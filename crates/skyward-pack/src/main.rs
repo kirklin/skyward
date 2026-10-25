@@ -65,6 +65,11 @@ enum Cmd {
         /// The monospaced typeface's licence, which goes with it.
         #[arg(long)]
         mono_license: PathBuf,
+        /// An extra file packed into the ramdisk, as the archive path it
+        /// takes and the file to put there, joined by '='. A program under
+        /// system/bin is executable; anything else is a plain file.
+        #[arg(long = "extra", value_name = "ARCHIVE-PATH=FILE")]
+        extra: Vec<String>,
         #[arg(long)]
         out: PathBuf,
     },
@@ -103,7 +108,7 @@ fn main() -> Result<()> {
             img.kernel = BootImage::read(&kernel)?.kernel;
             write(&out, &img, &img.to_bytes()?)
         }
-        Cmd::Recovery { stock, binary, config, font, mono, mono_license, out } => {
+        Cmd::Recovery { stock, binary, config, font, mono, mono_license, extra, out } => {
             let size = partition_size(&stock)?;
             let mut img = BootImage::read(&stock)?;
             let mut rd = Ramdisk::decode(&img.ramdisk)?;
@@ -123,6 +128,11 @@ fn main() -> Result<()> {
             // and logd stops as soon as it cannot find the one it asks for.
             if rd.find(paths::TASK_PROFILES).is_none() {
                 rd.add(paths::TASK_PROFILES, 0o644, TASK_PROFILES.to_vec())?;
+            }
+            for joined in &extra {
+                let (at, from) = joined.split_once('=').with_context(|| format!("{joined} is not an archive path and a file joined by '='"))?;
+                let mode = if at.starts_with("system/bin/") || at.starts_with("sbin/") { 0o755 } else { 0o644 };
+                rd.add(at, mode, read(&PathBuf::from(from)).with_context(|| format!("read {from}"))?)?;
             }
             rd.add(paths::MTP_RC, 0o644, MTP_RC.to_vec())?;
             // On an unlocked device adbd keeps root when ro.secure is 0 and

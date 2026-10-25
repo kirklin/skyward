@@ -450,6 +450,13 @@ fn default_module_sources() -> Vec<String> {
     vec!["vendor_boot".into(), "vendor_dlkm".into(), "vendor".into()]
 }
 
+/// Whether a path of the phone's is absolute the way the recovery sees it:
+/// rooted at `/`, whatever platform this host is, where a path without a
+/// drive is rooted but not what Rust calls absolute.
+fn is_absolute(path: &Path) -> bool {
+    path.is_absolute() || path.has_root()
+}
+
 impl DeviceConfig {
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let p = path.as_ref();
@@ -464,7 +471,7 @@ impl DeviceConfig {
             let path = Path::new(log);
             let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
             ensure!(
-                path.is_absolute() && plain && path.starts_with(DATA) && path != Path::new(DATA),
+                is_absolute(path) && plain && path.starts_with(DATA) && path != Path::new(DATA),
                 "[wipe] logs: {log} is not a folder inside {DATA}"
             );
         }
@@ -506,7 +513,7 @@ impl DeviceConfig {
                 "[haptics] names either a waveform the driver keeps or the file it says the motor's resonant frequency in"
             );
             if let Some(file) = &haptics.resonance {
-                ensure!(Path::new(file).is_absolute(), "[haptics] resonance: {file} is not an absolute path");
+                ensure!(is_absolute(Path::new(file)), "[haptics] resonance: {file} is not an absolute path");
             }
             let Strength { lightest, strongest } = haptics.strength;
             ensure!(
@@ -518,7 +525,7 @@ impl DeviceConfig {
             for library in &logd.libraries {
                 let path = Path::new(library);
                 let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
-                ensure!(path.is_absolute() && plain && path.file_name().is_some(), "[logd] libraries: {library} is not an absolute path to a file");
+                ensure!(is_absolute(path) && plain && path.file_name().is_some(), "[logd] libraries: {library} is not an absolute path to a file");
             }
         }
         if let Some(stock) = &cfg.stock {
@@ -551,7 +558,7 @@ impl DeviceConfig {
                         );
                         ensure!(plain && !file.path.is_empty(), "[wlan] firmware: {} is not a path from the top of {partition}", file.path);
                     }
-                    None => ensure!(path.is_absolute(), "[wlan] firmware: {} is not an absolute path", file.path),
+                    None => ensure!(is_absolute(path), "[wlan] firmware: {} is not an absolute path", file.path),
                 }
             }
         }

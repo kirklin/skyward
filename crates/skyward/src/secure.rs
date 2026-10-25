@@ -305,12 +305,26 @@ fn say_framework(dir: &Path) -> Result<usize> {
 }
 
 /// Whether a description is of the service registered under `name`, which
-/// reads as the interface and then the instance: the description names the
-/// two separately.
+/// reads as the interface and then the instance. A description names the
+/// package and the interface, and writes the interface and the instance
+/// either as one `<fqname>` or apart, the instance inside the interface's
+/// own block — NXP's descriptions, among others, are written the second
+/// way.
 fn describes(text: &str, name: &str) -> bool {
     let Some((interface, instance)) = name.rsplit_once('/') else { return false };
     let Some((package, interface)) = interface.rsplit_once('.') else { return false };
-    text.contains(package) && text.contains(&format!("{interface}/{instance}"))
+    if !text.contains(package) {
+        return false;
+    }
+    if text.contains(&format!("{interface}/{instance}")) {
+        return true;
+    }
+    let named = format!("<name>{interface}</name>");
+    let listed = format!("<instance>{instance}</instance>");
+    text.match_indices(&named).any(|(at, _)| match text[at..].find("</interface>") {
+        Some(end) => text[at..at + end].contains(&listed),
+        None => false,
+    })
 }
 
 /// Wait until the service directory is a new process and takes calls
@@ -329,5 +343,68 @@ fn answering_again(was: Option<u32>) -> Result<()> {
             anyhow::bail!("the service directory did not come back");
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A description as the maker of this phone's weaver writes it: the
+    /// interface and the instance apart, the instance inside the
+    /// interface's own block.
+    const APART: &str = "<manifest version=\"9.0\" type=\"device\">
+    <hal format=\"aidl\">
+        <name>android.hardware.weaver</name>
+        <version>2</version>
+        <interface>
+            <name>IWeaver</name>
+            <instance>default</instance>
+        </interface>
+    </hal>
+</manifest>";
+
+    /// A description of two services of one package, each in a block of
+    /// its own.
+    const TWO_APART: &str = "<manifest version=\"9.0\" type=\"device\">
+    <hal format=\"aidl\">
+        <name>vendor.xiaomi.hardware.miauthsecretd</name>
+        <interface>
+            <name>ICpaceService</name>
+            <instance>default</instance>
+        </interface>
+        <interface>
+            <name>IMIAuthSecret</name>
+            <instance>default</instance>
+        </interface>
+    </hal>
+</manifest>";
+
+    /// A description as most write it, the interface and the instance as
+    /// one `<fqname>`.
+    const TOGETHER: &str = "<manifest version=\"9.0\" type=\"device\">
+    <hal format=\"aidl\">
+        <name>android.hardware.secure_element</name>
+        <fqname>ISecureElement/eSE1</fqname>
+    </hal>
+</manifest>";
+
+    #[test]
+    fn a_description_of_either_shape_names_the_service_it_describes() {
+        assert!(describes(APART, "android.hardware.weaver.IWeaver/default"));
+        assert!(describes(TOGETHER, "android.hardware.secure_element.ISecureElement/eSE1"));
+    }
+
+    #[test]
+    fn each_of_a_descriptions_services_is_found_in_its_own_block() {
+        assert!(describes(TWO_APART, "vendor.xiaomi.hardware.miauthsecretd.ICpaceService/default"));
+        assert!(describes(TWO_APART, "vendor.xiaomi.hardware.miauthsecretd.IMIAuthSecret/default"));
+        assert!(!describes(TWO_APART, "vendor.xiaomi.hardware.miauthsecretd.INothing/default"), "an interface the description does not name");
+    }
+
+    #[test]
+    fn a_description_of_another_package_or_instance_is_not_the_service() {
+        assert!(!describes(TOGETHER, "android.hardware.weaver.IWeaver/default"), "another package");
+        assert!(!describes(APART, "android.hardware.weaver.IWeaver/eSE1"), "another instance");
     }
 }

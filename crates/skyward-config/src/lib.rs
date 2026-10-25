@@ -529,7 +529,9 @@ impl DeviceConfig {
             }
         }
         if let Some(stock) = &cfg.stock {
-            let name = stock.package.rsplit('/').next().unwrap_or_default();
+            // The address may carry the query the phone maker's updater
+            // signs it with, which is no part of the file's name.
+            let name = stock.package.rsplit('/').next().unwrap_or_default().split('?').next().unwrap_or_default();
             ensure!(
                 stock.package.starts_with("https://") && name.ends_with(".zip") && name.contains(&stock.version) && !stock.version.is_empty(),
                 "[stock] package: {} is not an HTTPS address of the full package of {}",
@@ -792,6 +794,14 @@ mod tests {
         let other = ok.replace("version = \"OS1.0.1.0", "version = \"OS1.0.2.0");
         assert!(DeviceConfig::parse(&format!("{other}recovery = \"{hash}\"\n")).is_err(), "the package of another build");
         assert_eq!(DeviceConfig::parse("[device]\ncodename = \"x\"\n").unwrap().stock, None);
+    }
+
+    #[test]
+    fn a_stock_address_may_carry_the_query_its_maker_signs_it_with() {
+        let hash = "faa425b10231a0cfe2d74ff34f344f032ee2d891ea5e9420bf4e67cd86d622a7";
+        let base = "[device]\ncodename = \"x\"\n[stock]\nversion = \"OS1.0.1.0.XXXCNXM\"\npackage = \"https://d.example/OS1.0.1.0.XXXCNXM/x-ota_full-OS1.0.1.0.XXXCNXM-user-16.0-0123456789.zip";
+        let signed = format!("{base}?t=1792946101&s=abcce191923e60115432e5d77161b64b\"\n");
+        assert!(DeviceConfig::parse(&format!("{signed}recovery = \"{hash}\"\n")).is_ok(), "the phone maker's updater hands out addresses signed with a time and a signature");
     }
 
     #[test]

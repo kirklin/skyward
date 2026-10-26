@@ -450,6 +450,13 @@ fn default_module_sources() -> Vec<String> {
     vec!["vendor_boot".into(), "vendor_dlkm".into(), "vendor".into()]
 }
 
+/// Whether a path of the phone's is absolute the way the recovery sees it:
+/// rooted at `/`, whatever platform this host is, where a path without a
+/// drive is rooted but not what Rust calls absolute.
+fn is_absolute(path: &Path) -> bool {
+    path.is_absolute() || path.has_root()
+}
+
 impl DeviceConfig {
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let p = path.as_ref();
@@ -464,7 +471,7 @@ impl DeviceConfig {
             let path = Path::new(log);
             let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
             ensure!(
-                path.is_absolute() && plain && path.starts_with(DATA) && path != Path::new(DATA),
+                is_absolute(path) && plain && path.starts_with(DATA) && path != Path::new(DATA),
                 "[wipe] logs: {log} is not a folder inside {DATA}"
             );
         }
@@ -506,7 +513,7 @@ impl DeviceConfig {
                 "[haptics] names either a waveform the driver keeps or the file it says the motor's resonant frequency in"
             );
             if let Some(file) = &haptics.resonance {
-                ensure!(Path::new(file).is_absolute(), "[haptics] resonance: {file} is not an absolute path");
+                ensure!(is_absolute(Path::new(file)), "[haptics] resonance: {file} is not an absolute path");
             }
             let Strength { lightest, strongest } = haptics.strength;
             ensure!(
@@ -518,11 +525,13 @@ impl DeviceConfig {
             for library in &logd.libraries {
                 let path = Path::new(library);
                 let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
-                ensure!(path.is_absolute() && plain && path.file_name().is_some(), "[logd] libraries: {library} is not an absolute path to a file");
+                ensure!(is_absolute(path) && plain && path.file_name().is_some(), "[logd] libraries: {library} is not an absolute path to a file");
             }
         }
         if let Some(stock) = &cfg.stock {
-            let name = stock.package.rsplit('/').next().unwrap_or_default();
+            // The address may carry the query the phone maker's updater
+            // signs it with, which is no part of the file's name.
+            let name = stock.package.rsplit('/').next().unwrap_or_default().split('?').next().unwrap_or_default();
             ensure!(
                 stock.package.starts_with("https://") && name.ends_with(".zip") && name.contains(&stock.version) && !stock.version.is_empty(),
                 "[stock] package: {} is not an HTTPS address of the full package of {}",
@@ -551,7 +560,7 @@ impl DeviceConfig {
                         );
                         ensure!(plain && !file.path.is_empty(), "[wlan] firmware: {} is not a path from the top of {partition}", file.path);
                     }
-                    None => ensure!(path.is_absolute(), "[wlan] firmware: {} is not an absolute path", file.path),
+                    None => ensure!(is_absolute(path), "[wlan] firmware: {} is not an absolute path", file.path),
                 }
             }
         }
@@ -785,6 +794,14 @@ mod tests {
         let other = ok.replace("version = \"OS1.0.1.0", "version = \"OS1.0.2.0");
         assert!(DeviceConfig::parse(&format!("{other}recovery = \"{hash}\"\n")).is_err(), "the package of another build");
         assert_eq!(DeviceConfig::parse("[device]\ncodename = \"x\"\n").unwrap().stock, None);
+    }
+
+    #[test]
+    fn a_stock_address_may_carry_the_query_its_maker_signs_it_with() {
+        let hash = "faa425b10231a0cfe2d74ff34f344f032ee2d891ea5e9420bf4e67cd86d622a7";
+        let base = "[device]\ncodename = \"x\"\n[stock]\nversion = \"OS1.0.1.0.XXXCNXM\"\npackage = \"https://d.example/OS1.0.1.0.XXXCNXM/x-ota_full-OS1.0.1.0.XXXCNXM-user-16.0-0123456789.zip";
+        let signed = format!("{base}?t=1792946101&s=abcce191923e60115432e5d77161b64b\"\n");
+        assert!(DeviceConfig::parse(&format!("{signed}recovery = \"{hash}\"\n")).is_ok(), "the phone maker's updater hands out addresses signed with a time and a signature");
     }
 
     #[test]

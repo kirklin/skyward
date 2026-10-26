@@ -1023,7 +1023,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     let mut surface = KmsSurface::open("/dev/dri/card0")?;
     let (w, h) = surface.size();
     eprintln!("display {}", surface.describe());
-    let mut inputs = Inputs::open(w, h, cfg.touch.writes.clone())?;
+    let mut inputs = Inputs::open(w, h, cfg.touch.writes.clone(), cfg.touch.reversed.clone())?;
     let started = Instant::now();
     let mut touch_known = false;
     // adbd and fastbootd ask over it to go over to fastboot and back.

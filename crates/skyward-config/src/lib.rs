@@ -307,6 +307,12 @@ pub struct Touch {
     /// step of starting the controller.
     #[serde(default)]
     pub writes: Vec<Write>,
+    /// The screen's own axes whose numbers the panel reports the other way
+    /// round, which one drawn from a panel mirrored against the screen does.
+    /// Which way round a panel lies is what its ranges say; which way its
+    /// numbers run is not, so this is said here.
+    #[serde(default)]
+    pub reversed: Vec<String>,
 }
 
 /// Partitions as the phone itself mounts them.
@@ -584,6 +590,9 @@ impl DeviceConfig {
                 }
             }
         }
+        for axis in &cfg.touch.reversed {
+            ensure!(axis == "x" || axis == "y", "[touch] reversed: {axis} is not one of the screen's axes");
+        }
         Ok(cfg)
     }
 }
@@ -782,7 +791,8 @@ mod tests {
     fn each_phones_programs_run_as_their_init_scripts_run_them() {
         let nezha = DeviceConfig::parse(include_str!("../../../devices/nezha.toml")).unwrap();
         let ishtar = DeviceConfig::parse(include_str!("../../../devices/ishtar.toml")).unwrap();
-        for s in nezha.services.iter().chain(&ishtar.services) {
+        let piano = DeviceConfig::parse(include_str!("../../../devices/piano.toml")).unwrap();
+        for s in nezha.services.iter().chain(&ishtar.services).chain(&piano.services) {
             assert!(s.user.is_some(), "{} names the user its init script does", s.path);
         }
         let find = |cfg: &DeviceConfig, path: &str| cfg.services.iter().find(|s| s.path == path).cloned().expect("listed");
@@ -807,7 +817,7 @@ mod tests {
             (include_str!("../../../devices/pandora.toml"), "OS4.0.4.0.XBLCNXM"),
             (include_str!("../../../devices/popsicle.toml"), "OS4.0.4.0.XPBCNXM"),
             (include_str!("../../../devices/myron.toml"), "OS4.0.4.0.XPMCNXM"),
-            (include_str!("../../../devices/songyuan.toml"), "OS4.0.4.0.XGNCNXM"),
+            (include_str!("../../../devices/songyuan.toml"), "OS4.0.5.0.XGNCNXM"),
             (include_str!("../../../devices/athens.toml"), "OS4.0.4.0.XPICNXM"),
             (include_str!("../../../devices/fuxi.toml"), "OS3.0.309.0.WMCCNXM"),
             (include_str!("../../../devices/nuwa.toml"), "OS3.0.312.0.WMBCNXM"),
@@ -822,6 +832,7 @@ mod tests {
             (include_str!("../../../devices/miro.toml"), "OS3.0.305.0.WOMCNXM"),
             (include_str!("../../../devices/annibale.toml"), "OS3.0.307.0.WPKCNXM"),
             (include_str!("../../../devices/warsaw.toml"), "OS3.0.309.0.WHPCNXM"),
+            (include_str!("../../../devices/piano.toml"), "OS4.0.5.0.XPYCNXM"),
         ] {
             let stock = DeviceConfig::parse(text).unwrap().stock.expect("a stock build to build on");
             assert_eq!(stock.version, version);
@@ -906,6 +917,184 @@ mod tests {
         assert_eq!(cfg.services[6].ready_hardware_service.as_deref(), Some("android.hardware.boot@1.2::IBootControl/default"));
         assert_eq!(cfg.backup.efs, ["modemst1", "modemst2", "fsg", "fsc", "persist"]);
         assert!(cfg.backup.data_skipped.contains(&"vendor/tzstorage".to_string()));
+    }
+
+    #[test]
+    fn parses_songyuan() {
+        let cfg = DeviceConfig::parse(include_str!("../../../devices/songyuan.toml")).unwrap();
+        assert_eq!(cfg.device.codename, "songyuan");
+        assert_eq!(cfg.device.brand, "Redmi");
+        assert_eq!(cfg.device.model, "REDMI K100 Pro Max");
+        assert_eq!(cfg.device.os_version_prop, "ro.mi.os.version.incremental");
+        let soc = cfg.device.soc.expect("songyuan names its SoC");
+        assert_eq!(soc.en, "Snapdragon® 8 Elite Gen 5 Mobile Platform");
+        assert_eq!((cfg.display.width, cfg.display.height, cfg.display.density), (1200, 2608, 480));
+        assert_eq!(cfg.display.diagonal, Some(6.9));
+        assert_eq!(cfg.display.corner_radius, 170);
+        assert!(cfg.modules.sources.iter().any(|s| s == "system_dlkm"), "rfkill is one of the kernel's own modules");
+        assert_eq!(cfg.modules.load, ["focaltech_touch_3685g_1"]);
+        assert_eq!(
+            cfg.touch.writes,
+            [Write { path: "/sys/class/touch/touch_dev/enable_touch_raw".into(), value: "0".into() }],
+            "its controller reports positions itself"
+        );
+        assert_eq!(cfg.firmware, Some(FirmwarePartition { partition: "modem".into() }));
+        assert_eq!(cfg.partitions.mounted, ["persist"], "the secure world keeps its own files there");
+        let paths: Vec<&str> = cfg.services.iter().map(|s| s.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            [
+                "/vendor/bin/sh",
+                "/vendor/bin/sh",
+                "/vendor/bin/qseecomd",
+                "/vendor/bin/hlosminkdaemon",
+                "/vendor/bin/hw/android.hardware.security.onekeymint-service-qti",
+                "/vendor/bin/hw/android.hardware.gatekeeper-rust-service-qti",
+                "/vendor/bin/hw/android.hardware.boot-service.qti",
+                "/odm/bin/hw/android.hardware.weaver-service.thales",
+            ]
+        );
+        for s in &cfg.services {
+            assert_eq!(s.ready_hardware_service, None, "{} is of the newer kind", s.path);
+        }
+        let [post_boot, gatekeeper_props, listeners, opener, keymint, gatekeeper, boot, weaver] = &cfg.services[..] else {
+            panic!("eight programs")
+        };
+        assert!(post_boot.oneshot, "the system's own settings for after start are made once");
+        assert_eq!(post_boot.args, ["/vendor/bin/init.kernel.post_boot.sh"]);
+        assert!(gatekeeper_props.oneshot, "the credential service is told before it is started");
+        assert_eq!(
+            gatekeeper_props.args,
+            ["-c", "setprop vendor.gatekeeper.disable_spu true; setprop vendor.gatekeeper.is_security_level_spu 0"],
+            "a recovery runs none of the secure processing unit's own service"
+        );
+        assert_eq!(listeners.ready_property.as_deref(), Some("vendor.sys.listeners.registered"));
+        assert_eq!(opener.capabilities, ["WAKE_ALARM", "BLOCK_SUSPEND"]);
+        assert_eq!(
+            &opener.groups[..],
+            &["system".to_string(), "vendor_ssgtzd".to_string(), "wakelock".to_string()][..],
+            "its init script's oem_2912 is the name the phone's own group file gives 2912"
+        );
+        assert_eq!(keymint.ready_service.as_deref(), Some("android.hardware.security.keymint.IKeyMintDevice/default"));
+        assert!(keymint.registers.contains(&"android.hardware.security.sharedsecret.ISharedSecret/default".to_string()));
+        assert_eq!(gatekeeper.ready_service.as_deref(), Some("android.hardware.gatekeeper.IGatekeeper/default"));
+        assert_eq!(boot.ready_service.as_deref(), Some("android.hardware.boot.IBootControl/default"));
+        assert_eq!(weaver.ready_service.as_deref(), Some("android.hardware.weaver.IWeaver/default"), "the weaver skyward's crypto asks for");
+        assert_eq!(
+            (weaver.user.as_deref(), &weaver.groups[..]),
+            (Some("root"), &["root".to_string()][..]),
+            "run as its own account it ends at once, and as root it stays up"
+        );
+        let wlan = cfg.wlan.expect("the K100 Pro Max's WLAN is described");
+        assert_eq!(wlan.modules, ["rfkill", "qca_cld3_peach_v2"]);
+        assert_eq!(wlan.writes, [Write { path: "/sys/kernel/cnss/fs_ready".into(), value: "1".into() }]);
+        assert_eq!(wlan.firmware.len(), 1, "the link its address is kept behind points at nothing on the phone itself");
+        assert_eq!(wlan.firmware[0].partition, None);
+        assert_eq!(wlan.libraries, ["/system/lib64", "/vendor/lib64"], "the recovery's own libraries come first");
+        assert_eq!(wlan.service, "android.hardware.wifi.supplicant.ISupplicant/default");
+        assert_eq!(cfg.update.expect("its update server is known").server, "https://update.miui.com/updates/miotaV3.php");
+        let logd = cfg.logd.expect("the K100 Pro Max's recovery leaves out what its logd loads");
+        assert_eq!(logd.libraries, ["/mnt/system/system/lib64/libsysutils.so", "/mnt/system/system/lib64/libcap.so"]);
+        let haptics = cfg.haptics.expect("the K100 Pro Max has a motor");
+        assert_eq!((haptics.click, haptics.resonance.as_deref()), (None, Some("/sys/class/qcom-haptics/lra_frequency_hz")), "its click is made");
+        assert_eq!(haptics.strength, Strength { lightest: 0.25, strongest: 0.75 });
+        assert_eq!(cfg.backup.efs, ["modemst1", "modemst2", "fsg", "fsc", "persist"]);
+        assert!(cfg.backup.data_skipped.contains(&"vendor/secure_element".to_string()));
+        assert!(cfg.wipe.logs.contains(&"/data/vendor/bsplog".to_string()));
+    }
+
+    #[test]
+    fn parses_piano() {
+        let cfg = DeviceConfig::parse(include_str!("../../../devices/piano.toml")).unwrap();
+        assert_eq!(cfg.device.codename, "piano");
+        assert_eq!(cfg.device.brand, "Xiaomi");
+        assert_eq!(cfg.device.model, "Xiaomi Pad 8 Pro");
+        assert_eq!(cfg.device.os_version_prop, "ro.mi.os.version.incremental");
+        let soc = cfg.device.soc.expect("piano names its SoC");
+        assert_eq!(soc.en, "Snapdragon® 8 Elite Mobile Platform");
+        assert_eq!((cfg.display.width, cfg.display.height, cfg.display.density), (2136, 3200, 440));
+        assert_eq!(cfg.display.diagonal, Some(11.2));
+        assert_eq!(cfg.display.corner_radius, 54);
+        assert!(cfg.modules.sources.iter().any(|s| s == "system_dlkm"), "rfkill is one of the kernel's own modules");
+        assert_eq!(cfg.modules.load, ["nt36532_touch", "mitee_dlkm"], "the weaver's trusted environment is reached through the second");
+        assert_eq!(
+            cfg.touch.writes,
+            [Write { path: "/sys/class/touch/touch_dev/enable_touch_raw".into(), value: "1".into() }],
+            "its driver hands the frames it reads to the service that reads them"
+        );
+        assert_eq!(cfg.touch.reversed, ["y"], "its panel counts the screen's vertical axis from the bottom");
+        assert_eq!(cfg.firmware, Some(FirmwarePartition { partition: "modem".into() }));
+        assert_eq!(cfg.partitions.mounted, ["persist"], "the secure world keeps its own files there");
+        assert!(cfg.logd.is_none(), "its stock recovery carries the libraries its logd loads");
+        assert!(cfg.haptics.is_none(), "a tablet has no motor to click");
+        let paths: Vec<&str> = cfg.services.iter().map(|s| s.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            [
+                "/vendor/bin/sh",
+                "/odm/bin/hw/vendor.xiaomi.hw.touchfeature-service",
+                "/vendor/bin/qseecomd",
+                "/vendor/bin/hw/vendor.qti.hardware.qseecom@1.0-service",
+                "/vendor/bin/qwesd",
+                "/vendor/bin/ssgtzd",
+                "/vendor/bin/hw/android.hardware.security.keymint-service-qti",
+                "/vendor/bin/hw/android.hardware.secure_element-service.qti",
+                "/vendor/bin/hw/android.hardware.boot-service.qti",
+                "/odm/bin/hw/android.hardware.weaver",
+            ]
+        );
+        let [post_boot, touch, _, opens_apps, qwesd, ssgtzd, keymint, element, boot, weaver] = &cfg.services[..] else {
+            panic!("ten programs")
+        };
+        assert!(post_boot.oneshot, "the tablet's own settings for after start are made once");
+        assert_eq!(post_boot.args, ["/vendor/bin/init.kernel.post_boot.sh"]);
+        assert_eq!(
+            touch.ready_service.as_deref(),
+            Some("vendor.xiaomi.hw.touchfeature.ITouchFeature/default"),
+            "its driver hands the frames it reads to this, and no touch reaches an input device without it"
+        );
+        assert_eq!(
+            opens_apps.ready_service.as_deref(),
+            Some("vendor.qti.hardware.qseecom.IQSEECom/default"),
+            "the programs that name an app of the secure world's reach it through this"
+        );
+        assert_eq!(
+            (qwesd.user.as_deref(), &qwesd.groups[..]),
+            (Some("system"), &["system".to_string(), "inet".to_string()][..]),
+            "its own init script starts it at boot, before the key service"
+        );
+        assert_eq!(
+            (ssgtzd.user.as_deref(), &ssgtzd.groups[..]),
+            (Some("system"), &["system".to_string(), "vendor_ssgtzd".to_string(), "wakelock".to_string()][..]),
+            "the number its init script calls oem_2912 is named vendor_ssgtzd here"
+        );
+        assert_eq!(keymint.ready_service.as_deref(), Some("android.hardware.security.keymint.IKeyMintDevice/default"));
+        assert!(keymint.registers.contains(&"android.hardware.security.sharedsecret.ISharedSecret/default".to_string()));
+        assert!(
+            keymint.libraries.iter().any(|l| l == "/mnt/system/system/lib64"),
+            "its libhardware asks for the installed system's libvndksupport"
+        );
+        assert_eq!(element.ready_service, None, "a weaver that finds it late costs the recovery nothing it had");
+        assert_eq!(boot.ready_service.as_deref(), Some("android.hardware.boot.IBootControl/default"));
+        assert_eq!(weaver.ready_service.as_deref(), Some("android.hardware.weaver.IWeaver/default"), "the weaver skyward's crypto asks for");
+        assert_eq!(
+            (weaver.user.as_deref(), &weaver.groups[..]),
+            (Some("system"), &["system".to_string(), "drmrpc".to_string()][..]),
+            "the tablet keeps its weaver beside the services of its own credentials"
+        );
+        let wlan = cfg.wlan.expect("the tablet's WLAN is described");
+        assert_eq!(wlan.modules, ["rfkill", "qca_cld3_peach_v2"]);
+        assert_eq!(wlan.firmware.len(), 2, "both the settings and the address are given to the loader");
+        assert_eq!(
+            wlan.firmware[1].path, "/mnt/vendor/persist/wlan/wlan_mac.bin",
+            "the address is read where persist is mounted already, rather than mounted again"
+        );
+        assert_eq!(wlan.libraries, ["/system/lib64", "/vendor/lib64"], "the recovery's own libraries come first");
+        assert_eq!(wlan.service, "android.hardware.wifi.supplicant.ISupplicant/default");
+        assert_eq!(cfg.update.expect("its update server is known").server, "https://update.miui.com/updates/miotaV3.php");
+        assert_eq!(cfg.backup.efs, ["modemst1", "modemst2", "fsg", "fsc", "persist"]);
+        assert!(cfg.backup.data_skipped.contains(&"vendor/secure_element".to_string()));
+        assert!(cfg.wipe.logs.contains(&"/data/miuilog".to_string()));
     }
 
     #[test]

@@ -1,0 +1,244 @@
+[device]
+codename = "piano"
+brand = "Xiaomi"
+model = "Xiaomi Pad 8 Pro"
+ab = true
+soc = { hans = "骁龙®8至尊版移动平台", hant = "Snapdragon® 8 Elite 行動平台", en = "Snapdragon® 8 Elite Mobile Platform" }
+os_version_prop = "ro.mi.os.version.incremental"
+
+[display]
+width = 2136
+height = 3200
+density = 440
+diagonal = 11.2
+# The radius the display reports for all four of its corners.
+corner_radius = 54
+
+[modules]
+sources = ["vendor_boot", "vendor_dlkm", "vendor", "system_dlkm"]
+# The touchscreen: Novatek's NT36532 over SPI, behind Xiaomi's touch layer,
+# whose input device the touches come in on. Its dependencies, xiaomi_touch
+# and panel_event_notifier, load from vendor_dlkm's modules.dep.
+#
+# The weaver keeps its slots in Xiaomi's own trusted environment, which the
+# system reaches through GlobalPlatform's TEE client: the kernel makes the
+# nodes that client opens only once this driver is in, and a recovery loads
+# none of the vendor's.
+load = ["nt36532_touch", "mitee_dlkm"]
+
+# The controller sends raw frames, which Xiaomi's touch feature service turns
+# into touches from /odm/lib64/libtouchreport.so: its driver hands them over
+# through /dev/xiaomi-touch rather than reporting positions itself, and the
+# service that reads them is started below. The panel lies with its own axes
+# across the screen's, which the ranges say, and counts the one the screen's
+# vertical axis follows from the bottom, which they do not.
+[touch]
+writes = [{ path = "/sys/class/touch/touch_dev/enable_touch_raw", value = "1" }]
+reversed = ["y"]
+
+# The firmware of the WLAN chip and of the tablet's other processors, and the
+# apps the secure world runs, are on the modem partition, which the tablet
+# mounts at /vendor/firmware_mnt and its own recovery leaves unmounted.
+[firmware]
+partition = "modem"
+
+# The persist partition, which the tablet mounts at /mnt/vendor/persist and
+# its own recovery leaves unmounted. The secure world keeps its own files
+# there, through a listener qseecomd registers: among them what the key
+# service needs to use a key that cannot be rolled back, such as the one
+# guarding each user's secret.
+[partitions]
+mounted = ["persist"]
+
+# Each of the tablet's own programs below runs as the user, in the groups and
+# with the capabilities its init script on the tablet gives it, so that what
+# it makes in the data partition is whose it is when the tablet runs it, and
+# the tablet's own copy of it can still read and remove it.
+
+# What the tablet's own init runs once the system has finished starting. The
+# kernel starts both CPU clusters on the performance governor; the script
+# hands them to schedutil. Without it the CPUs stay at their highest clock
+# and voltage while idle, and the tablet slowly heats up. It needs none of
+# the programs below and runs before them.
+[[service]]
+path = "/vendor/bin/sh"
+args = ["/vendor/bin/init.kernel.post_boot.sh"]
+libraries = ["/system/lib64", "/vendor/lib64"]
+oneshot = true
+user = "root"
+groups = ["root", "system", "wakelock", "graphics"]
+
+# The touchscreen's own service. Its driver hands the frames it reads to
+# userspace rather than reporting them itself, and this is what turns them
+# into touches: without it nothing reaches any input device, whatever the
+# driver is told. It runs as root because the phone's own init hands it the
+# device it reads those frames from, and a recovery leaves that device the
+# root's alone. The tablet keeps it and its own libraries on the odm
+# partition, and it asks the firmware loader for the models it recognizes
+# gestures with, which this build does not carry and it goes on without.
+[[service]]
+path = "/odm/bin/hw/vendor.xiaomi.hw.touchfeature-service"
+libraries = ["/system/lib64", "/vendor/lib64", "/odm/lib64"]
+ready_service = "vendor.xiaomi.hw.touchfeature.ITouchFeature/default"
+user = "root"
+groups = ["root"]
+
+# The secure world reaches back into Android through the listeners this daemon
+# registers; without them the key service cannot use any key.
+[[service]]
+path = "/vendor/bin/qseecomd"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_property = "vendor.sys.listeners.registered"
+user = "root"
+groups = ["root", "drmrpc"]
+
+# What the programs that call on the secure world's apps speak to, and what
+# loads them out of the firmware partition as they are first asked for. The
+# tablet runs this beside the daemon above, and one without the other leaves
+# those programs unable to find the app they name.
+[[service]]
+path = "/vendor/bin/hw/vendor.qti.hardware.qseecom@1.0-service"
+libraries = ["/system/lib64", "/vendor/lib64", "/vendor/lib64/hw"]
+ready_service = "vendor.qti.hardware.qseecom.IQSEECom/default"
+user = "system"
+groups = ["system", "drmrpc"]
+
+# The two services of the tablet's own secure stack that run before the key
+# service: the one that keeps the secure world's keys provisioned for it, and
+# Xiaomi's own security service, whose socket the key service and the weaver
+# reach through. The tablet's init starts them at boot, ahead of everything
+# below, and the TEE answers nothing until they are there.
+[[service]]
+path = "/vendor/bin/qwesd"
+libraries = ["/system/lib64", "/vendor/lib64"]
+user = "system"
+groups = ["system", "inet"]
+
+[[service]]
+path = "/vendor/bin/ssgtzd"
+libraries = ["/system/lib64", "/vendor/lib64"]
+user = "system"
+groups = ["system", "vendor_ssgtzd", "wakelock"]
+capabilities = ["WAKE_ALARM", "BLOCK_SUSPEND"]
+
+# The key service, which is the only thing that can use the keys the tablet
+# wrapped in hardware. The same program serves the secure clock and the shared
+# secret, which the tablet describes apart from it. It loads libhardware,
+# which asks for the installed system's libvndksupport, and that for its
+# libdl_android, so the stock libraries come after the recovery's own.
+[[service]]
+path = "/vendor/bin/hw/android.hardware.security.keymint-service-qti"
+libraries = ["/system/lib64", "/vendor/lib64", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"]
+ready_service = "android.hardware.security.keymint.IKeyMintDevice/default"
+registers = [
+    "android.hardware.security.keymint.IRemotelyProvisionedComponent/default",
+    "android.hardware.security.secureclock.ISecureClock/default",
+    "android.hardware.security.sharedsecret.ISharedSecret/default",
+]
+user = "system"
+groups = ["system", "drmrpc"]
+
+# The secure element's service, which puts the element's applets within reach
+# of a program that speaks to them as Android's own OMAPI does, as the weaver
+# below does. It loads its own libraries for the element from the vendor
+# partition's hardware folder. It is not waited on, so a weaver that finds it
+# late costs the recovery nothing it had before.
+[[service]]
+path = "/vendor/bin/hw/android.hardware.secure_element-service.qti"
+libraries = ["/system/lib64", "/vendor/lib64", "/vendor/lib64/hw", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"]
+user = "system"
+groups = ["nfc", "system"]
+
+# The boot control, which says which slot the bootloader starts next and
+# switches it, writing where the bootloader reads it. It comes before the
+# weaver: the tablet is usable without either, and the weaver is the likelier
+# of the two not to come up.
+[[service]]
+path = "/vendor/bin/hw/android.hardware.boot-service.qti"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_service = "android.hardware.boot.IBootControl/default"
+user = "root"
+groups = ["root"]
+
+# The weaver: every user's secret is bound to a slot of the secure element,
+# with a screen lock or without, and this is what unseals the slot. Xiaomi
+# keeps its weaver here beside the services of its own credentials, and it
+# loads the odm partition's libraries with the vendor partition's; both ask
+# for the installed system's libvndksupport and that for its libdl_android,
+# so the stock libraries come after the recovery's own.
+[[service]]
+path = "/odm/bin/hw/android.hardware.weaver"
+libraries = ["/odm/lib64", "/system/lib64", "/vendor/lib64", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"]
+ready_service = "android.hardware.weaver.IWeaver/default"
+user = "system"
+groups = ["system", "drmrpc"]
+
+# WLAN: Qualcomm's Peach on PCIe, driven by qca_cld3_peach_v2 over the cnss2
+# platform driver. The vendor's cfg80211 asks for rfkill, one of the kernel's
+# own modules in system_dlkm, which the system loads before any of the
+# vendor's and a recovery leaves out. Once fs_ready is written, cnss2 powers
+# the chip up and loads its firmware from the modem partition, and wlan0
+# appears. The driver reads its settings and its address through the firmware
+# loader, from links the vendor partition keeps in its own firmware folder,
+# which a recovery covers with the modem's, so both are given to the loader
+# again, where it looks first. The address is a file of the secure world's on
+# persist, which this recovery keeps mounted, so it is read where it lies.
+# Whether a network joined reaches the internet is asked of the page the stock
+# system's NetworkStack overlay names.
+[wlan]
+modules = ["rfkill", "qca_cld3_peach_v2"]
+writes = [{ path = "/sys/kernel/cnss/fs_ready", value = "1" }]
+firmware = [
+    { name = "wlan/qca_cld/peach_v2/WCNSS_qcom_cfg.ini", path = "/vendor/etc/wifi/peach_v2/WCNSS_qcom_cfg.ini" },
+    { name = "wlan/qca_cld/peach_v2/wlan_mac.bin", path = "/mnt/vendor/persist/wlan/wlan_mac.bin" },
+]
+interface = "wlan0"
+supplicant = "/vendor/bin/hw/wpa_supplicant"
+libraries = ["/system/lib64", "/vendor/lib64"]
+service = "android.hardware.wifi.supplicant.ISupplicant/default"
+probe = "http://connect.rom.miui.com/generate_204"
+
+# The update server the stock updater of the Chinese system asks.
+[update]
+server = "https://update.miui.com/updates/miotaV3.php"
+
+# The stock build the recovery is made on: the Chinese system's OS4.0.5.0,
+# whose full update package on the maker's own download server holds the
+# recovery partition the recovery is built on top of.
+[stock]
+version = "OS4.0.5.0.XPYCNXM"
+package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.5.0.XPYCNXM/piano-ota_full-OS4.0.5.0.XPYCNXM-user-17.0-86f6af9e1b.zip"
+recovery = "56d144b7b41ec2b5832dc5b10927d9545398cfcc30e85684531665db968ca095"
+
+# The partitions a backup of the baseband and EFS takes: the baseband's
+# settings, with the IMEI, and the sensors' calibration. And what of the data
+# partition a backup leaves out because the secure world keeps it in step with
+# itself: its own storage, its apps' data, the secure element's state and the
+# fingerprint templates.
+[backup]
+efs = ["modemst1", "modemst2", "fsg", "fsc", "persist"]
+data_skipped = [
+    "vendor/tzstorage",
+    "vendor/qtee",
+    "vendor/goodix",
+    "vendor/fpc",
+    "vendor/fingerprint",
+    "vendor/fpdata",
+    "vendor/secure_element",
+]
+
+# Where the tablet's own programs keep logs in the data partition: the
+# system's, the minidumps, what Xiaomi's log manager keeps of each part of the
+# tablet, and what the modem, Wi-Fi and Bluetooth leave when they crash.
+[wipe]
+logs = [
+    "/data/miuilog",
+    "/data/vendor/diag",
+    "/data/vendor/bsplog",
+    "/data/vendor/log",
+    "/data/vendor/ramdump",
+    "/data/vendor/ramdump_ssr",
+    "/data/vendor/ssrdump",
+    "/data/vendor/tombstones",
+    "/data/vendor/wlan_logs",
+]

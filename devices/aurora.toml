@@ -46,6 +46,87 @@ oneshot = true
 user = "root"
 groups = ["root", "system", "wakelock", "graphics"]
 
+[[service]]
+path = "/system/bin/sh"
+args = ["-c", "mkdir -p /kmlibs && cp /mnt/system/system/lib64/libhardware.so /mnt/system/system/lib64/libvndksupport.so /mnt/system/system/lib64/libnetutils.so /mnt/system/system/lib64/bootstrap/libdl_android.so /kmlibs/ && printf '[recovery]\\nnamespace.default.isolated = false\\n' > /kmlibs/ld.config.txt && printf '<manifest version=\"1.0\" type=\"device\"><hal format=\"aidl\"><name>android.hardware.weaver</name><version>2</version><fqname>IWeaver/default</fqname></hal></manifest>' > /kmlibs/weaver.xml && printf '#!/system/bin/sh\\nexport LD_CONFIG_FILE=/kmlibs/ld.config.txt\\nexec \"$@\"\\n' > /kmlibs/km.sh && chmod 755 /kmlibs/km.sh && V=$(ls -d /system_dlkm/lib/modules/*/kernel/net/rfkill 2>/dev/null | head -1) && mount --bind $V/rfkill.ko /system_dlkm/flatten/lib/modules/rfkill.ko"]
+oneshot = true
+user = "root"
+groups = ["root"]
+
+# The credential service of the older kind refuses everything while it
+# looks for the secure processing unit the recovery does not carry; the
+# phone's own recovery turns that search off before starting it.
+[[service]]
+path = "/system/bin/sh"
+args = ["-c", "setprop vendor.gatekeeper.disable_spu true; setprop vendor.gatekeeper.is_security_level_spu 0; true"]
+oneshot = true
+user = "root"
+groups = ["root"]
+
+# The secure world reaches back into Android through the listeners this
+# daemon registers; the key service waits for them before it can use a key.
+[[service]]
+path = "/vendor/bin/qseecomd"
+libraries = ["/vendor/lib64", "/vendor/lib64/hw", "/system/lib64", "/odm/lib64"]
+sockets = ["notify-topology"]
+ready_property = "vendor.sys.listeners.registered"
+user = "root"
+groups = ["root", "drmrpc"]
+
+# The secure service gateway: the TEE calls back into the server it
+# registers for system services.
+[[service]]
+path = "/vendor/bin/ssgtzd"
+libraries = ["/kmlibs", "/vendor/lib64", "/vendor/lib64/hw", "/system/lib64", "/odm/lib64"]
+sockets = ["ssgtzd", "ssgtzd_opener"]
+user = "root"
+groups = ["root", "system", "drmrpc"]
+capabilities = ["WAKE_ALARM", "BLOCK_SUSPEND"]
+
+# The key service, the only thing that can use keys the phone wrapped in
+# hardware. All four names it registers have to be described, or the
+# service directory refuses it. It waits, retrying, for qseecomd to come
+# up, and then has the keymaster applet loaded on its own request: the
+# session, and the calls back out of the secure world on it, are then the
+# key service's own. Started before qseecomd and without a gate, or a
+# qseecomd listener claims the applet first and its calls back find no
+# objects, and the key service hangs on them forever.
+[[service]]
+path = "/kmlibs/km.sh"
+args = ["/vendor/bin/hw/android.hardware.security.keymint-service-qti"]
+libraries = ["/kmlibs", "/vendor/lib64", "/vendor/lib64/hw", "/system/lib64", "/odm/lib64"]
+registers = [
+    "android.hardware.security.keymint.IRemotelyProvisionedComponent/default",
+    "android.hardware.security.secureclock.ISecureClock/default",
+    "android.hardware.security.sharedsecret.ISharedSecret/default",
+]
+user = "root"
+groups = ["root", "drmrpc"]
+
+# The credential service: the secure world has it check a screen lock, and
+# it is the only thing that can hand out the note the key service wants
+# before using a key a screen lock guards.
+[[service]]
+path = "/kmlibs/km.sh"
+args = ["/vendor/bin/hw/android.hardware.gatekeeper-service-qti"]
+libraries = ["/kmlibs", "/vendor/lib64", "/vendor/lib64/hw", "/system/lib64", "/odm/lib64"]
+ready_service = "android.hardware.gatekeeper.IGatekeeper/default"
+# This phone describes its gatekeeper not among the manifest fragments but
+# in its own SoC's manifest file, which the service directory asks for
+# before it takes the registration.
+description = "/vendor/etc/vintf/manifest_pineapple.xml"
+user = "root"
+groups = ["root", "drmrpc"]
+
+# The boot control, which says which slot the bootloader starts next and
+# switches it. It comes last: the phone is usable without it.
+[[service]]
+path = "/vendor/bin/hw/android.hardware.boot-service.qti"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_service = "android.hardware.boot.IBootControl/default"
+user = "root"
+groups = ["root"]
+
 # WLAN: the kiwi node in the device tree, driven by qca_cld3_kiwi_v2, the
 # one WLAN driver the phone's own modules.blocklist leaves of those its
 # modules.load lists. Its cfg80211 asks for rfkill, one of the kernel's own
@@ -55,12 +136,23 @@ groups = ["root", "system", "wakelock", "graphics"]
 # the settings from the vendor partition, the address from where the
 # vendor's link points in persist. wpa_supplicant runs on the recovery's
 # own libraries before the vendor partition's, as on the 17 Ultra.
+# The secure world keeps its own files (the applets the key service and the
+# credential service ask for) in the modem partition, which the listener
+# mounts at /vendor/firmware_mnt and loads them from as they are first
+# asked for; without the mount they are not there at all.
+[firmware]
+partition = "modem"
+
+# persist holds the WLAN address and the key service's storage.
+[partitions]
+mounted = ["persist"]
+
 [wlan]
 modules = ["rfkill", "qca_cld3_kiwi_v2"]
 writes = [{ path = "/sys/kernel/cnss/fs_ready", value = "1" }]
 firmware = [
     { name = "wlan/qca_cld/kiwi_v2/WCNSS_qcom_cfg.ini", path = "/vendor/etc/wifi/kiwi_v2/WCNSS_qcom_cfg.ini" },
-    { name = "wlan/qca_cld/kiwi_v2/wlan_mac.bin", partition = "persist", path = "wlan/wlan_mac.bin" },
+    { name = "wlan/qca_cld/kiwi_v2/wlan_mac.bin", path = "/mnt/vendor/persist/kiwi_v2/wlan_mac.bin" },
 ]
 interface = "wlan0"
 supplicant = "/vendor/bin/hw/wpa_supplicant"

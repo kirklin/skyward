@@ -477,7 +477,7 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot) -> Result<()> {
     let nodes = skyward_sys::ueventd::apply()?;
     skyward_sys::kmsg(&format!("{nodes} device nodes given the owner their phone describes"))?;
     let props = skyward_info::installed_props(slot)?;
-    adopt_installed_version(&props)?;
+    adopt_installed_version(&props, cfg.device.keymint_security_patch.as_deref())?;
     // Without logd the phone's own programs still run, and only what they
     // log is lost, so why it did not start goes to the kernel log.
     if let Some(logd) = &cfg.logd {
@@ -638,17 +638,28 @@ fn mount_firmware(partition: &str) -> Result<()> {
 #[cfg(target_os = "android")]
 const BUILD_VERSION: [&str; 3] = ["ro.build.version.release", "ro.build.version.security_patch", "ro.vendor.build.security_patch"];
 
-/// Set each of [`BUILD_VERSION`] to the installed system's value. An earlier
-/// run of the recovery service may have set it already, and init sets such
-/// a property only once.
+/// Set each of [`BUILD_VERSION`] to the installed system's value, or the
+/// configured patch level where the phone needs one: the secure world
+/// refuses the installed system's keys as made under a build it does not
+/// know when the recovery's own build is older. An earlier run of the
+/// recovery service may have set a property already, and init sets such a
+/// property only once.
 #[cfg(target_os = "android")]
-fn adopt_installed_version(props: &std::collections::HashMap<String, String>) -> Result<()> {
+fn adopt_installed_version(props: &std::collections::HashMap<String, String>, keymint_patch: Option<&str>) -> Result<()> {
     for name in BUILD_VERSION {
-        let value = props.get(name).with_context(|| format!("the installed system says no {name}"))?;
-        if skyward_sys::prop(name).as_ref() != Some(value) {
+        let installed = props.get(name).with_context(|| format!("the installed system says no {name}"))?;
+        let value = match keymint_patch {
+            Some(patch) if name != "ro.build.version.release" => patch,
+            _ => installed.as_str(),
+        };
+        if skyward_sys::prop(name).as_deref() != Some(value) {
             skyward_sys::set_prop(name, value)?;
         }
-        skyward_sys::kmsg(&format!("{name} is the installed system's {value}"))?;
+        if value == installed.as_str() {
+            skyward_sys::kmsg(&format!("{name} is the installed system's {value}"))?;
+        } else {
+            skyward_sys::kmsg(&format!("{name} is {value}, the installed system's is {installed}"))?;
+        }
     }
     Ok(())
 }

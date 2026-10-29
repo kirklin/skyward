@@ -35,9 +35,13 @@ Skyward is a recovery written in Rust, from scratch.
 
 ### 🚧 Under construction
 
-These images are built from each phone's stock firmware and have not been tried
-on the phone. They set up the screen, touch, WLAN and vibration, and do not decrypt
-the data partition.
+These images are built from each phone's stock firmware. Except for REDMI K70,
+they have not been tried on the phone: screen, touch, WLAN and vibration are
+configured, but the data partition is not decrypted.
+
+REDMI K70 has verified data decryption and restore on an Oplus Android 17 system,
+with Android boot, app launch and graphical lock working afterward. EFS,
+fingerprint and full HyperOS OTA installation remain unverified.
 
 | Device | Codename | Built on |
 | --- | --- | --- |
@@ -53,6 +57,7 @@ the data partition.
 | 🚧 Xiaomi 17 Pro | `pandora` | OS4.0.4.0.XBLCNXM (Android 17) |
 | 🚧 Xiaomi 17 Pro Max | `popsicle` | OS4.0.4.0.XPBCNXM (Android 17) |
 | 🚧 Xiaomi 17 Max | `byron` | OS3.0.310.0.WAFCNXM (Android 16) |
+| 🚧 REDMI K70 | `vermeer` | OS3.0.307.0.WNKCNXM (Android 16) |
 | 🚧 REDMI K80 | `zorn` | OS3.0.309.0.WOKCNXM (Android 16) |
 | 🚧 REDMI K80 Pro | `miro` | OS3.0.305.0.WOMCNXM (Android 16) |
 | 🚧 REDMI K90 | `annibale` | OS3.0.307.0.WPKCNXM (Android 16) |

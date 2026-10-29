@@ -258,9 +258,15 @@ pub struct Device {
     /// SoC marketing name shown on the About page.
     #[serde(default)]
     pub soc: Option<Names>,
-    /// System property that carries the vendor OS version.
+    /// System property that carries the installed system's version.
     #[serde(default = "default_os_version_prop")]
     pub os_version_prop: String,
+    /// The patch level the key service reports to the secure world, on a
+    /// phone whose installed system is newer than the recovery's own build:
+    /// the secure world refuses keys the installed system made as made
+    /// under a build it does not know. Written as `YYYY-MM-DD`.
+    #[serde(default)]
+    pub keymint_security_patch: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -467,6 +473,23 @@ fn default_module_sources() -> Vec<String> {
     vec!["vendor_boot".into(), "vendor_dlkm".into(), "vendor".into()]
 }
 
+/// Whether `s` is a calendar date written as `YYYY-MM-DD`, as a patch
+/// level is.
+fn is_date(s: &str) -> bool {
+    let b = s.as_bytes();
+    let digit = |i: usize| b[i].is_ascii_digit();
+    if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
+        return false;
+    }
+    let two = |i: usize| digit(i) && digit(i + 1);
+    if !(two(0) && two(2) && two(5) && two(8)) {
+        return false;
+    }
+    let month = (b[5] - b'0') * 10 + (b[6] - b'0');
+    let day = (b[8] - b'0') * 10 + (b[9] - b'0');
+    (1..=12).contains(&month) && (1..=31).contains(&day)
+}
+
 impl DeviceConfig {
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let p = path.as_ref();
@@ -477,6 +500,9 @@ impl DeviceConfig {
 
     pub fn parse(text: &str) -> Result<Self> {
         let cfg: DeviceConfig = toml::from_str(text).context("parse device config")?;
+        if let Some(patch) = &cfg.device.keymint_security_patch {
+            ensure!(is_date(patch), "[device] keymint_security_patch: {patch:?} is not a date, YYYY-MM-DD");
+        }
         for log in &cfg.wipe.logs {
             let path = Path::new(log);
             let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
@@ -598,10 +624,20 @@ mod tests {
         assert_eq!(cfg.device.codename, "nezha");
         assert!(cfg.device.ab);
         assert_eq!(cfg.device.os_version_prop, "ro.build.display.id");
+        assert_eq!(cfg.device.keymint_security_patch, None);
         assert_eq!(cfg.modules.sources, default_module_sources());
         assert!(cfg.modules.load.is_empty());
         assert_eq!((cfg.firmware, cfg.wlan, cfg.update), (None, None, None), "a phone may have none of them");
         assert_eq!(cfg.logd, None, "a recovery's own logd usually has all it needs");
+    }
+
+    #[test]
+    fn a_keymint_patch_level_is_a_date() {
+        let with = |patch: &str| DeviceConfig::parse(&format!("[device]\ncodename = \"x\"\nkeymint_security_patch = \"{patch}\"\n"));
+        assert!(with("2099-12-31").is_ok());
+        for bad in ["2099-13-01", "2099-00-10", "2099-12-32", "99-12-31", "2099-1-1", "tomorrow", ""] {
+            assert!(with(bad).is_err(), "{bad:?} is refused");
+        }
     }
 
     #[test]
@@ -818,6 +854,7 @@ mod tests {
             (include_str!("../../../devices/haotian.toml"), "OS3.0.309.0.WOBCNXM"),
             (include_str!("../../../devices/xuanyuan.toml"), "OS3.0.314.0.WOACNXM"),
             (include_str!("../../../devices/byron.toml"), "OS3.0.310.0.WAFCNXM"),
+            (include_str!("../../../devices/vermeer.toml"), "OS3.0.307.0.WNKCNXM"),
             (include_str!("../../../devices/zorn.toml"), "OS3.0.309.0.WOKCNXM"),
             (include_str!("../../../devices/miro.toml"), "OS3.0.305.0.WOMCNXM"),
             (include_str!("../../../devices/annibale.toml"), "OS3.0.307.0.WPKCNXM"),
@@ -906,6 +943,26 @@ mod tests {
         assert_eq!(cfg.services[6].ready_hardware_service.as_deref(), Some("android.hardware.boot@1.2::IBootControl/default"));
         assert_eq!(cfg.backup.efs, ["modemst1", "modemst2", "fsg", "fsc", "persist"]);
         assert!(cfg.backup.data_skipped.contains(&"vendor/tzstorage".to_string()));
+    }
+
+    #[test]
+    fn parses_vermeer() {
+        let cfg = DeviceConfig::parse(include_str!("../../../devices/vermeer.toml")).unwrap();
+        assert_eq!(cfg.device.os_version_prop, "ro.mi.os.version.incremental");
+        assert_eq!(cfg.device.keymint_security_patch.as_deref(), Some("2099-12-31"));
+        assert_eq!(cfg.backup.efs, ["modemst1", "modemst2", "fsg", "fsc", "persist"]);
+        assert_eq!(
+            cfg.backup.data_skipped,
+            ["vendor/tzstorage", "vendor/qtee", "vendor/misc/mi_fp", "vendor/fpc", "vendor/fpdump", "vendor/goodix", "vendor/fingerprint"]
+        );
+        let boot = cfg
+            .services
+            .iter()
+            .find(|s| s.path == "/vendor/bin/hw/android.hardware.boot@1.2-service")
+            .expect("vermeer's own boot control runs");
+        assert_eq!(boot.ready_hardware_service.as_deref(), Some("android.hardware.boot@1.2::IBootControl/default"));
+        assert_eq!(boot.user.as_deref(), Some("root"));
+        assert_eq!(boot.groups, ["root"]);
     }
 
     #[test]

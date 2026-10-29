@@ -198,12 +198,22 @@ const PROP_ORDER: [&str; 8] = ["system", "system_ext", "system_dlkm", "vendor", 
 /// What init names the properties the bootloader passes.
 const BOOT_PROPS: &str = "ro.boot.";
 
+/// The property Xiaomi's update service asks about the phone by.
+const MOD_DEVICE: &str = "ro.product.mod_device";
+
+/// The property the recovery reports the HyperOS build it is made on by,
+/// where the installed system does not keep one.
+const MI_OS_VERSION: &str = "ro.mi.os.version.incremental";
+
 /// The installed system's build properties from its mounted partitions, in
 /// init's order. Partitions init does not list, such as Xiaomi's mi_ext,
 /// come after the ones it does. Init has the properties the bootloader
 /// passes before it reads any of these, and a file may import another named
 /// after them, as Xiaomi's odm imports what each hardware version sets; so
-/// they come first here too, the same in a recovery as in the system.
+/// they come first here too, the same in a recovery as in the system. The
+/// property that names the phone for Xiaomi's update service is set at boot
+/// rather than kept in those files, so the recovery's own value stands in;
+/// it is built for the same phone.
 pub fn installed_props(slot: Slot) -> Result<HashMap<String, String>> {
     let base = |m: &skyward_vab::Mounted| -> String {
         m.partition.strip_suffix(slot.suffix()).expect("mounted partitions carry the slot suffix").to_string()
@@ -211,6 +221,16 @@ pub fn installed_props(slot: Slot) -> Result<HashMap<String, String>> {
     let mut parts = skyward_vab::mounted_partitions(slot)?;
     parts.sort_by_key(|m| PROP_ORDER.iter().position(|b| *b == base(m)).unwrap_or(PROP_ORDER.len()));
     let mut props: HashMap<String, String> = skyward_sys::props(BOOT_PROPS).into_iter().collect();
+    // A build.prop that carries the property still overrides this, as init
+    // lets a later line of a property file override an earlier one.
+    if let Some(value) = prop(MOD_DEVICE) {
+        props.insert(MOD_DEVICE.to_string(), value);
+    }
+    // The same stands for the HyperOS build the recovery is made on, which
+    // the installed system may not keep a property of its own for.
+    if let Some(value) = prop(MI_OS_VERSION) {
+        props.insert(MI_OS_VERSION.to_string(), value);
+    }
     for m in &parts {
         let files: &[&str] = match base(m).as_str() {
             "system" => &["system/build.prop"],

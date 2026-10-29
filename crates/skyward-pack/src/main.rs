@@ -113,7 +113,7 @@ fn main() -> Result<()> {
                 anyhow::bail!("{} holds {}, which is not a stock recovery", stock.display(), e.name);
             }
             let read = |p: &PathBuf| std::fs::read(p).with_context(|| format!("read {}", p.display()));
-            skyward_config::DeviceConfig::load(&config)?;
+            let cfg = skyward_config::DeviceConfig::load(&config)?;
             rd.replace(paths::RECOVERY, read(&binary)?)?;
             rd.add(paths::CONFIG, 0o644, read(&config)?)?;
             rd.add(paths::FONT, 0o644, read(&font)?)?;
@@ -136,6 +136,12 @@ fn main() -> Result<()> {
                 .with_context(|| format!("{} is not in the ramdisk", paths::PROP_DEFAULT))?
                 .data;
             let mut props = without(stock_props, &BUILD_VERSION);
+            // The recovery reports the HyperOS build it is made on, where
+            // the installed system does not say one itself; a build.prop
+            // that carries the property still overrides this.
+            if let Some(stock) = &cfg.stock {
+                props.extend_from_slice(format!("\nro.mi.os.version.incremental={}\n", stock.version).as_bytes());
+            }
             props.extend_from_slice(b"\nro.secure=0\nro.adb.secure=0\nro.debuggable=1\nro.ota.allow_downgrade=true\n");
             rd.replace(paths::PROP_DEFAULT, props)?;
             img.ramdisk = rd.encode()?;

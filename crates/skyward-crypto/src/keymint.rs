@@ -232,8 +232,26 @@ impl<'a> KeyMint<'a> {
         Ok(out)
     }
 
-    /// What the key service has to be told to use an AES-GCM key: how it is
-    /// used, how long its tag is, what it is bound to, and the nonce it was
+    /// What the key service has to be told to renew an AES-GCM key: how
+    /// long its tag is, what it is bound to, and the nonce it was encrypted
+    /// under. A decryption is told the same and the purpose it is opened
+    /// for. Renewal is not told one: its call has no purpose to name, and
+    /// the key service refuses one among its parameters as an invalid
+    /// argument, as Android's keystore2 leaves it out of what it renews
+    /// vold's key with.
+    fn gcm_params(call: &mut Parcel, app_id: &[u8], nonce: &[u8]) {
+        call.i32(if app_id.is_empty() { 4 } else { 5 });
+        Self::gcm_key_params(call, app_id, nonce);
+    }
+
+    /// The same parameters with the purpose a decryption is opened for.
+    fn decrypt_params(call: &mut Parcel, app_id: &[u8], nonce: &[u8]) {
+        call.i32(if app_id.is_empty() { 5 } else { 6 });
+        Self::gcm_key_params(call, app_id, nonce);
+        parameter(call, TAG_PURPOSE, Value::Enum(VALUE_KEY_PURPOSE, PURPOSE_DECRYPT));
+    }
+
+    /// How long the key's tag is, what it is bound to, and the nonce it was
     /// encrypted under.
     ///
     /// What a key is bound to is named only where there is something: the
@@ -241,8 +259,7 @@ impl<'a> KeyMint<'a> {
     /// with, and a binding to nothing named is not the same to it as none
     /// named at all, so naming an empty one leaves it unable to unwrap a
     /// key that was made bound to nothing.
-    fn gcm_params(call: &mut Parcel, app_id: &[u8], nonce: &[u8]) {
-        call.i32(if app_id.is_empty() { 5 } else { 6 });
+    fn gcm_key_params(call: &mut Parcel, app_id: &[u8], nonce: &[u8]) {
         parameter(call, TAG_BLOCK_MODE, Value::Enum(VALUE_BLOCK_MODE, BLOCK_MODE_GCM));
         parameter(call, TAG_PADDING, Value::Enum(VALUE_PADDING_MODE, PADDING_NONE));
         parameter(call, TAG_MAC_LENGTH, Value::Integer(128));
@@ -250,7 +267,6 @@ impl<'a> KeyMint<'a> {
             parameter(call, TAG_APPLICATION_ID, Value::Blob(app_id));
         }
         parameter(call, TAG_NONCE, Value::Blob(nonce));
-        parameter(call, TAG_PURPOSE, Value::Enum(VALUE_KEY_PURPOSE, PURPOSE_DECRYPT));
     }
 
     /// Open a decryption with the key service and keep hold of it.
@@ -258,7 +274,7 @@ impl<'a> KeyMint<'a> {
         let mut call = Parcel::call(DEVICE);
         call.i32(PURPOSE_DECRYPT);
         call.blob(key_blob);
-        Self::gcm_params(&mut call, app_id, nonce);
+        Self::decrypt_params(&mut call, app_id, nonce);
         // A key guarded by the screen lock takes the note the secure world
         // wrote when the user answered it; one that is not guarded takes
         // nothing, and is refused nothing for carrying a note either.

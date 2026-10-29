@@ -90,7 +90,9 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 
 ### 🚧 施工中
 
-这些机型的镜像按照各自的原厂固件构建，还没有在真机上试过。屏幕、触摸、WLAN 和振动已经配置好。解密 data 分区所需的程序由 Skyward 在手机上从已安装系统的 init 脚本和服务描述中读出，每个机型的读取结果都用原厂固件核对过，这些程序在这些机型上的运行情况还没有验证。
+这些机型的镜像按照各自的原厂固件构建。除 REDMI K70 外，还没有在真机上试过；屏幕、触摸、WLAN 和振动已经配置好。解密 data 分区所需的程序由 Skyward 在手机上从已安装系统的 init 脚本和服务描述中读出，每个机型的读取结果都用原厂固件核对过，这些程序在这些机型上的运行情况还没有验证。
+
+REDMI K70 已在 Oplus Android 17 系统上验证 data 解密和恢复，恢复后 Android 启动、应用打开及图案锁正常。EFS、指纹和完整 HyperOS OTA 安装尚未验证。
 
 | 机型 | 代号 | 构建所用的系统版本 |
 | --- | --- | --- |
@@ -106,6 +108,7 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 | 🚧 小米 17 Pro | `pandora` | OS4.0.4.0.XBLCNXM（Android 17） |
 | 🚧 小米 17 Pro Max | `popsicle` | OS4.0.4.0.XPBCNXM（Android 17） |
 | 🚧 小米 17 Max | `byron` | OS3.0.310.0.WAFCNXM（Android 16） |
+| 🚧 REDMI K70 | `vermeer` | OS3.0.307.0.WNKCNXM（Android 16） |
 | 🚧 REDMI K80 | `zorn` | OS3.0.309.0.WOKCNXM（Android 16） |
 | 🚧 REDMI K80 Pro | `miro` | OS3.0.305.0.WOMCNXM（Android 16） |
 | 🚧 REDMI K90 | `annibale` | OS3.0.307.0.WPKCNXM（Android 16） |

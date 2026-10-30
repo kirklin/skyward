@@ -277,9 +277,19 @@ fn receive(ctx: &mut Context, mut conn: Connection<Endpoints>, offer: Offer, res
     };
     let mount = mounted.serve(conn);
     let done = install(ctx, &mount, offer.size).unwrap_or_else(Done::Error);
+    // The end of a transfer is a write to the computer, and the kernel keeps
+    // that write until the computer takes it: one that has gone leaves the
+    // write blocked for good -- measured here as the installer thread asleep
+    // inside ffs_epfile_io -- and with it the hand back to adb never happens.
+    // A package a script installs is never read whole, since the script wants
+    // the parts it wants, so its computer is still sending the rest and is
+    // gone by the time the install ends: nothing is said to it.
+    let script = matches!(done, Done::Script { .. });
     let (mut conn, served) = mount.unmount();
     let outcome = conclude(done, served, ctx.origin);
-    finish(&mut conn, ending(&outcome));
+    if !script {
+        finish(&mut conn, ending(&outcome));
+    }
     (outcome, conn)
 }
 

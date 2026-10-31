@@ -298,7 +298,7 @@ mod tests {
     fn a_name_for_what_a_hash_is_for_is_padded_to_a_whole_block() {
         let out = personalized_hash(b"secdiscardable-transform", &[b"test"]);
         assert_eq!(
-            out.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            skyward_files::hex(&out),
             "b6ea00e9c56b167287e68821a4a302ee34b3d8eb43e67efd403b4ebbdfe34386\
              5c0bd2783da07e8566f8311820e57551318757cce3a3a8379ac0e1a6c72233b2"
         );
@@ -360,9 +360,11 @@ mod tests {
     #[test]
     fn the_weaver_key_is_the_named_hash_cut_to_the_weavers_length() {
         let stretched = stretched_without_credential();
-        let hex = |b: &[u8]| b.iter().map(|b| format!("{b:02x}")).collect::<String>();
-        assert_eq!(hex(&weaver_key(&stretched, 16).unwrap()), "ee43b0c0aadc31e0b8ba2843de4910b3");
-        assert_eq!(hex(&weaver_key(&stretched, 32).unwrap()), "ee43b0c0aadc31e0b8ba2843de4910b3ce7b4781a9a8c41050c4cbee46354321");
+        assert_eq!(skyward_files::hex(&weaver_key(&stretched, 16).unwrap()), "ee43b0c0aadc31e0b8ba2843de4910b3");
+        assert_eq!(
+            skyward_files::hex(&weaver_key(&stretched, 32).unwrap()),
+            "ee43b0c0aadc31e0b8ba2843de4910b3ce7b4781a9a8c41050c4cbee46354321"
+        );
         assert!(weaver_key(&stretched, 65).is_err(), "longer than a hash");
     }
 
@@ -371,7 +373,7 @@ mod tests {
         let secret = weaver_protector_secret(b"stretched", &[0xAB; 16]);
         assert_eq!(&secret[..9], b"stretched");
         assert_eq!(
-            secret[9..].iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            skyward_files::hex(&secret[9..]),
             "3ab55b85fd690fe840566368f54c22c3a1bd7d6ac11d75c3174b7be7dd49414e\
              a59a34c8ca70e5f2ef564d1ef8ff02bd47650f8fd34738185f9bd179ab1135fe"
         );
@@ -421,7 +423,7 @@ mod tests {
         let lock = Lock { kind: Lock::PASSWORD, cost: [10, 3, 4], salt: b"NaCl".to_vec(), enrolled: Vec::new() };
         let out = lock.stretched(b"password").unwrap();
         assert_eq!(
-            out.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            skyward_files::hex(&out),
             "fdbabe1c9d3472007856e7190d01e9fe7c6ad7cbc8237830e77376634b373162"
         );
     }

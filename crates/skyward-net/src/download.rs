@@ -4,6 +4,7 @@
 
 use anyhow::{bail, Context, Result};
 use md5::{Digest, Md5};
+use skyward_files::hex;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -110,10 +111,6 @@ fn hash_of(file: &mut File, total: u64, stop: &AtomicBool, progress: &mut dyn Fn
         done += n as u64;
         progress(Progress::Checking { done, total });
     }
-}
-
-fn hex(digest: &[u8]) -> String {
-    digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// Download `url` to `path`, carrying on from what an earlier download

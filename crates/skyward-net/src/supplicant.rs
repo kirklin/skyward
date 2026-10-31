@@ -2,6 +2,7 @@
 //! how its answers and events read, and the connection they go over.
 
 use anyhow::{bail, ensure, Context, Result};
+use skyward_files::hex;
 use std::collections::BTreeMap;
 
 /// How a network is protected, as a scan finds it.
@@ -140,12 +141,6 @@ pub fn unescape(text: &str) -> Result<Vec<u8>> {
         });
     }
     Ok(out)
-}
-
-/// Bytes as hex digits, the way a value the supplicant takes as it is,
-/// with nothing to escape, is written.
-pub fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// What sets up a network with id `id` to join it: its name, how it is

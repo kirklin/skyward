@@ -5755,7 +5755,7 @@ impl App {
     /// one lit as it comes back up; otherwise the first volume press lights
     /// a control, and the power key turns the panel off. The power key and
     /// volume down together take a screenshot instead: whichever of the two
-    /// goes down first waits [`CHORD_MS`] for the other, or until it is let
+    /// goes down first waits `CHORD_MS` for the other, or until it is let
     /// go, and then does what it does alone, as pressed when it went down.
     pub fn key(&mut self, key: Key, now: u64) -> Vec<Effect> {
         // Any button stops a gliding page, and brings a sliding one to rest.

@@ -132,6 +132,7 @@ fn decrypt_with_secret(pre_key: &[u8], nonce: &[u8], body: &[u8]) -> Result<Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use skyward_files::hex;
 
     /// Both hashes are checked against SHA-512 taken outside this code, so a
     /// change to the padding or the prefix shows up here.
@@ -149,10 +150,6 @@ mod tests {
             "1f0f944ae6b818481d8026af59a336cd84d6847475fa28196fc424a23794f21b\
              bae4f35a8be077f2c3fed1e4e5adbb58f1f97d522f5131b8cedcf4102478049d"
         );
-    }
-
-    fn hex(bytes: &[u8]) -> String {
-        bytes.iter().map(|b| format!("{b:02x}")).collect()
     }
 
     /// Wrap a key the way Android does, to read it back.

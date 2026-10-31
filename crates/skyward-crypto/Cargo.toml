@@ -11,6 +11,7 @@ aes-gcm = "0.10.3"
 hmac = "0.12.1"
 scrypt = { version = "0.11.0", default-features = false }
 skyward-binder = { path = "../skyward-binder" }
+skyward-files = { path = "../skyward-files" }
 # The phone's own stores are sqlite databases, read on the phone and in the
 # tests of the readers.
 rusqlite = { version = "0.40.2", features = ["bundled"] }

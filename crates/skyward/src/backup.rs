@@ -318,7 +318,7 @@ fn copy(from: &mut impl Read, to: &mut impl Write, len: u64, cancel: &AtomicBool
 /// with, in hex.
 fn data_key() -> Result<String> {
     let bytes = fs::read(DATA_KEY).with_context(|| format!("read {DATA_KEY}"))?;
-    Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
+    Ok(skyward_files::hex(&bytes))
 }
 
 /// The bytes free where `path` is, or would be made.

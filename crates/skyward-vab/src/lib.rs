@@ -329,12 +329,6 @@ fn state_of(status: &UpdateStatus) -> Result<UpdateState> {
     UpdateState::try_from(status.state).map_err(|e| anyhow!("update state: {e}"))
 }
 
-/// Conservative guard: `false` only when no update is positively known to be
-/// in flight. Callers writing to dynamic partitions must honour this.
-pub fn merge_outstanding() -> Result<bool> {
-    Ok(snapshot_state()? != SnapshotState::None)
-}
-
 /// Where an update stands for the phone running from a slot, as a
 /// recovery shows it.
 #[derive(Debug, Clone, PartialEq)]

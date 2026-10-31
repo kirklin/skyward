@@ -15,6 +15,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// How much of a file is copied between two reports of how far it is.
 const CHUNK: usize = 1 << 20;
 
+/// Bytes as lowercase hex digits, as a digest or a key is written.
+pub fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 /// What to do when an entry of the same name is already where one goes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Clash {

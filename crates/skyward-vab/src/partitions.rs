@@ -259,7 +259,7 @@ pub struct SlotMaps {
 
 /// Map each of the slot's logical partitions writable and under its own
 /// name, as recoveries map them for install scripts, which look for them
-/// at /dev/block/mapper/<name>; while no update snapshot is outstanding.
+/// at `/dev/block/mapper/<name>`; while no update snapshot is outstanding.
 /// One the recovery has mapped read-only already is made writable where
 /// it is, in use or not.
 pub fn map_slot(slot: Slot) -> Result<SlotMaps> {

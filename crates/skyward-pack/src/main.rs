@@ -53,7 +53,7 @@ enum Cmd {
         /// Skyward built for the device (aarch64-linux-android).
         #[arg(long)]
         binary: PathBuf,
-        /// The device configuration, devices/<codename>.toml.
+        /// The device configuration, `devices/<codename>.toml`.
         #[arg(long)]
         config: PathBuf,
         /// The UI typeface.
@@ -75,7 +75,7 @@ enum Cmd {
     /// server, reading only what the partition takes, and write it there
     /// once its SHA-256 is that one.
     Stock {
-        /// The device configuration, devices/<codename>.toml.
+        /// The device configuration, `devices/<codename>.toml`.
         #[arg(long)]
         config: PathBuf,
         /// Where to write the stock recovery image.

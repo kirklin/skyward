@@ -571,7 +571,7 @@ pub fn target(device: &str, sectors: u64, key: &[u8], encryption: &Encryption) -
         sectors: sectors - sectors % SECTORS_PER_UNIT,
         device: device.to_string(),
         cipher: encryption.cipher.clone(),
-        key: key.iter().map(|b| format!("{b:02x}")).collect(),
+        key: skyward_files::hex(key),
         wrapped: encryption.wrapped,
     }
 }

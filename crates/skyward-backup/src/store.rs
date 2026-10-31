@@ -6,7 +6,7 @@ use anyhow::{ensure, Context, Result};
 use lz4_flex::frame::{BlockSize, FrameDecoder, FrameEncoder, FrameInfo};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use skyward_files::Ownership;
+use skyward_files::{hex, Ownership};
 use std::fs::File;
 use std::io::{self, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -223,10 +223,6 @@ pub fn digest(mut from: impl Read, len: u64, progress: &mut dyn FnMut(u64)) -> i
         progress(done);
     }
     Ok(hex(&digest.finalize()))
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 #[cfg(test)]

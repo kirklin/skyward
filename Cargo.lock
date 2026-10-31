@@ -2319,6 +2319,7 @@ dependencies = [
  "sha2 0.10.9",
  "skyward-binder",
  "skyward-block",
+ "skyward-files",
 ]
 
 [[package]]
@@ -2414,6 +2415,7 @@ dependencies = [
  "md-5",
  "serde",
  "serde_json",
+ "skyward-files",
  "ureq",
 ]
 
@@ -2429,6 +2431,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "skyward-config",
+ "skyward-files",
  "tempfile",
  "unpayload",
 ]

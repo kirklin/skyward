@@ -17,6 +17,7 @@ cpio = "0.4.1"
 lz4_flex = "0.14.0"
 sha2 = "0.10.9"
 skyward-config = { path = "../skyward-config" }
+skyward-files = { path = "../skyward-files" }
 tempfile = "3.27.0"
 # Takes the stock recovery partition out of a full update package on its
 # server, reading only what that partition takes.

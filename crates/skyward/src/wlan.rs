@@ -687,7 +687,10 @@ fn bring_up(cfg: &Config, modules: &[PathBuf]) -> Result<()> {
     iface::set_up(&cfg.interface, true)
 }
 
-/// Put a file the driver asks for where the firmware loader looks.
+/// Put a file the driver asks for where the firmware loader looks. A file
+/// the phone does not keep is said so and left out: the address of the
+/// interface, say, is one the chip can be without, and the driver is better
+/// brought up without it than not at all.
 fn place(file: &Firmware) -> Result<()> {
     let to = Path::new(FIRMWARE).join(&file.name);
     let dir = to.parent().expect("a firmware file is in a folder");
@@ -698,9 +701,16 @@ fn place(file: &Firmware) -> Result<()> {
             let at = Path::new(PARTITIONS).join(partition);
             fs::create_dir_all(&at).with_context(|| format!("make {}", at.display()))?;
             skyward_block::mount::mount_ro(&Path::new(skyward_block::BY_NAME).join(partition), &at)?;
-            let read = fs::read(at.join(&file.path)).with_context(|| format!("read {} on {partition}", file.path));
+            let read = fs::read(at.join(&file.path));
             skyward_block::mount::umount(&at)?;
-            read?
+            match read {
+                Ok(bytes) => bytes,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    let _ = skyward_sys::kmsg(&format!("{} is not on {partition}; the driver starts without it", file.path));
+                    return Ok(());
+                }
+                Err(e) => return Err(e).with_context(|| format!("read {} on {partition}", file.path)),
+            }
         }
     };
     fs::write(&to, bytes).with_context(|| format!("write {}", to.display()))

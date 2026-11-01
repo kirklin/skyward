@@ -205,6 +205,16 @@ pub struct Haptics {
     #[serde(default)]
     pub resonance: Option<String>,
     pub strength: Strength,
+    /// How many whole swings drive a made click, by default two. A motor
+    /// that bottoms out and bangs on its stops at full swing can be driven
+    /// less far, with a swing more of brake in its place.
+    #[serde(default = "default_drive_swings")]
+    pub drive_swings: f32,
+    /// The greatest share of a click's full strength that ever plays, no
+    /// higher than [`Strength::strongest`]. Where the motor bangs on its
+    /// stops at the slider's top, this caps the amplitude below it.
+    #[serde(default)]
+    pub max_amplitude: Option<f32>,
 }
 
 /// How strongly the click plays, each as a share of the most its waveform
@@ -263,7 +273,7 @@ pub struct Device {
     pub os_version_prop: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Display {
     #[serde(default)]
     pub width: u32,
@@ -278,6 +288,33 @@ pub struct Display {
     /// sliding over another rounds its leading corners to it.
     #[serde(default)]
     pub corner_radius: u32,
+    /// How far the slider's position is raised before it is written to the
+    /// backlight, so the light the panel gives rises evenly to the eye. A
+    /// panel gives light in proportion to what it is written, which the eye
+    /// reads strongly at the low end and weakly at the high end; raising it
+    /// to more than one eases the low end and opens the high end.
+    #[serde(default = "default_gamma")]
+    pub gamma: f32,
+}
+
+impl Default for Display {
+    /// A page laid out for no panel yet, its slider as the position it is
+    /// given until the phone says otherwise.
+    fn default() -> Self {
+        Self { width: 0, height: 0, density: 0, diagonal: None, corner_radius: 0, gamma: default_gamma() }
+    }
+}
+
+/// The default backlight curve: the slider passes straight through, as on
+/// the panels whose own curve already spans the light the same way.
+fn default_gamma() -> f32 {
+    1.0
+}
+
+/// The swings the 17 Ultra's made click drives with, for the phones that
+/// say no number of their own.
+fn default_drive_swings() -> f32 {
+    2.0
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -332,6 +369,12 @@ pub struct Service {
     /// Directories for LD_LIBRARY_PATH, searched in order.
     #[serde(default)]
     pub libraries: Vec<String>,
+    /// Android-init-style sockets to create under /dev/socket and hand to
+    /// the program the way init does, before it starts, through
+    /// ANDROID_SOCKET_<name>. A recovery makes none of init's, and the
+    /// phone's own programs that ask for them do not come up without.
+    #[serde(default)]
+    pub sockets: Vec<String>,
     /// The program runs once, to its end, as a service of init's marked
     /// oneshot does: it is not started again, the programs after it start
     /// once it has ended, and it has to end well.
@@ -355,6 +398,12 @@ pub struct Service {
     /// puts in place of another on some builds of the hardware.
     #[serde(default)]
     pub description: Option<String>,
+    /// The description of what the program registers, written here rather
+    /// than in a file the phone carries, for a service the phone describes
+    /// nowhere a recovery can read: it is published as the service
+    /// directory starts, as a file of `description` is.
+    #[serde(default)]
+    pub manifest: Option<String>,
     /// A service the program registers with the other directory, the one
     /// the phone's hardware services of the older kind use. It is written
     /// as the interface and then which of them it is.
@@ -495,15 +544,25 @@ impl DeviceConfig {
         for name in &cfg.partitions.mounted {
             ensure!(!name.is_empty() && !name.contains('/'), "[partitions] mounted: {name} is not a partition's name");
         }
+        ensure!(
+            cfg.display.gamma.is_finite() && cfg.display.gamma > 0.0 && cfg.display.gamma <= 5.0,
+            "[display] gamma: {} is not a power above 0 and at most 5",
+            cfg.display.gamma
+        );
         for s in cfg.services.iter().filter(|s| s.oneshot) {
             let waits = s.ready_property.is_some() || s.ready_service.is_some() || s.ready_hardware_service.is_some();
             ensure!(
-                !waits && s.registers.is_empty() && s.description.is_none(),
+                !waits && s.registers.is_empty() && s.description.is_none() && s.manifest.is_none(),
                 "[[service]] {}: a program run once is ready when it ends, and registers nothing",
                 s.path
             );
         }
         for s in &cfg.services {
+            ensure!(
+                s.manifest.is_none() || s.ready_service.is_some() || !s.registers.is_empty(),
+                "[[service]] {}: a description written here has a service to describe",
+                s.path
+            );
             ensure!(s.user.is_none() || !s.groups.is_empty(), "[[service]] {}: a program given a user is given its group too", s.path);
             for name in s.user.iter().chain(&s.groups) {
                 ensure!(!name.is_empty() && !name.contains(char::is_whitespace), "[[service]] {}: {name:?} is not an account's name", s.path);
@@ -530,6 +589,17 @@ impl DeviceConfig {
                 0.0 < lightest && lightest < strongest && strongest <= 1.0,
                 "[haptics] strength: {lightest} and {strongest} are not shares rising from above 0 to at most 1"
             );
+            ensure!(
+                haptics.drive_swings > 0.0,
+                "[haptics] drive_swings: {} is not a positive number of swings",
+                haptics.drive_swings
+            );
+            if let Some(max) = haptics.max_amplitude {
+                ensure!(
+                    0.0 < max && max <= strongest,
+                    "[haptics] max_amplitude: {max} is not a share above 0 and no higher than the strongest {strongest}"
+                );
+            }
         }
         if let Some(logd) = &cfg.logd {
             for library in &logd.libraries {
@@ -716,6 +786,23 @@ mod tests {
         assert_eq!(cfg.backup.efs, ["modemst1", "modemst2", "fsg", "fsc", "persist"]);
         assert!(cfg.backup.data_skipped.contains(&"vendor/goodix".to_string()));
         assert!(cfg.wipe.logs.contains(&"/data/vendor/bsplog".to_string()));
+    }
+
+    #[test]
+    fn parses_shennong() {
+        let cfg = DeviceConfig::parse(include_str!("../../../devices/shennong.toml")).unwrap();
+        assert_eq!((cfg.display.width, cfg.display.height, cfg.display.density), (1440, 3200, 560));
+        assert_eq!(cfg.display.gamma, 2.2, "the slider is raised so its light reads evenly");
+        let wlan = cfg.wlan.expect("the WLAN is brought up");
+        assert_eq!(wlan.modules, ["rfkill", "qca_cld3_kiwi_v2"], "cfg80211 sits on the kernel's rfkill");
+        assert_eq!(wlan.firmware[1].path, "/mnt/vendor/persist/kiwi_v2/wlan_mac.bin", "the address is where the vendor's link points in persist");
+        assert_eq!(wlan.libraries, ["/vendor/lib64", "/system/lib64"], "the supplicant is the vendor partition's own");
+        let sockets: Vec<&str> = cfg.services.iter().flat_map(|s| s.sockets.iter().map(String::as_str)).collect();
+        assert_eq!(sockets, ["notify-topology", "ssgtzd", "ssgtzd_opener"], "the sockets init would have made for them");
+        assert!(cfg.services.iter().any(|s| s.path == "/kmlibs/km.sh"), "the key services go through the wrapper that opens the linker namespace");
+        let haptics = cfg.haptics.expect("the 14 Pro has a motor");
+        assert_eq!((haptics.drive_swings, haptics.max_amplitude), (1.2, Some(0.45)), "the motor is held short of its stops");
+        assert_eq!(haptics.strength, Strength { lightest: 0.2, strongest: 0.6 });
     }
 
     #[test]

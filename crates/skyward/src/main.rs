@@ -516,7 +516,14 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot) -> Result<()> {
     // and nothing would register that again.
     let mut registering: Vec<String> = services.iter().flat_map(|s| s.ready_service.iter().chain(&s.registers).cloned()).collect();
     registering.extend(cfg.wlan.iter().map(|w| w.service.clone()));
-    let files: Vec<String> = services.iter().filter_map(|s| s.description.clone()).collect();
+    let mut files: Vec<String> = services.iter().filter_map(|s| s.description.clone()).collect();
+    // A description the configuration writes out itself, for a service the
+    // phone keeps its description of nowhere the recovery can read.
+    for (n, manifest) in services.iter().filter_map(|s| s.manifest.as_ref()).enumerate() {
+        let path = format!("/tmp/skyward-manifest-{n}.xml");
+        std::fs::write(&path, manifest).with_context(|| format!("write {path}"))?;
+        files.push(path);
+    }
     if !registering.is_empty() || !files.is_empty() {
         let described = secure::publish_descriptions(&registering, &files)?;
         skyward_sys::kmsg(&format!("{described} of the phone's own service descriptions published"))?;

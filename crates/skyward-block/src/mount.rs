@@ -213,10 +213,18 @@ mod sys {
         Ok(())
     }
 
+    /// One mount moved aside: where it came from, where it waits, and
+    /// whether it is a folder's mount or a file's.
+    struct Moved {
+        home: PathBuf,
+        at: PathBuf,
+        dir: bool,
+    }
+
     #[derive(Default)]
     struct Parked {
         /// Original mount point and where it waits.
-        moved: Vec<(PathBuf, PathBuf)>,
+        moved: Vec<Moved>,
         /// Shared mounts made private for the moves.
         privatized: Vec<PathBuf>,
     }
@@ -244,25 +252,60 @@ mod sys {
         }
         for (i, m) in top.iter().enumerate() {
             let at = Path::new(PARK).join(i.to_string());
-            fs::create_dir_all(&at).with_context(|| format!("create {}", at.display()))?;
+            // A mount may be of one file, as a phone's flattened modules
+            // are: the kernel moves a mount only onto a path of the same
+            // kind, so a file waits on a file. Anything not known to be a
+            // file waits on a folder, as it always has.
+            let dir = !m.mount_point.is_file();
+            hold_place(&at, dir).with_context(|| format!("create {}", at.display()))?;
             move_mount(&m.mount_point, &at)?;
-            parked.moved.push((m.mount_point.clone(), at));
+            parked.moved.push(Moved { home: m.mount_point.clone(), at, dir });
         }
         Ok(parked)
     }
 
     fn unpark(parked: Parked) -> Result<()> {
-        for (home, at) in &parked.moved {
-            move_mount(at, home)?;
-            fs::remove_dir(at).with_context(|| format!("remove {}", at.display()))?;
+        for m in &parked.moved {
+            move_mount(&m.at, &m.home)?;
+            remove_at(&m.at, m.dir)?;
         }
         if !parked.moved.is_empty() {
             fs::remove_dir(PARK).with_context(|| format!("remove {PARK}"))?;
         }
         for p in &parked.privatized {
-            remount(p, libc::MS_SHARED, "shared")?;
+            // The caller may have taken the mount at `p` away since it was
+            // made private, as an unmount does, or covered it with one that
+            // is shared already: making a plain path shared is refused, so
+            // only a mount that still shows and is not shared goes back.
+            match mounts()?.into_iter().rev().find(|m| &m.mount_point == p) {
+                Some(m) if m.opt_fields.iter().any(|f| matches!(f, MountOptFields::Shared(_))) => {}
+                Some(_) => remount(p, libc::MS_SHARED, "shared")?,
+                None => {}
+            }
         }
         Ok(())
+    }
+
+    /// Make `home` there to be mounted on, as a folder or as a file, with
+    /// the folders above it.
+    fn hold_place(home: &Path, dir: bool) -> Result<()> {
+        if dir {
+            fs::create_dir_all(home)?;
+            return Ok(());
+        }
+        if let Some(parent) = home.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        if !home.exists() {
+            fs::File::create(home)?;
+        }
+        Ok(())
+    }
+
+    /// Take away what waited at `at`, a folder's or a file's.
+    fn remove_at(at: &Path, dir: bool) -> Result<()> {
+        let removed = if dir { fs::remove_dir(at) } else { fs::remove_file(at) };
+        removed.with_context(|| format!("remove {}", at.display()))
     }
 
     /// Mount `device` read-only over `target` and keep the mounts below it on
@@ -277,11 +320,16 @@ mod sys {
                 return Err(e);
             }
         };
-        if let Some((home, _)) = parked.moved.iter().find(|(home, _)| !home.is_dir()) {
-            let home = home.clone();
+        if let Some(m) = parked.moved.iter().find(|m| m.dir && !m.home.is_dir()) {
+            let home = m.home.clone();
             umount(target)?;
             unpark(parked)?;
             bail!("{} has no {} to keep the mount there", device.display(), home.display());
+        }
+        // A file mount goes back onto a file: the new filesystem may not
+        // have the path yet, so it is made first, as below an unmount.
+        for m in &parked.moved {
+            hold_place(&m.home, m.dir).with_context(|| format!("make {} to keep the mount there", m.home.display()))?;
         }
         unpark(parked)?;
         Ok(fs)
@@ -304,10 +352,11 @@ mod sys {
             unpark(parked).with_context(|| format!("after {e:#}"))?;
             return Err(e);
         }
-        // What shows at `target` now may lack a folder one of them was on,
-        // as the recovery's own root lacks a phone partition's folders.
-        for (home, _) in &parked.moved {
-            fs::create_dir_all(home).with_context(|| format!("make {} to keep the mount there", home.display()))?;
+        // What shows at `target` now may lack a folder or a file one of
+        // them was on, as the recovery's own root lacks a phone partition's
+        // folders.
+        for m in &parked.moved {
+            hold_place(&m.home, m.dir).with_context(|| format!("make {} to keep the mount there", m.home.display()))?;
         }
         unpark(parked)
     }

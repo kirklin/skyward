@@ -207,11 +207,50 @@ fn supervise(s: &Service, who: &Credentials) -> ! {
     }
 }
 
-/// Start the program and wait for it to end.
+/// Start the program and wait for it to end, keeping what it writes to its
+/// error stream in the kernel log as it writes it, so a program that starts
+/// and then waits forever can say why it did.
 fn run(s: &Service, who: &Credentials) -> Result<String> {
     let mut child = command(s, who).spawn().with_context(|| format!("start {}", s.path))?;
+    let pid = child.id();
+    let reading = child.stderr.take().map(|pipe| {
+        let path = s.path.clone();
+        thread::Builder::new().name(format!("err-{pid}")).spawn(move || {
+            use std::io::{BufRead, BufReader};
+            for line in BufReader::new(pipe).lines().filter_map(|line| line.ok()) {
+                let _ = skyward_sys::kmsg(&format!("{path}: {line}"));
+            }
+        })
+    });
     let status = child.wait().context("wait for it")?;
-    Ok(format!("pid {} ended: {status}", child.id()))
+    if let Some(reader) = reading.transpose().context("read its error stream")? {
+        let _ = reader.join();
+    }
+    Ok(format!("pid {pid} ended: {status}"))
+}
+
+/// Create an Android-init-style socket bound and listening under
+/// /dev/socket, for the program to accept connections on over the file
+/// descriptor it is handed through the environment. init makes the socket
+/// and accepts nothing itself; the program does, so no thread here may take
+/// the connections it is waiting for.
+fn create_init_socket(name: &str) -> Result<i32> {
+    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::net::UnixListener;
+    let path = format!("/dev/socket/{name}");
+    let _ = fs::remove_file(&path);
+    let listener = UnixListener::bind(&path).with_context(|| format!("bind {path}"))?;
+    // init gives the socket to the accounts its init script names; a
+    // recovery hands none over, so it stays open to every program that may
+    // connect to it.
+    let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o666));
+    let listener = Box::leak(Box::new(listener));
+    let fd = listener.as_raw_fd();
+    unsafe { libc::fcntl(fd, libc::F_SETFD, 0) };
+    const O_NONBLOCK: i32 = 0o4000;
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    unsafe { libc::fcntl(fd, libc::F_SETFL, flags & !O_NONBLOCK) };
+    Ok(fd)
 }
 
 /// The program as it is started: with what it is given, from the top of the
@@ -219,9 +258,22 @@ fn run(s: &Service, who: &Credentials) -> Result<String> {
 /// libraries where it names them, and as `who`.
 fn command(s: &Service, who: &Credentials) -> Command {
     let mut cmd = Command::new(&s.path);
-    cmd.args(&s.args).current_dir("/").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    cmd.args(&s.args).current_dir("/").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
     if !s.libraries.is_empty() {
         cmd.env("LD_LIBRARY_PATH", s.libraries.join(":"));
+    }
+    // The sockets init would have made for it, by the name init gives each
+    // one in the environment: the name as it is written, dashes and all.
+    for name in &s.sockets {
+        match create_init_socket(name) {
+            Ok(fd) => {
+                cmd.env(format!("ANDROID_SOCKET_{name}"), fd.to_string());
+                let _ = skyward_sys::kmsg(&format!("socket {name} listening on fd {fd}"));
+            }
+            Err(e) => {
+                let _ = skyward_sys::kmsg(&format!("socket {name}: {e:#}"));
+            }
+        }
     }
     let who = who.clone();
     // Only system calls run between the fork and the exec, on what was

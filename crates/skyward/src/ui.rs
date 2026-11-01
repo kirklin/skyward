@@ -75,10 +75,13 @@ struct Backlight {
     top: u32,
     /// The raw level last written; at first the one the bootloader left.
     level: u32,
+    /// How far the slider's position is raised before it is written, so
+    /// that the light the panel gives rises evenly to the eye.
+    gamma: f32,
 }
 
 impl Backlight {
-    fn open() -> Result<Self> {
+    fn open(gamma: f32) -> Result<Self> {
         let mut dirs: Vec<PathBuf> = fs::read_dir("/sys/class/backlight")
             .context("read /sys/class/backlight")?
             .map(|e| e.map(|e| e.path()))
@@ -100,13 +103,16 @@ impl Backlight {
         };
         let top = normal_max(read("max_brightness")?)?;
         let level = read("brightness")?;
-        Ok(Backlight { path: dir.join("brightness"), top, level })
+        Ok(Backlight { path: dir.join("brightness"), top, level, gamma })
     }
 
     /// Light the panel at `level` of its normal maximum, or turn it off
     /// with `None`. The file is written only when the raw level changes.
     fn show(&mut self, level: Option<f32>) -> Result<()> {
-        let raw = level.map_or(0, |v| ((v.clamp(0.0, 1.0) * self.top as f32).round() as u32).max(1));
+        let raw = level.map_or(0, |v| {
+            let lit = v.clamp(0.0, 1.0).powf(self.gamma);
+            ((lit * self.top as f32).round() as u32).max(1)
+        });
         if raw != self.level {
             fs::write(&self.path, raw.to_string()).with_context(|| format!("write {}", self.path.display()))?;
             eprintln!("backlight {raw}");
@@ -278,6 +284,30 @@ fn list(app: &mut App, folder: String) -> Result<()> {
 fn list_place(app: &mut App, place: Place, folder: String) -> Result<()> {
     let files = read_folder(&in_place(place, &folder)).map_err(|e| format!("{e:#}"));
     app.set_place(place, folder, files, unix_now()?);
+    Ok(())
+}
+
+/// Whether the port is given to a drive as its host rather than kept as the
+/// device the recovery's own adb and MTP need.
+static PORT_HOST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Give the port to a drive as host, so one plugged into it is enumerated
+/// and shows as a drive, or back to the recovery's own adb and MTP. The
+/// gadget is taken off the controller before it turns, and put back after.
+fn host_port(host: bool) -> Result<()> {
+    use std::sync::atomic::Ordering;
+    if PORT_HOST.load(Ordering::Relaxed) == host {
+        return Ok(());
+    }
+    if host {
+        skyward_sys::usb::set("none", USB_TIMEOUT)?;
+        skyward_block::usb::set_host(true)?;
+    } else {
+        skyward_block::usb::set_host(false)?;
+        skyward_sys::usb::switch(skyward_sys::usb::resting(), USB_TIMEOUT)?;
+    }
+    PORT_HOST.store(host, Ordering::Relaxed);
+    skyward_sys::kmsg(&format!("the USB port is a {}", if host { "host, for a drive" } else { "device, for adb and MTP" }))?;
     Ok(())
 }
 
@@ -1029,7 +1059,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     // adbd and fastbootd ask over it to go over to fastboot and back.
     let control = Control::open()?;
     let mut haptics = cfg.haptics.as_ref().map(Haptics::open).transpose()?;
-    let mut backlight = Backlight::open()?;
+    let mut backlight = Backlight::open(cfg.display.gamma)?;
     let first = match &request.work {
         Work::Fastboot => Screen::Fastboot,
         Work::PromptWipeData => Screen::CantStart,
@@ -1955,8 +1985,18 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                         let job = decrypt::Job::Unlock { closed: closed.clone(), user, credential: code.into_bytes() };
                         decryptor = Some(Decryptor::start(job)?);
                     }
-                    Effect::ReadDir(folder) => list(&mut app, folder)?,
-                    Effect::ReadPlace(place, folder) => list_place(&mut app, place, folder)?,
+                    Effect::ReadDir(folder) => {
+                        if let Err(e) = host_port(false) {
+                            skyward_sys::kmsg(&format!("the USB port is left as it was: {e:#}"))?;
+                        }
+                        list(&mut app, folder)?
+                    }
+                    Effect::ReadPlace(place, folder) => {
+                        if let Err(e) = host_port(place == Place::UsbDrive) {
+                            skyward_sys::kmsg(&format!("the USB port is left as it was: {e:#}"))?;
+                        }
+                        list_place(&mut app, place, folder)?
+                    }
                     // A name taken where an entry goes is the user's to
                     // decide on before anything is written.
                     Effect::Paste { op, path, into, clash } => {

@@ -325,6 +325,9 @@ pub fn mount_one(slot: Slot, base_name: &str) -> Result<Mounted> {
     match status {
         Some(_) if dm::status(&name)?.is_some() => mount_mapped(p, Path::new("/dev/block").join(dm_node(&name)?), slot),
         Some((s, status)) => mount_snapshot(s, &md, &devices, p, &status, slot),
+        // A partition left mapped by an unmount that only took it out of the
+        // tree is mounted as it is: mapped again, the kernel would refuse it.
+        None if dm::status(&name)?.is_some() => mount_mapped(p, Path::new("/dev/block").join(dm_node(&name)?), slot),
         None => map_and_mount(p, &devices, slot),
     }
 }
@@ -342,9 +345,25 @@ fn dm_node(name: &str) -> Result<String> {
 fn unmap(name: &str, point: &Path) -> Result<()> {
     let Some(dev) = dm::status(name)? else { return Ok(()) };
     if mount::visible(point)?.is_some_and(|v| v.device == dev) {
-        mount::umount_over(point)?;
+        if let Err(e) = mount::umount_over(point) {
+            // A program the service scan does not name still holds it: it
+            // leaves the tree at once and keeps its device, so the mount
+            // page can put it back without mapping it again.
+            if !busy_error(&e) {
+                return Err(e);
+            }
+            mount::umount_detach_over(point)?;
+            return Ok(());
+        }
     }
-    snapshots::unmap_snapshot(name)
+    // The device may be held yet, by a detached mount an earlier release
+    // left behind or by the files kept in memory: it stays until let go,
+    // and the mount page puts it back as it is.
+    match snapshots::unmap_snapshot(name) {
+        Ok(()) => Ok(()),
+        Err(e) if busy_error(&e) => Ok(()),
+        Err(e) => Err(e),
+    }
 }
 
 /// Unmount one of the slot's logical partitions by its base name and remove
@@ -398,12 +417,36 @@ pub fn release_partitions(slot: Slot, busy: &[PathBuf]) -> Result<()> {
     for m in mounted_partitions(slot)?.into_iter().rev() {
         if busy.contains(&m.mount_point) {
             mount::umount_detach_over(&m.mount_point)?;
-        } else {
-            mount::umount_over(&m.mount_point)?;
-            snapshots::unmap_snapshot(&m.partition)?;
+            continue;
+        }
+        if let Err(e) = mount::umount_over(&m.mount_point) {
+            // The service scan sees only the configured services, so a mount
+            // a stray program keeps open slips past `busy` and a clean
+            // unmount is refused as busy. It still leaves the tree at once,
+            // by way of a lazy unmount, and its mounts below stay on their
+            // paths just as in a clean unmount.
+            if !busy_error(&e) {
+                return Err(e);
+            }
+            mount::umount_detach_over(&m.mount_point)?;
+            continue;
+        }
+        // An earlier release that only detached the partition left a mount
+        // behind that still holds its device, as does what was kept in
+        // memory for the programs that run from it: the device stays until
+        // let go, and the mount page mounts it again as it is.
+        if let Err(e) = snapshots::unmap_snapshot(&m.partition) {
+            if !busy_error(&e) {
+                return Err(e);
+            }
         }
     }
     Ok(())
+}
+
+/// Whether the kernel refused to unmount a mount that is still in use.
+fn busy_error(e: &anyhow::Error) -> bool {
+    e.root_cause().downcast_ref::<std::io::Error>().and_then(|io| io.raw_os_error()) == Some(libc::EBUSY)
 }
 
 /// Undo `mount_partitions`: unmount the slot's partitions where their own

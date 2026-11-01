@@ -378,8 +378,8 @@ pub fn screen_off(cx: &Ctx) -> Frame {
 }
 
 /// Mount manager: the slot's partitions, each with a switch to mount it
-/// read-only or unmount it; one that programs are using says which, and
-/// stays.
+/// read-only or unmount it; one that programs are using says which, and can
+/// still be asked to go.
 pub fn mount(cx: &Ctx) -> Frame {
     let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
     let mut c = long_page(cx);
@@ -409,19 +409,13 @@ pub fn mount(cx: &Ctx) -> Frame {
             let rows: Vec<Row> = mounts
                 .iter()
                 .zip(&subs)
-                .map(|(m, sub)| {
-                    let trail = if m.holders.is_empty() { Trail::Switch(m.mounted) } else { Trail::Text(l.pick(["使用中", "使用中", "In use"])) };
-                    Row::new(&m.base).subtitle(sub).trail(trail)
-                })
+                .map(|(m, sub)| Row::new(&m.base).subtitle(sub).trail(Trail::Switch(m.mounted)))
                 .collect();
             let list = widgets::list(&mut c, t, f, y, &rows);
-            out.extend(list.rows.iter().zip(mounts).enumerate().map(|(i, (&rect, m))| {
-                let action = match m.holders.is_empty() {
-                    true => Action::MountToggle(i),
-                    false => Action::Unavailable(l.pick(["无法卸载正在使用的分区", "無法卸載正在使用的分割區", "A partition in use can't be unmounted"])),
-                };
-                Hit { rect, action }
-            }));
+            // A partition in use still shows its switch, next to who holds
+            // it: being used is why a clean unmount fails, not a reason to
+            // take the choice away.
+            out.extend(list.rows.iter().enumerate().map(|(i, &rect)| Hit { rect, action: Action::MountToggle(i) }));
             let y = match &s.mount_failure {
                 Some(failure) => widgets::footnote(&mut c, t, f, list.bottom, &fmt::mount_failure(l, failure)),
                 None => list.bottom,

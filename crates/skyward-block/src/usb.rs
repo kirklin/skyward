@@ -56,6 +56,37 @@ pub fn drives() -> Result<Vec<Drive>> {
     drives_in(Path::new(SYS_BLOCK))
 }
 
+/// Put the port in host mode, so a drive plugged into it is enumerated and
+/// its disks show under `/sys/block`; or back in peripheral mode, for the
+/// recovery's own adb and MTP, which need the port as a device. The port's
+/// controller is put there through the mode node Qualcomm's driver keeps,
+/// and through the role switches the kernel's USB role class keeps; the
+/// gadget has to be unbound first, which the caller does.
+pub fn set_host(host: bool) -> Result<()> {
+    let role = if host { "host" } else { "peripheral" };
+    let mut put = false;
+    for entry in fs::read_dir("/sys/bus/platform/devices").with_context(|| "read the platform's devices")?.flatten() {
+        if !entry.file_name().to_string_lossy().contains("ssusb") {
+            continue;
+        }
+        let mode = entry.path().join("mode");
+        if mode.is_file() && fs::write(&mode, role).is_ok() {
+            put = true;
+        }
+    }
+    for entry in fs::read_dir("/sys/class/usb_role").into_iter().flatten().flatten() {
+        let switch = entry.path().join("role");
+        let wanted = if host { "host" } else { "device" };
+        if fs::write(&switch, wanted).is_ok() {
+            put = true;
+        }
+    }
+    if !put {
+        bail!("no USB controller took the port as a {}", if host { "host" } else { "device" });
+    }
+    Ok(())
+}
+
 fn drives_in(listed: &Path) -> Result<Vec<Drive>> {
     let mut found = Vec::new();
     for entry in fs::read_dir(listed).with_context(|| format!("read {}", listed.display()))? {

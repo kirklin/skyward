@@ -7,68 +7,161 @@ soc = { hans = "第三代骁龙®8移动平台", hant = "Snapdragon® 8 Gen 3 �
 os_version_prop = "ro.mi.os.version.incremental"
 
 [display]
-# The panel's own mode, persist.sys.miui_default_resolution in the odm
-# partition's build.prop and the n2 panels' mode in the device tree:
-# 1440 by 3200. persist.sys.miui_resolution gives the lower mode the system
-# starts in, 1080 by 2400 at 420, as the 13 Ultra's does; the density is
-# that one's, at the panel's own width, as the 13 Ultra's is.
 width = 1440
 height = 3200
 density = 560
+# The panel gives light in proportion to the level it is written, which the
+# eye reads too strongly at the low end and too weakly at the high end;
+# raising the slider's position to 2.2 eases the low end and opens the high.
+gamma = 2.2
 
 [modules]
 sources = ["vendor_boot", "vendor_dlkm", "vendor", "system_dlkm"]
-# The touchscreen: Synaptics TouchComm over SPI behind Xiaomi's touch
-# layer, the one touch driver the phone's own modules.load lists.
 load = ["synaptics_tcm2"]
 
-# As on the 17 Ultra, no init script of the phone's starts touch_report:
-# the touch feature service turns the controller's raw frames into
-# touches with /odm/lib64/libtouchreport.so, and a recovery runs none of
-# it. Told through Xiaomi's touch layer, the driver has the controller
-# report positions itself; that is known of the 17 Ultra's Synaptics
-# controller and not yet tried on this phone's.
 [touch]
 writes = [{ path = "/sys/class/touch/touch_dev/enable_touch_raw", value = "0" }]
 
-# What the phone's own init runs once the system has finished starting, as
-# kernel-post-boot in /vendor/etc/init/hw/init.qti.kernel.rc. The kernel
-# starts the CPU clusters on the performance governor, which holds them at
-# their highest clock; the script hands them to WALT, lets idle CPUs power
-# down and sets how the memory bus scales. Without it the CPUs stay at
-# their highest clock and voltage even while idle, and the phone slowly
-# heats up.
+# Stage the shared libraries the key services ask for that the recovery's
+# own library folder does not carry, out of the installed system's, and lay
+# the signed rfkill of the running kernel over the flattened copy, whose
+# signature the kernel does not take. The wrapper this writes is how the key
+# and credential services are started: with the linker's config in
+# LD_CONFIG_FILE, as the phone's own system starts them.
 [[service]]
-path = "/vendor/bin/sh"
-args = ["/vendor/bin/init.kernel.post_boot.sh"]
-libraries = ["/system/lib64", "/vendor/lib64"]
+path = "/system/bin/sh"
+args = ["-c", "mkdir -p /kmlibs && cp /mnt/system/system/lib64/libhardware.so /mnt/system/system/lib64/libvndksupport.so /mnt/system/system/lib64/libnetutils.so /mnt/system/system/lib64/bootstrap/libdl_android.so /kmlibs/ && printf '[recovery]\\nnamespace.default.isolated = false\\n' > /kmlibs/ld.config.txt && printf '#!/system/bin/sh\\nexport LD_CONFIG_FILE=/kmlibs/ld.config.txt\\nexec \"$@\"\\n' > /kmlibs/km.sh && chmod 755 /kmlibs/km.sh && V=$(ls -d /system_dlkm/lib/modules/*/kernel/net/rfkill 2>/dev/null | head -1) && mount --bind $V/rfkill.ko /system_dlkm/flatten/lib/modules/rfkill.ko || true"]
 oneshot = true
 user = "root"
-groups = ["root", "system", "wakelock", "graphics"]
+groups = ["root"]
+
+# The credential service of the AIDL generation is enabled on the phone by
+# the property its init script waits for; a recovery runs no such script.
+[[service]]
+path = "/system/bin/sh"
+args = ["-c", "setprop vendor.gatekeeper.disable_spu true; setprop vendor.gatekeeper.is_security_level_spu 0; true"]
+oneshot = true
+user = "root"
+groups = ["root"]
+
+# The secure world reaches back into Android through the listeners this
+# daemon registers; the key service waits for them before it can use a key.
+# The phone's own init hands it the notify-topology socket, and it accepts
+# on that.
+[[service]]
+path = "/vendor/bin/qseecomd"
+libraries = ["/vendor/lib64", "/vendor/lib64/hw", "/system/lib64", "/odm/lib64"]
+sockets = ["notify-topology"]
+ready_property = "vendor.sys.listeners.registered"
+user = "root"
+groups = ["root", "drmrpc"]
+
+# The secure service gateway: the TEE calls back into the server it
+# registers for system services. Its init script runs it as system, in a
+# group the recovery's account table does not carry; run as root, it serves
+# the same, and its two sockets are the ones that script makes.
+[[service]]
+path = "/vendor/bin/ssgtzd"
+libraries = ["/kmlibs", "/vendor/lib64", "/vendor/lib64/hw", "/system/lib64", "/odm/lib64"]
+sockets = ["ssgtzd", "ssgtzd_opener"]
+user = "root"
+groups = ["root", "system", "drmrpc"]
+capabilities = ["WAKE_ALARM", "BLOCK_SUSPEND"]
+
+# The key service, the only thing that can use keys the phone wrapped in
+# hardware. All four names it registers have to be described, or the
+# service directory refuses it. It has no gate of its own: started without
+# one, it has the keymaster applet loaded on its own request, and the calls
+# back out of the secure world on that session are its own. Gated, or
+# started late, a qseecomd listener claims the applet first and its calls
+# back find no objects, and it hangs on them forever.
+[[service]]
+path = "/kmlibs/km.sh"
+args = ["/vendor/bin/hw/android.hardware.security.keymint-service-qti"]
+libraries = ["/kmlibs", "/vendor/lib64", "/vendor/lib64/hw", "/system/lib64", "/odm/lib64"]
+registers = [
+    "android.hardware.security.keymint.IRemotelyProvisionedComponent/default",
+    "android.hardware.security.secureclock.ISecureClock/default",
+    "android.hardware.security.sharedsecret.ISharedSecret/default",
+]
+user = "root"
+groups = ["root", "drmrpc"]
+
+# The credential service: the secure world has it check a screen lock, and
+# it is the only thing that can hand out the note the key service wants
+# before using a key a screen lock guards. This phone describes its
+# gatekeeper in its own SoC's manifest file, which the service directory
+# asks for before it takes the registration.
+[[service]]
+path = "/kmlibs/km.sh"
+args = ["/vendor/bin/hw/android.hardware.gatekeeper-service-qti"]
+libraries = ["/kmlibs", "/vendor/lib64", "/vendor/lib64/hw", "/system/lib64", "/odm/lib64"]
+ready_service = "android.hardware.gatekeeper.IGatekeeper/default"
+description = "/vendor/etc/vintf/manifest_pineapple.xml"
+user = "root"
+groups = ["root", "drmrpc"]
+
+# The boot control, which says which slot the bootloader starts next and
+# switches it. It comes before the weaver: the phone is usable without the
+# weaver answering, and the weaver is the one program here that may never.
+[[service]]
+path = "/vendor/bin/hw/android.hardware.boot-service.qti"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_service = "android.hardware.boot.IBootControl/default"
+user = "root"
+groups = ["root"]
+
+# The weaver: the slot every user's secret is bound to on this NXP secure
+# element. Keymint wraps the keys with it, so it is the other half of the
+# way the data partition opens; where it cannot answer, the same secret's
+# other blob, the one the credential service guards, is tried instead. It
+# goes last, so that a weaver that never comes up holds nothing else back.
+# The phone describes it in no file a recovery reads — its init script
+# declares it — so the description is written here and published as the
+# service directory starts, without which the directory refuses it.
+[[service]]
+path = "/kmlibs/km.sh"
+args = ["/odm/bin/hw/android.hardware.weaver-service.nxp-qti"]
+libraries = ["/kmlibs", "/odm/lib64", "/vendor/lib64", "/system/lib64", "/mnt/system/system/lib64/bootstrap"]
+ready_service = "android.hardware.weaver.IWeaver/default"
+manifest = '''<manifest version="1.0" type="device"><hal format="aidl"><name>android.hardware.weaver</name><version>2</version><fqname>IWeaver/default</fqname></hal></manifest>'''
+user = "root"
+groups = ["root", "drmrpc"]
 
 # WLAN: the kiwi node in the device tree, driven by qca_cld3_kiwi_v2, the
-# one WLAN driver the phone's own modules.blocklist leaves of those its
-# modules.load lists. Its cfg80211 asks for rfkill, one of the kernel's own
-# modules in system_dlkm, as the 17 Ultra's does. Its recovery covers the
-# vendor partition's firmware folder with the modem's, as the 13 Ultra's
-# does, so the settings and the MAC address are given to the loader again:
-# the settings from the vendor partition, the address from where the
-# vendor's link points in persist. wpa_supplicant runs on the recovery's
-# own libraries before the vendor partition's, as on the 17 Ultra.
+# one WLAN driver the phone's own modules.load lists. The cfg80211 that
+# driver sits on wants the kernel's rfkill, which is loaded first from the
+# flattened system_dlkm the first program above laid the kernel's signed
+# copy over. Once fs_ready is written, cnss2 powers the chip up, and wlan0
+# appears. The driver reads its settings and the MAC address through the
+# firmware loader, so they are given to it again: the settings from the
+# vendor partition, the address from persist, which is mounted below.
 [wlan]
 modules = ["rfkill", "qca_cld3_kiwi_v2"]
 writes = [{ path = "/sys/kernel/cnss/fs_ready", value = "1" }]
 firmware = [
     { name = "wlan/qca_cld/kiwi_v2/WCNSS_qcom_cfg.ini", path = "/vendor/etc/wifi/kiwi_v2/WCNSS_qcom_cfg.ini" },
-    { name = "wlan/qca_cld/kiwi_v2/wlan_mac.bin", partition = "persist", path = "wlan/wlan_mac.bin" },
+    { name = "wlan/qca_cld/kiwi_v2/wlan_mac.bin", path = "/mnt/vendor/persist/kiwi_v2/wlan_mac.bin" },
 ]
 interface = "wlan0"
 supplicant = "/vendor/bin/hw/wpa_supplicant"
-libraries = ["/system/lib64", "/vendor/lib64"]
+libraries = ["/vendor/lib64", "/system/lib64"]
 service = "android.hardware.wifi.supplicant.ISupplicant/default"
 probe = "http://connect.rom.miui.com/generate_204"
 
-# The update server the stock updater of the Chinese system asks.
+# The secure world keeps its own files, the applets the key service and the
+# credential service ask for, in the modem partition, which qseecomd's
+# listener mounts at /vendor/firmware_mnt and loads them from as they are
+# first asked for; without the mount they are not there.
+[firmware]
+partition = "modem"
+
+# The persist partition, which the phone mounts at /mnt/vendor/persist and
+# its own recovery leaves unmounted. The weaver's own files are there, and
+# the WLAN's MAC address.
+[partitions]
+mounted = ["persist"]
+
 [update]
 server = "https://update.miui.com/updates/miotaV3.php"
 
@@ -82,8 +175,12 @@ recovery = "2a07b87f0a09ec8e75155aa9d36df354de09d77332cf56caf97659878e91e368"
 
 # qcom-hv-haptics (qcom,hv-haptics in its dtbo), whose driver says the
 # motor's resonant frequency as the 17 Ultra's does; the click is made from
-# samples at that frequency, and the strengths are the 17 Ultra's. Neither
-# is yet tried on this phone's motor.
+# samples at that frequency. The 14 Pro's linear motor knocks against its
+# stops if it is driven with the 17 Ultra's click, so the click drives it
+# with one swing fewer and less than half of the waveform, and the slider's
+# strongest is held below the strengths that make it knock.
 [haptics]
 resonance = "/sys/class/qcom-haptics/lra_frequency_hz"
-strength = { lightest = 0.25, strongest = 0.75 }
+drive_swings = 1.2
+max_amplitude = 0.45
+strength = { lightest = 0.2, strongest = 0.6 }

@@ -259,8 +259,16 @@ mod sys {
         if !parked.moved.is_empty() {
             fs::remove_dir(PARK).with_context(|| format!("remove {PARK}"))?;
         }
+        // A mount the caller unmounted is gone, and the propagation it was
+        // given went with it: the kernel answers EINVAL to making a path that
+        // is no longer a mount point shared, which is what every partition
+        // taken off leaves of the mount above it.
+        let all = mounts()?;
+        let mounted: HashSet<&Path> = all.iter().map(|m| m.mount_point.as_path()).collect();
         for p in &parked.privatized {
-            remount(p, libc::MS_SHARED, "shared")?;
+            if mounted.contains(p.as_path()) {
+                remount(p, libc::MS_SHARED, "shared")?;
+            }
         }
         Ok(())
     }

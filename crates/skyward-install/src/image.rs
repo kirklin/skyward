@@ -186,9 +186,12 @@ pub fn flash<R: Read + Seek>(image: &mut R, len: u64, devices: &[PathBuf], progr
     ensure!(!devices.is_empty(), "no partition to write");
     let mut outs = Vec::with_capacity(devices.len());
     for path in devices {
-        let mut f = OpenOptions::new().read(true).write(true).open(path).with_context(|| format!("open {}", path.display()))?;
-        let size = f.seek(SeekFrom::End(0)).with_context(|| format!("find the size of {}", path.display()))?;
-        f.seek(SeekFrom::Start(0)).with_context(|| format!("rewind {}", path.display()))?;
+        let mut f = OpenOptions::new().read(true).write(true).open(path).with_context(|| format!("open {}", name(path)))?;
+        // A slot that is not the one running has its partitions left
+        // read-only, and the flag stays until it is cleared.
+        make_writable(&f).with_context(|| format!("write {}", name(path)))?;
+        let size = f.seek(SeekFrom::End(0)).with_context(|| format!("find the size of {}", name(path)))?;
+        f.seek(SeekFrom::Start(0)).with_context(|| format!("rewind {}", name(path)))?;
         outs.push((path, f, size));
     }
     let size = outs[0].2;
@@ -216,7 +219,7 @@ pub fn flash<R: Read + Seek>(image: &mut R, len: u64, devices: &[PathBuf], progr
         source.read_exact(&mut buf[..n]).context("read the image")?;
         written.update(&buf[..n]);
         for (path, f, _) in &mut outs {
-            f.write_all(&buf[..n]).with_context(|| format!("write {}", path.display()))?;
+            f.write_all(&buf[..n]).with_context(|| format!("write {}", name(path)))?;
             done += n as u64;
             progress(done, total);
         }
@@ -241,6 +244,46 @@ pub fn flash<R: Read + Seek>(image: &mut R, len: u64, devices: &[PathBuf], progr
         }
         ensure!(back.finalize() == written, "{} reads back different from what was written", path.display());
     }
+    Ok(())
+}
+
+/// What a partition is called in what an install says about it: the link
+/// under /dev/block/by-name says which one it is, and the whole path does not
+/// fit in a line of the kernel log.
+fn name(path: &Path) -> std::borrow::Cow<'_, str> {
+    match path.file_name() {
+        Some(name) => name.to_string_lossy(),
+        None => path.display().to_string().into(),
+    }
+}
+
+/// `BLKROSET` from linux/fs.h, which sets a block device's read-only flag:
+/// clearing it is what makes a partition the bootloader left read-only
+/// writable again. The libc this builds against does not carry it.
+#[cfg(target_os = "android")]
+const BLKROSET: libc::c_int = 0x125d;
+
+/// Clear the read-only flag of the partition `f` is, where the bootloader
+/// left it set: a slot that is not the one running has its recovery marked
+/// so, and writes to it fail until the flag goes.
+#[cfg(target_os = "android")]
+fn make_writable(f: &File) -> Result<()> {
+    use std::os::fd::AsRawFd;
+    let mut off: libc::c_int = 0;
+    let at = &mut off as *mut libc::c_int as *mut libc::c_void;
+    if unsafe { libc::ioctl(f.as_raw_fd(), BLKROSET, at) } != 0 {
+        let e = io::Error::last_os_error();
+        // A file that is not a block device has no such flag to clear.
+        if !matches!(e.raw_os_error(), Some(libc::ENOTTY) | Some(libc::EINVAL)) {
+            return Err(e).context("clear the read-only flag");
+        }
+    }
+    Ok(())
+}
+
+/// Hosts run the tests on plain files, which have no such flag.
+#[cfg(not(target_os = "android"))]
+fn make_writable(_: &File) -> Result<()> {
     Ok(())
 }
 

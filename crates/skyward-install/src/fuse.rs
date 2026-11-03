@@ -119,6 +119,8 @@ pub struct Server {
     fault: Option<Fault>,
     /// The furthest byte any read reached.
     served: u64,
+    /// The parts of the package read so far, merged, in order.
+    runs: Vec<(u64, u64)>,
 }
 
 impl Server {
@@ -130,11 +132,47 @@ impl Server {
             block: vec![0; offer.block_size as usize],
             fault: None,
             served: 0,
+            runs: Vec::new(),
         }
     }
 
     pub fn served(&self) -> u64 {
         self.served
+    }
+
+    /// How far into the package the reads that began at `base` have come. A
+    /// read that lands past them, as a zip's own table of contents does at
+    /// the end of the file, says nothing about them.
+    pub fn progress_from(&self, base: u64) -> u64 {
+        match self.runs.iter().find(|(a, b)| *a <= base && base < *b) {
+            Some((_, b)) => *b,
+            None => base,
+        }
+    }
+
+    /// The parts of the package read so far, merged, in order.
+    pub fn runs(&self) -> &[(u64, u64)] {
+        &self.runs
+    }
+
+    /// Note that the package was read from `at` for `len` bytes.
+    fn note(&mut self, at: u64, len: u64) {
+        if len == 0 {
+            return;
+        }
+        let (mut start, mut end) = (at, (at + len).min(self.offer.size));
+        let mut runs: Vec<(u64, u64)> = Vec::with_capacity(self.runs.len() + 1);
+        for &(a, b) in &self.runs {
+            if b < start || a > end {
+                runs.push((a, b));
+            } else {
+                start = start.min(a);
+                end = end.max(b);
+            }
+        }
+        runs.push((start, end));
+        runs.sort();
+        self.runs = runs;
     }
 
     pub fn fault(&self) -> Option<&Fault> {
@@ -242,6 +280,7 @@ impl Server {
             at += take as u64;
         }
         self.served = self.served.max(at.min(self.offer.size));
+        self.note(offset, data.len() as u64);
         reply(unique, &data)
     }
 
@@ -296,7 +335,7 @@ mod device {
     use std::os::unix::fs::OpenOptionsExt;
     use std::path::Path;
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use std::thread::{self, JoinHandle};
 
     /// Big enough for any request: the kernel asks for at least 8 KiB, and
@@ -313,6 +352,7 @@ mod device {
     pub struct Mount<S> {
         thread: JoinHandle<(S, Result<Option<Fault>>)>,
         served: Arc<AtomicU64>,
+        runs: Arc<Mutex<Vec<(u64, u64)>>>,
     }
 
     /// Mount the package `offer` describes at /sideload, read-only.
@@ -350,20 +390,28 @@ mod device {
         pub fn serve<S: Source + Send + 'static>(self, source: S) -> Mount<S> {
             let served = Arc::new(AtomicU64::new(0));
             let reach = served.clone();
+            let runs = Arc::new(Mutex::new(Vec::new()));
+            let parts = runs.clone();
             let thread = thread::Builder::new()
                 .name("sideload-fuse".into())
                 .spawn(move || {
                     let mut source = source;
                     let mut server = Server::new(self.offer);
-                    let result = serve(&self.dev, &mut server, &mut source, &reach);
+                    let result = serve(&self.dev, &mut server, &mut source, &reach, &parts);
                     (source, result.map(|()| server.fault().cloned()))
                 })
                 .expect("the FUSE thread starts");
-            Mount { thread, served }
+            Mount { thread, served, runs }
         }
     }
 
-    fn serve(dev: &File, server: &mut Server, source: &mut impl Source, served: &AtomicU64) -> Result<()> {
+    fn serve(
+        dev: &File,
+        server: &mut Server,
+        source: &mut impl Source,
+        served: &AtomicU64,
+        runs: &Mutex<Vec<(u64, u64)>>,
+    ) -> Result<()> {
         let mut buf = vec![0u8; REQUEST_BUFFER];
         loop {
             let n = match { dev }.read(&mut buf) {
@@ -376,6 +424,10 @@ mod device {
             let mut fetch = |index: u64, out: &mut [u8]| source.read_block(index, out);
             let handled = server.handle(&buf[..n], &mut fetch)?;
             served.store(server.served(), Ordering::Relaxed);
+            if let Ok(mut held) = runs.lock() {
+                held.clear();
+                held.extend_from_slice(server.runs());
+            }
             match handled {
                 Handled::Reply(r) => answer(dev, &r)?,
                 Handled::Silent => {}
@@ -398,6 +450,18 @@ mod device {
         /// How far into the package reads have reached.
         pub fn served(&self) -> u64 {
             self.served.load(Ordering::Relaxed)
+        }
+
+        /// How far into the package the reads that began at `base` have come,
+        /// as [`Server::progress_from`] tells it.
+        pub fn progress_from(&self, base: u64) -> u64 {
+            match self.runs.lock() {
+                Ok(held) => match held.iter().find(|(a, b)| *a <= base && base < *b) {
+                    Some((_, b)) => *b,
+                    None => base,
+                },
+                Err(_) => base,
+            }
         }
 
         /// Stop serving and unmount. The source always comes back; the
@@ -527,6 +591,20 @@ mod tests {
         assert_eq!(body, vec![0; 100]);
         // Blocks 0, 1 and 2; the block past the end needs no fetch.
         assert_eq!(fetches.get(), 3);
+    }
+
+    #[test]
+    fn a_read_at_the_end_of_the_package_is_not_progress_through_it() {
+        let (pkg, fetches) = (package(), Cell::new(0));
+        let (mut server, mut fetch) = (server_for(&pkg), fetch_from(&pkg, &fetches));
+        // A zip's own table of contents sits at the end of the file, and
+        // reading it says nothing about how far the payload has come.
+        let last = pkg.len() as u64 - 100;
+        split(server.handle(&read_request(last, 100), &mut fetch).unwrap());
+        assert_eq!(server.progress_from(4096), 4096, "nothing of the payload is read yet");
+        split(server.handle(&read_request(4096, 4096), &mut fetch).unwrap());
+        assert_eq!(server.progress_from(4096), 8192);
+        assert_eq!(server.progress_from(8192), 8192, "a byte no read began at");
     }
 
     #[test]

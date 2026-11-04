@@ -162,9 +162,16 @@ pub fn libraries() -> Result<Option<PathBuf>> {
     Ok(bundle(&format!("com.android.vndk.v{version}"))?.map(|at| at.join(BUNDLE_LIBS)))
 }
 
-/// Open the bundle of this name where it lies, and give where it is. A
-/// bundle the phone does not carry gives nothing; one already open is left
-/// as it is.
+/// Open the bundle of this name and give where it is. A bundle the phone
+/// does not carry gives nothing; one already open is left as it is.
+///
+/// The file is copied into the recovery's own memory first and the loop
+/// device points at the copy. A loop device backed by a file inside one of
+/// the phone's partitions keeps that whole partition from being unmounted,
+/// and installing a package unmounts them all before it writes — a bundle
+/// opened where it lies makes every install stop at "Device or resource
+/// busy". Where the copy cannot be made the bundle is opened where it lies
+/// and the log says so: that costs the install, not the libraries.
 fn bundle(name: &str) -> Result<Option<PathBuf>> {
     let at = Path::new(BUNDLE_MOUNT).join(name);
     if skyward_block::mount::is_mount_point(&at)? {
@@ -174,10 +181,25 @@ fn bundle(name: &str) -> Result<Option<PathBuf>> {
         return Ok(None);
     };
     let (offset, length) = image(&file)?;
-    let device = skyward_block::loopdev::attach(&file, offset, length)?;
+    let opened = held(&file).unwrap_or_else(|e| {
+        let _ = skyward_sys::kmsg(&format!("the bundle at {} is opened where it lies: {e:#}", file.display()));
+        file.clone()
+    });
+    let device = skyward_block::loopdev::attach(&opened, offset, length)?;
     fs::create_dir_all(&at).with_context(|| format!("make {}", at.display()))?;
     skyward_block::mount::mount_ro(&device, &at)?;
     Ok(Some(at))
+}
+
+/// A copy of `file` in the recovery's own memory, for the loop device to
+/// read instead of the file where it lies.
+fn held(file: &Path) -> Result<PathBuf> {
+    const HELD: &str = "/tmp/bundles";
+    let name = file.file_name().with_context(|| format!("{} has no name", file.display()))?;
+    let at = Path::new(HELD).join(name);
+    fs::create_dir_all(HELD).with_context(|| format!("make {HELD}"))?;
+    fs::copy(file, &at).with_context(|| format!("copy {} to {}", file.display(), at.display()))?;
+    Ok(at)
 }
 
 /// Where the filesystem lies inside a bundle.

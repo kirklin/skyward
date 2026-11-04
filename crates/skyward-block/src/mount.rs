@@ -26,6 +26,7 @@ const FLAGS: [(&str, u64); 18] = [
     ("defaults", 0),
 ];
 
+
 /// Split the mount options of a phone's table into the kernel's flags and
 /// the options the filesystem reads, joined the way the kernel takes them.
 pub fn split_options(options: &[String]) -> (u64, String) {
@@ -298,6 +299,39 @@ mod sys {
         under_parked(target, umount_detach)
     }
 
+    /// How often an unmount is tried, and how long between the tries: what
+    /// the phone's own recovery allows for, and for the same reason.
+    const UMOUNT_TRIES: usize = 5;
+    const UMOUNT_WAIT: std::time::Duration = std::time::Duration::from_millis(100);
+
+    /// Unmount `target`, giving whatever is closing a file on it a moment to
+    /// finish, and name the programs still holding it when it will not come
+    /// off: "Device or resource busy" alone leaves nothing to act on.
+    ///
+    /// Five tries a hundred milliseconds apart, as the phone's own recovery
+    /// allows for: a program that has just been told to end still holds its
+    /// files while it goes.
+    pub fn umount_when_free(target: &Path) -> Result<()> {
+        let device = visible(target)?.map(|v| v.device);
+        let mut last = None;
+        for attempt in 0..UMOUNT_TRIES {
+            if attempt > 0 {
+                std::thread::sleep(UMOUNT_WAIT);
+            }
+            match umount_over(target) {
+                Ok(()) => return Ok(()),
+                Err(e) => last = Some(e),
+            }
+        }
+        let why = last.expect("a try that failed kept its error");
+        let who = device.map(|d| holding(d).unwrap_or_default()).unwrap_or_default();
+        if who.is_empty() {
+            return Err(why);
+        }
+        let named: Vec<String> = who.into_iter().map(|(pid, name)| format!("{name} ({pid})")).collect();
+        Err(why.context(format!("held by {}", named.join(", "))))
+    }
+
     fn under_parked(target: &Path, unmount: fn(&Path) -> Result<()>) -> Result<()> {
         let mut parked = park(target)?;
         if let Err(e) = unmount(target) {
@@ -436,6 +470,10 @@ mod sys {
         bail!("this host does not unmount {}", target.display())
     }
 
+    pub fn umount_when_free(target: &Path) -> Result<()> {
+        bail!("this host does not unmount {}", target.display())
+    }
+
     pub fn is_mount_point(path: &Path) -> Result<bool> {
         bail!("this host has no mount table to look up {}", path.display())
     }
@@ -467,7 +505,7 @@ mod sys {
 
 pub use sys::{
     bind, holders, holding, is_mount_point, mount, mount_ids, mount_ro, mount_ro_over, points_of, remount_writable, umount,
-    umount_detach, umount_detach_over, umount_over, visible,
+    umount_detach, umount_detach_over, umount_over, umount_when_free, visible,
 };
 
 #[cfg(test)]

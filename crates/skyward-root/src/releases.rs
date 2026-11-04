@@ -69,13 +69,6 @@ pub fn latest(variant: Variant) -> String {
 /// Where the package the newest run of `variant`'s manager workflow built is
 /// fetched from: nightly.link hands out what a workflow built, without a
 /// token, which is the only way to a manager that publishes no release.
-/// Where the newest releases of `variant` are listed, pre-releases among
-/// them: a manager whose workflow builds nothing right now still publishes
-/// its package there.
-pub fn newest(variant: Variant) -> String {
-    format!("https://api.github.com/repos/{}/releases?per_page=5", variant.repo())
-}
-
 pub fn nightly(variant: Variant) -> String {
     // Each repository names what its workflow uploads, and the name is what
     // nightly.link hands out: KernelSU's is lower case, the two forks' is not.

@@ -41,6 +41,9 @@ pub struct DeviceConfig {
     pub touch: Touch,
     #[serde(default)]
     pub partitions: Partitions,
+    /// Where the recovery keeps its own settings.
+    #[serde(default)]
+    pub settings: Settings,
     /// Where the firmware the phone's drivers ask for is, on phones whose
     /// recovery leaves it out of their reach.
     #[serde(default)]
@@ -317,6 +320,26 @@ pub struct Partitions {
     /// them starts.
     #[serde(default)]
     pub mounted: Vec<String>,
+}
+
+/// Where the recovery keeps the settings the user changes.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+pub struct Settings {
+    #[serde(default)]
+    pub place: SettingsPlace,
+}
+
+/// The partition the recovery keeps its settings on.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SettingsPlace {
+    /// The vendor persist partition, which opens before the data partition
+    /// and no reset wipes.
+    Vendor,
+    /// The data partition, which opens once the user answers the decrypt
+    /// page.
+    #[default]
+    Data,
 }
 
 /// A program from the phone's own partitions that the recovery keeps
@@ -858,6 +881,19 @@ mod tests {
         assert!(with("by-name/persist").is_err());
         assert!(with("").is_err());
         assert!(DeviceConfig::parse("[device]\ncodename = \"x\"\n").unwrap().partitions.mounted.is_empty(), "a phone may need none");
+    }
+
+    #[test]
+    fn the_settings_are_kept_where_the_device_says() {
+        let with = |place: &str| DeviceConfig::parse(&format!("[device]\ncodename = \"x\"\n[settings]\nplace = \"{place}\"\n"));
+        assert_eq!(with("vendor").unwrap().settings.place, SettingsPlace::Vendor);
+        assert_eq!(with("data").unwrap().settings.place, SettingsPlace::Data);
+        assert!(with("sdcard").is_err(), "shared storage is no place for settings");
+        assert_eq!(
+            DeviceConfig::parse("[device]\ncodename = \"x\"\n").unwrap().settings.place,
+            SettingsPlace::Data,
+            "a phone that says nothing keeps them on the data partition"
+        );
     }
 
     #[test]

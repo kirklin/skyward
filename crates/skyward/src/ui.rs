@@ -16,7 +16,7 @@ use crate::wlan;
 use anyhow::{anyhow, ensure, Context, Result};
 use skyward_block::fsck::Fixed;
 use skyward_block::{fstab, mount, probe};
-use skyward_config::{DeviceConfig, Service};
+use skyward_config::{DeviceConfig, Service, SettingsPlace};
 use skyward_crypto::data::{Closed, Opened};
 use skyward_install::asked::{self, Needs};
 use skyward_install::{Detach, Installer, Options};
@@ -32,7 +32,8 @@ use skyward_net::wlan::{Power as WlanPower, Wlan};
 use skyward_ui::app::{
     App, Asked, BackupAt, BackupEnd, BackupEntry, BackupRefusal, ClashChoice, Data, DownloadEnd, Effect, EraseStop, FileKind, FileOp,
     FileRow, FileTask, FsAction, FsRow, Have, Held, ItemEnd, ItemState, JobEnd, Keys, MountFailure, Part, PartKind, PartStop, Place,
-    RenameRefused, Screen, Shot, Target, UsbDrive, UsbLink, Wipe, DATA_OPENING, DATA_PARTITION, DOWNLOADS, INSTALL_UNFINISHED, USB_DRIVE,
+    RenameRefused, SavedSettings, Screen, Shot, Target, UsbDrive, UsbLink, Wipe, DATA_OPENING, DATA_PARTITION, DOWNLOADS,
+    INSTALL_UNFINISHED, USB_DRIVE,
 };
 use skyward_ui::surface::kms::KmsSurface;
 use skyward_ui::{Canvas, Fonts, Lang, Surface};
@@ -61,6 +62,53 @@ const TOUCH_WAIT: Duration = Duration::from_secs(5);
 /// storage the others do.
 const TMP_LOGS: &str = "/tmp/skyward-logs";
 const STORAGE_LOGS: &str = "Skyward/logs";
+
+/// The folder the settings are kept in, and the file in it; see `kept` for
+/// where that is.
+const SETTINGS: (&str, &str) = ("settings", "values");
+
+/// The configured place the settings are kept in, while it is mounted.
+fn settings_root(cfg: &DeviceConfig) -> Option<PathBuf> {
+    let root = match cfg.settings.place {
+        SettingsPlace::Vendor => skyward_sys::kept::vendor_root()?,
+        SettingsPlace::Data => PathBuf::from(skyward_sys::kept::DATA),
+    };
+    skyward_sys::kept::mounted(&root).then_some(root)
+}
+
+/// Read the settings the boots before kept; none while the file is not
+/// there. A key the file does not name stays at the value it starts at.
+fn saved_settings(cfg: &DeviceConfig, current: Lang) -> Option<SavedSettings> {
+    let root = settings_root(cfg)?;
+    let text = skyward_sys::kept::read(&root, SETTINGS.0, SETTINGS.1)?;
+    Some(SavedSettings::parse(&text, current))
+}
+
+/// Write the settings as they stand, for the boots to come; a storage that
+/// cannot be written keeps them only until it opens, and this says why
+/// rather than failing.
+fn write_settings(root: &Path, settings: &SavedSettings) -> bool {
+    let language = match settings.lang {
+        Lang::Hans => "hans",
+        Lang::Hant => "hant",
+        Lang::En => "en",
+    };
+    let text = format!(
+        "language = {language}\ndark = {}\nbrightness = {:.3}\nscreen_off = {}\ntime_zone = {}\nvibrate = {}\nvibration = {:.3}\nfile_transfer = {}\n",
+        settings.dark, settings.brightness, settings.screen_off, settings.time_zone, settings.vibrate, settings.vibration,
+        settings.file_transfer
+    );
+    match skyward_sys::kept::write(root, SETTINGS.0, SETTINGS.1, &text) {
+        Ok(path) => {
+            let _ = skyward_sys::kmsg(&format!("the settings are kept in {}", path.display()));
+            true
+        }
+        Err(e) => {
+            let _ = skyward_sys::kmsg(&format!("the settings are not kept: {e:#}"));
+            false
+        }
+    }
+}
 
 /// The folder of internal storage the system saves its own screenshots in,
 /// which the gallery shows as its screenshots, and where a screenshot waits
@@ -1058,6 +1106,12 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
         app.set_boot_slots(read_slots());
     }
     app.set_asked(asked(&request));
+    // What the boots before kept: brightness, the theme, the language and
+    // the rest are back before the first frame is drawn, and before file
+    // transfer starts with the time zone and the switch they name.
+    if let Some(saved) = saved_settings(cfg, app.state.lang) {
+        app.set_saved_settings(saved, false);
+    }
     // Opening the data partition, or a user's own files in it, under way,
     // and the users whose own files are still closed once it is open.
     let mut decryptor: Option<Decryptor> = None;
@@ -1666,6 +1720,15 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
             scanned_at = Instant::now();
             wlan_worker(&wlan)?.send(wlan::Command::Scan);
         }
+        // What the user changed goes to the partition the phone keeps it on
+        // a moment after the last change. The place may not be mounted yet;
+        // the change stays pending until it is.
+        if let Some(settings) = app.settings_due(now) {
+            match settings_root(cfg) {
+                Some(root) if write_settings(&root, &settings) => app.settings_written(settings),
+                _ => app.settings_not_written(now),
+            }
+        }
         let mut checked = false;
         if let Some(c) = &checker {
             for ev in c.events() {
@@ -1713,6 +1776,25 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     }
                     closed = opening.closed;
                     show_closed(&mut app, &closed)?;
+                    // The data partition now holds the settings if the device
+                    // keeps them there. A choice made before it opened is not
+                    // overruled.
+                    if cfg.settings.place == SettingsPlace::Data {
+                        if let Some(saved) = saved_settings(cfg, app.state.lang) {
+                            app.set_saved_settings(saved, true);
+                        }
+                        // The switch may have started on before the storage
+                        // that keeps it was open: follow what it says now.
+                        if !app.state.file_transfer {
+                            if let Some(t) = transfer.take() {
+                                let rests = !fastboot && !sideloading;
+                                if let Err(e) = t.stop(rests) {
+                                    skyward_sys::kmsg(&format!("file transfer did not stop cleanly: {e:#}"))?;
+                                    app.report(&skyward_ui::fmt::transfer_left_on(app.state.lang, &format!("{e:#}")), now);
+                                }
+                            }
+                        }
+                    }
                 }
                 decrypt::Ended::Opened(Err(why)) => {
                     skyward_sys::kmsg(&format!("the data partition stays closed: {why}"))?;
@@ -2217,6 +2299,14 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                         info = skyward_info::collect(cfg)?;
                         fastboot = false;
                         app.enter_recovery();
+                        // The settings are read at boot, before this phone has
+                        // the storage they are kept on: fastboot runs without
+                        // it, so what it read was nothing and the pages showed
+                        // their own defaults. They are read again now that the
+                        // storage is there.
+                        if let Some(saved) = saved_settings(cfg, app.state.lang) {
+                            app.set_saved_settings(saved, true);
+                        }
                     }
                     // A port that something else has takes file transfer
                     // on, or leaves it, when it comes back to rest.

@@ -2456,6 +2456,7 @@ dependencies = [
  "anyhow",
  "libc",
  "skyward-block",
+ "tempfile",
 ]
 
 [[package]]

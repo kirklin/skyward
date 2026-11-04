@@ -8,3 +8,6 @@ license.workspace = true
 anyhow = { workspace = true }
 libc = { workspace = true }
 skyward-block = { path = "../skyward-block" }
+
+[dev-dependencies]
+tempfile = "3.27.0"

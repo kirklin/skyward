@@ -766,3 +766,38 @@ fn end(child: &mut Child, control: Option<&Control>) {
     let _ = child.kill();
     let _ = child.wait();
 }
+
+/// Where the phone keeps what it knows of the networks it joined, the proxy
+/// of each among it.
+const SETTINGS: &str = "/data/misc/apexdata/com.android.wifi/WifiConfigStore.xml";
+
+/// The proxy the phone's own Wi-Fi settings hold for a network it joined, as
+/// `host:port`: `None` where none is set, or where the settings cannot be
+/// read, as before the data partition opens.
+pub fn system_proxy() -> Option<String> {
+    let settings = std::fs::read_to_string(SETTINGS).ok()?;
+    let mut rest = settings.as_str();
+    while let Some((_, after)) = rest.split_once("ProxyType") {
+        rest = after;
+        let manual = after.starts_with("\" value=\"1\"") || after.starts_with("&quot; value=&quot;1&quot;");
+        if !manual {
+            continue;
+        }
+        let host = value_between(after, "ProxyHost")?;
+        let port = value_between(after, "ProxyPort")?;
+        let host = host.trim().to_string();
+        if host.is_empty() {
+            continue;
+        }
+        return Some(format!("{host}:{port}"));
+    }
+    None
+}
+
+/// The text a setting named `name` holds, in the settings' own writing.
+fn value_between(text: &str, name: &str) -> Option<String> {
+    let (_, after) = text.split_once(name)?;
+    let (_, after) = after.split_once('>')?;
+    let value = after.split('<').next()?;
+    Some(value.replace("&quot;", "\"").replace("&apos;", "'").replace("&amp;", "&"))
+}

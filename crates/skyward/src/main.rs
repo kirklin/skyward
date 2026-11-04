@@ -106,6 +106,49 @@ enum Cmd {
     /// merge where it has not begun, and follow it to its end.
     #[cfg(target_os = "android")]
     Merge,
+    /// List the modules the phone's root manager has, and how each stands.
+    #[cfg(target_os = "android")]
+    RootModules {
+        /// The folder the modules are in.
+        #[arg(long, default_value = "/data/adb/modules")]
+        dir: PathBuf,
+    },
+    /// Turn a module on or off, by the name of its directory.
+    #[cfg(target_os = "android")]
+    ModuleEnable {
+        id: String,
+        /// Turn it off rather than on.
+        #[arg(long)]
+        off: bool,
+        #[arg(long, default_value = "/data/adb/modules")]
+        dir: PathBuf,
+    },
+    /// Have the manager take a module away when the phone next starts.
+    #[cfg(target_os = "android")]
+    ModuleUninstall {
+        id: String,
+        #[arg(long, default_value = "/data/adb/modules")]
+        dir: PathBuf,
+    },
+    /// Install a module zip with the manager the phone has.
+    #[cfg(target_os = "android")]
+    ModuleInstall { zip: PathBuf },
+    /// Patch the image a root manager patches, for the slot the phone runs
+    /// from, into `out`, with the manager the phone has. An APK is used only
+    /// where the phone has no manager of its own.
+    #[cfg(target_os = "android")]
+    Patch {
+        /// The manager's APK to take the patcher from, where the phone has
+        /// no manager of its own.
+        #[arg(long)]
+        apk: Option<PathBuf>,
+        /// The partition to patch, `init_boot` or `boot`; whichever a phone
+        /// this is, unless said.
+        #[arg(long)]
+        partition: Option<String>,
+        /// Where the patched image goes.
+        out: PathBuf,
+    },
     /// Keep the configuration's services that this phone runs going until
     /// stopped.
     #[cfg(target_os = "android")]
@@ -249,6 +292,32 @@ fn main() -> Result<()> {
             Ok(())
         }
         Cmd::Identify { file } => identify(&file),
+        #[cfg(target_os = "android")]
+        Cmd::Patch { apk, partition, out } => patch(apk, partition, out),
+        #[cfg(target_os = "android")]
+        Cmd::RootModules { dir } => {
+            for m in skyward_root::modules::list(&dir)? {
+                println!(
+                    "{:<24} {:<28} {:<12} {}{}",
+                    m.id,
+                    m.name,
+                    m.version,
+                    if m.enabled { "on" } else { "off" },
+                    if m.removed { ", to be removed" } else { "" }
+                );
+            }
+            Ok(())
+        }
+        #[cfg(target_os = "android")]
+        Cmd::ModuleEnable { id, off, dir } => skyward_root::modules::set_enabled(&dir, &id, !off),
+        #[cfg(target_os = "android")]
+        Cmd::ModuleUninstall { id, dir } => skyward_root::modules::uninstall(&dir, &id),
+        #[cfg(target_os = "android")]
+        Cmd::ModuleInstall { zip } => {
+            let manager = skyward_root::detect().context("no root manager on the phone")?;
+            println!("installs with {}", manager.name());
+            skyward_root::modules::install(&manager, &zip)
+        }
         Cmd::Mount => {
             let mounts = skyward_vab::mount_partitions(booted_slot()?)?;
             for d in &mounts.damaged {
@@ -787,6 +856,43 @@ fn info(config: &str) -> Result<()> {
     }
     let parts = skyward_block::list_by_name(skyward_block::BY_NAME)?;
     println!("partitions    = {} under {}", parts.len(), skyward_block::BY_NAME);
+    Ok(())
+}
+
+/// Patch the image a root manager patches, for the slot the phone runs from,
+/// into `out`. The tools come from `apk` where one is given, and from the
+/// manager installed on the phone otherwise.
+#[cfg(target_os = "android")]
+fn patch(apk: Option<PathBuf>, partition: Option<String>, out: PathBuf) -> Result<()> {
+    use skyward_root::{Manager, Options};
+    let slot = booted_slot()?;
+    let by_name = Path::new(skyward_root::BY_NAME);
+    let partition = partition.unwrap_or_else(|| skyward_root::target(by_name, slot).to_string());
+    let into = out.parent().context("a place to patch in")?.to_path_buf();
+    std::fs::create_dir_all(&into).with_context(|| format!("create {}", into.display()))?;
+    let stock = into.join("stock.img");
+    skyward_root::read(by_name, &partition, slot, &stock)?;
+    println!("stock   {}", stock.display());
+    // The manager the phone has is the one that patches it: another would
+    // write a boot image its own manager cannot use.
+    let installed = skyward_root::detect();
+    if let (Some(manager), Some(_)) = (&installed, &apk) {
+        println!("note    {} is installed here, so its own patcher is used", manager.name());
+    }
+    let manager = match (installed, &apk) {
+        (Some(manager), _) => manager,
+        (None, Some(apk)) => Manager::Magisk(skyward_root::Magisk::from_apk(apk, &into.join("magisk"))?),
+        (None, None) => return Err(anyhow!("no root manager on the phone, and no APK given")),
+    };
+    println!("manager {} {}", manager.name(), manager.version().unwrap_or("(says no version)"));
+    println!("patches {partition}{}", slot.suffix());
+    let options = Options::default();
+    match &manager {
+        Manager::Magisk(m) => m.patch(&stock, &out, &options)?,
+        Manager::KernelSu(k) => k.patch(&stock, &out)?,
+        Manager::Apatch(a) => a.patch(&stock, &out, &options)?,
+    }
+    println!("patched {} bytes into {}", std::fs::metadata(&out)?.len(), out.display());
     Ok(())
 }
 

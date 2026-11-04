@@ -276,7 +276,16 @@ fn list(app: &mut App, folder: String) -> Result<()> {
 /// Read a folder of `place` to choose a file to install in, as it is now;
 /// `folder` is its path from the place's top.
 fn list_place(app: &mut App, place: Place, folder: String) -> Result<()> {
-    let files = read_folder(&in_place(place, &folder)).map_err(|e| format!("{e:#}"));
+    let at = in_place(place, &folder);
+    let files = read_folder(&at).map_err(|e| format!("{e:#}"));
+    let _ = skyward_sys::kmsg(&format!(
+        "place {place:?} {folder:?} at {}: {}",
+        at.display(),
+        match &files {
+            Ok(rows) => format!("{} entries", rows.len()),
+            Err(why) => format!("unread: {why}"),
+        }
+    ));
     app.set_place(place, folder, files, unix_now()?);
     Ok(())
 }
@@ -904,6 +913,240 @@ fn read_mounts(services: &[Service]) -> Result<Vec<skyward_ui::app::MountRow>> {
     Ok(rows)
 }
 
+/// Where a manager's package is: the address the worker downloads, and the
+/// name it is kept under.
+struct ManagerPlan {
+    url: String,
+    name: String,
+}
+
+/// A manager's address being looked up, as the release it comes from tells
+/// it.
+type PlanSlot = std::sync::Arc<std::sync::Mutex<Option<Result<ManagerPlan, String>>>>;
+
+/// Start looking up where the manager and tier at `at` of the ones the page
+/// lists is.
+fn start_manager_plan(servers: Servers, at: usize, proxy: usize) -> PlanSlot {
+    let plan = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let held = plan.clone();
+    std::thread::Builder::new()
+        .name("manager-plan".into())
+        .spawn(move || {
+            let said = manager_plan(&servers, at, proxy).map_err(|e| format!("{e:#}"));
+            if let Ok(mut slot) = held.lock() {
+                *slot = Some(said);
+            }
+        })
+        .expect("the plan thread starts");
+    plan
+}
+
+/// Ask the release the manager and tier at `at` comes from where its package
+/// is, and nothing of the package itself: the worker the update page
+/// downloads with fetches that.
+fn manager_plan(servers: &Servers, at: usize, proxy: usize) -> Result<ManagerPlan> {
+    use skyward_root::releases::{self, Tier, Variant};
+    let all = Variant::all();
+    let (variant, tier) = *all.get(at).context("the list holds no such manager")?;
+    let agent = skyward_net::http::agent(servers.clone());
+    let stop = std::sync::atomic::AtomicBool::new(false);
+    let work = Path::new("/tmp/root");
+    std::fs::create_dir_all(work).with_context(|| format!("create {}", work.display()))?;
+    let fetch = |url: &str, path: &Path| -> Result<()> {
+        skyward_net::download::fetch(&agent, url, path, "", &stop, &mut |_| {})
+    };
+    // The way to GitHub the page chose, and no other: what a phone reaches
+    // through one it does not reach through another.
+    // A build a workflow made takes only the way that carries any address:
+    // the other mirrors reach GitHub's own files alone.
+    let proxy = match tier {
+        Tier::Dev => proxy.min(1),
+        Tier::Stable => proxy,
+    };
+    let mirror = releases::MIRRORS.get(proxy).map(|(_, url)| *url).unwrap_or("");
+    match (tier, releases::has_releases(variant)) {
+        // The newest release carries the package of the stable tier, where
+        // the manager publishes one.
+        (Tier::Stable, true) => {
+            let listing = work.join("latest.json");
+            fetch(&releases::through(mirror, &releases::latest(variant)), &listing)?;
+            let json = std::fs::read_to_string(&listing).with_context(|| format!("read {}", listing.display()))?;
+            let one = format!("[{json}]");
+            let url = releases::apk_in(&one, Tier::Stable).context("the newest release carries no package")?;
+            Ok(ManagerPlan { name: releases::file_name(&url), url: releases::through(mirror, &url) })
+        }
+        // What the workflow built, which is the only way to a manager that
+        // publishes no release: a zip, the package taken out of it once it
+        // is down.
+        // What a workflow built comes from nightly.link, which hands the
+        // download on where the mirror carries it: a build taken as it is
+        // fails where the same build through the way the page chose came.
+        _ => Ok(ManagerPlan { name: "manager.zip".to_string(), url: releases::through(mirror, &releases::nightly(variant)) }),
+    }
+}
+
+/// The manager's package in `into`: the zip a workflow built unpacked first.
+fn manager_apk(into: &Path) -> Result<PathBuf> {
+    // What came down as a zip is unpacked, whatever the workflow named it.
+    let mut zips: Vec<PathBuf> = std::fs::read_dir(into)
+        .with_context(|| format!("read {}", into.display()))?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.to_string_lossy().to_ascii_lowercase().ends_with(".zip"))
+        .collect();
+    zips.sort();
+    if let Some(zip) = zips.pop() {
+        let at = unzip_apk(&zip, into)?;
+        std::fs::remove_file(&zip).ok();
+        return Ok(at);
+    }
+    let mut newest: Option<(std::time::SystemTime, PathBuf)> = None;
+    for entry in std::fs::read_dir(into).with_context(|| format!("read {}", into.display()))? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().is_none_or(|e| e != "apk") {
+            continue;
+        }
+        let at = entry.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH);
+        if newest.as_ref().is_none_or(|(when, _)| at > *when) {
+            newest = Some((at, path));
+        }
+    }
+    newest.map(|(_, path)| path).context("the download left no package")
+}
+
+/// The package inside the zip `zip`, written into `into`.
+fn unzip_apk(zip: &Path, into: &Path) -> Result<std::path::PathBuf> {
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(zip).with_context(|| format!("open {}", zip.display()))?)
+        .with_context(|| format!("read {}", zip.display()))?;
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).with_context(|| format!("read entry {index}"))?;
+        let Some(name) = entry.enclosed_name() else { continue };
+        let Some(name) = name.file_name().map(|name| name.to_string_lossy().into_owned()) else { continue };
+        if !name.to_ascii_lowercase().ends_with(".apk") {
+            continue;
+        }
+        let at = into.join(&name);
+        let mut out = std::fs::File::create(&at).with_context(|| format!("create {}", at.display()))?;
+        std::io::copy(&mut entry, &mut out).with_context(|| format!("write {}", at.display()))?;
+        return Ok(at);
+    }
+    anyhow::bail!("{} holds no package", zip.display())
+}
+
+/// Write a boot image to its partition: one the page chose goes in as it is
+/// when the page says so, and is patched with a manager otherwise. Gives what
+/// the page says of it.
+fn patch_root(
+    partition: Option<&'static str>,
+    source: &skyward_ui::app::RootSource,
+    image: &skyward_ui::app::RootImage,
+) -> Result<String> {
+    // What a patch comes to is worth a line of the kernel log: the page that
+    // asked for it is gone once the phone starts, and the next one has to
+    // know why it failed.
+    let done = patch_root_in(partition, source, image);
+    match &done {
+        Ok(said) => {
+            let _ = skyward_sys::kmsg(&format!("root: {said}"));
+        }
+        Err(e) => {
+            let _ = skyward_sys::kmsg(&format!("root: patching failed: {e:#}"));
+        }
+    }
+    done
+}
+
+fn patch_root_in(
+    partition: Option<&'static str>,
+    source: &skyward_ui::app::RootSource,
+    image: &skyward_ui::app::RootImage,
+) -> Result<String> {
+    let slot = skyward_vab::current_slot()?.context("not an A/B phone")?;
+    let work = Path::new("/tmp/root");
+    std::fs::create_dir_all(work).with_context(|| format!("create {}", work.display()))?;
+    let by_name = Path::new(skyward_root::BY_NAME);
+    let partition = partition.unwrap_or_else(|| skyward_root::target(by_name, slot));
+    // What the partition holds now is kept aside before anything is written
+    // to it, whichever way the image to write is come by.
+    let stock = work.join("stock.img");
+    skyward_root::read(by_name, partition, slot, &stock)?;
+    let kept = keep_aside(&stock, partition, slot, work)?;
+    let _ = skyward_sys::kmsg(&format!("root: the image {partition}{} held is at {}", slot.suffix(), kept.display()));
+    // The image patched is the one the partition holds, or a file the page
+    // chose; either way the manager makes it the image root starts from.
+    let base = match image {
+        skyward_ui::app::RootImage::Partition => &stock,
+        skyward_ui::app::RootImage::File(at) => std::path::Path::new(at),
+    };
+    let manager = manager_from(source, work)?;
+    let patched = work.join("patched.img");
+    let _ = skyward_sys::kmsg(&format!(
+        "root: {} patches {partition}{} from {}",
+        manager.name(),
+        slot.suffix(),
+        base.display()
+    ));
+    let options = skyward_root::Options::default();
+    match &manager {
+        skyward_root::Manager::Magisk(magisk) => magisk.patch(base, &patched, &options)?,
+        skyward_root::Manager::KernelSu(ksu) => ksu.patch(base, &patched)?,
+        skyward_root::Manager::Apatch(apatch) => apatch.patch(base, &patched, &options)?,
+    }
+    skyward_root::write(&patched, by_name, partition, slot)?;
+    // Read the partition again: what is on it has to be what was written, or
+    // the phone does not start.
+    let back = work.join("written.img");
+    skyward_root::read(by_name, partition, slot, &back)?;
+    let want = std::fs::metadata(&patched).with_context(|| format!("measure {}", patched.display()))?.len();
+    let got = std::fs::metadata(&back).with_context(|| format!("measure {}", back.display()))?.len();
+    ensure!(want == got, "{partition}{} reads back as {got} bytes, not the {want} written", slot.suffix());
+    // The detail is the partition and where the image it held went; the page
+    // says what it means in the user's words.
+    Ok(format!("{partition}{} — {}", slot.suffix(), kept.display()))
+}
+
+/// The manager whose tools patch the image, from the phone or from a package
+/// the page chose, which then has to carry its own.
+fn manager_from(source: &skyward_ui::app::RootSource, work: &Path) -> Result<skyward_root::Manager> {
+    let manager = match source {
+        skyward_ui::app::RootSource::Installed => skyward_root::detect().context("no root manager on the phone")?,
+        // A package carries its manager's own patcher: which one it is
+        // decides how it is run.
+        skyward_ui::app::RootSource::Apk(at) => {
+            let apk = std::path::Path::new(at);
+            let into = work.join("apk");
+            match skyward_root::apk::kind(apk)? {
+                skyward_root::apk::Kind::Magisk => {
+                    skyward_root::apk::unpack(apk, &into, skyward_root::apk::Kind::Magisk)?;
+                    skyward_root::Manager::Magisk(skyward_root::Magisk { dir: into, version: None })
+                }
+                skyward_root::apk::Kind::KernelSu => {
+                    skyward_root::apk::unpack(apk, &into, skyward_root::apk::Kind::KernelSu)?;
+                    skyward_root::Manager::KernelSu(skyward_root::KernelSu { ksud: into.join("ksud"), version: None })
+                }
+                skyward_root::apk::Kind::Apatch => {
+                    skyward_root::apk::unpack(apk, &into, skyward_root::apk::Kind::Apatch)?;
+                    skyward_root::Manager::Apatch(skyward_root::Apatch { dir: into, version: None })
+                }
+            }
+        }
+    };
+    Ok(manager)
+}
+
+/// The image `stock` put where a patch that does not boot is undone with it:
+/// the shared folder, or the work folder where the card is not there.
+fn keep_aside(stock: &Path, partition: &str, slot: skyward_vab::Slot, work: &Path) -> Result<std::path::PathBuf> {
+    let at = Path::new("/sdcard/Download").join(format!("stock-{partition}{}.img", slot.suffix()));
+    if std::fs::copy(stock, &at).is_ok() {
+        return Ok(at);
+    }
+    let at = work.join(format!("stock-{partition}{}.img", slot.suffix()));
+    std::fs::copy(stock, &at).with_context(|| format!("keep {}", stock.display()))?;
+    Ok(at)
+}
+
 /// What the phone's boot control holds of the slots, or why it cannot be
 /// asked.
 fn read_slots() -> Result<skyward_vab::BootSlots, String> {
@@ -931,6 +1174,19 @@ fn set_slot(slot: skyward_vab::Slot) -> Result<skyward_vab::BootSlots, String> {
     set().map_err(|e| format!("{e:#}"))
 }
 
+/// Start the slot the update went to next, as an install leaves it: the
+/// system there merges what was written, which a recovery from this slot
+/// cannot do.
+fn start_other(app: &mut App) -> Result<()> {
+    let slot = skyward_vab::current_slot()?.context("not an A/B phone")?.other();
+    let (binder, hardware) = (skyward_binder::driver::Binder::open()?, skyward_binder::driver::Binder::hardware()?);
+    let control = skyward_vab::boot::BootControl::open(&binder, &hardware)?;
+    control.set_active(slot)?;
+    skyward_sys::kmsg(&format!("slot {} starts next, which merges the update", slot.letter()))?;
+    app.set_boot_slots(read_slots());
+    Ok(())
+}
+
 /// What has to happen before an update writes over the installed system's
 /// partitions: the files the phone's own programs run from stay in memory,
 /// and the booted slot's partitions come off.
@@ -948,8 +1204,17 @@ fn detach(services: Vec<Service>) -> Detach {
 /// on a phone that has them, and checks a zip's signature before its
 /// install script runs.
 fn install_options(app: &App) -> Options {
-    Options { keep: app.state.keep_recovery && app.state.recovery_partitions, signed: app.state.check_signature }
+    Options {
+        keep: app.state.keep_recovery && app.state.recovery_partitions,
+        signed: app.state.check_signature,
+        keeps: app.state.keep_partitions.clone(),
+        root: app.state.keep_root,
+    }
 }
+
+/// Where a proxy written by hand is kept, as `host:port`: the phone's own
+/// Wi-Fi settings hold one too, and this is what a page that sets one writes.
+const HAND_PROXY: &str = "/sdcard/skyward.proxy";
 
 /// How often the WLAN page scans while it shows.
 const SCAN_EVERY: Duration = Duration::from_secs(10);
@@ -1252,6 +1517,12 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     // Asking the update server, and downloading the full package.
     let mut checker: Option<updates::Worker> = None;
     let mut downloader: Option<updates::Worker> = None;
+    // The key typed for a network, kept until the network takes it.
+    let mut typed_key: Option<(Vec<u8>, String)> = None;
+    // Where the manager's package is, being looked up.
+    let mut manager_plan: Option<PlanSlot> = None;
+    // Whether the download under way is that manager's package.
+    let mut manager_open = false;
     // The USB drive plugged in, looked for each second.
     let mut plugged: Option<Plugged> = None;
     let mut seen: Option<String> = None;
@@ -1390,6 +1661,32 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
         fds.push(readings.fd());
         wait(&fds, timeout)?;
         let now = monotonic_ms();
+        // A download under way tells its own progress, and its end turns the
+        // page into the one that patches with what it brought.
+        if let Some(slot) = &manager_plan {
+            let said = slot.lock().ok().and_then(|mut held| held.take());
+            if let Some(said) = said {
+                manager_plan = None;
+                match said {
+                    Ok(plan) => {
+                        // The address says which way to GitHub it takes, and
+                        // what is fetched through it.
+                        skyward_sys::kmsg(&format!("root: fetching {}", plan.url))?;
+                        // The package comes down through the page's own
+                        // worker, so it goes as the update page's does.
+                        let into = Path::new(skyward_root::releases::MANAGERS);
+                        let at = into.join(&plan.name);
+                        let task = updates::Task::download(&plan.url, &plan.name, at);
+                        downloader = Some(updates::Worker::start(task, servers.clone())?);
+                        manager_open = true;
+                    }
+                    Err(why) => {
+                        skyward_sys::kmsg(&format!("root: download failed: {why}"))?;
+                        app.download_ended(DownloadEnd::Failed(Failure::Other(why)), Have::Nothing, now);
+                    }
+                }
+            }
+        }
         let mut drive_told = None;
         if drive_at.elapsed().as_secs() >= 1 {
             drive_told = look_for_drive(&mut plugged, &mut seen)?;
@@ -1653,6 +1950,19 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
         }
         if let Some((told, traffic)) = wlan.as_ref().map(wlan::Worker::told) {
             if let Some(w) = told {
+                // The network took the key typed for it: the phone's own
+                // settings learn the network, so its system joins it too.
+                if let Some((ssid, key)) = &typed_key {
+                    if w.joined.as_ref().is_some_and(|j| j.ssid == *ssid && matches!(j.stage, skyward_net::wlan::Stage::Connected(_))) {
+                        let name = String::from_utf8_lossy(ssid).to_string();
+                        match skyward_net::wlan::remember(&name, key) {
+                            Ok(true) => skyward_sys::kmsg(&format!("the phone's settings learned {name}"))?,
+                            Ok(false) => skyward_sys::kmsg("the phone's settings hold no network to copy")?,
+                            Err(e) => skyward_sys::kmsg(&format!("the phone's settings stayed as they were: {e}"))?,
+                        }
+                        typed_key = None;
+                    }
+                }
                 app.set_wlan(w);
             }
             if let Some(t) = traffic {
@@ -1687,12 +1997,27 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                 match ev {
                     updates::Event::Progress(progress, rate) => app.download_progress(progress, rate),
                     updates::Event::Ended(end) => {
-                        let release = app.state.newest().context("a download is of the newest system")?.clone();
                         let end = match end {
                             updates::End::Downloaded => DownloadEnd::Downloaded,
                             updates::End::Stopped => DownloadEnd::Stopped,
                             updates::End::Failed(why) => DownloadEnd::Failed(why),
                         };
+                        if manager_open {
+                            manager_open = false;
+                            fetched = true;
+                            skyward_sys::kmsg(&format!("the manager's download ended: {end:?}"))?;
+                            let came = matches!(end, DownloadEnd::Downloaded);
+                            app.download_ended(end, Have::Nothing, now);
+                            if came {
+                                let into = Path::new(skyward_root::releases::MANAGERS);
+                                match manager_apk(into) {
+                                    Ok(at) => app.root_package_chosen(at.display().to_string()),
+                                    Err(e) => app.report(&format!("{e:#}"), now),
+                                }
+                            }
+                            continue;
+                        }
+                        let release = app.state.newest().context("a download is of the newest system")?.clone();
                         skyward_sys::kmsg(&format!("downloading {} ended: {end:?}", release.name))?;
                         app.download_ended(end, have(&app, &release), now);
                         fetched = true;
@@ -1713,6 +2038,11 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     }
                     closed = opening.closed;
                     show_closed(&mut app, &closed)?;
+                    // A proxy written by hand, in a file of its own, wins
+                    // over the one the phone's Wi-Fi settings keep; without
+                    // one, theirs carries every request, as the system's do.
+                    let by_hand = std::fs::read_to_string(HAND_PROXY).ok().map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+                    skyward_net::http::use_proxy(by_hand.or_else(wlan::system_proxy));
                 }
                 decrypt::Ended::Opened(Err(why)) => {
                     skyward_sys::kmsg(&format!("the data partition stays closed: {why}"))?;
@@ -1942,8 +2272,26 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                         }
                     },
                     Effect::ReadMounts => app.set_mounts(mounts()),
+                    Effect::PatchRoot => {
+                        let l = app.state.lang;
+                        let (good, bad) = (
+                            l.pick(["修补成功", "修補成功", "Patched"]),
+                            l.pick(["修补失败", "修補失敗", "Patching failed"]),
+                        );
+                        let said = match patch_root(app.state.root_partition, &app.state.root_source, &app.state.root_image) {
+                            Ok(detail) => format!("{good}：{detail}"),
+                            Err(why) => format!("{bad}：{why}"),
+                        };
+                        app.root_ended(said);
+                    }
                     Effect::ReadSlots => app.set_boot_slots(read_slots()),
                     Effect::SetSlot(slot) => app.slot_switched(set_slot(slot), now),
+                    // The slot the update went to starts next, whether or not
+                    // a merge waits: the system there merges it.
+                    Effect::BootOther => match start_other(app) {
+                        Ok(()) => {}
+                        Err(e) => app.report(&format!("{e:#}"), now),
+                    },
                     // The decrypt page shows meanwhile that the work is
                     // under way, and takes nothing more until it is done.
                     Effect::OpenData => {
@@ -2123,6 +2471,9 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                         wlan_worker(&wlan)?.send(wlan::Command::Scan);
                     }
                     Effect::JoinWlan { ssid, name, security, password } => {
+                        // A key typed here is the phone's to keep too, once
+                        // the network takes it: its own settings learn it.
+                        typed_key = (!password.0.is_empty()).then(|| (ssid.clone(), password.0.clone()));
                         wlan_worker(&wlan)?.send(wlan::Command::Join { ssid, name, security, password: password.0 })
                     }
                     Effect::LeaveWlan => wlan_worker(&wlan)?.send(wlan::Command::Leave),
@@ -2139,13 +2490,30 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                             Err(e) => app.update_checked(Err(Unanswered::Failed(format!("{e:#}"))), Have::Nothing),
                         }
                     }
+                    Effect::SetProxy(text) => {
+                        // What the page sets is kept where the next start
+                        // finds it: an empty line takes the hand-written one
+                        // away and leaves the phone's own settings to say.
+                        let at = std::path::Path::new(HAND_PROXY);
+                        if text.is_empty() {
+                            std::fs::remove_file(at).ok();
+                            skyward_net::http::use_proxy(wlan::system_proxy());
+                        } else {
+                            std::fs::write(at, format!("{text}\n")).ok();
+                            skyward_net::http::use_proxy(Some(text));
+                        }
+                    }
+                    Effect::DownloadManager(at) => {
+                        ensure!(manager_plan.is_none() && !manager_open, "a package is being downloaded already");
+                        manager_plan = Some(start_manager_plan(servers.clone(), at, app.state.root_proxy));
+                    }
                     Effect::Download(release) => {
                         ensure!(downloader.is_none(), "the full package is being downloaded already");
                         let server = cfg.update.as_ref().context("the phone's update server is not known")?.server.clone();
                         let path = downloaded(&release);
                         match installed(cfg, &info) {
                             Ok(installed) => {
-                                let task = updates::Task::Download { server, installed, release, path };
+                                let task = updates::Task::Download { server: Some(server), installed: Some(installed), release, path };
                                 downloader = Some(updates::Worker::start(task, servers.clone())?);
                             }
                             Err(e) => app.download_ended(DownloadEnd::Failed(Failure::Other(format!("{e:#}"))), have(&app, &release), now),

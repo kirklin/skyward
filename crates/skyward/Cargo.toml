@@ -9,6 +9,7 @@ name = "skyward"
 path = "src/main.rs"
 
 [dependencies]
+skyward-root = { path = "../skyward-root" }
 anyhow = { workspace = true }
 clap = { version = "4.5.51", features = ["derive"] }
 skyward-config = { path = "../skyward-config" }

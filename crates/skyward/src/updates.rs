@@ -32,8 +32,20 @@ pub enum Task {
     /// reaches the internet, says whether the network is why.
     Check { server: String, probe: String, installed: Installed },
     /// Download `release`'s full package to `path`; `server` is asked again
-    /// for where it is when the addresses it gave have run out.
-    Download { server: String, installed: Installed, release: Release, path: PathBuf },
+    /// for where it is when the addresses it gave have run out. A download
+    /// whose address a page resolved already gives neither, and is retried
+    /// at the address it has.
+    Download { server: Option<String>, installed: Option<Installed>, release: Release, path: PathBuf },
+}
+
+impl Task {
+    /// Downloading what `url` holds to `path`, as a root manager's package
+    /// is: the page resolved the address, and nothing is asked of any server
+    /// for it again.
+    pub fn download(url: &str, name: &str, path: PathBuf) -> Task {
+        let release = Release { version: String::new(), name: name.to_string(), urls: vec![url.to_string()], md5: String::new(), size: String::new(), length: None };
+        Task::Download { server: None, installed: None, release, path }
+    }
 }
 
 pub enum Event {
@@ -87,7 +99,13 @@ impl Worker {
                     Task::Check { server, probe, installed } => {
                         let a = http::agent(servers.clone());
                         *using.lock().expect("the agent is not held by a thread that panicked") = Some(a.clone());
-                        let mut answer = release::ask(&a, &server, &installed).map_err(|e| unanswered(&e, &server, &probe, &servers));
+                        // The phone's own updater saw the newest system a
+                        // sealed question does not; where it has written of
+                        // one newer than the installed, that is the answer.
+                        let mut answer = match cached(&installed) {
+                            Some(newest) => Ok(Some(newest)),
+                            None => release::ask(&a, &server, &installed).map_err(|e| unanswered(&e, &server, &probe, &servers)),
+                        };
                         if let Ok(Some(r)) = &mut answer {
                             match release::length(&a, &r.urls[0]) {
                                 Ok(length) => r.length = Some(length),
@@ -99,7 +117,7 @@ impl Worker {
                         tell(Event::Checked(answer));
                     }
                     Task::Download { server, installed, release, path } => {
-                        let end = fetch(&servers, &server, &installed, release, &path, &stopping, &using, &tell);
+                        let end = fetch(&servers, server.as_deref(), installed.as_ref(), release, &path, &stopping, &using, &tell);
                         tell(Event::Ended(end));
                     }
                 }
@@ -138,6 +156,13 @@ impl Drop for Worker {
     }
 }
 
+/// The newest system the phone's own updater last wrote of, where it wrote
+/// of one newer than the system installed.
+fn cached(installed: &Installed) -> Option<Release> {
+    let xml = std::fs::read_to_string(release::CACHE).ok()?;
+    release::cached(&xml, &installed.version)
+}
+
 /// Why `server` gave no answer: that the network joined wants a login
 /// first, or reaches nothing, where `probe` shows it, rather than how
 /// asking failed through such a network.
@@ -154,12 +179,12 @@ fn unanswered(e: &anyhow::Error, server: &str, probe: &str, servers: &Servers) -
 
 /// Download the package, trying again while the connection fails and
 /// something more comes each time, and asking the server again for where it
-/// is once the addresses it gave run out.
+/// is once the addresses it gave run out, where there is a server to ask.
 #[allow(clippy::too_many_arguments)]
 fn fetch(
     servers: &Servers,
-    server: &str,
-    installed: &Installed,
+    server: Option<&str>,
+    installed: Option<&Installed>,
     mut release: Release,
     path: &std::path::Path,
     stop: &AtomicBool,
@@ -220,17 +245,19 @@ fn fetch(
         }
         let _ = skyward_sys::kmsg(&format!("downloading {} from {}: {e:#}", release.name, host(&release.urls[url])));
         if e.is::<Refused>() && !asked_again {
-            // A signed address runs out a day after the server gave it.
             asked_again = true;
-            match release::ask(&a, server, installed) {
-                Ok(Some(fresh)) if fresh.md5 == release.md5 => {
-                    release = fresh;
-                    url = 0;
-                    continue;
-                }
-                Ok(_) => return End::Failed(Failure::Changed),
-                Err(again) => {
-                    let _ = skyward_sys::kmsg(&format!("asking where {} is: {again:#}", release.name));
+            if let (Some(server), Some(installed)) = (server, installed) {
+                // A signed address runs out a day after the server gave it.
+                match release::ask(&a, server, installed) {
+                    Ok(Some(fresh)) if fresh.md5 == release.md5 => {
+                        release = fresh;
+                        url = 0;
+                        continue;
+                    }
+                    Ok(_) => return End::Failed(Failure::Changed),
+                    Err(again) => {
+                        let _ = skyward_sys::kmsg(&format!("asking where {} is: {again:#}", release.name));
+                    }
                 }
             }
         }

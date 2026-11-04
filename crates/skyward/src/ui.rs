@@ -1174,6 +1174,15 @@ fn set_slot(slot: skyward_vab::Slot) -> Result<skyward_vab::BootSlots, String> {
     set().map_err(|e| format!("{e:#}"))
 }
 
+/// Mark `slot` the one that starts next, which the boot control also marks
+/// bootable: an update written there starts from it, as the system's own
+/// updater leaves it.
+fn start_written(slot: skyward_vab::Slot) -> Result<()> {
+    let (binder, hardware) = (skyward_binder::driver::Binder::open()?, skyward_binder::driver::Binder::hardware()?);
+    let control = skyward_vab::boot::BootControl::open(&binder, &hardware)?;
+    control.set_active(slot)
+}
+
 /// Start the slot the update went to next, as an install leaves it: the
 /// system there merges what was written, which a recovery from this slot
 /// cannot do.
@@ -1720,6 +1729,17 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     _ => {}
                 }
                 app.install(ev, now);
+                // An update the install wrote is the one that starts next,
+                // as the system's own updater leaves it: the slot is marked
+                // bootable by the boot control, and its snapshots merge on
+                // the way in.
+                if let Told::Finished(Outcome::Installed { slot, .. }) = &ev {
+                    match start_written(*slot) {
+                        Ok(()) => skyward_sys::kmsg(&format!("install: slot {} starts next", slot.letter()))?,
+                        Err(e) => skyward_sys::kmsg(&format!("install: slot {} is not set to start: {e:#}", slot.letter()))?,
+                    }
+                    app.set_boot_slots(read_slots());
+                }
                 if finished {
                     installer = None;
                     sideloading = false;

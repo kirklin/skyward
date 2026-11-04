@@ -1502,11 +1502,10 @@ fn finished(
             let y = widgets::list(c, t, f, top, &[standing(installed, GREEN, Icon::Install, &detail)]).bottom;
             // The slot the update was written to starts next, set as the
             // install finished: the page offers the restart the system's own
-            // updater offers.
+            // updater offers, and nothing else.
             let next = widgets::list(c, t, f, y + gap, &[restart]);
             out.extend(hits(&next.rows, &[Action::RebootTo(Target::System)]));
-            let y = reflashed(c, cx, next.bottom);
-            afterwards_of(c, cx, y, true)
+            next.bottom
         }
         Outcome::Flashed { partition, slots } => {
             let slots = fmt::slots(l, slots);

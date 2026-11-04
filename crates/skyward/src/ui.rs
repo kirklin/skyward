@@ -1183,19 +1183,6 @@ fn start_written(slot: skyward_vab::Slot) -> Result<()> {
     control.set_active(slot)
 }
 
-/// Start the slot the update went to next, as an install leaves it: the
-/// system there merges what was written, which a recovery from this slot
-/// cannot do.
-fn start_other(app: &mut App) -> Result<()> {
-    let slot = skyward_vab::current_slot()?.context("not an A/B phone")?.other();
-    let (binder, hardware) = (skyward_binder::driver::Binder::open()?, skyward_binder::driver::Binder::hardware()?);
-    let control = skyward_vab::boot::BootControl::open(&binder, &hardware)?;
-    control.set_active(slot)?;
-    skyward_sys::kmsg(&format!("slot {} starts next, which merges the update", slot.letter()))?;
-    app.set_boot_slots(read_slots());
-    Ok(())
-}
-
 /// What has to happen before an update writes over the installed system's
 /// partitions: the files the phone's own programs run from stay in memory,
 /// and the booted slot's partitions come off.
@@ -2306,12 +2293,6 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     }
                     Effect::ReadSlots => app.set_boot_slots(read_slots()),
                     Effect::SetSlot(slot) => app.slot_switched(set_slot(slot), now),
-                    // The slot the update went to starts next, whether or not
-                    // a merge waits: the system there merges it.
-                    Effect::BootOther => match start_other(&mut app) {
-                        Ok(()) => {}
-                        Err(e) => app.report(&format!("{e:#}"), now),
-                    },
                     // The decrypt page shows meanwhile that the work is
                     // under way, and takes nothing more until it is done.
                     Effect::OpenData => {

@@ -2288,7 +2288,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     Effect::SetSlot(slot) => app.slot_switched(set_slot(slot), now),
                     // The slot the update went to starts next, whether or not
                     // a merge waits: the system there merges it.
-                    Effect::BootOther => match start_other(app) {
+                    Effect::BootOther => match start_other(&mut app) {
                         Ok(()) => {}
                         Err(e) => app.report(&format!("{e:#}"), now),
                     },

@@ -1715,11 +1715,9 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     Told::Reboot(target) => rescue_leaves = Some(rescue_target(target)),
                     _ => {}
                 }
-                app.install(ev, now);
                 // An update the install wrote is the one that starts next,
-                // as the system's own updater leaves it: the slot is marked
-                // bootable by the boot control, and its snapshots merge on
-                // the way in.
+                // as the system's own updater leaves it: the boot control
+                // marks the slot active and bootable.
                 if let Told::Finished(Outcome::Installed { slot, .. }) = &ev {
                     match start_written(*slot) {
                         Ok(()) => skyward_sys::kmsg(&format!("install: slot {} starts next", slot.letter()))?,
@@ -1727,6 +1725,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     }
                     app.set_boot_slots(read_slots());
                 }
+                app.install(ev, now);
                 if finished {
                     installer = None;
                     sideloading = false;

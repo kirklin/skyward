@@ -20,6 +20,7 @@ sha2 = { version = "0.10.9", features = ["oid"] }
 skyward-block = { path = "../skyward-block" }
 skyward-config = { path = "../skyward-config" }
 skyward-info = { path = "../skyward-info" }
+skyward-root = { path = "../skyward-root" }
 skyward-vab = { path = "../skyward-vab" }
 x509-cert = "0.2.5"
 zerocopy = { version = "0.8.63", features = ["derive"] }

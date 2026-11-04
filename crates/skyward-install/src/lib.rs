@@ -57,7 +57,7 @@ pub const ENGINE_LOG: &str = "/tmp/update_engine.log";
 pub const SCRIPT_LOG: &str = "/tmp/install-script.log";
 
 /// What the screen asks of an install besides the package.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Options {
     /// This recovery goes back into the recovery partitions an install
     /// writes over.
@@ -65,6 +65,13 @@ pub struct Options {
     /// A zip with an install script runs only if it was signed with one of
     /// the keys the phone's updates are signed with.
     pub signed: bool,
+    /// The partitions an install puts back as they were once it is done, by
+    /// name. The two a root manager patches are left out: a boot image from
+    /// the other slot does not boot the new system.
+    pub keeps: Vec<String>,
+    /// The slot an install writes into is patched with the root manager the
+    /// phone has, once it is written, so root is there after the restart.
+    pub root: bool,
 }
 
 /// What the installer tells the screen, in the order it happens.

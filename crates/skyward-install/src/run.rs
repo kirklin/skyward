@@ -4,6 +4,10 @@
 //! handed back to adb after; a file on the phone is read where it is, and
 //! a package the system left on a partition through the map of its blocks.
 
+/// Where the tools of the manager that patches the written image wait,
+/// taken out of the data partition before the install let go of it.
+const MANAGER_TOOLS: &str = "/tmp/root-tools";
+
 use crate::adb::{self, Connection, Offer, Service};
 use crate::asked::Asked;
 use crate::blockmap::BlockMap;
@@ -525,6 +529,14 @@ fn update_system<S>(ctx: &mut Context, mount: &Mount<S>, update: &Update) -> Res
     }
     ctx.send(Event::Installing { version });
     let kept = hold(ctx, slot)?;
+    // What the screen asked to keep is read before anything writes: the
+    // partitions it names are in the slot the phone runs from, and the
+    // install writes the other one.
+    let kept_parts = hold_partitions(&ctx.options.keeps, slot)?;
+    // The manager whose tools patch the written image is taken out of the
+    // data partition before the install lets go of it: after that, its
+    // folder is gone until the next start.
+    let manager = ctx.options.root.then(|| skyward_root::stage(Path::new(MANAGER_TOOLS)));
     detach_once(ctx)?;
     // update_engine mounts /metadata itself, as in the stock recovery, keeps
     // the update's state there, and unmounts it when done. The recovery
@@ -542,10 +554,84 @@ fn update_system<S>(ctx: &mut Context, mount: &Mount<S>, update: &Update) -> Res
             if let Some(kept) = &kept {
                 reflash(ctx, kept, Ok(slot.other()));
             }
+            restore_partitions(&kept_parts, slot.other());
+            if ctx.options.root {
+                patch_root(slot.other(), manager.unwrap_or_else(|| Err(anyhow::anyhow!("nothing was taken"))));
+            }
             Done::Decided(Outcome::Installed { slot: slot.other(), wipe })
         }
         code => Done::Engine(code),
     })
+}
+
+/// The partitions `names` of `slot`, read into a folder of their own before an
+/// install writes over the slot the phone starts from next, and where each
+/// waits.
+fn hold_partitions(names: &[String], slot: Slot) -> Result<Vec<(String, PathBuf)>> {
+    let dir = Path::new("/tmp/keep");
+    let mut held = Vec::new();
+    for name in names {
+        // The two a root manager patches are not kept here: a boot image of
+        // the older system does not boot the newer one.
+        if name == "boot" || name == "init_boot" {
+            let _ = kmsg(&format!("install: {name} is patched rather than kept"));
+            continue;
+        }
+        std::fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
+        let at = dir.join(format!("{name}{}", slot.suffix()));
+        match skyward_root::read(Path::new(skyward_root::BY_NAME), name, slot, &at) {
+            Ok(_) => held.push((name.clone(), at)),
+            Err(e) => {
+                let _ = kmsg(&format!("install: {name} is not kept: {e:#}"));
+            }
+        }
+    }
+    Ok(held)
+}
+
+/// Patch the image `slot` starts from with the root manager the phone has, so
+/// root is there when the phone starts from the slot an install wrote.
+fn patch_root(slot: Slot, manager: Result<skyward_root::Manager>) {
+    match patch_root_in(slot, manager) {
+        Ok(said) => {
+            let _ = kmsg(&format!("install: root patched into {said}"));
+        }
+        Err(e) => {
+            let _ = kmsg(&format!("install: root not patched into {}: {e:#}", slot.suffix()));
+        }
+    }
+}
+
+fn patch_root_in(slot: Slot, manager: Result<skyward_root::Manager>) -> Result<String> {
+    let manager = manager.context("no root manager on the phone")?;
+    let by_name = Path::new(skyward_root::BY_NAME);
+    let partition = skyward_root::target(by_name, slot);
+    let work = Path::new("/tmp/root-target");
+    std::fs::create_dir_all(work).with_context(|| format!("create {}", work.display()))?;
+    let (stock, patched) = (work.join("stock.img"), work.join("patched.img"));
+    skyward_root::read(by_name, partition, slot, &stock)?;
+    let options = skyward_root::Options::default();
+    match &manager {
+        skyward_root::Manager::Magisk(magisk) => magisk.patch(&stock, &patched, &options)?,
+        skyward_root::Manager::KernelSu(ksu) => ksu.patch(&stock, &patched)?,
+        skyward_root::Manager::Apatch(apatch) => apatch.patch(&stock, &patched, &options)?,
+    }
+    skyward_root::write(&patched, by_name, partition, slot)?;
+    Ok(format!("{partition}{}", slot.suffix()))
+}
+
+/// Put what [`hold_partitions`] read back into `slot`.
+fn restore_partitions(held: &[(String, PathBuf)], slot: Slot) {
+    for (name, at) in held {
+        match skyward_root::write(at, Path::new(skyward_root::BY_NAME), name, slot) {
+            Ok(()) => {
+                let _ = kmsg(&format!("install: {name}{} put back as it was", slot.suffix()));
+            }
+            Err(e) => {
+                let _ = kmsg(&format!("install: {name}{} not put back: {e:#}", slot.suffix()));
+            }
+        }
+    }
 }
 
 /// This recovery, held before an install writes, when the screen asked to

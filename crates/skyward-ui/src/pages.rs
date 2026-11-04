@@ -1500,21 +1500,11 @@ fn finished(
                 "The new system is installed to slot {slot}, which starts after a reboot."
             );
             let y = widgets::list(c, t, f, top, &[standing(installed, GREEN, Icon::Install, &detail)]).bottom;
-            // An update written to the other slot is not merged yet: the
-            // page leads to the merge first, rather than into a system whose
-            // snapshots are still to be merged.
-            let merging = !matches!(cx.info.snapshot, skyward_vab::SnapshotState::None);
-            let (row, act) = match merging {
-                true => (
-                    Row::new(l.pick(["重启到另一槽位的恢复模式", "重新啟動到另一槽位的復原模式", "Restart into the other slot's recovery"]))
-                        .subtitle(l.pick(["重启后在「系统更新」页滑动合并", "重新啟動後在「系統更新」頁滑動合併", "Merge there by swiping on the update page"]))
-                        .icon(ORANGE, Icon::Power),
-                    Action::BootOther,
-                ),
-                false => (restart, Action::RebootTo(Target::System)),
-            };
-            let next = widgets::list(c, t, f, y + gap, &[row]);
-            out.extend(hits(&next.rows, &[act]));
+            // The slot the update was written to starts next, set as the
+            // install finished: the page offers the restart the system's own
+            // updater offers.
+            let next = widgets::list(c, t, f, y + gap, &[restart]);
+            out.extend(hits(&next.rows, &[Action::RebootTo(Target::System)]));
             let y = reflashed(c, cx, next.bottom);
             afterwards_of(c, cx, y, true)
         }

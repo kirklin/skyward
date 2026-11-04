@@ -1251,9 +1251,6 @@ pub enum Action {
     Pattern,
     /// Patch with the package a download left at this place in the list.
     RootPackage(usize),
-    /// Start the slot the update was written to next, and restart into it:
-    /// the system there merges what the install wrote.
-    BootOther,
     /// Open the proxy page, holding the one every request goes through now.
     OpenProxy,
     /// Start receiving a package over USB.
@@ -2051,9 +2048,6 @@ pub enum Effect {
     /// shows, telling how it goes with [`App::download_progress`] and
     /// [`App::download_ended`] as the system's own package does.
     DownloadManager(usize),
-    /// Start the slot the update was written to next: the system there
-    /// merges the update when it starts.
-    BootOther,
     /// Go through this proxy, as `host:port`, for every request: empty where
     /// none is to be used.
     SetProxy(String),
@@ -5106,10 +5100,6 @@ impl App {
                 }
                 self.refresh();
             }
-            // The other slot starts next, and the recovery restarts in it: the
-            // merge of what was written runs from that slot, never from this
-            // one, so the page that merges is the one there.
-            Action::BootOther => return vec![Effect::BootOther, Effect::Reboot(Target::Recovery)],
             Action::OpenProxy => {
                 self.state.proxy_text = skyward_net::http::proxy().unwrap_or_default();
                 self.open(Screen::Proxy);

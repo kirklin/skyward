@@ -1,0 +1,16 @@
+[package]
+name = "skyward-root"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+libc = { workspace = true }
+sha1 = "0.10.7"
+sha2 = "0.10.9"
+skyward-vab = { path = "../skyward-vab" }
+zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"

@@ -40,11 +40,30 @@ impl Resolver for Lookup {
     }
 }
 
+/// The proxy the phone's own Wi-Fi settings gave, as `host:port`, for every
+/// request to go through: `None` reaches the servers as they are.
+static PROXY: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+
+/// Go through `proxy`, as `host:port`: the phone's own Wi-Fi settings give
+/// one, and a page can set one instead, so what every request goes through
+/// can change while the recovery runs.
+pub fn use_proxy(proxy: Option<String>) {
+    if let Ok(mut held) = PROXY.write() {
+        *held = proxy;
+    }
+}
+
+/// The proxy every request goes through, as `host:port`.
+pub fn proxy() -> Option<String> {
+    PROXY.read().ok().and_then(|held| held.clone())
+}
+
 /// An agent that looks names up in `servers`, and gives a server's answer
 /// whatever its status: the caller says what a status means.
 pub fn agent(servers: Servers) -> ureq::Agent {
+    let proxy = proxy().and_then(|p| ureq::Proxy::new(&p).ok());
     let config = ureq::Agent::config_builder()
-        .proxy(None)
+        .proxy(proxy)
         .timeout_connect(Some(CONNECT))
         .timeout_per_read(Some(STALL))
         .timeout_per_write(Some(STALL))

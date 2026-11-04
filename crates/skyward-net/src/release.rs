@@ -20,6 +20,10 @@ const UPDATER: &str = "9.3.7";
 /// What the server says when it has answered.
 const ANSWERED: u32 = 2000;
 
+/// Where the phone's own updater keeps what it last learned of the newest
+/// system, among the settings of its screen.
+pub const CACHE: &str = "/data/data/com.android.updater/shared_prefs/version_json.xml";
+
 type Sealer = cbc::Encryptor<aes::Aes128>;
 type Opener = cbc::Decryptor<aes::Aes128>;
 
@@ -171,6 +175,66 @@ pub fn release(answer: &str) -> Result<Option<Release>> {
         bail!("the update server says of no place to download {name}");
     }
     Ok(Some(Release { version: rom.version, name, urls, md5: rom.md5.to_lowercase(), size: rom.filesize, length: None }))
+}
+
+/// The newest system the phone's own updater last wrote of, where it wrote
+/// of one newer than `installed`: the map it keeps holds the answer the
+/// server gave it, which a sealed question on its own does not get.
+pub fn cached(xml: &str, installed: &str) -> Option<Release> {
+    let settings = xml.split("name=\"new_version\"").nth(1)?;
+    let (_, rest) = settings.split_once('>')?;
+    let json = rest.split("</string>").next()?;
+    let cached: Cached = serde_json::from_str(&unescape(json)).ok()?;
+    let rom = cached.latest.as_ref()?;
+    let release = rom.release(&cached.mirrors)?;
+    (release.version != installed).then_some(release)
+}
+
+/// A text the updater's map keeps, with what XML writes in place of some of
+/// its characters.
+fn unescape(text: &str) -> String {
+    text.replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+}
+
+#[derive(Deserialize)]
+struct Cached {
+    #[serde(rename = "LatestRom")]
+    latest: Option<CachedRom>,
+    #[serde(rename = "MirrorList", default)]
+    mirrors: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct CachedRom {
+    version: String,
+    filename: String,
+    md5: String,
+    filesize: String,
+}
+
+impl CachedRom {
+    fn release(&self, mirrors: &[String]) -> Option<Release> {
+        let name = self.filename.split('?').next().unwrap_or_default().to_string();
+        if name.is_empty() || name.contains('/') {
+            return None;
+        }
+        let urls: Vec<String> = mirrors.iter().map(|m| format!("{}/{}/{}", m.trim_end_matches('/'), self.version, self.filename)).collect();
+        if urls.is_empty() {
+            return None;
+        }
+        Some(Release {
+            version: self.version.clone(),
+            name,
+            urls,
+            md5: self.md5.to_lowercase(),
+            size: self.filesize.clone(),
+            length: None,
+        })
+    }
 }
 
 /// How many bytes the package at `url` is, as its server says.

@@ -303,3 +303,111 @@ mod tests {
         assert_eq!(link.router, Some(Ipv4Addr::new(192, 168, 1, 1)));
     }
 }
+
+/// Where the phone keeps what it knows of the networks it joined, their
+/// keys among it.
+const SAVED: &str = "/data/misc/apexdata/com.android.wifi/WifiConfigStore.xml";
+
+/// A network the phone joined before: what it is called, and the key it
+/// keeps for it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Known {
+    pub ssid: Vec<u8>,
+    pub key: String,
+}
+
+/// The networks the phone's own Wi-Fi settings keep a key for, as they wrote
+/// them: none before the data partition opens.
+pub fn known() -> Vec<Known> {
+    let Ok(settings) = std::fs::read_to_string(SAVED) else { return Vec::new() };
+    let mut out: Vec<Known> = Vec::new();
+    let mut ssid: Option<Vec<u8>> = None;
+    // Each network writes its name and its key on lines of their own, the
+    // name first: a key belongs to the name before it.
+    for line in settings.lines() {
+        if let Some(value) = setting(line, "SSID") {
+            ssid = Some(value.into_bytes());
+            continue;
+        }
+        if let Some(value) = setting(line, "PreSharedKey") {
+            if let Some(name) = ssid.take() {
+                if !value.is_empty() {
+                    out.push(Known { ssid: name, key: value });
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The text a line of the settings holds under `name`, unquoted: `None`
+/// where the line holds another setting.
+fn setting(line: &str, name: &str) -> Option<String> {
+    let marker = format!("name=\"{name}\"");
+    if !line.contains(&marker) {
+        return None;
+    }
+    let (_, after) = line.split_once('>')?;
+    let (value, _) = after.split_once("</string>")?;
+    let value = unescape(value.trim());
+    Some(value.trim_matches('"').to_string())
+}
+
+/// The text the settings keep, with what XML writes in place of some of its
+/// characters.
+fn unescape(text: &str) -> String {
+    text.replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+}
+
+/// Remember `ssid` and `key` in the phone's own Wi-Fi settings, so its system
+/// knows the network the recovery joined: a network already there gives the
+/// shape, and only its name and key change. `Ok(false)` where nothing was
+/// written, as when no network there keeps a key to copy.
+pub fn remember(ssid: &str, key: &str) -> std::io::Result<bool> {
+    let text = std::fs::read_to_string(SAVED)?;
+    let Some((block_start, block)) = template(&text) else { return Ok(false) };
+    let mut block = block.to_string();
+    block = rewrite(&block, "ConfigKey", &format!("\"{ssid}\"WPA_PSK"));
+    block = rewrite(&block, "SSID", &format!("\"{ssid}\""));
+    block = rewrite(&block, "PreSharedKey", &format!("\"{key}\""));
+    let Some(end) = text.rfind("</NetworkList>") else { return Ok(false) };
+    // The settings are backed up beside themselves before they change.
+    std::fs::copy(SAVED, format!("{SAVED}.bak"))?;
+    let mut written = String::with_capacity(text.len() + block.len());
+    written.push_str(&text[..end]);
+    written.push_str(&block);
+    written.push_str(&text[end..]);
+    std::fs::write(SAVED, written)?;
+    let _ = block_start;
+    Ok(true)
+}
+
+/// The first network in `text` that keeps a key, and where its block starts.
+fn template(text: &str) -> Option<(usize, &str)> {
+    let mut from = 0;
+    while let Some(at) = text[from..].find("<WifiConfiguration>") {
+        let start = from + at;
+        let end = text[start..].find("</WifiConfiguration>")? + start + "</WifiConfiguration>".len();
+        let block = &text[start..end];
+        if block.contains("name=\"PreSharedKey\"") {
+            return Some((start, block));
+        }
+        from = end;
+    }
+    None
+}
+
+/// `block` with the string named `name` holding `value`, escaped as the
+/// settings write it.
+fn rewrite(block: &str, name: &str, value: &str) -> String {
+    let marker = format!("<string name=\"{name}\">");
+    let Some(start) = block.find(&marker) else { return block.to_string() };
+    let Some(end) = block[start..].find("</string>") else { return block.to_string() };
+    let end = start + end + "</string>".len();
+    let escaped = value.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
+    format!("{}{marker}{escaped}</string>{}", &block[..start], &block[end..])
+}

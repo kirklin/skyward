@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+skyward-root = { path = "../skyward-root" }
 anyhow = { workspace = true }
 ab_glyph = "0.2.32"
 # The stock status bar's outlines are filled as glyphs are.

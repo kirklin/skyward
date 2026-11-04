@@ -67,7 +67,19 @@ pub fn render(screen: Screen, cx: &Ctx) -> Frame {
         Screen::Wipe => wipe(cx),
         Screen::Mount => mount(cx),
         Screen::Install => install(cx),
+        Screen::Keep => keep(cx),
+        Screen::Root => root(cx),
+        Screen::Modules => modules(cx),
+        Screen::ModuleInfo => module_info(cx),
         Screen::Choose(place) => choose(cx, place),
+        Screen::ChooseRoot(place) => choose_root(cx, place),
+        Screen::ChooseImage(place) => choose_image(cx, place),
+        Screen::RootDownload => root_download(cx),
+        Screen::RootConfirm => root_confirm(cx),
+        Screen::RootInstalled => root_installed(cx),
+        Screen::RootManagers => root_managers(cx),
+        Screen::RootImages => root_images(cx),
+        Screen::RootDirect => root_direct(cx),
         Screen::Installing => installing(cx),
         Screen::About => about(cx),
         Screen::Specs => specs(cx),
@@ -103,6 +115,7 @@ pub fn render(screen: Screen, cx: &Ctx) -> Frame {
         Screen::FileJob => file_job(cx),
         Screen::Wlan => wlan(cx),
         Screen::WlanPassword => wlan_password(cx),
+    Screen::Proxy => proxy_entry(cx),
         Screen::WlanNetwork => wlan_network(cx),
         Screen::WlanAdd => wlan_add(cx),
     }
@@ -129,6 +142,7 @@ pub fn confirm_label(which: Confirm, s: &State) -> (&'static str, bool) {
         Confirm::InstallWipe => (["滑动以安装并清除", "滑動以安裝並清除", "Slide to install and wipe"], true),
         Confirm::RunScript => (INSTALL, true),
         Confirm::Merge => (["滑动以合并", "滑動以合併", "Slide to merge"], true),
+    Confirm::PatchRoot => (["滑动以修补", "滑動以修補", "Slide to patch"], true),
         Confirm::Relabel => (["滑动以修复", "滑動以修復", "Slide to fix"], true),
     };
     (s.lang.pick(label), danger)
@@ -862,7 +876,139 @@ pub fn install(cx: &Ctx) -> Frame {
         ]);
         y = widgets::footnote(&mut c, t, f, options.bottom, note);
     }
+    // What an install does about root and the partitions a phone keeps, under
+    // the ways to install: a switch each, and a page of their own for the
+    // partitions.
+    let mut rows = Vec::new();
+    let mut actions = Vec::new();
+    rows.push(Row::new(l.pick(["保留 root", "保留 root", "Keep root"])).trail(Trail::Switch(cx.state.keep_root)));
+    actions.push(Action::Toggle(Switch::KeepRoot));
+    let kept = cx.state.keep_partitions.len();
+    let count = match kept {
+        0 => l.pick(["不保留任何分区", "不保留任何分割區", "No partitions kept"]).to_string(),
+        n => {
+            let (hans, hant, en) = (format!("保留 {n} 个分区"), format!("保留 {n} 個分割區"), format!("{n} partitions kept"));
+            l.pick([hans.as_str(), hant.as_str(), en.as_str()]).to_string()
+        }
+    };
+    rows.push(Row::new(l.pick(["保留分区", "保留分割區", "Partitions to keep"])).subtitle(&count).trail(Trail::Arrow));
+    actions.push(Action::Open(Screen::Keep));
+    let options = widgets::list(&mut c, t, f, y + t.m.card_gap, &rows);
+    out.extend(hits(&options.rows, &actions));
+    let note = l.pick([
+        "开启后，安装系统更新或刷机包时，用手机上已装的 root 管理器修补新槽，重启后 root 仍在；保留分区保持原样。",
+        "開啟後，安裝系統更新或刷機包時，用手機上已裝的 root 管理器修補新槽，重新啟動後 root 仍在；保留分割區保持原樣。",
+        "When on, an install patches the new slot with the root manager the phone has, so root is there after the restart, and the partitions chosen stay as they are.",
+    ]);
+    let y = widgets::footnote(&mut c, t, f, options.bottom, note);
     Frame::new(t, fit(c, t, y), out, l.pick(["安装", "安裝", "Install"]), top)
+}
+
+/// What a partition holds, in the words the page shows under its name: the
+/// ones a phone has, and a word for the rest, as the ones that keep
+/// partitions say it.
+fn partition_note(l: Lang, name: &str) -> &'static str {
+    match name {
+        "abl" => l.pick(["Qualcomm 引导加载器", "Qualcomm 引導載入器", "Qualcomm's bootloader"]),
+        "aop" => l.pick(["Always-On 处理器固件", "Always-On 處理器固件", "the always-on processor's firmware"]),
+        "bluetooth" => l.pick(["蓝牙固件", "藍牙固件", "the Bluetooth firmware"]),
+        "boot" => l.pick(["内核与启动镜像，root 注入目标", "內核與啟動映像，root 注入目標", "the kernel and ramdisk, where root is injected"]),
+        "devcfg" => l.pick(["设备配置", "裝置設定", "the device configuration"]),
+        "dsp" => l.pick(["数字信号处理器固件", "數位訊號處理器固件", "the DSP firmware"]),
+        "dtbo" => l.pick(["设备树覆盖（DTBO）", "裝置樹覆蓋（DTBO）", "the device tree overlay"]),
+        "featenabler" => l.pick(["特性使能", "特性啟用", "the feature enabler"]),
+        "fsg" => l.pick(["基带配置数据", "基帶設定資料", "the baseband's configuration"]),
+        "hyp" => l.pick(["Hypervisor 镜像", "Hypervisor 映像", "the hypervisor image"]),
+        "imagefv" => l.pick(["image firmware volume", "image firmware volume", "an image firmware volume"]),
+        "init_boot" => l.pick(["Android 13 起的 initramfs，root 注入目标", "Android 13 起的 initramfs，root 注入目標", "the initramfs of Android 13 and later, where root is injected"]),
+        "keymaster" => l.pick(["Keymaster TA", "Keymaster TA", "the Keymaster TA"]),
+        "modem" => l.pick(["蜂窝基带固件（4G/5G）", "行動基帶固件（4G/5G）", "the cellular baseband firmware"]),
+        "modemst1" => l.pick(["基带自己的状态数据", "基帶自己的狀態資料", "the baseband's own state"]),
+        "modemst2" => l.pick(["基带自己的状态数据", "基帶自己的狀態資料", "the baseband's own state"]),
+        "multiimgoem" => l.pick(["多镜像清单", "多映像清單", "the multi-image table"]),
+        "multiimgqti" => l.pick(["多镜像清单", "多映像清單", "the multi-image table"]),
+        "persist" => l.pick(["出厂数据：传感器校准、WLAN 地址", "出廠資料：感測器校準、WLAN 位址", "factory data: sensor calibration and the WLAN address"]),
+        "qupfw" => l.pick(["QUPv3 固件", "QUPv3 固件", "the QUPv3 firmware"]),
+        "recovery" => l.pick(["恢复模式镜像，Skyward 自己住在这里", "恢復模式映像，Skyward 自己住在這裡", "the recovery image, which is where Skyward lives"]),
+        "tz" => l.pick(["TrustZone TEE 镜像", "TrustZone TEE 映像", "the TrustZone TEE image"]),
+        "uefisecapp" => l.pick(["UEFI secapp", "UEFI secapp", "the UEFI secure app"]),
+        "vbmeta" => l.pick(["AVB 主签名元数据", "AVB 主簽章中繼資料", "the AVB main metadata"]),
+        "vbmeta_system" => l.pick(["system 链的 AVB 元数据", "system 鏈的 AVB 中繼資料", "the AVB metadata of the system chain"]),
+        "vbmeta_vendor" => l.pick(["vendor 链的 AVB 元数据", "vendor 鏈的 AVB 中繼資料", "the AVB metadata of the vendor chain"]),
+        "vendor_boot" => l.pick(["厂商 ramdisk 与 DTB", "廠商 ramdisk 與 DTB", "the vendor ramdisk and its DTB"]),
+        "xbl" => l.pick(["Qualcomm XBL 引导链", "Qualcomm XBL 引導鏈", "Qualcomm's XBL boot chain"]),
+        "xbl_config" => l.pick(["Qualcomm XBL 引导链", "Qualcomm XBL 引導鏈", "Qualcomm's XBL boot chain"]),
+        "aop_config" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "countrycode" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "cpucp" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "cpucp_dtb" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "dcp" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "hyp_ac_config" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "idmanager" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "modemfirmware" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "pdp" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "pvmfw" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "pvmfw_signed" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "qtvm_dtbo" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "qweslicstore" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "secretkeeper" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "soccp" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "soccp_dcd" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "soccp_debug" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "spuservice" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "tme_fw" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "tme_seq_patch" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "tz_ac_config" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "uefi" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "vm-bootsys" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "xbl_ac_config" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        "xbl_ramdump" => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+        _ => l.pick(["厂商专有分区", "廠商專有分割區", "a vendor-specific partition"]),
+    }
+}
+
+/// The partitions an install keeps as they are when it writes over the slot,
+/// a switch each. The two a root manager patches are patched again rather than
+/// kept, which the note under the list says.
+pub fn keep(cx: &Ctx) -> Frame {
+    let (t, f, l) = (cx.t, cx.f, cx.state.lang);
+    let top = t.m.content_top;
+    let title = l.pick(["保留分区", "保留分割區", "Partitions to keep"]);
+    // Every partition the phone has, on one page: the canvas is as tall as
+    // the rows it holds.
+    let parts = skyward_root::partitions::here();
+    let rows: Vec<Row> = parts
+        .iter()
+        .map(|name| {
+            let chosen = cx.state.keep_partitions.iter().any(|kept| kept == name);
+            Row::new(name.as_str()).subtitle(partition_note(l, name)).trail(Trail::Switch(chosen))
+        })
+        .collect();
+    let mut c = rows_page(cx, &rows, t.m.dp(360.0));
+    let mut y = widgets::section_first(&mut c, t, f, top, title);
+    let list = widgets::list(&mut c, t, f, y, &rows);
+    let out: Vec<Hit> = list
+        .rows
+        .iter()
+        .enumerate()
+        .map(|(at, &rect)| Hit { rect, action: Action::Toggle(Switch::Keep(at)) })
+        .collect();
+    y = list.bottom;
+    let note = l.pick([
+        "开启后，安装系统更新或刷机包时这些分区保持原样。boot 与 init_boot 例外：它们由 root 管理器重新修补，而不是沿用旧镜像，否则新系统起不来。",
+        "開啟後，安裝系統更新或刷機包時這些分割區保持原樣。boot 與 init_boot 例外：它們由 root 管理器重新修補，而不是沿用舊映像，否則新系統起不來。",
+        "When on, these partitions stay as they are when an install writes over the slot. boot and init_boot are the exception: the root manager patches them again rather than keeping them, or the new system would not start.",
+    ]);
+    y = widgets::footnote(&mut c, t, f, y, note);
+    Frame::new(t, fit(c, t, y), out, title, top)
+}
+
+/// A page as tall as the rows it lists, which a page of the partitions of a
+/// phone needs: it holds more rows than a screen does.
+fn rows_page(cx: &Ctx, rows: &[Row], extra: f32) -> Canvas {
+    let probe = sheet(cx, 1, cx.t.pal.bg);
+    let h = cx.t.m.content_top + widgets::list_height(&probe, cx.t, cx.f, rows) + extra;
+    sheet(cx, h.ceil() as u32, cx.t.pal.bg)
 }
 
 const SECURITY_PATCH: Text = ["安全补丁", "安全性修補程式", "Security patch"];
@@ -1354,8 +1500,21 @@ fn finished(
                 "The new system is installed to slot {slot}, which starts after a reboot."
             );
             let y = widgets::list(c, t, f, top, &[standing(installed, GREEN, Icon::Install, &detail)]).bottom;
-            let next = widgets::list(c, t, f, y + gap, &[restart]);
-            out.extend(hits(&next.rows, &[Action::RebootTo(Target::System)]));
+            // An update written to the other slot is not merged yet: the
+            // page leads to the merge first, rather than into a system whose
+            // snapshots are still to be merged.
+            let merging = !matches!(cx.info.snapshot, skyward_vab::SnapshotState::None);
+            let (row, act) = match merging {
+                true => (
+                    Row::new(l.pick(["重启到另一槽位的恢复模式", "重新啟動到另一槽位的復原模式", "Restart into the other slot's recovery"]))
+                        .subtitle(l.pick(["重启后在「系统更新」页滑动合并", "重新啟動後在「系統更新」頁滑動合併", "Merge there by swiping on the update page"]))
+                        .icon(ORANGE, Icon::Power),
+                    Action::BootOther,
+                ),
+                false => (restart, Action::RebootTo(Target::System)),
+            };
+            let next = widgets::list(c, t, f, y + gap, &[row]);
+            out.extend(hits(&next.rows, &[act]));
             let y = reflashed(c, cx, next.bottom);
             afterwards_of(c, cx, y, true)
         }
@@ -2058,6 +2217,7 @@ pub fn advanced(cx: &Ctx) -> Frame {
         Row::new(l.pick(FILESYSTEMS)).icon(RED, Icon::Mount),
         Row::new(l.pick(LOGS)).icon(ORANGE, Icon::Log),
         Row::new(l.pick(UPDATE)).icon(GREEN, Icon::Layers).trail(Trail::Value(update_value(cx))),
+        Row::new(l.pick(ROOT)).icon(GREEN, Icon::Shield),
     ]);
     let out = hits(&tools.rows, &[
         Action::Open(Screen::Files),
@@ -2066,14 +2226,294 @@ pub fn advanced(cx: &Ctx) -> Frame {
         Action::Open(Screen::Filesystems),
         Action::Open(Screen::Logs),
         Action::Open(Screen::Update),
+        Action::Open(Screen::Root),
     ]);
     Frame::new(t, c, out, l.pick(ADVANCED), top)
 }
 
+const ROOT: Text = ["root 管理", "root 管理", "Root"];
+const MODULES: Text = ["模块管理", "模組管理", "Modules"];
 const RELABEL: Text = ["修复 SELinux 上下文", "修復 SELinux 上下文", "Fix SELinux contexts"];
 const FILESYSTEMS: Text = ["文件系统", "檔案系統", "Filesystems"];
 const STOPPED: Text = ["已停止", "已停止", "Stopped"];
 const STOPPING: Text = ["正在停止", "正在停止", "Stopping"];
+
+/// Root on this phone: what the image it starts from holds, the manager and
+/// the image a patch takes, and the row that asks for it.
+pub fn root(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = long_page(cx);
+    let mut out = Vec::new();
+    let top = t.m.content_top;
+    let title = l.pick(ROOT);
+
+    // What the phone is, and what the image it starts from holds.
+    let mut facts: Vec<(&str, String)> = Vec::new();
+    if let Some(version) = &cx.info.os_version {
+        facts.push((l.pick(["当前系统", "目前系統", "Current system"]), version.clone()));
+    }
+    if let Some(slot) = cx.info.slot {
+        facts.push((l.pick(["槽位", "槽位", "Slot"]), slot.letter().to_string()));
+    }
+    if let Some(images) = s.root_images.as_deref() {
+        let said = match images.iter().find(|(_, kind)| kind.is_some()) {
+            Some((name, Some(kind))) => format!("{name} {}：{}", l.pick(["已修补", "已修補", "patched"]), kind.name()),
+            _ => l.pick(["未 root", "未 root", "not rooted"]).to_string(),
+        };
+        facts.push((l.pick(["root", "root", "root"]), said));
+    }
+    let mut y = widgets::section_first(&mut c, t, f, top, l.pick(["本机", "本機", "This phone"]));
+    y = widgets::info_card(&mut c, t, f, y, &facts);
+
+    // What the patch takes: a manager and an image, then the patch itself.
+    y = widgets::section(&mut c, t, f, y, l.pick(["修补方式", "修補方式", "Ways to patch"]));
+    let bar = [
+        Row::new(l.pick(["管理器", "管理器", "Manager"])).trail(Trail::Choice(s.root_manager_way.name(l))),
+        Row::new(l.pick(["镜像文件", "映像檔", "Image"])).trail(Trail::Choice(s.root_image_way.name(l))),
+        Row::new(l.pick(["修补", "修補", "Patch"]))
+            .subtitle(l.pick(["滑动确认后写入分区", "滑動確認後寫入分割區", "swiping writes it to the partition"]))
+            .trail(Trail::Arrow),
+    ];
+    let listed = widgets::list(&mut c, t, f, y, &bar);
+    out.extend(hits(
+        &listed.rows,
+        &[
+            Action::Open(Screen::RootManagers),
+            Action::Open(Screen::RootImages),
+            Action::Open(Screen::RootConfirm),
+        ],
+    ));
+    y = listed.bottom;
+    // What the last patch came to shows here too, so the page it was asked
+    // for from says how it went.
+    if let Some(said) = &s.root_said {
+        y = widgets::footnote(&mut c, t, f, y, said);
+    }
+    // The modules the manager runs, at the foot of the page.
+    y = widgets::section(&mut c, t, f, y, l.pick(MODULES));
+    let modules = [Row::new(l.pick(["模块", "模組", "Modules"]))
+        .subtitle(l.pick(["开关模块、查看模块信息", "開關模組、查看模組資訊", "turn them on or off, and read what each is"]))
+        .trail(Trail::Arrow)];
+    let listed = widgets::list(&mut c, t, f, y, &modules);
+    out.extend(hits(&listed.rows, &[Action::Open(Screen::Modules)]));
+    y = listed.bottom;
+    Frame::new(t, fit(c, t, y), out, title, top)
+}
+
+/// The ways to the manager a patch runs: the one the phone has, an app that
+/// carries one, a package on the phone, and one downloaded.
+pub fn root_managers(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = long_page(cx);
+    let mut out = Vec::new();
+    let top = t.m.content_top;
+    let title = l.pick(["管理器", "管理器", "Manager"]);
+    let manager = skyward_root::detect();
+    let line = match &manager {
+        Some(manager) => format!("{}（{}）", manager.name(), manager.dir().display()),
+        None => l.pick(["没有找到", "沒有找到", "none found"]).to_string(),
+    };
+    let way = s.root_manager_way;
+    let rows = [
+        Row::new(l.pick(["上次使用的管理器", "上次使用的管理器", "The manager used last time"]))
+            .subtitle(&line)
+            .trail(if manager.is_some() { Trail::Check(way == crate::app::ManagerWay::LastUsed) } else { Trail::None }),
+        Row::new(l.pick(["从已安装管理器中选择", "從已安裝管理器中選擇", "Choose an installed manager"]))
+            .subtitle(l.pick(["带有管理器库的应用", "帶有管理器庫的應用", "an app that carries a manager's library"]))
+            .trail(Trail::Check(way == crate::app::ManagerWay::Installed)),
+        Row::new(l.pick(["从内部存储选择", "從內部儲存空間選擇", "Choose from internal storage"]))
+            .subtitle(l.pick(["只列出安装包", "只列出安裝包", "only packages are listed"]))
+            .trail(Trail::Check(way == crate::app::ManagerWay::Storage)),
+        Row::new(l.pick(["网络下载", "網路下載", "Download one"]))
+            .subtitle("KernelSU、SukiSU")
+            .trail(Trail::Check(way == crate::app::ManagerWay::Download)),
+    ];
+    let listed = widgets::list(&mut c, t, f, top, &rows);
+    if manager.is_some() {
+        out.push(Hit { rect: listed.rows[0], action: Action::Toggle(Switch::RootSource(0)) });
+    }
+    out.extend(hits(&listed.rows[1..], &[
+        Action::Open(Screen::RootInstalled),
+        Action::OpenPackages,
+        Action::Open(Screen::RootDownload),
+    ]));
+    let y = widgets::footnote(
+        &mut c,
+        t,
+        f,
+        listed.bottom,
+        l.pick([
+            "选中的管理器回到 root 管理页，修补时使用。",
+            "選中的管理器回到 root 管理頁，修補時使用。",
+            "The manager chosen comes back to the root page, and is what the patch runs.",
+        ]),
+    );
+    Frame::new(t, fit(c, t, y), out, title, top)
+}
+
+/// The ways to the image a patch writes: the one the partition holds, a file
+/// on the phone, and one out of a system package.
+pub fn root_images(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = long_page(cx);
+    let mut out = Vec::new();
+    let top = t.m.content_top;
+    let title = l.pick(["镜像文件", "映像檔", "Image"]);
+    let partition = s.root_partition.unwrap_or("init_boot");
+    let way = s.root_image_way;
+    let file_line = match &s.root_image {
+        crate::app::RootImage::File(at) => file_name(at),
+        crate::app::RootImage::Partition => l.pick(["从内部储存选择", "從內部儲存空間選擇", "choose one on the phone"]).to_string(),
+    };
+    let rows = [
+        Row::new(l.pick(["直接安装", "直接安裝", "This phone's image"]))
+            .subtitle(partition)
+            .trail(Trail::Check(way == crate::app::ImageWay::Direct)),
+        Row::new(l.pick(["选择镜像文件进行修补", "選擇映像檔進行修補", "Patch an image file"]))
+            .subtitle(&file_line)
+            .trail(Trail::Check(way == crate::app::ImageWay::File)),
+        Row::new(l.pick(["从完整系统包解析", "從完整系統包解析", "Take one from a system package"]))
+            .subtitle(l.pick(["尚未支持", "尚未支援", "not yet"]))
+            .trail(Trail::None),
+    ];
+    let listed = widgets::list(&mut c, t, f, top, &rows);
+    out.extend(hits(&listed.rows[..2], &[Action::Open(Screen::RootDirect), Action::OpenPatchImage]));
+    let y = widgets::footnote(
+        &mut c,
+        t,
+        f,
+        listed.bottom,
+        l.pick([
+            "选中的镜像回到 root 管理页，修补后写入分区。",
+            "選中的映像回到 root 管理頁，修補後寫入分割區。",
+            "The image chosen comes back to the root page, and is patched and written.",
+        ]),
+    );
+    Frame::new(t, fit(c, t, y), out, title, top)
+}
+
+/// The partitions an image of the phone's own is written to, for the one the
+/// patch takes.
+pub fn root_direct(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = long_page(cx);
+    let mut out = Vec::new();
+    let top = t.m.content_top;
+    let title = l.pick(["直接安装", "直接安裝", "This phone's image"]);
+    let parts = crate::app::root_partitions();
+    let chosen = s.root_partition.unwrap_or("init_boot");
+    let rows: Vec<Row> = parts
+        .iter()
+        .map(|name| Row::new(name).subtitle(partition_note(l, name)).trail(Trail::Check(*name == chosen)))
+        .collect();
+    let listed = widgets::list(&mut c, t, f, top, &rows);
+    let picks: Vec<Action> = (0..rows.len()).map(|at| Action::Toggle(Switch::RootPartition(at))).collect();
+    out.extend(hits(&listed.rows, &picks));
+    let y = widgets::footnote(
+        &mut c,
+        t,
+        f,
+        listed.bottom,
+        l.pick([
+            "选中的分区现用镜像交给管理器修补，再写回该分区。",
+            "選中的分割區現用映像交給管理器修補，再寫回該分割區。",
+            "The image the partition holds is patched by the manager and written back to it.",
+        ]),
+    );
+    Frame::new(t, fit(c, t, y), out, title, top)
+}
+
+/// The modules the phone's root manager has: what each is, and whether it
+/// loads. A module is turned on or off, or taken away, on its own page.
+pub fn modules(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = long_page(cx);
+    let top = t.m.content_top;
+    let title = l.pick(MODULES);
+    let mut out = Vec::new();
+    let list: &[skyward_root::modules::Module] = match &s.modules {
+        Some(list) => list,
+        None => &[],
+    };
+    if list.is_empty() {
+        let y = widgets::paragraph(
+            &mut c,
+            t,
+            f,
+            top,
+            l.pick(["没有安装任何模块。", "沒有安裝任何模組。", "No modules are installed."]),
+        );
+        return Frame::new(t, fit(c, t, y), out, title, top);
+    }
+    let rows: Vec<Row> = list
+        .iter()
+        .map(|module| Row::new(module.name.as_str()).subtitle(module.version.as_str()).trail(Trail::Switch(module.enabled)))
+        .collect();
+    let listed = widgets::list(&mut c, t, f, top, &rows);
+    let opens: Vec<Action> = (0..list.len()).map(Action::OpenModule).collect();
+    out.extend(hits(&listed.rows, &opens));
+    let note = l.pick([
+        "点开一个模块可以启用/停用，或标记为下次开机时卸载；卸载后还能取消。",
+        "點開一個模組可以啟用/停用，或標記為下次開機時卸載；卸載後還能取消。",
+        "Opening a module turns it on or off, or marks it for removal when the phone next starts, which can be taken back.",
+    ]);
+    let y = widgets::footnote(&mut c, t, f, listed.bottom, note);
+    Frame::new(t, fit(c, t, y), out, title, top)
+}
+
+/// One module: what it says of itself, the switch that keeps it from loading,
+/// and whether the manager takes it away when the phone next starts.
+pub fn module_info(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = page(cx);
+    let mut out = Vec::new();
+    let top = t.m.content_top;
+    let title = l.pick(MODULES);
+    let Some(at) = s.module else {
+        return Frame::new(t, c, out, title, top);
+    };
+    let Some(module) = s.modules.as_ref().and_then(|list| list.get(at)) else {
+        return Frame::new(t, c, out, title, top);
+    };
+    let title = module.name.clone();
+    let state = if module.removed {
+        l.pick(["下次开机时卸载", "下次開機時卸載", "Removed when the phone next starts"])
+    } else if module.enabled {
+        l.pick(["已启用", "已啟用", "On"])
+    } else {
+        l.pick(["已停用", "已停用", "Off"])
+    };
+    let facts = [
+        (l.pick(["标识", "識別", "Id"]), module.id.clone()),
+        (l.pick(["版本", "版本", "Version"]), module.version.clone()),
+        (l.pick(["状态", "狀態", "State"]), state.to_string()),
+    ];
+    let mut y = widgets::info_card(&mut c, t, f, top, &facts);
+    if !module.description.is_empty() {
+        y = widgets::paragraph(&mut c, t, f, y, &module.description);
+    }
+    let rows = if module.removed {
+        [
+            Row::new(l.pick(["启用", "啟用", "Enabled"])).trail(Trail::Switch(module.enabled)),
+            Row::new(l.pick(["取消卸载", "取消卸載", "Keep it"]))
+                .subtitle(l.pick(["开机时不再移除它", "開機時不再移除它", "It is no longer removed when the phone starts"]))
+                .trail(Trail::Arrow),
+        ]
+    } else {
+        [
+            Row::new(l.pick(["启用", "啟用", "Enabled"])).trail(Trail::Switch(module.enabled)),
+            Row::new(l.pick(["卸载", "卸載", "Remove"]))
+                .subtitle(l.pick(["下次开机时移除", "下次開機時移除", "When the phone next starts"]))
+                .trail(Trail::Arrow),
+        ]
+    };
+    let listed = widgets::list(&mut c, t, f, y + t.m.card_gap, &rows);
+    let second = if module.removed { Action::RestoreModule(at) } else { Action::RemoveModule(at) };
+    out.extend(hits(&listed.rows, &[Action::Toggle(Switch::Module(at)), second]));
+    // The page is named after the module it shows, rather than after the
+    // list it was opened from.
+    Frame { title: title.into(), ..Frame::new(t, c, out, l.pick(MODULES), top) }
+}
 
 /// Giving the data partition's files the SELinux labels the installed
 /// system's rules give them: what it does, and a swipe to start it; then
@@ -2441,6 +2881,9 @@ pub fn update(cx: &Ctx) -> Frame {
     let merging = l.pick(["更新合并", "更新合併", "Merging"]);
     y = if y == top { widgets::section_first(&mut c, t, f, y, merging) } else { widgets::section(&mut c, t, f, y, merging) };
     y = widgets::list(&mut c, t, f, y, &[row]).bottom;
+    // An update written to the other slot merges once that slot has
+    // started: the system there owns its snapshots, and a recovery running
+    // from this one cannot merge them.
     if s.update == Standing::Waiting {
         let (label, danger) = confirm_label(Confirm::Merge, cx.state);
         let track = widgets::confirm(&mut c, t, f, y + t.m.dp(28.0), label, danger, s.confirm);
@@ -2672,6 +3115,21 @@ pub fn wlan_password(cx: &Ctx) -> Frame {
     Frame { caret: Some(caret), ..Frame::new(t, c, out, l.pick(["输入密码", "輸入密碼", "Enter password"]), top) }
 }
 
+/// The proxy every request goes through, typed as `host:port`.
+pub fn proxy_entry(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = page(cx);
+    let mut out = Vec::new();
+    let top = t.m.content_top;
+    let title = l.pick(["代理", "代理", "Proxy"]);
+    let y = widgets::section_first(&mut c, t, f, top, title);
+    let (y, caret) = widgets::text_field(&mut c, t, f, y, &s.proxy_text);
+    let note = [Row::new(l.pick(["留空则不使用代理", "留空則不使用代理", "Leave it empty to use none"])).trail(Trail::None)];
+    let listed = widgets::list(&mut c, t, f, y + t.m.card_gap, &note);
+    keyboard_hits(&mut c, t, f, s, l.pick(["保存", "儲存", "Save"]), &mut out);
+    Frame { caret: Some(caret), ..Frame::new(t, fit(c, t, listed.bottom), out, title, top) }
+}
+
 /// A network added by hand: its name, how it is protected, its password
 /// where it takes one with the switch that shows it, and the keyboard,
 /// which types into the field touched. The protections open over the page
@@ -2765,7 +3223,11 @@ pub fn wlan_network(cx: &Ctx) -> Frame {
         }
     }
     let y = widgets::detail_grid(&mut c, t, f, y, &items);
-    let forget = widgets::list(&mut c, t, f, y + t.m.card_gap, &[Row::new(l.pick(["删除网络", "刪除網路", "Forget network"])).tint(t.pal.danger).trail(Trail::None)]);
+    let shown = skyward_net::http::proxy().unwrap_or_else(|| l.pick(["无", "無", "None"]).to_string());
+    let proxy = [Row::new(l.pick(["代理", "代理", "Proxy"])).trail(Trail::Value(&shown))];
+    let proxy = widgets::list(&mut c, t, f, y + t.m.card_gap, &proxy);
+    out.extend(hits(&proxy.rows, &[Action::OpenProxy]));
+    let forget = widgets::list(&mut c, t, f, proxy.bottom + t.m.card_gap, &[Row::new(l.pick(["删除网络", "刪除網路", "Forget network"])).tint(t.pal.danger).trail(Trail::None)]);
     out.extend(hits(&forget.rows, &[Action::LeaveNetwork]));
     Frame::new(t, fit(c, t, forget.bottom), out, title, top)
 }
@@ -2808,7 +3270,364 @@ pub fn choose(cx: &Ctx, place: Place) -> Frame {
         _ => None,
     };
     let empty = l.pick(["暂无可安装的文件", "沒有可安裝的檔案", "Nothing here to install"]);
+    let absent = absent.or_else(|| match (place, s.data.storage_open()) {
+        (Place::Storage, false) => Some((
+            l.pick(["需先完成「解密」", "需先完成「解密」", "Decrypt first"]),
+            l.pick([
+                "内部存储的文件夹在 data 分区打开后才读得到。",
+                "內部儲存空間的資料夾在 data 分割區開啟後才讀得到。",
+                "The folders of internal storage are read once the data partition is open.",
+            ]),
+        )),
+        _ => None,
+    });
     listing(cx, s.folder(Screen::Choose(place)), place_name(l, place), absent, empty, Action::ChooseEntry, l.pick(["选择文件", "選擇檔案", "Choose a file"]))
+}
+
+/// The managers installed as apps, whose packages carry a manager's library:
+/// the one chosen patches the image.
+pub fn root_installed(cx: &Ctx) -> Frame {
+    let (t, f, l) = (cx.t, cx.f, cx.state.lang);
+    let mut c = long_page(cx);
+    let mut out = Vec::new();
+    let top = t.m.content_top;
+    let title = l.pick(["从已安装管理器中选择", "從已安裝管理器中選擇", "Choose an installed manager"]);
+    let found = skyward_root::installed::installed().unwrap_or_default();
+    if found.is_empty() {
+        let why = match skyward_root::installed::unreadable() {
+            Some(why) => format!("{} {why}", l.pick(["读不到已安装的应用：", "讀不到已安裝的應用：", "The installed apps cannot be read:"])),
+            None => l.pick([
+                "没有已安装的应用带有 root 管理器的库。",
+                "沒有已安裝的應用帶有 root 管理器的庫。",
+                "No installed app carries a root manager's library.",
+            ])
+            .to_string(),
+        };
+        let y = widgets::paragraph(&mut c, t, f, top, &why);
+        return Frame::new(t, fit(c, t, y), out, title, top);
+    }
+    let labels: Vec<String> = found.iter().map(|app| app.label()).collect();
+    let rows: Vec<Row> = labels
+        .iter()
+        .map(|label| Row::new(label.as_str()).trail(Trail::Arrow))
+        .collect();
+    let listed = widgets::list(&mut c, t, f, top, &rows);
+    let picks: Vec<Action> = (0..rows.len()).map(|at| Action::Toggle(Switch::RootManager(at))).collect();
+    out.extend(hits(&listed.rows, &picks));
+    let note = l.pick([
+        "选中的管理器作为修补来源，回到 root 管理页。",
+        "選中的管理器作為修補來源，回到 root 管理頁。",
+        "The manager chosen is what the patch runs, and the root page takes it.",
+    ]);
+    let y = widgets::footnote(&mut c, t, f, listed.bottom, note);
+    Frame::new(t, fit(c, t, y), out, title, top)
+}
+
+/// What a patch would do: the manager it runs, the image it patches, the
+/// partition it writes, and the swipe that does it.
+pub fn root_confirm(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = page(cx);
+    let mut out = Vec::new();
+    let top = t.m.content_top;
+    let title = l.pick(["修补 root", "修補 root", "Patch root"]);
+    let partition = s.root_partition.unwrap_or("init_boot");
+    // What the way chosen comes to, in the manager it runs and the file it
+    // takes, beside the way itself.
+    let manager = match &s.root_source {
+        crate::app::RootSource::Installed => match skyward_root::detect() {
+            Some(manager) => format!("{}（{}）", s.root_manager_way.name(l), manager.name()),
+            None => s.root_manager_way.name(l).to_string(),
+        },
+        crate::app::RootSource::Apk(at) => {
+            format!("{}（{}）", s.root_manager_way.name(l), file_name(at))
+        }
+    };
+    let image = match &s.root_image {
+        crate::app::RootImage::Partition => s.root_image_way.name(l).to_string(),
+        crate::app::RootImage::File(at) => format!("{}（{}）", s.root_image_way.name(l), file_name(at)),
+    };
+    let facts = [
+        (l.pick(["管理器", "管理器", "Manager"]), manager),
+        (l.pick(["镜像文件", "映像檔", "Image"]), image),
+        (l.pick(["分区", "分割區", "Partition"]), partition.to_string()),
+    ];
+    let mut y = widgets::info_card(&mut c, t, f, top, &facts);
+    y = widgets::footnote(
+        &mut c,
+        t,
+        f,
+        y,
+        l.pick([
+            "滑动后：写分区前把原有镜像存到 /sdcard/Download，写完读回校验。",
+            "滑動後：寫分割區前把原有映像存到 /sdcard/Download，寫完讀回驗證。",
+            "When swiped: the image the partition holds is kept in /sdcard/Download, then the patch is written and read back.",
+        ]),
+    );
+    if let Some(said) = &s.root_said {
+        y = widgets::footnote(&mut c, t, f, y, said);
+    }
+    // Why the swipe is not there, where it is not: the manager is on the data
+    // partition, which has to be open to be run from.
+    let mut cannot = None;
+    if !s.data.storage_open() {
+        cannot = Some(l.pick([
+            "先在「解密」中打开 data 分区，管理器在它上面。",
+            "先在「解密」中開啟 data 分割區，管理器在它上面。",
+            "Open the data partition in Decrypt first: the manager is there.",
+        ]));
+    } else {
+        match &s.root_source {
+            crate::app::RootSource::Installed if skyward_root::detect().is_none() => {
+                cannot = Some(l.pick([
+                    "没有找到已安装的管理器。",
+                    "沒有找到已安裝的管理器。",
+                    "No installed manager is found.",
+                ]));
+            }
+            crate::app::RootSource::Apk(at) if !Path::new(at).is_file() => {
+                cannot = Some(l.pick([
+                    "选中的安装包不在了。",
+                    "選中的安裝包不在了。",
+                    "The package chosen is gone.",
+                ]));
+            }
+            _ => {}
+        }
+    }
+    match cannot {
+        Some(why) => {
+            widgets::footnote(&mut c, t, f, y, why);
+        }
+        None => {
+            let (label, danger) = confirm_label(Confirm::PatchRoot, cx.state);
+            let track = widgets::confirm(&mut c, t, f, y + t.m.dp(24.0), label, danger, s.confirm);
+            out.push(Hit { rect: track, action: Action::Confirm(Confirm::PatchRoot) });
+        }
+    }
+    Frame::new(t, c, out, title, top)
+}
+
+/// The last part of a path, which is what a page names a file by.
+fn file_name(at: &str) -> String {
+    Path::new(at).file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_else(|| at.to_string())
+}
+
+/// What a page calls a tier of a manager's package.
+fn tier_label(l: Lang, tier: skyward_root::releases::Tier) -> &'static str {
+    match tier {
+        skyward_root::releases::Tier::Stable => l.pick(["稳定版", "穩定版", "Stable"]),
+        skyward_root::releases::Tier::Dev => l.pick(["开发版", "開發版", "Dev"]),
+    }
+}
+
+/// A manager's package downloaded from its own repository: the branch and the
+/// version of it, then the row that fetches it, which says how far it is as
+/// the update page does, then what to note and the way to GitHub.
+pub fn root_download(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = long_page(cx);
+    let top = t.m.content_top;
+    let title = l.pick(["网络下载", "網路下載", "Download a manager"]);
+    let mut out = Vec::new();
+    let branches = [
+        skyward_root::releases::Variant::Official,
+        skyward_root::releases::Variant::SukiSu,
+        skyward_root::releases::Variant::BakaSu,
+    ];
+    let variant = branches[s.root_variant.min(branches.len() - 1)];
+    let combos = skyward_root::releases::Variant::all();
+    // BakaSU publishes no stable release: the version it comes in is the
+    // build its workflow made, and nothing else is offered.
+    let tier = match variant {
+        skyward_root::releases::Variant::BakaSu => skyward_root::releases::Tier::Dev,
+        _ => combos[s.root_tier.min(1)].1,
+    };
+    let rows = [
+        Row::new(l.pick(["分支", "分支", "Branch"])).trail(Trail::Choice(variant.name())),
+        Row::new(l.pick(["版本", "版本", "Version"])).trail(Trail::Choice(tier_label(l, tier))),
+    ];
+    let mut y = widgets::section_first(&mut c, t, f, top, l.pick(["管理器", "管理器", "Manager"]));
+    let choices = widgets::list(&mut c, t, f, y, &rows);
+    out.push(Hit {
+        rect: choices.rows[0],
+        action: Action::Toggle(Switch::PickVariant((s.root_variant + 1) % branches.len())),
+    });
+    out.push(Hit {
+        rect: choices.rows[1],
+        action: Action::Toggle(Switch::PickTier((s.root_tier + 1) % 2)),
+    });
+    y = choices.bottom;
+
+    // The row it is started from turns into how far it has come, as the
+    // update page's does: the same card, the same pause, and the same words
+    // for why it failed.
+    let joined = s.wlan.as_ref().is_some_and(|w| w.joined.is_some());
+    match (&s.download, s.have) {
+        (Some(job), _) if job.outcome.is_none() => {
+            let (heading, detail, share) = match job.progress {
+                None => (l.pick(GETTING_READY), String::new(), None),
+                Some(Progress::Checking { done, total }) => (
+                    l.pick(["正在校验已下载的部分", "正在驗證已下載的部分", "Verifying what was downloaded"]),
+                    format!("{} / {}", fmt::file_size(done), fmt::file_size(total)),
+                    Some(share(done, total)),
+                ),
+                Some(Progress::Downloading { done, total }) => (
+                    l.pick(["正在下载", "正在下載", "Downloading"]),
+                    format!("{} / {} · {}/s", fmt::file_size(done), fmt::file_size(total), fmt::file_size(job.rate)),
+                    Some(share(done, total)),
+                ),
+            };
+            y = widgets::progress_card(&mut c, t, f, y + t.m.card_gap, heading, &detail, share);
+            let label = l.pick(if job.stopping { ["正在暂停", "正在暫停", "Pausing"] } else { ["暂停", "暫停", "Pause"] });
+            let stop = widgets::list(&mut c, t, f, y + t.m.card_gap, &[Row::new(label).trail(Trail::None)]);
+            if !job.stopping {
+                out.extend(hits(&stop.rows, &[Action::StopDownload]));
+            }
+            y = stop.bottom;
+        }
+        (job, have) => {
+            match job.as_ref().and_then(|j| j.outcome.as_ref()) {
+                Some(DownloadEnd::Failed(why)) => y = widgets::footnote(&mut c, t, f, y, &fmt::download_failure(l, why)),
+                Some(DownloadEnd::Stopped) => y = widgets::footnote(&mut c, t, f, y, l.pick(["已暂停下载。", "已暫停下載。", "Download paused."])),
+                _ => {}
+            }
+            let title = l.pick(if matches!(have, Have::Part(_)) {
+                ["继续下载", "繼續下載", "Resume download"]
+            } else {
+                ["下载", "下載", "Download"]
+            });
+            // The line that names the part downloaded outlives the row it
+            // is on.
+            let part = match have {
+                Have::Part(done) => {
+                    let done = fmt::file_size(done);
+                    Some(tr!(l, "已下载 {done}", "已下載 {done}", "{done} downloaded"))
+                }
+                _ => None,
+            };
+            let mut row = Row::new(title);
+            if !joined {
+                row = row.subtitle(l.pick(WLAN_FIRST));
+            } else if let Some(part) = &part {
+                row = row.subtitle(part);
+            }
+            let listed = widgets::list(&mut c, t, f, y + t.m.card_gap, &[row]);
+            if joined {
+                out.extend(hits(&listed.rows, &[Action::DownloadManager(s.root_variant * 2 + s.root_tier)]));
+            }
+            y = listed.bottom;
+        }
+    }
+
+    // What a download left before is chosen as it is, as the update page
+    // takes a package that is already down.
+    let left = skyward_root::releases::downloaded();
+    if !left.is_empty() {
+        let top_of = widgets::section_first(&mut c, t, f, y + t.m.card_gap, l.pick(["已下载的安装包", "已下載的安裝包", "Downloaded packages"]));
+        let names: Vec<String> = left.iter().map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()).collect();
+        let rows: Vec<Row> = names.iter().map(|name| Row::new(name.as_str()).icon(GREEN, Icon::Install).trail(Trail::Arrow)).collect();
+        let listed = widgets::list(&mut c, t, f, top_of, &rows);
+        let picks: Vec<Action> = (0..names.len()).map(Action::RootPackage).collect();
+        out.extend(hits(&listed.rows, &picks));
+        y = listed.bottom;
+    }
+
+    // What to know before starting it.
+    let saved = l.pick([
+        "安装包保存到内部存储的 downloaded_manager 文件夹，下载后作为修补来源。",
+        "安裝包儲存到內部儲存空間的 downloaded_manager 資料夾，下載後作為修補來源。",
+        "The package is saved in downloaded_manager on internal storage, and is what the patch then runs.",
+    ]);
+    let points = [
+        l.pick([
+            "需要先连接 WLAN。",
+            "需要先連接 Wi-Fi。",
+            "A network has to be joined first.",
+        ]),
+        saved,
+    ];
+    y = widgets::notes(
+        &mut c,
+        t,
+        f,
+        y + t.m.card_gap,
+        l.pick(["注意事项", "注意事項", "Notes"]),
+        &points,
+    );
+
+    // The way to GitHub, at the foot of the page.
+    y = widgets::section(&mut c, t, f, y, l.pick(["选项", "選項", "Options"]));
+    // A build a workflow made comes from nightly.link, which only the way
+    // to GitHub that carries any address carries: the phone owner's own.
+    let all = skyward_root::releases::MIRRORS;
+    let ways: &[(&str, &str)] = match tier {
+        skyward_root::releases::Tier::Dev => &all[..2],
+        skyward_root::releases::Tier::Stable => &all[..],
+    };
+    let proxy = s.root_proxy.min(ways.len() - 1);
+    let row = [Row::new(l.pick(["代理加速", "代理加速", "Accelerator"])).trail(Trail::Choice(ways[proxy].0))];
+    let listed = widgets::list(&mut c, t, f, y, &row);
+    out.push(Hit {
+        rect: listed.rows[0],
+        action: Action::Toggle(Switch::PickProxy((proxy + 1) % ways.len())),
+    });
+    y = listed.bottom;
+    Frame::new(t, fit(c, t, y), out, title, top)
+}
+
+/// A place's folders and the packages in them, to choose one to patch root
+/// with: the same rows as a place to install from, under another name.
+pub fn choose_root(cx: &Ctx, place: Place) -> Frame {
+    let (s, l) = (cx.state, cx.state.lang);
+    let empty = l.pick(["这里没有安装包", "這裡沒有安裝包", "No packages here"]);
+    let absent = match (place, s.data.storage_open()) {
+        (Place::Storage, false) => Some((
+            l.pick(["需先完成「解密」", "需先完成「解密」", "Decrypt first"]),
+            l.pick([
+                "内部存储的文件夹在 data 分区打开后才读得到。",
+                "內部儲存空間的資料夾在 data 分割區開啟後才讀得到。",
+                "The folders of internal storage are read once the data partition is open.",
+            ]),
+        )),
+        _ => None,
+    };
+    listing(
+        cx,
+        s.folder(Screen::ChooseRoot(place)),
+        place_name(l, place),
+        absent,
+        empty,
+        Action::ChooseEntry,
+        l.pick(["选择安装包", "選擇安裝包", "Choose a package"]),
+    )
+}
+
+/// A place's folders and the images in them, to write one as it is or to
+/// patch one: the same rows as a place to install from, under another name.
+pub fn choose_image(cx: &Ctx, place: Place) -> Frame {
+    let (s, l) = (cx.state, cx.state.lang);
+    let empty = l.pick(["这里没有镜像文件", "這裡沒有映像檔", "No images here"]);
+    let absent = match (place, s.data.storage_open()) {
+        (Place::Storage, false) => Some((
+            l.pick(["需先完成「解密」", "需先完成「解密」", "Decrypt first"]),
+            l.pick([
+                "内部存储的文件夹在 data 分区打开后才读得到。",
+                "內部儲存空間的資料夾在 data 分割區開啟後才讀得到。",
+                "The folders of internal storage are read once the data partition is open.",
+            ]),
+        )),
+        _ => None,
+    };
+    listing(
+        cx,
+        s.folder(Screen::ChooseImage(place)),
+        place_name(l, place),
+        absent,
+        empty,
+        Action::ChooseEntry,
+        l.pick(["选择镜像文件", "選擇映像檔", "Choose an image"]),
+    )
 }
 
 /// A folder laid out as the stock file manager lays one out: the path as
@@ -2851,7 +3670,7 @@ fn listing(
 /// drawn as the row comes into view.
 pub fn row(screen: Screen, cx: &Ctx, i: usize, c: &mut Canvas) {
     match screen {
-        Screen::Files | Screen::Choose(_) => {
+        Screen::Files | Screen::Choose(_) | Screen::ChooseRoot(_) => {
             let folder = cx.state.folder(screen);
             let entries = folder.entries.as_ref().expect("a folder listed draws its rows");
             files::row(c, cx.t, cx.f, cx.state.lang, &entries[i], folder.listed, cx.state.time_zone);

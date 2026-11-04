@@ -1669,6 +1669,12 @@ pub fn list_toned(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, rows: &[Row], 
     Block { bottom: top + h, rows: rects }
 }
 
+/// How tall the card holding `rows` is drawn, which a page whose rows are
+/// more than a canvas holds sizes its canvas by.
+pub fn list_height(c: &Canvas, t: &Theme, f: &Fonts, rows: &[Row]) -> f32 {
+    rows.iter().map(|r| layout(c, t, f, r).h).sum()
+}
+
 /// Account-style card: avatar, name and detail, then optional rows. The
 /// first rect returned covers the name row.
 pub fn device_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, title: &str, sub: &str, rows: &[Row]) -> Block {

@@ -72,9 +72,7 @@ pub fn render(screen: Screen, cx: &Ctx) -> Frame {
         Screen::Modules => modules(cx),
         Screen::ModuleInfo => module_info(cx),
         Screen::Choose(place) => choose(cx, place),
-        Screen::ChooseRoot(place) => choose_root(cx, place),
-        Screen::ChooseImage(place) => choose_image(cx, place),
-        Screen::RootDownload => root_download(cx),
+                Screen::RootDownload => root_download(cx),
         Screen::RootConfirm => root_confirm(cx),
         Screen::RootInstalled => root_installed(cx),
         Screen::RootManagers => root_managers(cx),
@@ -3565,60 +3563,6 @@ pub fn root_download(cx: &Ctx) -> Frame {
     Frame::new(t, fit(c, t, y), out, title, top)
 }
 
-/// A place's folders and the packages in them, to choose one to patch root
-/// with: the same rows as a place to install from, under another name.
-pub fn choose_root(cx: &Ctx, place: Place) -> Frame {
-    let (s, l) = (cx.state, cx.state.lang);
-    let empty = l.pick(["这里没有安装包", "這裡沒有安裝包", "No packages here"]);
-    let absent = match (place, s.data.storage_open()) {
-        (Place::Storage, false) => Some((
-            l.pick(["需先完成「解密」", "需先完成「解密」", "Decrypt first"]),
-            l.pick([
-                "内部存储的文件夹在 data 分区打开后才读得到。",
-                "內部儲存空間的資料夾在 data 分割區開啟後才讀得到。",
-                "The folders of internal storage are read once the data partition is open.",
-            ]),
-        )),
-        _ => None,
-    };
-    listing(
-        cx,
-        s.folder(Screen::ChooseRoot(place)),
-        place_name(l, place),
-        absent,
-        empty,
-        Action::ChooseEntry,
-        l.pick(["选择安装包", "選擇安裝包", "Choose a package"]),
-    )
-}
-
-/// A place's folders and the images in them, to write one as it is or to
-/// patch one: the same rows as a place to install from, under another name.
-pub fn choose_image(cx: &Ctx, place: Place) -> Frame {
-    let (s, l) = (cx.state, cx.state.lang);
-    let empty = l.pick(["这里没有镜像文件", "這裡沒有映像檔", "No images here"]);
-    let absent = match (place, s.data.storage_open()) {
-        (Place::Storage, false) => Some((
-            l.pick(["需先完成「解密」", "需先完成「解密」", "Decrypt first"]),
-            l.pick([
-                "内部存储的文件夹在 data 分区打开后才读得到。",
-                "內部儲存空間的資料夾在 data 分割區開啟後才讀得到。",
-                "The folders of internal storage are read once the data partition is open.",
-            ]),
-        )),
-        _ => None,
-    };
-    listing(
-        cx,
-        s.folder(Screen::ChooseImage(place)),
-        place_name(l, place),
-        absent,
-        empty,
-        Action::ChooseEntry,
-        l.pick(["选择镜像文件", "選擇映像檔", "Choose an image"]),
-    )
-}
-
 /// A folder laid out as the stock file manager lays one out: the path as
 /// capsules from `top`, held under the bar once scrolled there, then the
 /// entries in one list on the plain page, each row drawn as it scrolls into
@@ -3659,7 +3603,7 @@ fn listing(
 /// drawn as the row comes into view.
 pub fn row(screen: Screen, cx: &Ctx, i: usize, c: &mut Canvas) {
     match screen {
-        Screen::Files | Screen::Choose(_) | Screen::ChooseRoot(_) => {
+        Screen::Files | Screen::Choose(_) => {
             let folder = cx.state.folder(screen);
             let entries = folder.entries.as_ref().expect("a folder listed draws its rows");
             files::row(c, cx.t, cx.f, cx.state.lang, &entries[i], folder.listed, cx.state.time_zone);

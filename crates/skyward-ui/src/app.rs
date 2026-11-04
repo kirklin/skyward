@@ -60,11 +60,6 @@ pub enum Screen {
     /// A place's folders and the files in them that can be installed, to
     /// choose one.
     Choose(Place),
-    /// A place's folders and the packages in them, to choose one to patch
-    /// with rather than to install.
-    ChooseRoot(Place),
-    /// A place's folders and the images in them, to write or to patch.
-    ChooseImage(Place),
     /// Installing a package, which the computer sends with `adb sideload`
     /// or which is a file chosen in a place, and how it went.
     Installing,
@@ -1944,8 +1939,8 @@ impl State {
     pub fn folder(&self, screen: Screen) -> &Folder {
         match screen {
             Screen::Files => &self.files,
-            Screen::Choose(Place::Storage) | Screen::ChooseRoot(Place::Storage) | Screen::ChooseImage(Place::Storage) => &self.storage,
-            Screen::Choose(Place::UsbDrive) | Screen::ChooseRoot(Place::UsbDrive) | Screen::ChooseImage(Place::UsbDrive) => &self.drive,
+            Screen::Choose(Place::Storage) => &self.storage,
+            Screen::Choose(Place::UsbDrive) => &self.drive,
             other => unreachable!("{other:?} lists no folder"),
         }
     }
@@ -1953,8 +1948,8 @@ impl State {
     fn folder_mut(&mut self, screen: Screen) -> &mut Folder {
         match screen {
             Screen::Files => &mut self.files,
-            Screen::Choose(Place::Storage) | Screen::ChooseRoot(Place::Storage) | Screen::ChooseImage(Place::Storage) => &mut self.storage,
-            Screen::Choose(Place::UsbDrive) | Screen::ChooseRoot(Place::UsbDrive) | Screen::ChooseImage(Place::UsbDrive) => &mut self.drive,
+            Screen::Choose(Place::Storage) => &mut self.storage,
+            Screen::Choose(Place::UsbDrive) => &mut self.drive,
             other => unreachable!("{other:?} lists no folder"),
         }
     }
@@ -3924,8 +3919,6 @@ impl App {
         let wanted: &[&str] = match (self.screen(), self.state.root_pick) {
             (_, Some(RootPick::Manager)) => &[".apk"],
             (_, Some(RootPick::Image)) => &[".img"],
-            (Screen::ChooseRoot(_), _) => &[".apk"],
-            (Screen::ChooseImage(_), _) => &[".img"],
             _ => &[".zip", ".img"],
         };
         let files = files.map(|entries| entries.into_iter().filter(|e| shown(e, wanted)).collect());
@@ -4716,7 +4709,7 @@ impl App {
                 // Leaving the file manager puts a picked entry down.
                 self.state.clip = None;
             }
-            Screen::Choose(place) | Screen::ChooseRoot(place) | Screen::ChooseImage(place) => {
+            Screen::Choose(place) => {
                 if let Some(up) = self.state.folder(Screen::Choose(place)).up() {
                     return vec![Effect::ReadPlace(place, up)];
                 }
@@ -4949,7 +4942,7 @@ impl App {
             Screen::Slot | Screen::Reboot => vec![Effect::ReadSlots],
             Screen::Restore => vec![self.find_backups()],
             Screen::Files => vec![Effect::ReadDir(self.state.files.path.clone())],
-            Screen::Choose(place) | Screen::ChooseRoot(place) | Screen::ChooseImage(place) if self.state.place_open(place) => {
+            Screen::Choose(place) if self.state.place_open(place) => {
                 vec![Effect::ReadPlace(place, self.state.folder(s).path.clone())]
             }
             Screen::Search => {
@@ -5493,10 +5486,8 @@ impl App {
             }
             Action::ChooseEntry(i) => {
                 let screen = self.screen();
-                let (place, patching, choosing_image) = match screen {
-                    Screen::Choose(place) => (place, false, false),
-                    Screen::ChooseRoot(place) => (place, true, false),
-                    Screen::ChooseImage(place) => (place, true, true),
+                let place = match screen {
+                    Screen::Choose(place) => place,
                     _ => unreachable!("only a place's folder is chosen in"),
                 };
                 let folder = self.state.folder(screen);
@@ -5530,25 +5521,6 @@ impl App {
                         return vec![Effect::ReadPlace(place, path)];
                     }
                     FileKind::File | FileKind::Link { folder: false, .. } => {
-                        if choosing_image {
-                            let top = match place {
-                                Place::Storage => "/sdcard",
-                                Place::UsbDrive => USB_DRIVE,
-                            };
-                            self.root_image_chosen(ImageWay::File, RootImage::File(format!("{top}/{path}")));
-                            return Vec::new();
-                        }
-                        if patching {
-                            // A package chosen here patches root rather than
-                            // installing: the root page takes it, and the
-                            // patch is asked for there.
-                            let top = match place {
-                                Place::Storage => "/sdcard",
-                                Place::UsbDrive => USB_DRIVE,
-                            };
-                            self.root_manager_chosen(ManagerWay::Storage, RootSource::Apk(format!("{top}/{path}")));
-                            return Vec::new();
-                        }
                         return self.install_file(place, path, entry.size, now);
                     }
                     FileKind::Special => unreachable!("a place lists no special files"),
@@ -5558,7 +5530,7 @@ impl App {
                 let screen = self.screen();
                 if let Some(path) = self.state.folder(screen).ancestor(depth) {
                     return vec![match screen {
-                        Screen::Choose(place) | Screen::ChooseRoot(place) | Screen::ChooseImage(place) => Effect::ReadPlace(place, path),
+                        Screen::Choose(place) => Effect::ReadPlace(place, path),
                         _ => Effect::ReadDir(path),
                     }];
                 }

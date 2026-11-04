@@ -1488,16 +1488,16 @@ fn finished(
         Source::Rescue => (Row::new(l.pick(["退出救援模式", "結束救援模式", "Leave rescue mode"])).icon(GREEN, Icon::Usb), Action::Back),
     };
     let restart = Row::new(l.pick(["重启到系统", "重新啟動到系統", "Reboot to system"])).icon(ORANGE, Icon::Power);
-    let installed = l.pick(["安装成功", "安裝成功", "Installed"]);
+    let installed = l.pick(["安装完成", "安裝完成", "Installed"]);
     let nothing_written = l.pick(["未写入任何内容。", "未寫入任何內容。", "Nothing was written."]);
     match outcome {
         Outcome::Installed { slot, .. } => {
             let slot = slot.letter();
             let detail = tr!(
                 l,
-                "新系统已安装到槽位 {slot}，重启后将从该槽位启动。",
-                "新系統已安裝到槽位 {slot}，重新啟動後將從該槽位啟動。",
-                "The new system is installed to slot {slot}, which starts after a reboot."
+                "新系统安装在槽位 {slot}，重启后从这个槽位启动。",
+                "新系統安裝在槽位 {slot}，重新啟動後從這個槽位啟動。",
+                "The new system is installed to slot {slot}, and starts from it after a reboot."
             );
             let y = widgets::list(c, t, f, top, &[standing(installed, GREEN, Icon::Install, &detail)]).bottom;
             // The slot the update was written to starts next, set as the

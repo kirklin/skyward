@@ -346,3 +346,40 @@ fn wait_for(pid: u32) -> Result<()> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{is_program, PHONE_LIBRARIES};
+
+    fn write(name: &str, head: &[u8]) -> std::path::PathBuf {
+        let at = std::env::temp_dir().join(name);
+        std::fs::write(&at, head).expect("write the file");
+        at
+    }
+
+    #[test]
+    fn a_script_is_not_a_program_the_linker_can_load() {
+        let at = write("skyward-test-script", b"#!/system/bin/sh\necho hi\n");
+        assert!(!is_program(at.to_str().expect("a path")));
+        let _ = std::fs::remove_file(at);
+    }
+
+    #[test]
+    fn a_program_is_one_the_linker_can_load() {
+        let at = write("skyward-test-program", b"\x7fELF\x02\x01\x01\x00");
+        assert!(is_program(at.to_str().expect("a path")));
+        let _ = std::fs::remove_file(at);
+    }
+
+    #[test]
+    fn a_file_that_is_not_there_is_not_a_program() {
+        assert!(!is_program("/nowhere/at/all/skyward"));
+    }
+
+    #[test]
+    fn the_phone_s_libraries_include_the_bootstrap_folder() {
+        // The library of the loader lives in a folder of its own beside the
+        // others, and a linker that is not given it says so.
+        assert!(PHONE_LIBRARIES.contains("/bootstrap:"), "{PHONE_LIBRARIES}");
+    }
+}

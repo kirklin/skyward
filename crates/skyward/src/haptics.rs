@@ -145,15 +145,20 @@ impl Haptics {
     }
 }
 
-/// Play the configured click once at the slider's `position`, saying how
-/// strongly and for how long, for trying out a motor.
-pub fn probe(cfg: &skyward_config::Haptics, position: f32) -> Result<()> {
+/// Play the configured click once at the slider's `position`, or else the
+/// ticks of the screen going off, saying how strongly and for how long, for
+/// trying out a motor.
+pub fn probe(cfg: &skyward_config::Haptics, position: f32, ticks: bool) -> Result<()> {
     let mut haptics = Haptics::open(cfg)?;
-    let length = haptics.click(position)?;
-    // Once it has played out, the click goes with the device as the
+    let (what, strength, length) = if ticks {
+        ("ticks", TICKS_STRENGTH, haptics.ticks()?)
+    } else {
+        ("click", share(&cfg.strength, position), haptics.click(position)?)
+    };
+    // Once it has played out, what played goes with the device as the
     // command ends.
     std::thread::sleep(length);
-    println!("played the click at {:.3} of its full strength, {} ms long", share(&cfg.strength, position), length.as_millis());
+    println!("played the {what} at {strength:.3} of the full strength, {} ms long", length.as_millis());
     Ok(())
 }
 

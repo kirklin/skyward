@@ -56,7 +56,11 @@ fn script(dir: &Path, script: &str, zip: &Path, out: &Path) -> ExitStatus {
         .unwrap()
 }
 
-const FLASH_SUPER: &str = r#"7za e -so "$ZIPFILE" "images/super.img.zst" | zstd -c -d > "$OUT""#;
+/// The two ways ROMs' scripts pour their super image out of their zip.
+const FLASH_SUPER: [&str; 2] = [
+    r#"7za e -so "$ZIPFILE" "images/super.img.zst" | zstd -c -d > "$OUT""#,
+    r#"unzip -p "$ZIPFILE" images/super.img.zst | zstd -c -d > "$OUT""#,
+];
 
 #[test]
 fn a_rom_s_script_pours_its_super_image_out_of_the_zip_through_zstd() {
@@ -64,8 +68,11 @@ fn a_rom_s_script_pours_its_super_image_out_of_the_zip_through_zstd() {
     let image = noise(8 << 20);
     let zip = rom(dir.path(), &zstd::encode_all(image.as_slice(), 3).unwrap());
     let out = dir.path().join("super");
-    assert!(script(dir.path(), FLASH_SUPER, &zip, &out).success());
-    assert!(fs::read(&out).unwrap() == image);
+    for flash in FLASH_SUPER {
+        assert!(script(dir.path(), flash, &zip, &out).success(), "{flash}");
+        assert!(fs::read(&out).unwrap() == image, "{flash}");
+        fs::remove_file(&out).unwrap();
+    }
 }
 
 #[test]
@@ -73,5 +80,7 @@ fn a_super_image_cut_short_in_the_zip_fails_the_pipe() {
     let dir = tempfile::tempdir().unwrap();
     let whole = zstd::encode_all(noise(1 << 20).as_slice(), 3).unwrap();
     let zip = rom(dir.path(), &whole[..whole.len() / 2]);
-    assert!(!script(dir.path(), FLASH_SUPER, &zip, &dir.path().join("super")).success());
+    for flash in FLASH_SUPER {
+        assert!(!script(dir.path(), flash, &zip, &dir.path().join("super")).success(), "{flash}");
+    }
 }

@@ -118,10 +118,18 @@ impl Ramdisk {
         self.insert(name, S_IFREG | mode, data)
     }
 
-    /// Add a root-owned link to `target`, creating missing parent
+    /// Point `name` to `target`: a link already there is pointed anew, and
+    /// otherwise a root-owned link is added, creating missing parent
     /// directories.
     pub fn link(&mut self, name: &str, target: &str) -> Result<()> {
-        self.insert(name, S_IFLNK | LINK_MODE, target.as_bytes().to_vec())
+        match self.entries.iter_mut().find(|e| e.name == name) {
+            Some(e) if e.mode & S_IFMT == S_IFLNK => {
+                e.data = target.as_bytes().to_vec();
+                Ok(())
+            }
+            Some(_) => bail!("{name} is in the ramdisk and is not a link"),
+            None => self.insert(name, S_IFLNK | LINK_MODE, target.as_bytes().to_vec()),
+        }
     }
 
     fn insert(&mut self, name: &str, mode: u32, data: Vec<u8>) -> Result<()> {
@@ -208,7 +216,31 @@ mod tests {
         assert_eq!((zstd.mode, zstd.data.as_slice()), (S_IFLNK | LINK_MODE, b"recovery".as_slice()));
         assert_eq!((zstd.uid, zstd.gid, zstd.nlink), (0, 0, 1));
         assert!(back.find("sbin").is_some_and(Entry::is_dir), "a missing folder is made");
-        assert!(rd.link("system/bin/zstd", "recovery").is_err(), "a name is taken once");
+        assert!(rd.link("system/bin/recovery", "zstd").is_err(), "a file is no link to point anew");
         assert!(rd.link("system/bin/recovery/7za", "recovery").is_err(), "a file holds no links");
+    }
+
+    #[test]
+    fn a_link_already_there_is_pointed_anew_keeping_the_rest_of_its_entry() {
+        let mut rd = Ramdisk { entries: Vec::new() };
+        rd.add("system/bin/ziptool", 0o755, b"binary".to_vec()).unwrap();
+        rd.entries.push(Entry {
+            name: "system/bin/unzip".into(),
+            mode: S_IFLNK | 0o755,
+            uid: 0,
+            gid: 2000,
+            mtime: 0,
+            nlink: 1,
+            dev: (0, 0),
+            rdev: (0, 0),
+            data: b"ziptool".to_vec(),
+        });
+        let count = rd.entries.len();
+        rd.link("system/bin/unzip", "recovery").unwrap();
+        let back = Ramdisk::decode(&rd.encode().unwrap()).unwrap();
+        let unzip = back.find("system/bin/unzip").unwrap();
+        assert_eq!((unzip.data.as_slice(), unzip.mode, unzip.gid), (b"recovery".as_slice(), S_IFLNK | 0o755, 2000));
+        assert_eq!(back.entries.len(), count, "no second entry of the name");
+        assert!(back.find("system/bin/ziptool").is_some(), "what it pointed to stays");
     }
 }

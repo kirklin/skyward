@@ -116,7 +116,8 @@ fn main() -> Result<()> {
             skyward_config::DeviceConfig::load(&config)?;
             rd.replace(paths::RECOVERY, read(&binary)?)?;
             // Install scripts look for the commands a stock recovery lacks
-            // among its programs; the recovery binary is each of them.
+            // among its programs, and its unzip there too, a link to ziptool
+            // until it points here; the recovery binary is each of them.
             let (_, recovery) = paths::RECOVERY.rsplit_once('/').expect("the recovery binary is in a folder");
             for command in paths::COMMANDS {
                 rd.link(command, recovery)?;

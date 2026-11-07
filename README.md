@@ -16,7 +16,7 @@ Skyward is a recovery written in Rust, from scratch.
 
 - Decrypt the data partition
 - Install zips, system update packages and partition images, from internal storage, a USB drive or adb sideload
-- `7za` and `zstd` for install scripts, which ROMs with a super image compressed by zstd use to flash it
+- `7za` and `zstd` for install scripts, which ROMs with a super image compressed by zstd use to flash it, and an `unzip` whose `-p` streams the image as it reads it
 - Online system updates
 - Backup and restore
 - Wipe data and factory reset

@@ -2,8 +2,8 @@
 //! stock recovery does not carry: 7za, which takes a partition image out of
 //! the zip the script came in, and zstd, which decompresses it on its way to
 //! the partition; and unzip, as the stock recovery's own but pouring out what
-//! `-p` takes as it reads it. The ramdisk links 7za and zstd to the recovery
-//! service binary, which runs the one it is started as.
+//! `-p` takes as it reads it. The ramdisk links each to the recovery service
+//! binary, which runs the one it is started as.
 
 use std::ffi::{OsStr, OsString};
 use std::io::{self, Read, Write};

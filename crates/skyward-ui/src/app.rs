@@ -1880,6 +1880,10 @@ pub enum Effect {
     Reboot(Target),
     /// A short tap of the vibration motor.
     Haptic,
+    /// The motor's two quick ticks as the power key turns the screen off,
+    /// as strong as the phone's own system plays them whatever the
+    /// vibration settings say.
+    Ticks,
     /// Save what the panel shows as a picture: into the gallery's
     /// screenshots in the owner's shared storage where `storage` says it is
     /// open, and otherwise held until it is, telling how it went with
@@ -6212,6 +6216,7 @@ impl App {
                 Vec::new()
             }
             Key::Power => {
+                self.dirty = true;
                 match self.keys.then(|| self.lit()).flatten() {
                     // Held on a swipe-to-confirm control, the key slides
                     // its knob along as a finger would.
@@ -6219,12 +6224,13 @@ impl App {
                         self.button = Some((key, Press::Slide { which, track: rect, at }))
                     }
                     Some(spot) => self.button = Some((key, Press::Power { spot, at })),
+                    // Turning the screen off, the key ticks the motor.
                     None => {
                         self.button = Some((key, Press::Spent));
                         self.sleep(now);
+                        return vec![Effect::Ticks];
                     }
                 }
-                self.dirty = true;
                 Vec::new()
             }
         }
@@ -8520,7 +8526,7 @@ mod tests {
         assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::Search))), "the keys go on working the pages");
         app.touch(Touch::Down(W as f32 / 2.0, 200.0), &f, 0);
         app.touch(Touch::Up, &f, 0);
-        assert!(press(&mut app, Key::Power, 0).is_empty());
+        assert_eq!(press(&mut app, Key::Power, 0), vec![Effect::Ticks]);
         assert!(!app.display_on(), "with the light put out, power turns the panel off");
     }
 
@@ -10880,15 +10886,30 @@ mod tests {
         assert!(app.key(Key::Power, 0).is_empty());
         assert_eq!(app.panel(0), Some(SLIDER_START), "it waits for volume down first");
         assert_eq!(app.deadline(0), Some(CHORD_MS));
-        assert!(app.tick(CHORD_MS).is_empty());
-        assert!(!app.display_on(), "held on alone, it turns the panel off");
+        assert_eq!(app.tick(CHORD_MS), vec![Effect::Ticks], "held on alone, it turns the panel off, ticking the motor");
+        assert!(!app.display_on());
         assert!(app.key_up(Key::Power, CHORD_MS + 50).is_empty());
         assert!(app.key(Key::Power, CHORD_MS + 60).is_empty());
         assert_eq!(app.panel(CHORD_MS + 60), Some(SLIDER_START));
         assert!(app.key_up(Key::Power, CHORD_MS + 100).is_empty());
         assert!(app.key(Key::Power, 1000).is_empty());
-        assert!(app.key_up(Key::Power, 1050).is_empty());
+        assert_eq!(app.key_up(Key::Power, 1050), vec![Effect::Ticks]);
         assert!(!app.display_on(), "let go sooner, it turns the panel off then");
+    }
+
+    #[test]
+    fn the_power_key_turning_the_screen_off_ticks_the_motor_whatever_the_settings() {
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.tick(0);
+        assert_eq!(press(&mut app, Key::Power, 1000), vec![Effect::Ticks]);
+        assert!(app.tick(1400).is_empty(), "once");
+        app.state.vibrate = false;
+        press(&mut app, Key::Power, 2000);
+        assert_eq!(press(&mut app, Key::Power, 3000), vec![Effect::Ticks], "with vibration off too");
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.tick(0);
+        assert!(app.tick(OFF).is_empty(), "but not the screen going off by itself");
+        assert!(!app.display_on());
     }
 
     #[test]

@@ -1323,7 +1323,14 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                         h.click(app.state.vibration)?;
                     }
                 }
-                other => unreachable!("time passing asks for nothing but a tap of the motor, not {other:?}"),
+                // The power key held past its wait for volume down turns
+                // the screen off.
+                Effect::Ticks => {
+                    if let Some(h) = &mut haptics {
+                        h.ticks()?;
+                    }
+                }
+                other => unreachable!("time passing asks for nothing but the motor, not {other:?}"),
             }
         }
         let time = clock(app.state.time_zone)?;
@@ -2080,6 +2087,11 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     Effect::Haptic => {
                         if let Some(h) = &mut haptics {
                             h.click(app.state.vibration)?;
+                        }
+                    }
+                    Effect::Ticks => {
+                        if let Some(h) = &mut haptics {
+                            h.ticks()?;
                         }
                     }
                     // The panel shows the last frame drawn, which is what is

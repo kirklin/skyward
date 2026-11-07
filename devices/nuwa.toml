@@ -144,7 +144,9 @@ package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.co
 recovery = "04431f150316d32fc5fd38ac8caf7e48ee271fa47cd23a28ad7e067e5fcde273"
 
 # qcom-hv-haptics, as on the 13 Ultra, whose driver plays the click it
-# keeps as waveform 0; the strengths are the 13 Ultra's.
+# keeps as waveform 0 and says the motor's resonant frequency in
+# lra_frequency_hz; the strengths are the 13 Ultra's.
 [haptics]
 click = 0
+resonance = "/sys/class/qcom-haptics/lra_frequency_hz"
 strength = { lightest = 0.5, strongest = 1.0 }

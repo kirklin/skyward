@@ -1,7 +1,7 @@
 use anyhow::{anyhow, ensure, Context, Result};
 use evdev::raw_stream::RawDevice;
 use skyward_config::Strength;
-use std::f32::consts::TAU;
+use std::f32::consts::{PI, TAU};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::os::fd::AsRawFd;
@@ -22,6 +22,28 @@ const RATE: u32 = 8000;
 /// it, then swings turned over that stop it, so that it does not ring on.
 const DRIVE_SWINGS: f32 = 2.0;
 const BRAKE_SWINGS: f32 = 1.5;
+/// The ticks of the screen going off by the power key, as the phone's own
+/// system plays them on the 13 Ultra, whose motor swings at [`TICKS_HZ`]: a
+/// crisp tick near twice the motor's frequency, then a softer tap below it,
+/// half-swing by half-swing. Each half-swing is its start, peak and end in
+/// milliseconds, its signed share of the full, and how steeply it rises and
+/// falls: 1 on half a cosine, 2 on its square. For another motor the times
+/// go in proportion. They are made at [`TICKS_RATE`].
+const TICKS_HZ: f32 = 172.5;
+const TICKS: [(f32, f32, f32, f32, i32, i32); 11] = [
+    (0.88, 2.29, 3.04, 0.504, 1, 1),
+    (3.04, 3.79, 4.38, -0.717, 1, 1),
+    (4.38, 5.08, 5.92, 1.0, 1, 1),
+    (5.92, 6.54, 7.38, -0.819, 1, 1),
+    (7.38, 7.83, 8.83, 0.559, 1, 1),
+    (8.83, 9.33, 10.33, -0.220, 1, 1),
+    (33.54, 39.67, 42.42, 0.906, 2, 1),
+    (42.42, 44.46, 46.71, -0.906, 1, 1),
+    (46.71, 48.83, 51.17, 0.717, 1, 1),
+    (51.17, 53.46, 56.63, -1.0, 1, 1),
+    (56.63, 58.63, 67.67, 0.260, 1, 2),
+];
+const TICKS_RATE: u32 = 24000;
 
 /// The vibration motor, played through the kernel's force-feedback
 /// events. The driver fills its queue with a made click's samples as the
@@ -32,6 +54,7 @@ const BRAKE_SWINGS: f32 = 1.5;
 pub struct Haptics {
     dev: File,
     click: Click,
+    ticks: Click,
     strength: Strength,
     /// The click playing, by its slot and its count, until it is taken
     /// away; a click taken away early by the next is not taken away again.
@@ -44,8 +67,9 @@ enum Click {
     /// A waveform the driver keeps, by its number. The driver says how long
     /// it plays as it loads it.
     Kept(i16),
-    /// Samples made at the motor's resonant frequency, played at [`RATE`].
-    Made(Vec<i8>),
+    /// Samples made at the motor's resonant frequency, which the driver
+    /// plays as they are, at `rate` a second.
+    Samples { data: Vec<i8>, rate: u32 },
 }
 
 impl Haptics {
@@ -54,29 +78,42 @@ impl Haptics {
     /// only as it is played.
     pub fn open(cfg: &skyward_config::Haptics) -> Result<Haptics> {
         let (path, dev) = motor()?;
-        let click = match (cfg.click, &cfg.resonance) {
-            (Some(id), _) => {
-                eprintln!("haptics {}: clicks with waveform {id}", path.display());
+        let hz = resonance(&cfg.resonance)?;
+        let click = match cfg.click {
+            Some(id) => {
+                eprintln!("haptics {}: clicks with waveform {id}, ticks made for a motor swinging at {hz} Hz", path.display());
                 Click::Kept(id)
             }
-            (None, Some(file)) => {
-                let hz = resonance(file)?;
-                eprintln!("haptics {}: clicks made for a motor swinging at {hz} Hz", path.display());
-                Click::Made(made(hz))
+            None => {
+                eprintln!("haptics {}: clicks and ticks made for a motor swinging at {hz} Hz", path.display());
+                Click::Samples { data: made(hz), rate: RATE }
             }
-            (None, None) => unreachable!("the configuration names a click of one kind"),
         };
-        Ok(Haptics { dev, click, strength: cfg.strength, playing: Arc::new(Mutex::new(None)), clicks: 0 })
+        let ticks = Click::Samples { data: ticks(hz), rate: TICKS_RATE };
+        Ok(Haptics { dev, click, ticks, strength: cfg.strength, playing: Arc::new(Mutex::new(None)), clicks: 0 })
     }
 
     /// One short click at the strength the slider's `position` gives, after
     /// taking away one still playing. Gives how long it plays.
     pub fn click(&mut self, position: f32) -> Result<Duration> {
+        self.start(false, share(&self.strength, position))
+    }
+
+    /// The ticks of the screen going off, as strong as their samples are
+    /// whatever the slider says. Gives how long they play.
+    pub fn ticks(&mut self) -> Result<Duration> {
+        self.start(true, 1.0)
+    }
+
+    /// Play the ticks, or else the click, at `share` of its full strength,
+    /// after taking away what still plays.
+    fn start(&mut self, ticks: bool, share: f32) -> Result<Duration> {
         let mut playing = self.playing.lock().expect("no thread panics while it holds the click playing");
         if let Some((slot, _)) = playing.take() {
             erase(&self.dev, slot).context("take away the click still playing")?;
         }
-        let loaded = upload(&self.dev, &self.click, share(&self.strength, position)).context("load the click")?;
+        let effect = if ticks { &self.ticks } else { &self.click };
+        let loaded = upload(&self.dev, effect, share).context("load the click")?;
         play(&mut self.dev, loaded.slot).context("play the click")?;
         self.clicks += 1;
         let this = (loaded.slot, self.clicks);
@@ -153,6 +190,26 @@ fn made(hz: f32) -> Vec<i8> {
         .collect()
 }
 
+/// The ticks at [`TICKS_RATE`] for a motor that swings at `hz`, still
+/// between the half-swings.
+fn ticks(hz: f32) -> Vec<i8> {
+    let scale = TICKS_HZ / hz;
+    let at = |ms: f32| (ms * scale * TICKS_RATE as f32 / 1000.0).round() as usize;
+    let mut samples = vec![0i8; at(TICKS[TICKS.len() - 1].2)];
+    for (start, peak, end, share, rise, fall) in TICKS {
+        for (i, sample) in samples.iter_mut().enumerate().take(at(end)).skip(at(start)) {
+            let t = i as f32 * 1000.0 / TICKS_RATE as f32 / scale;
+            let k = if t < peak {
+                ((1.0 - (PI * (t - start) / (peak - start)).cos()) / 2.0).powi(rise)
+            } else {
+                ((1.0 + (PI * (t - peak) / (end - peak)).cos()) / 2.0).powi(fall)
+            };
+            *sample = (share * k * f32::from(i8::MAX)).round() as i8;
+        }
+    }
+    samples
+}
+
 /// A click as the driver loaded it: the slot the kernel keeps it in, and
 /// how long it plays.
 struct Loaded {
@@ -187,9 +244,10 @@ fn upload(dev: &File, click: &Click, share: f32) -> Result<Loaded> {
             kept[0] = *id;
             (std::mem::size_of_val(&kept), kept.as_mut_ptr())
         }
-        Click::Made(made) => {
-            samples.length = u32::try_from(made.len())?;
-            samples.data = made.as_ptr();
+        Click::Samples { data, rate } => {
+            samples.length = u32::try_from(data.len())?;
+            samples.rate = *rate;
+            samples.data = data.as_ptr();
             (std::mem::size_of::<Samples>(), (&mut samples as *mut Samples).cast::<i16>())
         }
     };
@@ -228,7 +286,7 @@ fn upload(dev: &File, click: &Click, share: f32) -> Result<Loaded> {
             length
         }
         // The queue is full before the samples start playing.
-        Click::Made(made) => Duration::from_secs_f64(made.len() as f64 / f64::from(RATE)),
+        Click::Samples { data, rate } => Duration::from_secs_f64(data.len() as f64 / f64::from(*rate)),
     };
     Ok(Loaded { slot: effect.id, length })
 }
@@ -264,6 +322,19 @@ mod tests {
         let quarter = (RATE as f32 / 172.4 / 4.0).round() as usize;
         assert!(samples[quarter] > 120, "it rises first");
         assert!(samples[drive + quarter] < -120, "it falls first once turned over");
+    }
+
+    #[test]
+    fn the_screen_going_off_ticks_crisply_then_taps_softly() {
+        let at = |ms: f32| (ms * TICKS_RATE as f32 / 1000.0).round() as usize;
+        let samples = ticks(TICKS_HZ);
+        assert_eq!(samples.len(), at(67.67));
+        assert_eq!(samples[at(5.08)], i8::MAX, "the tick swings up to the full");
+        assert_eq!(samples[at(53.46)], -i8::MAX, "and the tap's last full swing stops the motor");
+        assert!(samples[at(10.33)..at(33.54)].iter().all(|&s| s == 0), "still between");
+        let crossings = |s: &[i8]| s.windows(2).filter(|w| (w[0] < 0) != (w[1] < 0)).count();
+        assert!(crossings(&samples[..at(10.33)]) > crossings(&samples[at(33.54)..]), "the tick swings faster than the tap");
+        assert_eq!(ticks(TICKS_HZ * 2.0).len(), samples.len().div_ceil(2), "a motor twice as quick ticks in half the time");
     }
 
     #[test]

@@ -1,0 +1,76 @@
+//! The commands install scripts written for other recoveries run that a
+//! stock recovery does not carry: 7za, which takes a partition image out of
+//! the zip the script came in. This binary runs the one it is started as.
+
+use std::ffi::{OsStr, OsString};
+use std::io::{self, Read, Write};
+
+mod sevenzip;
+
+/// How much is read and written at a time: a whole partition image may go
+/// through a command.
+const CHUNK: usize = 1 << 20;
+
+/// What a command writes besides the files it names.
+struct Io<'a> {
+    output: &'a mut dyn Write,
+    errors: &'a mut dyn Write,
+}
+
+/// A command: its arguments, without its name, to the status it ends with.
+type Command = fn(&[OsString], &mut Io) -> i32;
+
+/// The command a program started as `name` is, if it is one of them.
+fn command(name: &OsStr) -> Option<Command> {
+    match name.to_str()? {
+        "7za" => Some(sevenzip::run),
+        _ => None,
+    }
+}
+
+/// Run the command this program was started as, `name`, with `args`, and
+/// give the status it ends with; none when `name` is not one of them.
+pub fn run(name: &OsStr, args: &[OsString]) -> Option<i32> {
+    let command = command(name)?;
+    // As with the programs these stand in for, writing to a pipe whose
+    // reader has gone ends the command.
+    unsafe { libc::signal(libc::SIGPIPE, libc::SIG_DFL) };
+    let (stdout, stderr) = (io::stdout(), io::stderr());
+    let (mut output, mut errors) = (stdout.lock(), stderr.lock());
+    Some(command(args, &mut Io { output: &mut output, errors: &mut errors }))
+}
+
+/// Where copying stopped.
+#[derive(Debug)]
+enum Failed {
+    Reading(io::Error),
+    Writing(io::Error),
+}
+
+/// Copy what is left of `from` to `to`, giving how much there was.
+fn copy(from: &mut dyn Read, to: &mut dyn Write) -> Result<u64, Failed> {
+    let mut chunk = vec![0; CHUNK];
+    let mut copied = 0;
+    loop {
+        let read = match from.read(&mut chunk) {
+            Ok(0) => return Ok(copied),
+            Ok(read) => read,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(Failed::Reading(e)),
+        };
+        to.write_all(&chunk[..read]).map_err(Failed::Writing)?;
+        copied += read as u64;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_program_started_by_a_command_s_name_runs_that_command() {
+        assert!(command(OsStr::new("7za")).is_some());
+        assert!(command(OsStr::new("recovery")).is_none());
+        assert!(command(OsStr::new("unzip")).is_none(), "the stock recovery carries that one");
+    }
+}

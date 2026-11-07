@@ -206,9 +206,15 @@ enum Cmd {
 
 fn main() -> Result<()> {
     // init starts the recovery service by path with no arguments.
-    let started_as = std::env::args().next().unwrap_or_default();
-    if Path::new(&started_as).file_name().is_some_and(|n| n == "recovery") {
+    let started_as = std::env::args_os().next().unwrap_or_default();
+    let name = Path::new(&started_as).file_name().unwrap_or_default();
+    if name == "recovery" {
         return recovery();
+    }
+    // Install scripts run the commands linked to this binary by their names.
+    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    if let Some(code) = skyward_install::commands::run(name, &args) {
+        std::process::exit(code);
     }
     match Cli::parse().cmd {
         Cmd::Info { config } => info(&config),

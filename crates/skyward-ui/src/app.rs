@@ -1,4 +1,5 @@
 use crate::canvas::{Canvas, Run};
+use crate::charge;
 use crate::color::Rgba;
 use crate::editor::{self, Editor};
 use crate::files::{self, FileType};
@@ -2224,6 +2225,12 @@ const NEAR_SCREENS: f32 = 0.5;
 /// its square.
 const DARKEN: Ease = Ease::Out(365, 3);
 const BRIGHTEN: Ease = Ease::Out(520, 2);
+/// The charging screen comes over the page as the phone's own does, over
+/// 420 ms slowing as the square of the time left, shows this long from
+/// when the cable went in, and goes in 300 ms.
+const CHARGE_SHOW: Ease = Ease::Out(420, 2);
+const CHARGE_HIDE: Ease = Ease::Out(300, 2);
+const CHARGE_MS: u64 = 4000;
 
 /// How a part of the screen eases between shown and hidden.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -2245,6 +2252,14 @@ impl Ease {
             Ease::Out(span, power) => 1.0 - (1.0 - (ms as f32 / span as f32).min(1.0)).powi(power),
         }
     }
+}
+
+/// The charging screen: when the cable went in, how far it shows over the
+/// page, and whether the panel was dark then and goes dark again after.
+struct Charging {
+    since: u64,
+    shown: Fade,
+    dark_after: bool,
 }
 
 /// A part of the screen fading in or out: where it is headed, since when,
@@ -2579,6 +2594,12 @@ pub struct App {
     /// off, under the backlight held then, and comes up as the panel lights.
     curtain: Fade,
     darkening: Option<f32>,
+    /// The charging screen, from when a cable goes in until it has gone,
+    /// with the level and what the charger does drawn for it, and the
+    /// screen it is drawn on while it comes or goes over the page.
+    charging: Option<Charging>,
+    charge_art: Option<charge::Art>,
+    charge_canvas: Option<Canvas>,
     /// While a text field's cursor is up: the page, how many edits had
     /// been typed, and when it came up whole on them. It shows for the
     /// first half of each blink from then on, so it is whole again at each
@@ -2664,6 +2685,9 @@ impl App {
             bright: full_brightness(),
             curtain: Fade::shown(BRIGHTEN, DARKEN),
             darkening: None,
+            charging: None,
+            charge_art: None,
+            charge_canvas: None,
             blink: None,
             edits: 0,
             caret_shown: false,
@@ -2734,9 +2758,10 @@ impl App {
                 || self.turn.is_some()
                 || self.row_press.is_some_and(|p| p.changing(now) || p.gone(now))
                 || self.glowing());
-        // The content going dark or coming up moves a frame at a time while
-        // the panel is lit.
-        if moving || (self.panel(now).is_some() && self.curtain.moving(now)) {
+        // The content going dark or coming up, and the charging screen's
+        // tide, move a frame at a time while the panel is lit.
+        let lit = self.panel(now).is_some();
+        if moving || (lit && (self.curtain.moving(now) || self.charging.is_some())) {
             return Some(0);
         }
         let darkens = self.row_press.map(|p| p.rise).filter(|&rise| rise > now);
@@ -2822,11 +2847,26 @@ impl App {
                 self.bright.set(false, now);
             }
         }
-        // Once the content is dark, the panel is off.
+        // The charging screen goes once it has shown long enough: on a
+        // panel lit for it, with the panel, else for the page.
+        if self.display_on && self.charging.as_ref().is_some_and(|c| c.shown.on && now >= c.since + CHARGE_MS) {
+            let c = self.charging.as_mut().expect("the charging screen shows");
+            if c.dark_after {
+                self.sleep(now);
+            } else {
+                c.shown.set(false, now);
+            }
+        }
+        if self.charging.as_ref().is_some_and(|c| !c.shown.on && !c.shown.moving(now)) {
+            self.end_charging();
+        }
+        // Once the content is dark, the panel is off, and what showed goes
+        // with it.
         if !self.display_on && self.darkening.is_some() && self.curtain.level(now) <= 0.0 {
             self.darkening = None;
+            self.end_charging();
         }
-        if self.curtain.moving(now) {
+        if self.curtain.moving(now) || self.charging.is_some() {
             self.dirty = true;
         }
         if self.toast.as_ref().is_some_and(|m| now >= m.1) {
@@ -3005,15 +3045,49 @@ impl App {
         self.stir(now);
     }
 
-    /// A charger or a computer was attached or taken away: the dark panel
-    /// lights, and a lit one stays at full brightness for the screen-off
-    /// time from now, as on the phone's own system.
-    pub fn plugged(&mut self, now: u64) {
+    /// A charger or a computer was attached, `cable_in`, or taken away: the
+    /// dark panel lights, and a lit one stays at full brightness for the
+    /// screen-off time from now, as on the phone's own system. A cable
+    /// going in brings up the charging screen, over the page or on the
+    /// panel lit for it, which then goes dark again.
+    pub fn plugged(&mut self, now: u64, cable_in: bool) {
+        if cable_in {
+            let dark = !self.display_on;
+            let mut shown = self.charging.take().map_or(Fade::hidden(CHARGE_SHOW, CHARGE_HIDE), |c| c.shown);
+            if dark {
+                shown.jump(true);
+            } else {
+                shown.set(true, now);
+            }
+            self.charging = Some(Charging { since: now, shown, dark_after: dark });
+            self.dirty = true;
+        }
         if self.display_on {
             self.stir(now);
         } else {
             self.wake(now);
         }
+    }
+
+    /// The charging screen has gone, and what was drawn for it with it.
+    fn end_charging(&mut self) {
+        self.charging = None;
+        self.charge_art = None;
+        self.charge_canvas = None;
+    }
+
+    /// Whether the charging screen shows, or is coming up.
+    fn charge_shown(&self) -> bool {
+        self.charging.as_ref().is_some_and(|c| c.shown.on)
+    }
+
+    /// Send the charging screen away for the page, and keep the panel lit.
+    fn dismiss_charging(&mut self, now: u64) {
+        if let Some(c) = &mut self.charging {
+            c.shown.set(false, now);
+            c.dark_after = false;
+        }
+        self.stir(now);
     }
 
     /// Whether the panel lit so recently that a touch or key should only
@@ -4023,11 +4097,37 @@ impl App {
         top.1 = top.1.clamp(0.0, max);
     }
 
-    /// Draw what the panel shows now: the page, as dark as the content
-    /// stands as the panel goes off or comes up.
+    /// Draw what the panel shows now: the page, the charging screen over it
+    /// while a cable has just gone in, both as dark as the content stands
+    /// as the panel goes off or comes up.
     pub fn compose(&mut self, out: &mut Canvas, f: &Fonts, info: &DeviceInfo, clock: &str, now: u64) {
-        self.compose_page(out, f, info, clock, now);
+        let charge = self.charging.as_ref().map_or(0.0, |c| c.shown.level(now));
+        if charge < 1.0 {
+            self.compose_page(out, f, info, clock, now);
+        }
+        if charge > 0.0 {
+            self.compose_charging(out, f, info, charge, now);
+        }
         out.dim(self.curtain.level(now));
+    }
+
+    /// The charging screen, `level` of the way over the page drawn on `out`.
+    fn compose_charging(&mut self, out: &mut Canvas, f: &Fonts, info: &DeviceInfo, level: f32, now: u64) {
+        let battery = info.battery.as_ref().expect("a cable went in on a phone whose battery is read");
+        let (t, lang) = (self.theme(), self.state.lang);
+        if !self.charge_art.as_ref().is_some_and(|a| a.shows(lang, battery)) {
+            self.charge_art = Some(charge::Art::new(f, &t.m, lang, battery).expect("the screens' face takes the charging screen's weight"));
+        }
+        let since = self.charging.as_ref().map_or(now, |c| c.since);
+        let dither = self.dither.get_or_insert_with(|| glow::Dither::new(out.w as usize, out.h as usize));
+        let art = self.charge_art.as_ref().expect("drawn above");
+        if level >= 1.0 {
+            charge::draw(out, art, &t.m, battery.level, now.saturating_sub(since), dither);
+        } else {
+            let screen = self.charge_canvas.get_or_insert_with(|| Canvas::new(out.w, out.h));
+            charge::draw(screen, art, &t.m, battery.level, now.saturating_sub(since), dither);
+            out.lay(screen, 0, 0, level);
+        }
     }
 
     /// The visible part of the page, pulled past an end if it is, its large
@@ -5709,6 +5809,15 @@ impl App {
         if !self.display_on {
             return Vec::new();
         }
+        // A finger on the charging screen sends it away for the page, and
+        // does nothing else until it lifts.
+        if self.charge_shown() {
+            if matches!(ev, Touch::Down(..)) {
+                self.dismiss_charging(now);
+                self.drag = Drag::Waking;
+            }
+            return Vec::new();
+        }
         // A finger landing just after the panel lit only keeps it awake.
         if matches!(ev, Touch::Down(..)) && self.just_woke(now) {
             self.stir(now);
@@ -6033,6 +6142,13 @@ impl App {
             if key == Key::Power {
                 self.wake(now);
             }
+            self.button = Some((key, Press::Spent));
+            return fx;
+        }
+        // A key other than power sends the charging screen away for the
+        // page, and does nothing else.
+        if key != Key::Power && self.charge_shown() {
+            self.dismiss_charging(now);
             self.button = Some((key, Press::Spent));
             return fx;
         }
@@ -10918,25 +11034,100 @@ mod tests {
     }
 
     #[test]
-    fn a_cable_going_in_or_out_lights_the_dark_panel_and_keeps_a_lit_one_lit() {
+    fn a_cable_coming_out_lights_the_dark_panel_and_keeps_a_lit_one_lit() {
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.tick(0);
         app.tick(OFF);
         app.tick(OFF + 365);
         assert_eq!(app.panel(OFF + 365), None);
-        let plugged = OFF + 1000;
-        app.plugged(plugged);
-        assert!(app.display_on(), "the cable going in lights the panel");
-        assert_eq!(app.panel(plugged), Some(SLIDER_START));
-        assert_eq!(app.deadline(plugged + 520), Some(plugged + DIMS), "for the screen-off time, once the content is up");
-        app.tick(plugged + DIMS);
-        assert_eq!(app.panel(plugged + DIMS + 500), Some(dim_level(SLIDER_START)));
-        let pulled = plugged + DIMS + 600;
-        app.plugged(pulled);
-        assert_eq!(app.panel(pulled + 150), Some(SLIDER_START), "the cable coming out brightens it");
-        assert_eq!(app.deadline(pulled + 150), Some(pulled + DIMS), "and the wait starts over");
-        press(&mut app, Key::Power, pulled + 200);
+        let pulled = OFF + 1000;
+        app.plugged(pulled, false);
+        assert!(app.display_on(), "the cable coming out lights the panel");
+        assert!(!app.charge_shown(), "and shows the page");
+        assert_eq!(app.panel(pulled), Some(SLIDER_START));
+        assert_eq!(app.deadline(pulled + 520), Some(pulled + DIMS), "for the screen-off time, once the content is up");
+        app.tick(pulled + DIMS);
+        assert_eq!(app.panel(pulled + DIMS + 500), Some(dim_level(SLIDER_START)));
+        let again = pulled + DIMS + 600;
+        app.plugged(again, false);
+        assert_eq!(app.panel(again + 150), Some(SLIDER_START), "a cable coming out brightens a lit panel");
+        assert_eq!(app.deadline(again + 150), Some(again + DIMS), "and the wait starts over");
+        press(&mut app, Key::Power, again + 200);
         assert!(!app.display_on(), "the power key turns it off at once, as ever");
+    }
+
+    #[test]
+    fn a_cable_going_in_on_the_dark_panel_shows_the_charging_screen_and_goes_dark_again() {
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.tick(0);
+        press(&mut app, Key::Power, 0);
+        app.tick(365);
+        assert_eq!(app.panel(365), None);
+        let plugged = 1000;
+        app.plugged(plugged, true);
+        assert!(app.display_on() && app.charge_shown(), "the charging screen lights the panel");
+        assert_eq!(app.deadline(plugged + 1000), Some(0), "its tide moves a frame at a time");
+        app.tick(plugged + CHARGE_MS - 1);
+        assert!(app.display_on());
+        app.tick(plugged + CHARGE_MS);
+        assert!(!app.display_on(), "then the panel goes dark again");
+        assert!(app.panel(plugged + CHARGE_MS + 100).is_some(), "as the charging screen goes dark");
+        app.tick(plugged + CHARGE_MS + 365);
+        assert_eq!(app.panel(plugged + CHARGE_MS + 365), None);
+        assert!(app.charging.is_none(), "and goes with it");
+    }
+
+    #[test]
+    fn a_cable_going_in_on_a_lit_panel_brings_the_charging_screen_over_the_page_and_away() {
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.tick(0);
+        app.plugged(1000, true);
+        assert!(app.display_on() && app.charge_shown());
+        app.tick(1000 + CHARGE_MS);
+        assert!(app.display_on(), "the panel stays lit");
+        assert!(!app.charge_shown(), "as the charging screen goes for the page");
+        app.tick(1000 + CHARGE_MS + 300);
+        assert!(app.charging.is_none());
+    }
+
+    #[test]
+    fn a_touch_or_a_volume_key_sends_the_charging_screen_away_and_keeps_the_panel_lit() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        let (x, y) = spot(&mut app, &f, &i, Action::Open(Screen::Settings));
+        app.tick(0);
+        press(&mut app, Key::Power, 0);
+        app.tick(365);
+        app.plugged(1000, true);
+        app.touch(Touch::Down(x, y), &f, 1500);
+        app.touch(Touch::Up, &f, 1550);
+        assert!(!app.charge_shown(), "the touch sent it away");
+        assert_eq!(app.screen(), Screen::Home, "and pressed nothing");
+        app.tick(1000 + CHARGE_MS);
+        assert!(app.display_on(), "the panel stays lit for the page");
+        app.plugged(10_000, true);
+        press(&mut app, Key::VolumeDown, 10_500);
+        assert!(!app.charge_shown(), "a volume key sends it away too");
+        assert!(app.display_on());
+    }
+
+    #[test]
+    fn the_charging_screen_shows_the_level_over_a_tide_of_light() {
+        let (f, i) = (fonts(), DeviceInfo { battery: Some(battery_at(64, Charge::Charging)), ..info() });
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.tick(0);
+        press(&mut app, Key::Power, 0);
+        app.tick(365);
+        app.plugged(1000, true);
+        let mut c = Canvas::new(W, H);
+        app.compose(&mut c, &f, &i, "12:00", 3000);
+        let px = |x: u32, y: u32| {
+            let k = ((y * W + x) * 4) as usize;
+            [c.data[k], c.data[k + 1], c.data[k + 2]]
+        };
+        assert_eq!(px(0, 0), [0, 0, 0], "on black");
+        let foot = px(W / 2, H - 4);
+        assert!(foot[2] > 40 && foot[2] > foot[0] * 4 && foot[2] > foot[1] * 2, "the tide's light at the foot is blue: {foot:?}");
     }
 
     #[test]

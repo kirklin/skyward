@@ -16,7 +16,7 @@ const FRAME_US: u64 = 8333;
 const BUDGET_MS: f64 = 5.5;
 
 /// The moves timed, each from the page it starts on.
-const MOVES: [&str; 11] = ["press", "open", "drag", "fold", "fling", "back", "search", "about", "files", "dark", "renders"];
+const MOVES: [&str; 12] = ["press", "open", "drag", "fold", "fling", "back", "search", "about", "files", "dark", "charge", "renders"];
 
 /// Times what the UI draws: whole pages rendered, and every frame of the
 /// moves people make, driven the way the runtime drives the app. Run with
@@ -147,6 +147,17 @@ fn run(name: &str, f: &Fonts, i: &DeviceInfo, quiet: bool) {
             p.press(Key::Power);
             p.run(600);
             p.report("the settings page coming up as the panel lights");
+        }
+        "charge" => {
+            let mut p = Panel::new(Screen::Settings, f, i, quiet);
+            let now = p.now();
+            p.app.plugged(now, true);
+            p.run(500);
+            p.report("the charging screen coming over the settings page");
+            p.run(3000);
+            p.report("the charging screen's tide");
+            p.run(1000);
+            p.report("the charging screen going for the page");
         }
         _ => panic!("no move named {name}; the moves are {MOVES:?}"),
     }

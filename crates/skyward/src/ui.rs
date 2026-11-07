@@ -263,7 +263,7 @@ fn plug(app: &mut App, was: &Option<skyward_info::Battery>, is: &Option<skyward_
     let plugged = |b: &Option<skyward_info::Battery>| b.as_ref().is_some_and(|b| b.plugged);
     if plugged(was) != plugged(is) {
         skyward_sys::kmsg(if plugged(is) { "a charger or a computer powers the phone" } else { "the phone runs on its battery" })?;
-        app.plugged(now);
+        app.plugged(now, plugged(is));
     }
     Ok(())
 }

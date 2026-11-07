@@ -13,6 +13,7 @@ use crate::motion::{self, Spring};
 use crate::pages::{self, Band, Ctx};
 use crate::sprite::{Blurs, Sprite};
 use crate::search;
+use crate::settings::Settings;
 use crate::term::{self, Term, TermKey};
 use crate::theme::Theme;
 use crate::tr;
@@ -1464,6 +1465,9 @@ impl Frame {
 pub struct State {
     /// The language the pages speak.
     pub lang: Lang,
+    /// The language was chosen on the language page, now or at an earlier
+    /// start, where otherwise it is the one the system names.
+    pub language_chosen: bool,
     pub dark: bool,
     pub brightness: f32,
     /// How long the screen stays on with nothing touched, by its place in
@@ -1622,6 +1626,7 @@ impl Default for State {
     fn default() -> Self {
         State {
             lang: Lang::Hans,
+            language_chosen: false,
             dark: false,
             brightness: SLIDER_START,
             // Two minutes.
@@ -2920,6 +2925,26 @@ impl App {
     /// Something laid over the page changed (the clock): compose again.
     pub fn redraw(&mut self) {
         self.dirty = true;
+    }
+
+    /// The settings the pages show, as they are kept between starts.
+    pub fn settings(&self) -> Settings {
+        Settings::of(&self.state)
+    }
+
+    /// Take the settings `kept` from the starts before, and speak the
+    /// language chosen then, or else the one the system `named`, or else
+    /// the one the pages last spoke.
+    pub fn take_settings(&mut self, kept: Option<&Settings>, named: Option<Lang>) {
+        if let Some(kept) = kept {
+            kept.apply(&mut self.state);
+        }
+        if !self.state.language_chosen {
+            if let Some(lang) = named.or(kept.and_then(Settings::spoken)) {
+                self.state.lang = lang;
+            }
+        }
+        self.refresh();
     }
 
     /// The page's readings changed (battery, storage): render it again.
@@ -4883,6 +4908,7 @@ impl App {
             }
             Action::Language(l) => {
                 self.state.lang = l;
+                self.state.language_chosen = true;
                 self.refresh();
             }
             Action::BackupPart(k) => {
@@ -7898,6 +7924,52 @@ mod tests {
         tap(&mut app, &f, &i, Action::Open(Screen::Mount));
         tap(&mut app, &f, &i, Action::Unavailable("A partition in use can't be unmounted"));
         assert_eq!(app.toast.as_ref().map(|t| t.0.as_str()), Some("A partition in use can't be unmounted"), "as do its messages");
+    }
+
+    #[test]
+    fn a_language_chosen_is_kept_and_spoken_over_the_one_the_system_names() {
+        let (f, i) = (fonts(), info());
+        let mut app = opened(Screen::Settings, &f, &i);
+        app.take_settings(None, Some(Lang::Hant));
+        assert_eq!((app.state.lang, app.settings().language), (Lang::Hant, None), "the system's, until one is chosen");
+        tap(&mut app, &f, &i, Action::Open(Screen::Language));
+        tap(&mut app, &f, &i, Action::Language(Lang::En));
+        let kept = app.settings();
+        assert_eq!(kept.language.as_deref(), Some("en"));
+
+        let mut next = App::new(Screen::Home, W, H, PPD);
+        next.take_settings(Some(&kept), Some(Lang::Hans));
+        assert_eq!(next.state.lang, Lang::En, "the next start speaks the language chosen");
+        assert_eq!(next.settings(), kept, "and keeps it chosen");
+    }
+
+    #[test]
+    fn with_no_language_chosen_a_start_speaks_the_system_s_or_else_the_one_last_spoken() {
+        let spoke_english = Settings { spoken: Some("en".into()), ..Settings::default() };
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.take_settings(Some(&spoke_english), Some(Lang::Hant));
+        assert_eq!(app.state.lang, Lang::Hant, "the one the system names");
+        let mut fastboot = App::new(Screen::Fastboot, W, H, PPD);
+        fastboot.take_settings(Some(&spoke_english), None);
+        assert_eq!(fastboot.state.lang, Lang::En, "a start that names none, as fastboot's");
+        let mut first = App::new(Screen::Fastboot, W, H, PPD);
+        first.take_settings(None, None);
+        assert_eq!(first.state.lang, State::default().lang, "and with nothing kept, the pages' own");
+    }
+
+    #[test]
+    fn the_other_pages_choices_are_kept_too() {
+        let (f, i) = (fonts(), info());
+        let mut app = opened(Screen::Settings, &f, &i);
+        tap(&mut app, &f, &i, Action::Toggle(Switch::Vibrate));
+        app.state.check_signature = true;
+        app.state.backup_to = Place::UsbDrive;
+        app.state.logs_to = 1;
+        let kept = app.settings();
+        let mut next = App::new(Screen::Home, W, H, PPD);
+        next.take_settings(Some(&kept), None);
+        assert!(!next.state.vibrate && next.state.check_signature);
+        assert_eq!((next.state.backup_to, next.state.logs_to), (Place::UsbDrive, 1));
     }
 
     /// The installing page, opened from the install page, with the

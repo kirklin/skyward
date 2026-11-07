@@ -2475,6 +2475,8 @@ dependencies = [
  "libc",
  "png",
  "proc-macro2",
+ "serde",
+ "serde_json",
  "skyward-info",
  "skyward-install",
  "skyward-net",

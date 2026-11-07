@@ -23,6 +23,11 @@ impl Lang {
         self.pick(["简体中文", "繁體中文", "English"])
     }
 
+    /// The language as a locale, which [`Lang::for_locale`] reads back.
+    pub fn tag(self) -> &'static str {
+        self.pick(["zh-Hans", "zh-Hant", "en"])
+    }
+
     /// Of the same thing written in each language, in the order of
     /// [`Lang::ALL`], the one in this language.
     pub fn pick<T>(self, [hans, hant, en]: [T; 3]) -> T {
@@ -137,6 +142,13 @@ mod tests {
         assert_eq!(of("en-US"), Lang::En);
         assert_eq!(of("ja-JP"), Lang::En, "a language the pages do not speak");
         assert!(Lang::for_locale("not a locale").is_err());
+    }
+
+    #[test]
+    fn each_language_s_locale_reads_back_as_it() {
+        for lang in Lang::ALL {
+            assert_eq!(Lang::for_locale(lang.tag()).unwrap(), lang);
+        }
     }
 
     #[test]

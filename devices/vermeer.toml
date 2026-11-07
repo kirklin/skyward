@@ -1,0 +1,165 @@
+[device]
+codename = "vermeer"
+brand = "Redmi"
+model = "REDMI K70"
+ab = true
+soc = { hans = "第二代骁龙®8移动平台", hant = "Snapdragon® 8 Gen 2 行動平台", en = "Snapdragon® 8 Gen 2 Mobile Platform" }
+# The phone runs Oplus's Android 17, but the recovery is built on and
+# reports Xiaomi's HyperOS 3 underneath: the installed system keeps no
+# ro.mi.os.version.incremental of its own, so the recovery's prop.default
+# fills it with the stock build's version.
+os_version_prop = "ro.mi.os.version.incremental"
+# The key service tells the secure world the patch level of the build it
+# runs. The recovery's own build is older than the installed system's, and
+# the secure world then refuses the system's keys as made under a build it
+# does not know. This is the key service's patch level only; the boot
+# patchlevel and the firmware stay as they are.
+keymint_security_patch = "2099-12-31"
+
+[display]
+# The panel's own mode in the device tree, 1440 by 3200. The system starts
+# in the lower mode persist.sys.miui_resolution in the odm partition's
+# build.prop gives, 1080 by 2400 at 420, as the 13 Ultra's does; the
+# density is that one's at the panel's own width, as the 13 Ultra's is.
+width = 1440
+height = 3200
+density = 560
+# The marketed diagonal of the K70's 6.67-inch screen.
+diagonal = 6.67
+# rounded_corner_radius, 20dp, in the system's FrameworksResTarget_Vendor
+# overlay, at 560 density.
+corner_radius = 70
+
+[modules]
+sources = ["vendor_boot", "vendor_dlkm", "vendor"]
+# The touchscreen: Goodix's GT9916 over I2C behind Xiaomi's touch layer.
+# The phone's own recovery module list loads the layer's event source,
+# miev, but not the layer itself, and vendor_dlkm's dependency list leaves
+# miev out of the layer's line, so the event source is named before it.
+# The secure world's driver is what the key service and qseecomd reach the
+# secure world through.
+load = ["miev", "goodix_core", "smcinvoke_dlkm"]
+
+# As on the 17 Ultra, no init script of the phone's starts touch_report:
+# the touch feature service turns the controller's raw frames into
+# touches with /odm/lib64/libtouchreport.so, and a recovery runs none of
+# it. Told through Xiaomi's touch layer, the driver has the controller
+# report positions itself; that is known of the 17 Ultra's Synaptics
+# controller and not yet tried on this phone's Goodix one.
+[touch]
+writes = [{ path = "/sys/class/touch/touch_dev/enable_touch_raw", value = "0" }]
+
+# What the phone's own init runs once the system has finished starting, as
+# kernel-post-boot in /vendor/etc/init/hw/init.qti.kernel.rc. The kernel
+# starts the CPU clusters on the performance governor, which holds them at
+# their highest clock; the script hands them to WALT, lets idle CPUs power
+# down and sets how the memory bus scales. Without it the CPUs stay at
+# their highest clock and voltage even while idle, and the phone slowly
+# heats up.
+[[service]]
+path = "/vendor/bin/sh"
+args = ["/vendor/bin/init.kernel.post_boot.sh"]
+libraries = ["/system/lib64", "/vendor/lib64"]
+oneshot = true
+user = "root"
+groups = ["root", "system", "wakelock", "graphics"]
+
+# The secure world reaches back into Android through the listeners this
+# daemon registers; without them the key service cannot use any key.
+[[service]]
+path = "/vendor/bin/qseecomd"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_property = "vendor.sys.listeners.registered"
+user = "root"
+groups = ["root", "drmrpc"]
+
+# The key service, which is the only thing that can use the keys the phone
+# wrapped in hardware.
+[[service]]
+path = "/vendor/bin/hw/android.hardware.security.keymint-service-qti"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_service = "android.hardware.security.keymint.IKeyMintDevice/default"
+user = "system"
+groups = ["system", "drmrpc"]
+
+# The directory the phone's hardware services of the older kind register
+# with. A recovery carries none of it, so it is the installed system's own
+# program, running against the installed system's own libraries. It says it
+# is up by the property the services themselves wait on.
+[[service]]
+path = "/mnt/system_ext/bin/hwservicemanager"
+libraries = ["/mnt/system/system/lib64/bootstrap", "/mnt/system/system/lib64", "/mnt/system_ext/lib64"]
+ready_property = "hwservicemanager.ready"
+user = "system"
+groups = ["system", "readproc"]
+
+# The credential service: it is what the secure world has check a screen
+# lock, and the only thing that can hand out the note the key service wants
+# before it will use a key a screen lock guards.
+[[service]]
+path = "/vendor/bin/hw/android.hardware.gatekeeper@1.0-service-qti"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_hardware_service = "android.hardware.gatekeeper@1.0::IGatekeeper/default"
+user = "system"
+groups = ["system"]
+
+# The boot control, which says which slot the bootloader starts next and
+# switches it, writing where the bootloader reads it. It registers with the
+# hardware service directory, so it comes after that directory starts; the
+# phone is usable without it.
+[[service]]
+path = "/vendor/bin/hw/android.hardware.boot@1.2-service"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_hardware_service = "android.hardware.boot@1.2::IBootControl/default"
+user = "root"
+groups = ["root"]
+
+# WLAN: the kiwi_v2 node in the device tree, driven by qca_cld3_kiwi_v2,
+# the one WLAN driver the phone's own modules.load lists. Its recovery
+# covers the vendor partition's firmware folder with the modem's, as the
+# 13 Ultra's does, so the settings and the MAC address are given to the
+# loader again: the settings from the vendor partition, the address from
+# where the vendor's link points in persist. wpa_supplicant runs on the
+# recovery's own libraries before the vendor partition's, as on the
+# 17 Ultra.
+[wlan]
+modules = ["qca_cld3_kiwi_v2"]
+writes = [{ path = "/sys/kernel/cnss/fs_ready", value = "1" }]
+firmware = [
+    { name = "wlan/qca_cld/kiwi_v2/WCNSS_qcom_cfg.ini", path = "/vendor/etc/wifi/kiwi_v2/WCNSS_qcom_cfg.ini" },
+    { name = "wlan/qca_cld/kiwi_v2/wlan_mac.bin", partition = "persist", path = "kiwi_v2/wlan_mac.bin" },
+]
+interface = "wlan0"
+supplicant = "/vendor/bin/hw/wpa_supplicant"
+libraries = ["/system/lib64", "/vendor/lib64"]
+service = "android.hardware.wifi.supplicant.ISupplicant/default"
+probe = "http://connect.rom.miui.com/generate_204"
+
+# The update server the stock updater of the Chinese system asks.
+[update]
+server = "https://update.miui.com/updates/miotaV3.php"
+
+# The stock build the recovery is made on: the Chinese system's
+# OS3.0.307.0, whose full update package on the phone maker's own download
+# server holds the recovery partition the recovery is built on top of.
+[stock]
+version = "OS3.0.307.0.WNKCNXM"
+package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS3.0.307.0.WNKCNXM/vermeer-ota_full-OS3.0.307.0.WNKCNXM-user-16.0-e8ac729fa5.zip"
+recovery = "58e508fe836d9f469e76440329d180a6556ed13ee42eb975a19124e7cc90c987"
+
+# qcom-hv-haptics (qcom,hv-haptics in its dtbo), whose driver plays the
+# click it keeps as waveform 0, as on the 13 Ultra; the strengths are the
+# 13 Ultra's. Neither is yet tried on this phone's motor.
+[haptics]
+click = 0
+strength = { lightest = 0.5, strongest = 1.0 }
+
+# The baseband's settings, with the IMEI, and the sensors' calibration. The
+# recovery's own table does not mount persist, but the partition is there
+# to read all the same.
+[backup]
+efs = ["modemst1", "modemst2", "fsg", "fsc", "persist"]
+# What the secure world keeps in step with itself: Qualcomm's trusted
+# storage and the fingerprint daemon's templates, which an older copy
+# written back would not open.
+data_skipped = ["vendor/tzstorage", "vendor/qtee", "vendor/misc/mi_fp", "vendor/fpc", "vendor/fpdump", "vendor/goodix", "vendor/fingerprint"]

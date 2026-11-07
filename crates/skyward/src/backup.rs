@@ -427,7 +427,7 @@ fn backup(t: BackupTask, tell: &dyn Fn(Event), cancel: &AtomicBool) -> Result<Pa
         if t.verify {
             for (k, item) in items.iter().enumerate() {
                 let mut telling = Telling::new(tell, k, item.stored.size, true);
-                check(&folder, &item.stored, cancel, &mut telling).with_context(|| format!("check {}", item.name))?;
+                check(&folder, item, cancel, &mut telling).with_context(|| format!("check {}", item.name))?;
             }
         }
         let data_key = if data { Some(data_key()?) } else { None };
@@ -455,11 +455,17 @@ fn backup(t: BackupTask, tell: &dyn Fn(Event), cancel: &AtomicBool) -> Result<Pa
     Ok(folder)
 }
 
-/// Read a part back from its files whole and see that it is what was
-/// stored.
-fn check(folder: &Path, stored: &Stored, cancel: &AtomicBool, telling: &mut Telling) -> Result<()> {
+/// Read a part back whole, checking its digest and data archive metadata.
+fn check(folder: &Path, item: &Item, cancel: &AtomicBool, telling: &mut Telling) -> Result<()> {
+    let stored = &item.stored;
     let mut reader = Reader::open(folder, stored);
-    copy(&mut reader, &mut io::sink(), stored.size, cancel, telling)?;
+    if item.part == Part::Data {
+        let read = Cell::new(0);
+        let from = Counted { inner: &mut reader, read: &read };
+        archive::validate(from, cancel, &mut |_| telling.done(read.get())).context("check the data archive's metadata")?;
+    } else {
+        copy(&mut reader, &mut io::sink(), stored.size, cancel, telling)?;
+    }
     let mut rest = Vec::new();
     reader.read_to_end(&mut rest).context("read")?;
     ensure!(rest.is_empty(), "the backup holds more than was stored");
@@ -526,7 +532,7 @@ fn restore(t: RestoreTask, tell: &dyn Fn(Event), cancel: &AtomicBool) -> Result<
     // A damaged backup is not written anywhere.
     for (k, item) in items.iter().enumerate() {
         let mut telling = Telling::new(tell, k, item.stored.size, true);
-        check(&t.folder, &item.stored, cancel, &mut telling).with_context(|| format!("check {}", item.name))?;
+        check(&t.folder, item, cancel, &mut telling).with_context(|| format!("check {}", item.name))?;
     }
     for item in items.iter().filter(|i| matches!(i.part, Part::Boot | Part::Efs)) {
         let device = target(item, slot);

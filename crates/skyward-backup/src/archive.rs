@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, ErrorKind, Read, Write};
 use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::ffi::OsStringExt;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tar::{Archive, Builder, EntryType, Header};
@@ -241,6 +242,132 @@ struct Records {
     inherits: bool,
     key_root: bool,
     mtime: Option<(i64, u32)>,
+    path: Option<PathBuf>,
+    link: Option<PathBuf>,
+    size: Option<u64>,
+}
+
+/// Read metadata separately from entries so binary PAX values stay intact.
+fn read_entries<R: Read>(input: R, cancel: &AtomicBool, mut visit: impl FnMut(&mut tar::Entry<'_, R>, PathBuf, Records, Option<PathBuf>) -> Result<()>) -> Result<()> {
+    let mut archive = Archive::new(input);
+    let (mut pax, mut long_path, mut long_link) = (None, None, None);
+    for entry in archive.entries().context("read the archive")?.raw(true) {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(Cancelled.into());
+        }
+        let mut entry = entry.context("read the archive")?;
+        match entry.header().entry_type() {
+            EntryType::XHeader => {
+                ensure!(pax.is_none(), "two PAX headers describe the same entry");
+                pax = Some(records(&mut entry, cancel)?);
+                continue;
+            }
+            EntryType::GNULongName | EntryType::GNULongLink => {
+                let name = if entry.header().entry_type() == EntryType::GNULongName { &mut long_path } else { &mut long_link };
+                ensure!(name.is_none(), "two long names describe the same entry");
+                let mut bytes = read_extension(&mut entry, cancel)?;
+                if bytes.last() == Some(&0) {
+                    bytes.pop();
+                }
+                *name = Some(PathBuf::from(std::ffi::OsString::from_vec(bytes)));
+                continue;
+            }
+            EntryType::XGlobalHeader => bail!("the backup holds unsupported global PAX metadata"),
+            _ => {}
+        }
+        let mut records = pax.take().unwrap_or_default();
+        let rel = long_path.take().or(records.path.take()).unwrap_or(entry.path()?.into_owned());
+        ensure!(!rel.as_os_str().is_empty() && rel.components().all(|c| matches!(c, Component::Normal(_))), "the archive names {} outside its folder", rel.display());
+        cstr(&rel)?;
+        let link = long_link.take().or(records.link.take()).or(entry.link_name()?.map(|p| p.into_owned()));
+        if let Some(link) = &link {
+            cstr(link)?;
+            if entry.header().entry_type() == EntryType::Link {
+                ensure!(!link.as_os_str().is_empty() && link.components().all(|c| matches!(c, Component::Normal(_))), "the archive links {} outside its folder", link.display());
+            }
+        }
+        if let Some(size) = records.size {
+            ensure!(size == entry.size(), "the PAX size differs from the backup entry's size");
+        }
+        visit(&mut entry, rel, records, link)?;
+    }
+    ensure!(pax.is_none() && long_path.is_none() && long_link.is_none(), "the archive ends before the entry its metadata describes");
+    Ok(())
+}
+
+/// Extension metadata must fit in recovery memory and remain cancellable.
+fn read_extension(entry: &mut tar::Entry<impl Read>, cancel: &AtomicBool) -> Result<Vec<u8>> {
+    // shortcut: per-entry metadata is capped at 1 MiB; raise only for verified larger system-generated metadata.
+    ensure!(entry.size() <= 1 << 20, "the backup entry's metadata exceeds 1 MiB");
+    let mut bytes = vec![0u8; entry.size() as usize];
+    for chunk in bytes.chunks_mut(64 << 10) {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(Cancelled.into());
+        }
+        entry.read_exact(chunk).context("read the backup entry's metadata")?;
+    }
+    Ok(bytes)
+}
+
+/// A validation reports metadata and padding as well as file contents.
+struct Reading<'a, R> {
+    input: R,
+    done: u64,
+    progress: &'a mut dyn FnMut(u64),
+}
+
+impl<R: Read> Read for Reading<'_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.input.read(buf)?;
+        self.done += n as u64;
+        (self.progress)(self.done);
+        Ok(n)
+    }
+}
+
+/// Check the archive's metadata and contents without changing any files.
+/// Tells all bytes read, including metadata, and consumes the archive's tail.
+pub fn validate(input: impl Read, cancel: &AtomicBool, progress: &mut dyn FnMut(u64)) -> Result<()> {
+    let mut input = Reading { input, done: 0, progress };
+    let mut buf = vec![0u8; 1 << 20];
+    read_entries(&mut input, cancel, |entry, rel, _records, link| {
+        let header = entry.header();
+        header.uid()?;
+        header.gid()?;
+        header.mode()?;
+        header.mtime()?;
+        match header.entry_type() {
+            EntryType::Regular | EntryType::Directory | EntryType::Fifo => {}
+            EntryType::Symlink | EntryType::Link => {
+                ensure!(link.is_some(), "{} links to no file", rel.display());
+            }
+            EntryType::Char | EntryType::Block => {
+                header.device_major()?;
+                header.device_minor()?;
+            }
+            other => bail!("the archive holds a {other:?} at {}", rel.display()),
+        }
+        let mut left = entry.size();
+        while left > 0 {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(Cancelled.into());
+            }
+            let want = left.min(buf.len() as u64) as usize;
+            entry.read_exact(&mut buf[..want]).with_context(|| format!("read {} from the archive", rel.display()))?;
+            left -= want as u64;
+        }
+        Ok(())
+    })?;
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(Cancelled.into());
+        }
+        let n = input.read(&mut buf).context("read the archive's tail")?;
+        if n == 0 {
+            break;
+        }
+    }
+    Ok(())
 }
 
 /// Make the files of `root` what the archive from `input` holds: each entry
@@ -249,22 +376,14 @@ struct Records {
 /// not hold, but for what is `skipped` and the folders a key of their own
 /// begins in. Tells how many bytes of file contents are written so far.
 pub fn unpack(input: impl Read, root: &Path, skipped: &Skipped, cancel: &AtomicBool, progress: &mut dyn FnMut(u64)) -> Result<Unpacked> {
-    let mut archive = Archive::new(input);
     let mut held: HashSet<PathBuf> = HashSet::new();
     let mut folders: Vec<(PathBuf, (i64, u32))> = Vec::new();
     let mut unpacked = Unpacked::default();
     let mut done = 0u64;
-    for entry in archive.entries().context("read the archive")? {
-        if cancel.load(Ordering::Relaxed) {
-            return Err(Cancelled.into());
-        }
-        let mut entry = entry.context("read the archive")?;
-        let rel = entry.path().context("read the archive")?.into_owned();
-        ensure!(rel.components().all(|c| matches!(c, Component::Normal(_))), "the archive names {} outside its folder", rel.display());
+    read_entries(input, cancel, |entry, rel, records, link| {
         if skipped.covers(&rel) || unpacked.unmade.iter().any(|u| rel.starts_with(u)) {
-            continue;
+            return Ok(());
         }
-        let records = records(&mut entry).with_context(|| format!("read what the archive holds of {}", rel.display()))?;
         let header = entry.header().clone();
         let path = root.join(&rel);
         let mtime = records.mtime.unwrap_or((header.mtime()? as i64, 0));
@@ -317,14 +436,14 @@ pub fn unpack(input: impl Read, root: &Path, skipped: &Skipped, cancel: &AtomicB
                     fs::rename(&temp, &path).context("put it in place")?;
                 }
                 EntryType::Symlink => {
-                    let target = entry.link_name().context("read where it points")?.context("it points nowhere")?.into_owned();
+                    let target = link.as_ref().context("it points nowhere")?;
                     remove_any(&path)?;
-                    std::os::unix::fs::symlink(&target, &path).context("make it")?;
+                    std::os::unix::fs::symlink(target, &path).context("make it")?;
                     give(&path, &header, &records, true)?;
                     times(&path, mtime)?;
                 }
                 EntryType::Link => {
-                    let first = entry.link_name().context("read what it is another name of")?.context("it names no file")?.into_owned();
+                    let first = link.as_ref().context("it names no file")?;
                     remove_any(&path)?;
                     fs::hard_link(root.join(first), &path).context("make it")?;
                 }
@@ -353,10 +472,11 @@ pub fn unpack(input: impl Read, root: &Path, skipped: &Skipped, cancel: &AtomicB
         .with_context(|| format!("restore {}", path.display()))?;
         if !made {
             unpacked.unmade.push(rel);
-            continue;
+            return Ok(());
         }
         held.insert(rel);
-    }
+        Ok(())
+    })?;
     let dev = fs::symlink_metadata(root).with_context(|| format!("look at {}", root.display()))?.dev();
     sweep(root, Path::new(""), dev, &held, skipped, key(root)?.as_deref())?;
     // A folder's time goes last, its contents having changed it, the
@@ -408,24 +528,47 @@ fn remove_any(path: &Path) -> Result<()> {
     }
 }
 
-fn records(entry: &mut tar::Entry<impl Read>) -> Result<Records> {
+fn records(entry: &mut tar::Entry<impl Read>, cancel: &AtomicBool) -> Result<Records> {
     let mut r = Records::default();
-    let Some(extensions) = entry.pax_extensions()? else { return Ok(r) };
-    for ext in extensions {
-        let ext = ext?;
-        let key = ext.key()?;
-        let value = ext.value_bytes();
+    let bytes = read_extension(entry, cancel)?;
+    let mut left = bytes.as_slice();
+    // tar's PAX iterator splits at newlines, which binary xattrs can contain.
+    while !left.is_empty() {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(Cancelled.into());
+        }
+        let space = left.iter().position(|&b| b == b' ').context("PAX record has no length")?;
+        ensure!(space > 0 && left[..space].iter().all(u8::is_ascii_digit), "invalid PAX record length");
+        let len: usize = std::str::from_utf8(&left[..space])?.parse().context("invalid PAX record length")?;
+        let record = left.get(space + 1..len).context("PAX record length is outside its metadata")?;
+        ensure!(record.last() == Some(&b'\n'), "PAX record has no final newline");
+        let record = &record[..record.len() - 1];
+        let equals = record.iter().position(|&b| b == b'=').context("PAX record has no value")?;
+        ensure!(equals > 0, "PAX record has no key");
+        let key = std::str::from_utf8(&record[..equals])?;
+        let value = &record[equals + 1..];
         if let Some(name) = key.strip_prefix(XATTR) {
+            ensure!(!name.is_empty() && name.len() <= 255 && value.len() <= 65_536, "xattr {name:?} exceeds the kernel's name or value limits");
+            std::ffi::CString::new(name.as_bytes()).context("an xattr name holds a NUL")?;
             r.xattrs.push((name.to_string(), value.to_vec()));
         } else if key == PROJECT {
             r.project = Some(std::str::from_utf8(value)?.parse()?);
         } else if key == INHERITS {
+            ensure!(matches!(value, b"0" | b"1"), "invalid {INHERITS} flag");
             r.inherits = value == b"1";
         } else if key == KEY_ROOT {
+            ensure!(matches!(value, b"0" | b"1"), "invalid {KEY_ROOT} flag");
             r.key_root = value == b"1";
         } else if key == MTIME {
             r.mtime = Some(time(std::str::from_utf8(value)?)?);
+        } else if key == "path" {
+            r.path = Some(PathBuf::from(std::ffi::OsString::from_vec(value.to_vec())));
+        } else if key == "linkpath" {
+            r.link = Some(PathBuf::from(std::ffi::OsString::from_vec(value.to_vec())));
+        } else if key == "size" {
+            r.size = Some(std::str::from_utf8(value)?.parse()?);
         }
+        left = &left[len..];
     }
     Ok(r)
 }
@@ -682,13 +825,206 @@ mod tests {
         Skipped::new(&["media".into(), "system_de/*/spblob".into()])
     }
 
+    fn metadata_archive(headers: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut b = Builder::new(Vec::new());
+        b.append_pax_extensions(headers.iter().copied()).unwrap();
+        let mut h = Header::new_gnu();
+        h.set_entry_type(EntryType::Directory);
+        h.set_size(0);
+        h.set_mode(0o700);
+        h.set_uid(0);
+        h.set_gid(0);
+        h.set_mtime(0);
+        b.append_data(&mut h, "app-ephemeral", io::empty()).unwrap();
+        b.into_inner().unwrap()
+    }
+
+    #[test]
+    fn validation_checks_the_kernel_xattr_limits() {
+        for (name_len, value_len, accepted) in [(255, 65_536, true), (256, 1, false), (10, 65_537, false)] {
+            let key = format!("SCHILY.xattr.user.{}", "n".repeat(name_len - 5));
+            let value = vec![7; value_len];
+            let bytes = metadata_archive(&[(&key, &value)]);
+            let result = validate(bytes.as_slice(), &AtomicBool::new(false), &mut |_| {});
+            assert_eq!(result.is_ok(), accepted, "xattr name {name_len}, value {value_len}: {result:?}");
+        }
+    }
+
+    #[test]
+    fn encryption_and_project_flags_are_not_silently_cleared() {
+        for key in ["SKYWARD.key-root", "SKYWARD.project-inherit"] {
+            for value in [b"0".as_slice(), b"1"] {
+                let bytes = metadata_archive(&[(key, value)]);
+                validate(bytes.as_slice(), &AtomicBool::new(false), &mut |_| {}).unwrap();
+            }
+            for value in [b"2".as_slice(), b"", b"yes", b"1\0"] {
+                let bytes = metadata_archive(&[(key, value)]);
+                assert!(validate(bytes.as_slice(), &AtomicBool::new(false), &mut |_| {}).is_err(), "{key}={value:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn validation_can_stop_inside_binary_pax_metadata() {
+        let value = vec![7; 128 << 10];
+        let bytes = metadata_archive(&[("SKYWARD.future", &value)]);
+        let mut input = io::Cursor::new(bytes);
+        let cancel = AtomicBool::new(false);
+        let e = validate(&mut input, &cancel, &mut |n| cancel.store(n > 1024, Ordering::Relaxed)).unwrap_err();
+        assert!(e.is::<Cancelled>(), "{e:#}");
+        assert_eq!(input.position(), 512 + (64 << 10), "the rest of the PAX body is not read");
+    }
+
+    #[test]
+    fn oversized_extensions_are_rejected_before_reading_their_body() {
+        for kind in [EntryType::XHeader, EntryType::GNULongName, EntryType::GNULongLink] {
+            let mut b = Builder::new(Vec::new());
+            let mut h = Header::new_gnu();
+            h.set_entry_type(kind);
+            h.set_size((1 << 20) + 1);
+            h.set_cksum();
+            b.append(&h, io::empty()).unwrap();
+            let mut input = io::Cursor::new(b.into_inner().unwrap());
+            assert!(validate(&mut input, &AtomicBool::new(false), &mut |_| {}).is_err());
+            assert_eq!(input.position(), 512, "an oversized {kind:?} body must not be read");
+        }
+    }
+
+    #[test]
+    fn pax_records_preserve_binary_xattrs() {
+        let binary: Vec<u8> = (0..=255).collect();
+        let mut b = Builder::new(Vec::new());
+        b.append_pax_extensions([
+            ("SCHILY.xattr.user.binary", binary.as_slice()),
+            ("SCHILY.xattr.security.selinux", b"u:object_r:app_data_file:s0\0".as_slice()),
+            ("mtime", b"1793277280.000000123".as_slice()),
+        ]).unwrap();
+        let bytes = b.into_inner().unwrap();
+        let mut archive = Archive::new(bytes.as_slice());
+        let mut entry = archive.entries().unwrap().raw(true).next().unwrap().unwrap();
+        let read = records(&mut entry, &AtomicBool::new(false)).unwrap();
+        assert_eq!(read.xattrs, [
+            ("user.binary".into(), binary),
+            ("security.selinux".into(), b"u:object_r:app_data_file:s0\0".to_vec()),
+        ]);
+        assert_eq!(read.mtime, Some((1_793_277_280, 123)));
+    }
+
+    #[test]
+    fn binary_pax_does_not_hide_long_names_or_links() {
+        let at = scratch("binary-long");
+        let name = "n".repeat(150);
+        let mut b = Builder::new(Vec::new());
+        let mut h = Header::new_gnu();
+        h.set_mode(0o600);
+        h.set_uid(u64::from(unsafe { libc::geteuid() }));
+        h.set_gid(u64::from(unsafe { libc::getegid() }));
+        h.set_mtime(0);
+        h.set_size(7);
+        h.set_entry_type(EntryType::Regular);
+        b.append_pax_extensions([("SKYWARD.future", b"\0\n=\xff".as_slice())]).unwrap();
+        b.append_data(&mut h, &name, b"payload".as_slice()).unwrap();
+        h.set_size(0);
+        h.set_entry_type(EntryType::Symlink);
+        b.append_pax_extensions([("SKYWARD.future", b"\n\0".as_slice())]).unwrap();
+        b.append_link(&mut h, "symlink", &name).unwrap();
+        h.set_entry_type(EntryType::Link);
+        b.append_link(&mut h, "hardlink", &name).unwrap();
+        let bytes = b.into_inner().unwrap();
+        unpack(bytes.as_slice(), &at, &Skipped::new(&[]), &AtomicBool::new(false), &mut |_| {}).unwrap();
+        assert_eq!(fs::read(at.join(&name)).unwrap(), b"payload");
+        assert_eq!(fs::read_link(at.join("symlink")).unwrap(), Path::new(&name));
+        assert_eq!(fs::metadata(at.join("hardlink")).unwrap().ino(), fs::metadata(at.join(&name)).unwrap().ino());
+        fs::remove_dir_all(&at).unwrap();
+    }
+
+    #[test]
+    fn binary_xattrs_can_be_checked_without_restoring_them() {
+        let mut b = Builder::new(Vec::new());
+        b.append_pax_extensions([("SCHILY.xattr.security.selinux", b"binary\0\n\xff".as_slice())]).unwrap();
+        let mut h = Header::new_gnu();
+        h.set_entry_type(EntryType::Directory);
+        h.set_size(0);
+        h.set_mode(0o700);
+        h.set_uid(0);
+        h.set_gid(0);
+        h.set_mtime(0);
+        b.append_data(&mut h, "app-ephemeral", io::empty()).unwrap();
+        let bytes = b.into_inner().unwrap();
+        validate(bytes.as_slice(), &AtomicBool::new(false), &mut |_| {}).unwrap();
+        let e = validate(bytes.as_slice(), &AtomicBool::new(true), &mut |_| {}).unwrap_err();
+        assert!(e.is::<Cancelled>(), "{e:#}");
+    }
+
+    #[test]
+    fn malformed_pax_records_are_rejected() {
+        for bytes in [
+            b"no length".as_slice(), b"0 a=b\n", b"3 a=b\n", b"99 a=b\n", b"6 a=b!",
+            b"6 a-b\n", b"5 =x\n", b"+7 a=b\n", b"999999999999999999999999 a=b\n",
+        ] {
+            let mut b = Builder::new(Vec::new());
+            let mut h = Header::new_ustar();
+            h.set_entry_type(EntryType::XHeader);
+            h.set_size(bytes.len() as u64);
+            h.set_cksum();
+            b.append(&h, bytes).unwrap();
+            let bytes = b.into_inner().unwrap();
+            let mut archive = Archive::new(bytes.as_slice());
+            let mut entry = archive.entries().unwrap().raw(true).next().unwrap().unwrap();
+            assert!(records(&mut entry, &AtomicBool::new(false)).is_err());
+        }
+    }
+
+    #[test]
+    fn validation_rejects_metadata_without_its_file() {
+        let mut b = Builder::new(Vec::new());
+        b.append_pax_extensions([("mtime", b"123.0".as_slice())]).unwrap();
+        let bytes = b.into_inner().unwrap();
+        assert!(validate(bytes.as_slice(), &AtomicBool::new(false), &mut |_| {}).is_err());
+    }
+
+    #[test]
+    fn validation_reads_whole_files_and_can_stop_partway() {
+        let mut b = Builder::new(Vec::new());
+        let mut h = Header::new_gnu();
+        h.set_entry_type(EntryType::Regular);
+        h.set_size(2 << 20);
+        h.set_mode(0o600);
+        h.set_uid(0);
+        h.set_gid(0);
+        h.set_mtime(0);
+        b.append_data(&mut h, "file", io::repeat(7).take(2 << 20)).unwrap();
+        let bytes = b.into_inner().unwrap();
+        let mut input = io::Cursor::new(bytes.as_slice());
+        let cancel = AtomicBool::new(false);
+        let e = validate(&mut input, &cancel, &mut |n| cancel.store(n >= 512 + (1 << 20), Ordering::Relaxed)).unwrap_err();
+        assert!(e.is::<Cancelled>(), "{e:#}");
+        assert_eq!(input.position(), 512 + (1 << 20), "validation stops halfway through the file");
+        assert!(validate(&bytes[..514], &AtomicBool::new(false), &mut |_| {}).is_err(), "a short file is not accepted");
+    }
+
+    #[test]
+    fn validation_rejects_links_outside_the_backup() {
+        let mut b = Builder::new(Vec::new());
+        let mut h = Header::new_gnu();
+        h.set_entry_type(EntryType::Link);
+        h.set_size(0);
+        h.set_mode(0o600);
+        h.set_uid(0);
+        h.set_gid(0);
+        h.set_mtime(0);
+        b.append_link(&mut h, "file", "../outside").unwrap();
+        let bytes = b.into_inner().unwrap();
+        assert!(validate(bytes.as_slice(), &AtomicBool::new(false), &mut |_| {}).is_err());
+    }
+
     #[test]
     fn a_folder_comes_back_as_it_was_archived() {
         let at = scratch("round");
         let (from, to) = (at.join("from"), at.join("to"));
         tree(&from);
         #[cfg(target_os = "android")]
-        set_xattr(&from.join("data/com.example/empty"), "user.skyward", b"kept").unwrap();
+        set_xattr(&from.join("data/com.example/empty"), "user.skyward", b"kept\0\n=\xff").unwrap();
         let (bytes, entries) = measure(&from, &skipped(), &AtomicBool::new(false)).unwrap();
         assert_eq!((bytes, entries), (300_000 + 11, 11), "what is left out is not counted, nor a second name");
         let mut archived = Vec::new();

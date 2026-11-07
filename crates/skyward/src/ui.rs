@@ -29,7 +29,8 @@ use skyward_block::usb::{self, Drive};
 use skyward_net::download::{self, Failure};
 use skyward_net::http::Servers;
 use skyward_net::release::{Installed, Release, Unanswered};
-use skyward_net::wlan::{Power as WlanPower, Wlan};
+use skyward_net::wlan::{Power as WlanPower, Stage as Joining, Wlan};
+use skyward_sys::sleep::{Sleeper, Slept};
 use skyward_ui::app::{
     App, Asked, BackupAt, BackupEnd, BackupEntry, BackupRefusal, ClashChoice, Data, DownloadEnd, Effect, EraseStop, FileKind, FileOp,
     FileRow, FileTask, FsAction, FsRow, Have, Held, ItemEnd, ItemState, JobEnd, Keys, MountFailure, Part, PartKind, PartStop, Place,
@@ -251,15 +252,19 @@ fn withhold(transfer: &mut Option<Transfer>, app: &mut App, now: u64) -> Result<
 /// computer has the port, as the USB controller tells it.
 fn fastboot_status() -> Result<(bool, UsbLink)> {
     let running = skyward_sys::prop("init.svc.fastbootd").as_deref() == Some("running");
+    Ok((running, usb_link()?))
+}
+
+/// How far a computer has the USB port, as the port's controller tells.
+fn usb_link() -> Result<UsbLink> {
     let controller = skyward_sys::prop("sys.usb.controller").context("init names no USB controller")?;
     let path = Path::new("/sys/class/udc").join(controller).join("state");
     let state = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-    let link = match state.trim() {
+    Ok(match state.trim() {
         "configured" => UsbLink::Connected,
         "not attached" => UsbLink::Unplugged,
         _ => UsbLink::Connecting,
-    };
-    Ok((running, link))
+    })
 }
 
 /// What a request from misc shows on the pages that answer it.
@@ -1275,6 +1280,8 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     // Asking GitHub for Skyward's newest release, and updating to it.
     let mut skyward_checker: Option<updates::Worker> = None;
     let mut skyward_updater: Option<updates::Worker> = None;
+    // The phone sleeps while its screen is off and nothing needs it awake.
+    let sleeper = Sleeper::start()?;
     // The USB drive plugged in, looked for each second.
     let mut plugged: Option<Plugged> = None;
     let mut seen: Option<String> = None;
@@ -1389,7 +1396,37 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
         // A resting panel turns off once its rest is over.
         let rest_left = rested_at.map(|at| REST.saturating_sub(at.elapsed()).as_millis() as i32);
         let timeout = if ahead { 0 } else { until_due.into_iter().chain(rest_left).min().map_or(1000, |t| t.clamp(floor, 1000)) };
-        let mut fds = inputs.fds();
+        // With the display off, the phone sleeps unless something needs it
+        // awake: work under way, fastboot or sideload, a restart on its way,
+        // a command running in the terminal, a network being joined, or a
+        // computer on the USB port, whose adb and file transfer stay up.
+        let busy = installer.is_some()
+            || eraser.is_some()
+            || worker.is_some()
+            || relabeler.is_some()
+            || backuper.is_some()
+            || merger.is_some()
+            || decryptor.is_some()
+            || part_worker.is_some()
+            || checker.is_some()
+            || downloader.is_some()
+            || skyward_checker.is_some()
+            || skyward_updater.is_some();
+        let joining = app.state.wlan.as_ref().and_then(|w| w.joined.as_ref()).is_some_and(|j| matches!(j.stage, Joining::Joining | Joining::Addressing));
+        let running = match &shell {
+            Some(sh) => !sh.waiting()?,
+            None => false,
+        };
+        let may_sleep = surface.is_off()
+            && !busy
+            && !fastboot
+            && !sideloading
+            && leave_at.is_none()
+            && !joining
+            && !running
+            && usb_link()? != UsbLink::Connected;
+        sleeper.allow(may_sleep);
+        let mut fds = vec![inputs.fd(), sleeper.fd()];
         if let Some(i) = &installer {
             fds.push(i.fd());
         }
@@ -1438,6 +1475,12 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
         fds.push(readings.fd());
         wait(&fds, timeout)?;
         let now = monotonic_ms();
+        for slept in sleeper.slept() {
+            match slept {
+                Slept::Woke => skyward_sys::kmsg("the phone slept and woke")?,
+                Slept::Refused(why) => skyward_sys::kmsg(&format!("the phone did not sleep: {why}"))?,
+            }
+        }
         let mut drive_told = None;
         if drive_at.elapsed().as_secs() >= 1 {
             drive_told = look_for_drive(&mut plugged, &mut seen)?;

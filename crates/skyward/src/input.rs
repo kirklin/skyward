@@ -2,6 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use evdev::raw_stream::RawDevice;
 use evdev::{AbsoluteAxisCode, EventSummary, InputEvent, KeyCode, PropType, SynchronizationCode};
 use skyward_config::Write;
+use skyward_sys::sleep::Wakeful;
 use skyward_ui::app::{Key, Touch};
 use std::collections::HashSet;
 use std::ffi::CString;
@@ -180,6 +181,9 @@ impl Panel {
 /// loads after the UI starts, is picked up when it appears.
 pub struct Inputs {
     watch: OwnedFd,
+    /// The watch and every device taken in: a touch or a key press keeps
+    /// the phone awake until it is read.
+    wakeful: Wakeful,
     panel: Option<Panel>,
     buttons: Vec<(PathBuf, RawDevice)>,
     seen: HashSet<PathBuf>,
@@ -202,8 +206,18 @@ impl Inputs {
         if unsafe { libc::inotify_add_watch(fd, dir.as_ptr(), libc::IN_CREATE | libc::IN_ATTRIB) } < 0 {
             return Err(io::Error::last_os_error()).context("watch /dev/input");
         }
-        let mut inputs =
-            Inputs { watch, panel: None, buttons: Vec::new(), seen: HashSet::new(), touch_writes, w: w as f32, h: h as f32 };
+        let wakeful = Wakeful::new()?;
+        wakeful.add(fd)?;
+        let mut inputs = Inputs {
+            watch,
+            wakeful,
+            panel: None,
+            buttons: Vec::new(),
+            seen: HashSet::new(),
+            touch_writes,
+            w: w as f32,
+            h: h as f32,
+        };
         inputs.scan()?;
         if inputs.panel.is_none() {
             eprintln!("no touch panel yet; waiting for one to appear under /dev/input");
@@ -227,6 +241,7 @@ impl Inputs {
             let keys = dev.supported_keys().is_some_and(|k| KEYS.iter().any(|c| k.contains(*c)));
             eprintln!("input {}: {:?} direct={direct} multitouch={mt} keys={keys}", path.display(), dev.name().unwrap_or("?"));
             if direct && mt && self.panel.is_none() {
+                self.wakeful.add(dev.as_raw_fd())?;
                 self.panel = Some(Panel::new(path, dev)?);
                 for w in &self.touch_writes {
                     fs::write(&w.path, &w.value).with_context(|| format!("write {} to {}", w.value, w.path))?;
@@ -234,6 +249,7 @@ impl Inputs {
                 }
             } else if keys {
                 set_nonblocking(dev.as_raw_fd()).context("make buttons non-blocking")?;
+                self.wakeful.add(dev.as_raw_fd())?;
                 self.buttons.push((path, dev));
             }
         }
@@ -264,11 +280,9 @@ impl Inputs {
         self.panel.is_some()
     }
 
-    pub fn fds(&self) -> Vec<RawFd> {
-        let mut fds = vec![self.watch.as_raw_fd()];
-        fds.extend(self.panel.iter().map(|p| p.dev.as_raw_fd()));
-        fds.extend(self.buttons.iter().map(|(_, b)| b.as_raw_fd()));
-        fds
+    /// Readable while a device has something queued, or /dev/input changed.
+    pub fn fd(&self) -> RawFd {
+        self.wakeful.fd()
     }
 
     /// Everything the devices have queued, as touches and key presses.

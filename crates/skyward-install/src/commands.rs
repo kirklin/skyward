@@ -1,13 +1,15 @@
 //! The commands install scripts written for other recoveries run that a
 //! stock recovery does not carry: 7za, which takes a partition image out of
 //! the zip the script came in, and zstd, which decompresses it on its way to
-//! the partition. The ramdisk links each to the recovery service binary,
-//! which runs the one it is started as.
+//! the partition; and unzip, as the stock recovery's own but pouring out what
+//! `-p` takes as it reads it. The ramdisk links 7za and zstd to the recovery
+//! service binary, which runs the one it is started as.
 
 use std::ffi::{OsStr, OsString};
 use std::io::{self, Read, Write};
 
 mod sevenzip;
+mod unzip;
 mod zstandard;
 
 /// How much is read and written at a time: a whole partition image may go
@@ -28,6 +30,7 @@ type Command = fn(&[OsString], &mut Io) -> i32;
 fn command(name: &OsStr) -> Option<Command> {
     match name.to_str()? {
         "7za" => Some(sevenzip::run),
+        "unzip" => Some(unzip::run),
         "zstd" => Some(zstandard::run),
         _ => None,
     }
@@ -80,6 +83,6 @@ mod tests {
             assert!(command(name).is_some(), "{link}");
         }
         assert!(command(OsStr::new("recovery")).is_none());
-        assert!(command(OsStr::new("unzip")).is_none(), "the stock recovery carries that one");
+        assert!(command(OsStr::new("zipinfo")).is_none(), "the stock recovery's own answers to that name");
     }
 }

@@ -13,9 +13,6 @@ const PORT: u16 = 53;
 /// How long a server gets to answer.
 const WAIT: Duration = Duration::from_secs(3);
 
-/// How many times each server is asked before the next is.
-const TRIES: usize = 2;
-
 /// A question for the IPv4 addresses of `host`, numbered `id`.
 pub fn question(id: u16, host: &str) -> Result<Vec<u8>> {
     let name = Name::from_ascii(host).with_context(|| format!("{host} is not a name DNS knows"))?;
@@ -79,23 +76,28 @@ pub fn lookup(host: &str, servers: &[Ipv4Addr]) -> Result<Vec<Ipv4Addr>> {
     }
     let mut last = None;
     for server in servers {
-        let at = SocketAddrV4::new(*server, PORT);
-        for _ in 0..TRIES {
-            match ask(host, at) {
-                Ok(Some(found)) => return Ok(found),
-                Ok(None) => last = Some(anyhow::anyhow!("the DNS server at {server} did not answer")),
-                // A name that is not there is not there at the next server
-                // either.
-                Err(e) => return Err(e),
-            }
+        match ask_server(host, SocketAddrV4::new(*server, PORT))? {
+            Ok(found) => return Ok(found),
+            Err(why) => last = Some(why),
         }
     }
     Err(last.expect("there was a server to ask"))
 }
 
-/// Ask the server at `at`, over UDP and, for an answer too long for it,
-/// over TCP; nothing heard in time gives none.
-fn ask(host: &str, at: SocketAddrV4) -> Result<Option<Vec<Ipv4Addr>>> {
+/// Ask the server at `at` over UDP, then over TCP where no whole answer
+/// comes over UDP, as some networks let a question out over UDP and never
+/// let its answer back in: the addresses of `host`, or why the server gave
+/// none. A name that is not there is an error, as it is not there at the
+/// next server either.
+fn ask_server(host: &str, at: SocketAddrV4) -> Result<Result<Vec<Ipv4Addr>, anyhow::Error>> {
+    if let Some(Answer::Addresses(found)) = ask(host, at)? {
+        return Ok(Ok(found));
+    }
+    Ok(ask_tcp(host, at)?.map_err(|why| anyhow::anyhow!("the DNS server at {} did not answer over UDP, nor over TCP: {why}", at.ip())))
+}
+
+/// Ask the server at `at` over UDP; nothing heard in time gives none.
+fn ask(host: &str, at: SocketAddrV4) -> Result<Option<Answer>> {
     let id = id();
     let q = question(id, host)?;
     let s = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).context("make a DNS socket")?;
@@ -112,28 +114,37 @@ fn ask(host: &str, at: SocketAddrV4) -> Result<Option<Vec<Ipv4Addr>>> {
         if from != SocketAddr::V4(at) {
             continue;
         }
-        match answer(&buf[..n], id, host)? {
-            Some(Answer::Addresses(found)) => return Ok(Some(found)),
-            Some(Answer::Truncated) => return ask_tcp(host, at),
-            None => continue,
+        if let Some(answer) = answer(&buf[..n], id, host)? {
+            return Ok(Some(answer));
         }
     }
 }
 
-/// Ask over TCP, where each message goes after its length in two bytes.
-fn ask_tcp(host: &str, at: SocketAddrV4) -> Result<Option<Vec<Ipv4Addr>>> {
+/// Ask the server at `at` over TCP, where each message goes after its
+/// length in two bytes: its addresses for `host`, or why the server could
+/// not be asked or its answer read.
+fn ask_tcp(host: &str, at: SocketAddrV4) -> Result<Result<Vec<Ipv4Addr>, std::io::Error>> {
     let id = id();
     let q = question(id, host)?;
-    let mut s = TcpStream::connect_timeout(&SocketAddr::V4(at), WAIT).with_context(|| format!("reach the DNS server at {at}"))?;
-    s.set_read_timeout(Some(WAIT)).context("time the DNS connection")?;
-    let len = u16::try_from(q.len()).context("a DNS question that long")?;
-    s.write_all(&len.to_be_bytes()).and_then(|()| s.write_all(&q)).with_context(|| format!("ask the DNS server at {at}"))?;
-    let mut len = [0u8; 2];
-    s.read_exact(&mut len).with_context(|| format!("read the answer of the DNS server at {at}"))?;
-    let mut packet = vec![0u8; u16::from_be_bytes(len) as usize];
-    s.read_exact(&mut packet).with_context(|| format!("read the answer of the DNS server at {at}"))?;
+    let exchange = || -> std::io::Result<Vec<u8>> {
+        let mut s = TcpStream::connect_timeout(&SocketAddr::V4(at), WAIT)?;
+        s.set_read_timeout(Some(WAIT))?;
+        s.set_write_timeout(Some(WAIT))?;
+        let len = u16::try_from(q.len()).map_err(std::io::Error::other)?;
+        s.write_all(&len.to_be_bytes())?;
+        s.write_all(&q)?;
+        let mut len = [0u8; 2];
+        s.read_exact(&mut len)?;
+        let mut packet = vec![0u8; u16::from_be_bytes(len) as usize];
+        s.read_exact(&mut packet)?;
+        Ok(packet)
+    };
+    let packet = match exchange() {
+        Ok(packet) => packet,
+        Err(e) => return Ok(Err(e)),
+    };
     match answer(&packet, id, host)? {
-        Some(Answer::Addresses(found)) => Ok(Some(found)),
+        Some(Answer::Addresses(found)) => Ok(Ok(found)),
         Some(Answer::Truncated) => bail!("the DNS server at {at} cut its answer short over TCP too"),
         None => bail!("the DNS server at {at} answered another question"),
     }
@@ -191,6 +202,20 @@ mod tests {
         assert!(lookup("example.com", &[]).is_err());
     }
 
+    const ADDRESSES: [Ipv4Addr; 2] = [Ipv4Addr::new(10, 0, 0, 1), Ipv4Addr::new(10, 0, 0, 2)];
+
+    /// Answer the one question that comes over TCP to `tcp`, whole.
+    fn answer_over_tcp(tcp: std::net::TcpListener) {
+        let (mut s, _) = tcp.accept().unwrap();
+        let mut len = [0u8; 2];
+        s.read_exact(&mut len).unwrap();
+        let mut q = vec![0u8; u16::from_be_bytes(len) as usize];
+        s.read_exact(&mut q).unwrap();
+        let reply = served(&q, &ADDRESSES, false);
+        s.write_all(&(reply.len() as u16).to_be_bytes()).unwrap();
+        s.write_all(&reply).unwrap();
+    }
+
     /// A server on this computer that answers the way one on the network
     /// does: over UDP with the answer cut short, then whole over TCP.
     #[test]
@@ -198,22 +223,37 @@ mod tests {
         let udp = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let port = udp.local_addr().unwrap().port();
         let tcp = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, port)).unwrap();
-        let addresses = [Ipv4Addr::new(10, 0, 0, 1), Ipv4Addr::new(10, 0, 0, 2)];
         let server = std::thread::spawn(move || {
             let mut buf = [0u8; 1500];
             let (n, from) = udp.recv_from(&mut buf).unwrap();
             udp.send_to(&served(&buf[..n], &[], true), from).unwrap();
-            let (mut s, _) = tcp.accept().unwrap();
-            let mut len = [0u8; 2];
-            s.read_exact(&mut len).unwrap();
-            let mut q = vec![0u8; u16::from_be_bytes(len) as usize];
-            s.read_exact(&mut q).unwrap();
-            let reply = served(&q, &addresses, false);
-            s.write_all(&(reply.len() as u16).to_be_bytes()).unwrap();
-            s.write_all(&reply).unwrap();
+            answer_over_tcp(tcp);
         });
-        let found = ask("update.example.com", SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)).unwrap();
+        let found = ask_server("update.example.com", SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)).unwrap();
         server.join().unwrap();
-        assert_eq!(found, Some(addresses.to_vec()));
+        assert_eq!(found.unwrap(), ADDRESSES);
+    }
+
+    /// A server behind a network that lets questions out over UDP and
+    /// never lets the answers back in.
+    #[test]
+    fn a_server_whose_answers_never_come_over_udp_is_asked_over_tcp() {
+        let udp = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = udp.local_addr().unwrap().port();
+        let tcp = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, port)).unwrap();
+        let server = std::thread::spawn(move || answer_over_tcp(tcp));
+        let found = ask_server("update.example.com", SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)).unwrap();
+        server.join().unwrap();
+        assert_eq!(found.unwrap(), ADDRESSES);
+        drop(udp);
+    }
+
+    #[test]
+    fn a_server_that_answers_neither_way_says_why() {
+        let udp = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = udp.local_addr().unwrap().port();
+        let why = ask_server("update.example.com", SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)).unwrap().unwrap_err().to_string();
+        assert!(why.starts_with("the DNS server at 127.0.0.1 did not answer over UDP, nor over TCP: "), "{why}");
+        drop(udp);
     }
 }

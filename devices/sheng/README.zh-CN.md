@@ -52,13 +52,10 @@ BootControl 使用设备已有系统上的匹配服务和库。
 
 ## 本地构建和审计
 
-当前 `Pad` 提交跳过 GitHub Actions；使用下面的 WSL/Linux 本地构建命令。
-上传所用 GitHub OAuth 凭据缺少 `workflow` 权限，自动构建工作流的改动因此
-保存在本目录的 `build-workflow.patch`，尚未应用到 `.github/workflows/build.yml`。
-取得可修改工作流的凭据后，在仓库根目录执行
-`git apply devices/sheng/build-workflow.patch` 并提交该工作流。
-补丁修正构建工具目录冲突，支持 sheng 的官方 recovery URL 和 ramdisk overlay，
-并从默认自动构建列表排除必须手动提供官方 recovery 的机型。
+GitHub Actions 手动运行时，选择 `device = sheng`，并通过
+`stock_recovery_url` 提供官方 recovery 的 HTTPS 下载地址。工作流会校验镜像
+SHA-256 并应用 sheng 的 ramdisk overlay；默认自动构建列表排除需要手动提供
+官方 recovery 的机型。本地构建不需要上传官方镜像。
 
 Linux/WSL 需安装仓库要求的 Rust、aarch64-linux-android 目标、NDK r29、
 cargo-ndk 和 lz4，并设置 `ANDROID_NDK_HOME`。

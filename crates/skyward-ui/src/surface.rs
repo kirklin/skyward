@@ -254,6 +254,10 @@ pub mod kms {
                     let text = card.get_property_blob(blob).context("read mode_properties")?;
                     writeln!(out, "  mode_properties: {}", String::from_utf8_lossy(&text).replace('\n', " | "))?;
                 }
+                if let Ok((_, blob)) = props.get("capabilities") {
+                    let text = card.get_property_blob(blob).context("read capabilities")?;
+                    writeln!(out, "  capabilities: {}", String::from_utf8_lossy(&text).replace('\n', " | "))?;
+                }
                 for m in c.modes() {
                     let (w, hgt) = m.size();
                     writeln!(out, "  mode {:?} {w}x{hgt} {} Hz clock {} type {:?} flags {:?}", m.name(), m.vrefresh(), m.clock(), m.mode_type(), m.flags())?;

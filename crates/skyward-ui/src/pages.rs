@@ -3192,7 +3192,7 @@ pub fn logs(cx: &Ctx) -> Frame {
     });
     let places = widgets::list(&mut c, t, f, y, &[
         Row::new(l.pick(["临时文件夹", "暫存資料夾", "Temporary folder"]))
-            .subtitle(l.pick(["/tmp/skyward-logs，可通过 adb pull 导出到电脑", "/tmp/skyward-logs，可透過 adb pull 匯出到電腦", "/tmp/skyward-logs, which adb pull copies to a computer"]))
+            .subtitle(l.pick(["/skyward/run/logs，可通过 adb pull 导出到电脑", "/skyward/run/logs，可透過 adb pull 匯出到電腦", "/skyward/run/logs, which adb pull copies to a computer"]))
             .trail(Trail::Check(s.logs_to == 0)),
         Row::new(place_name(l, Place::Storage)).subtitle(storage).trail(Trail::Check(s.logs_to == 1)),
     ]);

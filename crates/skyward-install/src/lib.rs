@@ -50,12 +50,13 @@ pub fn battery_refusal(battery: &Battery) -> Option<Refusal> {
 }
 
 /// Where the installer keeps what update_engine wrote while it last
-/// installed an update.
-pub const ENGINE_LOG: &str = "/tmp/update_engine.log";
+/// installed an update, in the recovery service's own folder.
+pub const ENGINE_LOG: &str = "/skyward/run/update_engine.log";
 
 /// Where the installer keeps what the install script it last ran showed
-/// and asked for, with what it and the programs it ran wrote.
-pub const SCRIPT_LOG: &str = "/tmp/install-script.log";
+/// and asked for, with what it and the programs it ran wrote, in the
+/// recovery service's own folder.
+pub const SCRIPT_LOG: &str = "/skyward/run/install-script.log";
 
 /// What the screen asks of an install besides the package.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

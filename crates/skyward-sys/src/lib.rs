@@ -155,10 +155,16 @@ pub fn power(target: Power) -> Result<()> {
     set_prop("sys.powerctl", target.command())
 }
 
+/// The folder the recovery service keeps what it makes for itself in, for
+/// as long as the phone stays in recovery: its logs, the screenshots that
+/// wait for internal storage, the supplicant's settings. Install scripts
+/// written for other recoveries often empty /tmp before they start; this
+/// folder is out of their way.
+pub const RUN: &str = "/skyward/run";
+
 /// Where the recovery service keeps the lines it writes to the kernel log
-/// for as long as the phone stays in recovery, as the stock recovery keeps
-/// its own log there.
-pub const LOG: &str = "/tmp/recovery.log";
+/// for as long as the phone stays in recovery.
+pub const LOG: &str = "/skyward/run/recovery.log";
 
 /// The file [`kmsg`] writes its lines to as well, once [`keep_log`] opened
 /// it.

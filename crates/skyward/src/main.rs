@@ -659,15 +659,22 @@ fn adopt_installed_version(props: &std::collections::HashMap<String, String>) ->
     Ok(())
 }
 
-/// The recovery service. Its log is kept from the start, and adb comes up
-/// first so a failure later on can be inspected, file transfer joining it
+/// The recovery service. Its own folder is made and its log kept there from
+/// the start, and adb comes up first so a failure later on can be
+/// inspected, file transfer joining it
 /// once the screen starts; then the boot request in misc is read. A
 /// request whose work
 /// goes on stays in misc until the work is done; any other is cleared at
 /// once, so that any reboot from here boots the system. Failures go to the
 /// kernel log and still end the process, which init then starts again.
 fn recovery() -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
     let run = || -> Result<()> {
+        // Open to the programs the recovery runs as other users, the
+        // supplicant among them, whatever the umask.
+        std::fs::create_dir_all(skyward_sys::RUN).with_context(|| format!("make {}", skyward_sys::RUN))?;
+        std::fs::set_permissions(skyward_sys::RUN, std::fs::Permissions::from_mode(0o755))
+            .with_context(|| format!("open {} to the recovery's other users", skyward_sys::RUN))?;
         skyward_sys::keep_log(Path::new(skyward_sys::LOG))?;
         // A recovery that ended with a function of its own in the port took
         // the port with it; going through "none" takes that function off.

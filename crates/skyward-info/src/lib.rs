@@ -366,7 +366,7 @@ fn battery(root: &Path) -> Result<Option<Battery>> {
             Some("Battery") => {
                 first.get_or_insert(dir);
             }
-            Some(_) => plugged |= read_opt(dir.join("online"))?.as_deref() == Some("1"),
+            Some(_) => plugged |= online(&dir)?,
             None => {}
         }
     }
@@ -393,6 +393,25 @@ fn battery(root: &Path) -> Result<Option<Battery>> {
         quick: parse_opt::<u8>(root.with_file_name("qcom-battery").join("quick_charge_type"), "quick_charge_type")?.is_some_and(|k| (1..=4).contains(&k)),
         plugged,
     }))
+}
+
+/// Whether the power supply in `dir` says a charger or a computer is
+/// attached to it.
+fn online(dir: &Path) -> Result<bool> {
+    let path = dir.join("online");
+    said_online(fs::read_to_string(&path)).with_context(|| format!("read {}", path.display()))
+}
+
+/// What a power supply's `online` file says, as reading it went. A supply
+/// without one has no say, and one whose driver cannot tell yet, as
+/// Qualcomm's USB-C connector cannot early in a boot, answers "try again":
+/// either is taken as offline, and the next reading asks again.
+fn said_online(read: std::io::Result<String>) -> std::io::Result<bool> {
+    match read {
+        Ok(s) => Ok(s.trim() == "1"),
+        Err(e) if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::WouldBlock) => Ok(false),
+        Err(e) => Err(e),
+    }
 }
 
 #[cfg(test)]
@@ -474,5 +493,15 @@ mod tests {
         supply("ucsi-source-psy-soc:qcom,pmic_glink:qcom,ucsi1", &[("online", "0")]);
         supply("wireless", &[("online", "1")]);
         assert!(battery(&supplies).unwrap().expect("a battery").plugged, "on a wireless charger");
+    }
+
+    #[test]
+    fn a_power_supply_that_cannot_tell_yet_is_taken_as_offline() {
+        use std::io::Error;
+        assert!(said_online(Ok("1\n".into())).unwrap());
+        assert!(!said_online(Ok("0\n".into())).unwrap());
+        assert!(!said_online(Err(Error::from(ErrorKind::WouldBlock))).unwrap(), "Qualcomm's USB-C connector early in a boot");
+        assert!(!said_online(Err(Error::from(ErrorKind::NotFound))).unwrap(), "a supply without the file");
+        assert!(said_online(Err(Error::from(ErrorKind::PermissionDenied))).is_err(), "anything else is an error");
     }
 }

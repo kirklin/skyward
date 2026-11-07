@@ -723,6 +723,16 @@ fn recovery() -> Result<()> {
             Ok(ms) => skyward_sys::kmsg(&format!("clock set to {} ms from the RTC and persist", ms))?,
             Err(e) => skyward_sys::kmsg(&format!("clock not set: {e:#}"))?,
         }
+        // The kernel starts every core at its top frequency, and keeps idle
+        // ones from powering down, until the phone's own system boots and
+        // changes that; left so, the phone drains its battery with the
+        // screen off. The recovery works either way, so a failure goes to
+        // the kernel log.
+        #[cfg(target_os = "android")]
+        match skyward_sys::cpu::run_as_system() {
+            Ok(done) => skyward_sys::kmsg(&format!("the CPUs run as the system runs them: {}", done.join(", ")))?,
+            Err(e) => skyward_sys::kmsg(&format!("the CPUs run as the kernel started them: {e:#}"))?,
+        }
         #[cfg(target_os = "android")]
         {
             use skyward_ui::app::Screen;

@@ -473,6 +473,22 @@ fn default_module_sources() -> Vec<String> {
     vec!["vendor_boot".into(), "vendor_dlkm".into(), "vendor".into()]
 }
 
+/// The phone a device configuration is for, read on its own: the
+/// configuration a newer build of Skyward carries may hold what this build
+/// does not read.
+pub fn codename(text: &str) -> Result<String> {
+    #[derive(Deserialize)]
+    struct Named {
+        device: NamedDevice,
+    }
+    #[derive(Deserialize)]
+    struct NamedDevice {
+        codename: String,
+    }
+    let named: Named = toml::from_str(text).context("parse device config")?;
+    Ok(named.device.codename)
+}
+
 impl DeviceConfig {
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let p = path.as_ref();
@@ -920,6 +936,15 @@ mod tests {
         assert_eq!(cfg.services[6].ready_hardware_service.as_deref(), Some("android.hardware.boot@1.2::IBootControl/default"));
         assert_eq!(cfg.backup.efs, ["modemst1", "modemst2", "fsg", "fsc", "persist"]);
         assert!(cfg.backup.data_skipped.contains(&"vendor/tzstorage".to_string()));
+    }
+
+    #[test]
+    fn the_phone_is_read_from_a_configuration_this_build_cannot_read_whole() {
+        assert_eq!(codename(include_str!("../../../devices/ishtar.toml")).unwrap(), "ishtar");
+        let later = "[device]\ncodename = \"x\"\nab = \"no longer a switch\"\n[display]\nwidth = \"wide\"\n[aurora]\nnew = 1\n";
+        assert!(DeviceConfig::parse(later).is_err());
+        assert_eq!(codename(later).unwrap(), "x");
+        assert!(codename("[display]\nwidth = 1440\n").is_err(), "a configuration that names no phone");
     }
 
     #[test]

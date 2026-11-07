@@ -110,6 +110,13 @@ fn ramdisk(packed: impl Read) -> Result<Ramdisk> {
 
 /// Whether a packed ramdisk has an entry whose name `wanted` picks.
 fn holds(packed: impl Read, wanted: impl Fn(&str) -> bool) -> Result<bool> {
+    Ok(find(packed, wanted, |_| Ok(()))?.is_some())
+}
+
+/// What `take` makes of the first entry of a packed ramdisk whose name
+/// `wanted` picks, read from its start; none when no entry's name is
+/// picked.
+fn find<T>(packed: impl Read, wanted: impl Fn(&str) -> bool, take: impl FnOnce(&mut dyn Read) -> Result<T>) -> Result<Option<T>> {
     let mut packed = BufReader::new(packed);
     let start = packed.fill_buf().context("read the ramdisk's first bytes")?;
     let mut rest: Box<dyn Read + '_> = if start.starts_with(LZ4_LEGACY) || start.starts_with(LZ4_FRAME) {
@@ -122,12 +129,12 @@ fn holds(packed: impl Read, wanted: impl Fn(&str) -> bool) -> Result<bool> {
         bail!("a ramdisk packed in an unknown way, starting {:02x?}", &start[..start.len().min(4)]);
     };
     loop {
-        let entry = cpio::NewcReader::new(rest).context("read a ramdisk entry")?;
+        let mut entry = cpio::NewcReader::new(rest).context("read a ramdisk entry")?;
         if entry.entry().is_trailer() {
-            return Ok(false);
+            return Ok(None);
         }
         if wanted(entry.entry().name().trim_start_matches("./")) {
-            return Ok(true);
+            return take(&mut entry).map(Some);
         }
         rest = entry.finish().context("read past a ramdisk entry")?;
     }
@@ -137,22 +144,33 @@ fn holds(packed: impl Read, wanted: impl Fn(&str) -> bool) -> Result<bool> {
 /// the device configuration Skyward is packed with, packed in one of the
 /// ways read here, as Skyward packs it.
 pub fn is_skyward<R: Read + Seek>(file: &mut R) -> Result<bool> {
+    Ok(device_config(file)?.is_some())
+}
+
+/// The device configuration a Skyward recovery carries in its ramdisk;
+/// none when `file` is no Skyward recovery.
+pub fn device_config<R: Read + Seek>(file: &mut R) -> Result<Option<Vec<u8>>> {
     let mut head = Vec::with_capacity(4096);
     file.take(4096).read_to_end(&mut head).context("read the image's first bytes")?;
     if !head.starts_with(BOOT_MAGIC) {
-        return Ok(false);
+        return Ok(None);
     }
     let header = Header::parse(&mut Cursor::new(&head)).context("read the boot image header")?;
     if header.ramdisk_size() == 0 {
-        return Ok(false);
+        return Ok(None);
     }
     file.seek(SeekFrom::Start(header.ramdisk_position() as u64)).context("seek to the ramdisk")?;
     let mut ramdisk = BufReader::new(file.take(u64::from(header.ramdisk_size())));
     let start = ramdisk.fill_buf().context("read the ramdisk's first bytes")?;
     if ![LZ4_LEGACY, LZ4_FRAME, GZIP, NEWC].iter().any(|magic| start.starts_with(magic)) {
-        return Ok(false);
+        return Ok(None);
     }
-    holds(ramdisk, |name| name == skyward_config::ramdisk::CONFIG).context("read the ramdisk")
+    let read = |entry: &mut dyn Read| {
+        let mut config = Vec::new();
+        entry.read_to_end(&mut config).context("read the device configuration")?;
+        Ok(config)
+    };
+    find(ramdisk, |name| name == skyward_config::ramdisk::CONFIG, read).context("read the ramdisk")
 }
 
 /// The partition `name` of `slot` among the links in `dir`.
@@ -312,11 +330,24 @@ pub(crate) mod samples {
         }
         boot_image(0, &lz4_legacy(&archive(&names)))
     }
+
+    /// Skyward's recovery for the phone `codename` names, its device
+    /// configuration naming it.
+    pub fn skyward_for(codename: &str) -> Vec<u8> {
+        let config = format!("[device]\ncodename = \"{codename}\"\n");
+        let mut out = Vec::new();
+        for (name, data) in [("init", &b""[..]), ("system/bin/recovery", b""), ("skyward/device.toml", config.as_bytes())] {
+            let mut entry = cpio::NewcBuilder::new(name).mode(0o100644).write(out, data.len() as u32);
+            entry.write_all(data).unwrap();
+            out = entry.finish().unwrap();
+        }
+        boot_image(0, &lz4_legacy(&cpio::newc::trailer(out).unwrap()))
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::samples::{archive, boot_image, lz4_legacy, recovery};
+    use super::samples::{archive, boot_image, lz4_legacy, recovery, skyward_for};
     use super::*;
     use abootimg_oxide::binrw::BinWrite;
     use abootimg_oxide::VendorHeaderV4;
@@ -361,6 +392,14 @@ mod tests {
         assert!(!is_skyward(&mut Cursor::new(boot_image(5000, &[]))).unwrap(), "a boot image with no ramdisk");
         assert!(!is_skyward(&mut Cursor::new(boot_image(0, b"\xfd7zXZ\0"))).unwrap(), "a ramdisk packed as Skyward never packs it");
         assert!(!is_skyward(&mut Cursor::new(vec![0u8; 8192])).unwrap(), "an erased partition");
+    }
+
+    #[test]
+    fn skyward_carries_its_device_configuration() {
+        let config = device_config(&mut Cursor::new(skyward_for("ishtar"))).unwrap().expect("Skyward carries one");
+        assert_eq!(config, b"[device]\ncodename = \"ishtar\"\n");
+        assert!(is_skyward(&mut Cursor::new(skyward_for("ishtar"))).unwrap());
+        assert_eq!(device_config(&mut Cursor::new(recovery(false))).unwrap(), None);
     }
 
     #[test]

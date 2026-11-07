@@ -7,7 +7,7 @@ use std::io::{self, Write};
 use std::os::fd::AsRawFd;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 // linux/input-event-codes.h
 const EV_FF: u16 = 0x15;
@@ -120,9 +120,12 @@ impl Haptics {
         *playing = Some(this);
         drop(playing);
         let dev = self.dev.try_clone().context("share the motor")?;
-        let (playing, length) = (self.playing.clone(), loaded.length);
+        let length = loaded.length;
+        // Timed from now: a thread may wait a while before it first runs.
+        let until = Instant::now() + length;
+        let playing = self.playing.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(length);
+            std::thread::sleep(until.saturating_duration_since(Instant::now()));
             let mut playing = playing.lock().expect("no thread panics while it holds the click playing");
             if *playing == Some(this) {
                 *playing = None;

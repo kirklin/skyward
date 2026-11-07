@@ -1,7 +1,7 @@
 use anyhow::{anyhow, ensure, Context, Result};
 use evdev::raw_stream::RawDevice;
 use skyward_config::Strength;
-use std::f32::consts::{PI, TAU};
+use std::f32::consts::{FRAC_PI_2, TAU};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::os::fd::AsRawFd;
@@ -23,27 +23,34 @@ const RATE: u32 = 8000;
 const DRIVE_SWINGS: f32 = 2.0;
 const BRAKE_SWINGS: f32 = 1.5;
 /// The ticks of the screen going off by the power key, as the phone's own
-/// system plays them on the 13 Ultra, whose motor swings at [`TICKS_HZ`]: a
-/// crisp tick near twice the motor's frequency, then a softer tap below it,
-/// half-swing by half-swing. Each half-swing is its start, peak and end in
-/// milliseconds, its signed share of the full, and how steeply it rises and
-/// falls: 1 on half a cosine, 2 on its square. For another motor the times
-/// go in proportion. They are made at [`TICKS_RATE`].
-const TICKS_HZ: f32 = 172.5;
-const TICKS: [(f32, f32, f32, f32, i32, i32); 11] = [
-    (0.88, 2.29, 3.04, 0.504, 1, 1),
-    (3.04, 3.79, 4.38, -0.717, 1, 1),
-    (4.38, 5.08, 5.92, 1.0, 1, 1),
-    (5.92, 6.54, 7.38, -0.819, 1, 1),
-    (7.38, 7.83, 8.83, 0.559, 1, 1),
-    (8.83, 9.33, 10.33, -0.220, 1, 1),
-    (33.54, 39.67, 42.42, 0.906, 2, 1),
-    (42.42, 44.46, 46.71, -0.906, 1, 1),
-    (46.71, 48.83, 51.17, 0.717, 1, 1),
-    (51.17, 53.46, 56.63, -1.0, 1, 1),
-    (56.63, 58.63, 67.67, 0.260, 1, 2),
+/// system plays them on the 17 Ultra, whose motor swings at [`TICKS_HZ`]:
+/// two crisp ticks, the second lighter, each six half-swings at about one
+/// and a half times the motor's frequency. Each half-swing of a tick is its
+/// start, peak and end in milliseconds, its signed share of the full, and
+/// how it rises to its peak and falls from it: as a quarter of a sine
+/// raised to that power, 1 crossing zero at its steepest, higher powers
+/// setting off and dying away more gently. Each of the ticks is when it
+/// starts, in milliseconds, and its share of the tick in full. For another
+/// motor the times go in proportion. They are made at [`TICKS_RATE`].
+const TICKS_HZ: f32 = 172.7;
+const TICK: [(f32, f32, f32, f32, f32, f32); 6] = [
+    (0.125, 1.717, 2.375, 0.531, 2.6, 1.0),
+    (2.375, 3.45, 4.5, -1.0, 1.1, 1.0),
+    (4.5, 5.448, 6.375, 0.913, 1.0, 1.0),
+    (6.375, 7.227, 8.063, -0.801, 1.0, 1.0),
+    (8.063, 9.029, 10.025, 0.935, 1.0, 1.1),
+    (10.025, 10.671, 12.167, -0.508, 1.0, 2.3),
 ];
+const TICKS: [(f32, f32); 2] = [(0.0, 1.0), (55.125, 0.79)];
 const TICKS_RATE: u32 = 24000;
+/// The ticks play at this share of the drive the driver gives samples at in
+/// full, whatever the slider says: the 17 Ultra's own system plays them at
+/// 3527 mV of the 8500 mV its device tree gives.
+const TICKS_STRENGTH: f32 = 0.415;
+/// How long the ticks stay loaded once their samples have run out, as the
+/// phone's own system leaves them: the motor comes to rest on its own
+/// before taking them away brakes it.
+const TICKS_REST: Duration = Duration::from_millis(40);
 
 /// The vibration motor, played through the kernel's force-feedback
 /// events. The driver fills its queue with a made click's samples as the
@@ -99,10 +106,10 @@ impl Haptics {
         self.start(false, share(&self.strength, position))
     }
 
-    /// The ticks of the screen going off, as strong as their samples are
-    /// whatever the slider says. Gives how long they play.
+    /// The ticks of the screen going off, as strong as the phone's own
+    /// system plays them whatever the slider says. Gives how long they play.
     pub fn ticks(&mut self) -> Result<Duration> {
-        self.start(true, 1.0)
+        self.start(true, TICKS_STRENGTH)
     }
 
     /// Play the ticks, or else the click, at `share` of its full strength,
@@ -120,7 +127,7 @@ impl Haptics {
         *playing = Some(this);
         drop(playing);
         let dev = self.dev.try_clone().context("share the motor")?;
-        let length = loaded.length;
+        let length = loaded.length + if ticks { TICKS_REST } else { Duration::ZERO };
         // Timed from now: a thread may wait a while before it first runs.
         let until = Instant::now() + length;
         let playing = self.playing.clone();
@@ -194,20 +201,21 @@ fn made(hz: f32) -> Vec<i8> {
 }
 
 /// The ticks at [`TICKS_RATE`] for a motor that swings at `hz`, still
-/// between the half-swings.
+/// between them.
 fn ticks(hz: f32) -> Vec<i8> {
     let scale = TICKS_HZ / hz;
     let at = |ms: f32| (ms * scale * TICKS_RATE as f32 / 1000.0).round() as usize;
-    let mut samples = vec![0i8; at(TICKS[TICKS.len() - 1].2)];
-    for (start, peak, end, share, rise, fall) in TICKS {
-        for (i, sample) in samples.iter_mut().enumerate().take(at(end)).skip(at(start)) {
-            let t = i as f32 * 1000.0 / TICKS_RATE as f32 / scale;
-            let k = if t < peak {
-                ((1.0 - (PI * (t - start) / (peak - start)).cos()) / 2.0).powi(rise)
-            } else {
-                ((1.0 + (PI * (t - peak) / (end - peak)).cos()) / 2.0).powi(fall)
-            };
-            *sample = (share * k * f32::from(i8::MAX)).round() as i8;
+    let (last, _) = TICKS[TICKS.len() - 1];
+    let mut samples = vec![0i8; at(last + TICK[TICK.len() - 1].2)];
+    for (offset, strength) in TICKS {
+        for (start, peak, end, share, rise, fall) in TICK {
+            let (start, peak, end) = (start + offset, peak + offset, end + offset);
+            for (i, sample) in samples.iter_mut().enumerate().take(at(end)).skip(at(start)) {
+                let t = i as f32 * 1000.0 / TICKS_RATE as f32 / scale;
+                let (way, power) = if t < peak { ((t - start) / (peak - start), rise) } else { ((end - t) / (end - peak), fall) };
+                let k = (FRAC_PI_2 * way.clamp(0.0, 1.0)).sin().powf(power);
+                *sample = (strength * share * k * f32::from(i8::MAX)).round() as i8;
+            }
         }
     }
     samples
@@ -328,15 +336,20 @@ mod tests {
     }
 
     #[test]
-    fn the_screen_going_off_ticks_crisply_then_taps_softly() {
+    fn the_screen_going_off_ticks_twice_crisply_the_second_lighter() {
         let at = |ms: f32| (ms * TICKS_RATE as f32 / 1000.0).round() as usize;
         let samples = ticks(TICKS_HZ);
-        assert_eq!(samples.len(), at(67.67));
-        assert_eq!(samples[at(5.08)], i8::MAX, "the tick swings up to the full");
-        assert_eq!(samples[at(53.46)], -i8::MAX, "and the tap's last full swing stops the motor");
-        assert!(samples[at(10.33)..at(33.54)].iter().all(|&s| s == 0), "still between");
-        let crossings = |s: &[i8]| s.windows(2).filter(|w| (w[0] < 0) != (w[1] < 0)).count();
-        assert!(crossings(&samples[..at(10.33)]) > crossings(&samples[at(33.54)..]), "the tick swings faster than the tap");
+        let (first, second) = (&samples[..at(12.167)], &samples[at(55.125)..]);
+        assert_eq!(samples.len(), at(55.125 + 12.167));
+        assert!(samples[at(12.167)..at(55.125)].iter().all(|&s| s == 0), "still between");
+        let halves = |s: &[i8]| 1 + s.iter().filter(|&&s| s != 0).map(|&s| s > 0).collect::<Vec<_>>().windows(2).filter(|w| w[0] != w[1]).count();
+        assert_eq!((halves(first), halves(second)), (6, 6), "six half-swings each");
+        let motor = TICKS_RATE as f32 / TICKS_HZ / 2.0;
+        assert!((at(12.167 - 0.125) as f32 / 6.0) < motor, "each quicker than the motor's own");
+        assert_eq!(first.iter().min(), Some(&-i8::MAX), "the first swings to the full");
+        for (i, (&a, &b)) in first.iter().zip(second).enumerate() {
+            assert!((f32::from(a) * 0.79 - f32::from(b)).abs() <= 1.0, "the second is the first at 0.79: {a} and {b} at {i}");
+        }
         assert_eq!(ticks(TICKS_HZ * 2.0).len(), samples.len().div_ceil(2), "a motor twice as quick ticks in half the time");
     }
 

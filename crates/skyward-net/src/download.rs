@@ -1,9 +1,10 @@
 //! Downloading a package whole: from where an earlier download of it
-//! stopped, over connections that may drop, and checked against the MD5
+//! stopped, over connections that may drop, and checked against the digest
 //! its server gave before it takes its own name.
 
 use anyhow::{bail, Context, Result};
 use md5::{Digest, Md5};
+use sha2::Sha256;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -11,6 +12,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 /// How much is read and written at a time.
 const CHUNK: usize = 1 << 20;
+
+/// The digest a package's server gives of it, in hex.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Sum {
+    Md5(String),
+    Sha256(String),
+}
 
 /// Where a package is downloaded to until it is whole and checked.
 pub fn partial(path: &Path) -> PathBuf {
@@ -22,8 +30,8 @@ pub fn partial(path: &Path) -> PathBuf {
 /// How far a download has come.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Progress {
-    /// What an earlier download left is read for its MD5, before the rest
-    /// is added to it.
+    /// What an earlier download left is read for its digest, before the
+    /// rest is added to it.
     Checking { done: u64, total: u64 },
     Downloading { done: u64, total: u64 },
 }
@@ -55,14 +63,14 @@ impl std::fmt::Display for Refused {
 
 impl std::error::Error for Refused {}
 
-/// The whole package does not have the MD5 its server gave; what was
+/// The whole package does not have the digest its server gave; what was
 /// downloaded of it is gone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Damaged;
 
 impl std::fmt::Display for Damaged {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("the package downloaded does not have the MD5 its server gave")
+        f.write_str("the package downloaded does not have the digest its server gave")
     }
 }
 
@@ -93,9 +101,9 @@ pub fn free(dir: &Path) -> Result<u64> {
     Ok(s.f_bavail as u64 * s.f_frsize as u64)
 }
 
-/// The MD5 of what `file` holds, read from its start.
-fn hash_of(file: &mut File, total: u64, stop: &AtomicBool, progress: &mut dyn FnMut(Progress)) -> Result<Md5> {
-    let mut hash = Md5::new();
+/// The digest, by `D`, of what `file` holds, read from its start.
+fn hash_of<D: Digest>(file: &mut File, total: u64, stop: &AtomicBool, progress: &mut dyn FnMut(Progress)) -> Result<D> {
+    let mut hash = D::new();
     let mut buf = vec![0u8; CHUNK];
     let mut done = 0;
     loop {
@@ -117,10 +125,18 @@ fn hex(digest: &[u8]) -> String {
 }
 
 /// Download `url` to `path`, carrying on from what an earlier download
-/// left, and give it its name once its MD5 is `md5`. A part as long as the
-/// package is only checked; a server that will not send from the middle
-/// sends it all again.
-pub fn fetch(agent: &ureq::Agent, url: &str, path: &Path, md5: &str, stop: &AtomicBool, progress: &mut dyn FnMut(Progress)) -> Result<()> {
+/// left, and give it its name once it has the digest `sum`. A part as long
+/// as the package is only checked; a server that will not send from the
+/// middle sends it all again.
+pub fn fetch(agent: &ureq::Agent, url: &str, path: &Path, sum: &Sum, stop: &AtomicBool, progress: &mut dyn FnMut(Progress)) -> Result<()> {
+    match sum {
+        Sum::Md5(hex) => fetch_as::<Md5>(agent, url, path, hex, stop, progress),
+        Sum::Sha256(hex) => fetch_as::<Sha256>(agent, url, path, hex, stop, progress),
+    }
+}
+
+/// [`fetch`], with the digest by `D` in hex.
+fn fetch_as<D: Digest>(agent: &ureq::Agent, url: &str, path: &Path, sum: &str, stop: &AtomicBool, progress: &mut dyn FnMut(Progress)) -> Result<()> {
     let part = partial(path);
     let dir = path.parent().context("a package's path is in a folder")?;
     fs::create_dir_all(dir).with_context(|| format!("make {}", dir.display()))?;
@@ -140,7 +156,7 @@ pub fn fetch(agent: &ureq::Agent, url: &str, path: &Path, md5: &str, stop: &Atom
     if total - have > room {
         bail!(NoRoom { needed: total - have, free: room });
     }
-    let mut hash = hash_of(&mut file, have, stop, progress)?;
+    let mut hash = hash_of::<D>(&mut file, have, stop, progress)?;
     if have < total {
         let mut asked = agent.get(url);
         if have > 0 {
@@ -153,7 +169,7 @@ pub fn fetch(agent: &ureq::Agent, url: &str, path: &Path, md5: &str, stop: &Atom
                 if have > 0 {
                     file.set_len(0).with_context(|| format!("empty {}", part.display()))?;
                     have = 0;
-                    hash = Md5::new();
+                    hash = D::new();
                 }
             }
             status => bail!(Refused(status)),
@@ -178,7 +194,7 @@ pub fn fetch(agent: &ureq::Agent, url: &str, path: &Path, md5: &str, stop: &Atom
         }
         file.sync_all().with_context(|| format!("write {} through", part.display()))?;
     }
-    if hex(&hash.finalize()) != md5.to_lowercase() {
+    if hex(&hash.finalize()) != sum.to_lowercase() {
         drop(file);
         fs::remove_file(&part).with_context(|| format!("delete {}", part.display()))?;
         bail!(Damaged);
@@ -201,16 +217,18 @@ mod tests {
     }
 
     #[test]
-    fn what_is_there_is_read_for_its_md5() {
+    fn what_is_there_is_read_for_its_digest() {
         let dir = std::env::temp_dir().join(format!("skyward-net-hash-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("a.part");
         fs::write(&path, vec![7u8; CHUNK + 5]).unwrap();
         let mut seen = Vec::new();
-        let hash = hash_of(&mut File::open(&path).unwrap(), (CHUNK + 5) as u64, &AtomicBool::new(false), &mut |p| seen.push(p)).unwrap();
+        let hash = hash_of::<Md5>(&mut File::open(&path).unwrap(), (CHUNK + 5) as u64, &AtomicBool::new(false), &mut |p| seen.push(p)).unwrap();
         assert_eq!(hex(&hash.finalize()), hex(&Md5::digest(vec![7u8; CHUNK + 5])));
         assert_eq!(seen.last(), Some(&Progress::Checking { done: (CHUNK + 5) as u64, total: (CHUNK + 5) as u64 }));
-        let stopped = hash_of(&mut File::open(&path).unwrap(), 1, &AtomicBool::new(true), &mut |_| {});
+        let hash = hash_of::<Sha256>(&mut File::open(&path).unwrap(), (CHUNK + 5) as u64, &AtomicBool::new(false), &mut |_| {}).unwrap();
+        assert_eq!(hex(&hash.finalize()), hex(&Sha256::digest(vec![7u8; CHUNK + 5])));
+        let stopped = hash_of::<Md5>(&mut File::open(&path).unwrap(), 1, &AtomicBool::new(true), &mut |_| {});
         assert!(stopped.unwrap_err().is::<crate::Stopped>());
         fs::remove_dir_all(&dir).unwrap();
     }

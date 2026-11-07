@@ -3,7 +3,7 @@
 //! screen how far they have come.
 
 use anyhow::{Context, Result};
-use skyward_net::download::{self, Damaged, Failure, NoRoom, Progress, Refused};
+use skyward_net::download::{self, Damaged, Failure, NoRoom, Progress, Refused, Sum};
 use skyward_net::http::{self, Servers};
 use skyward_net::reach::{self, Reach};
 use skyward_net::release::{self, Installed, Release, Unanswered};
@@ -200,7 +200,7 @@ fn fetch(
             }
             last = Some((p, rate));
         };
-        let result = download::fetch(&a, &release.urls[url], path, &release.md5, stop, &mut progress);
+        let result = download::fetch(&a, &release.urls[url], path, &Sum::Md5(release.md5.clone()), stop, &mut progress);
         // How far it came shows in the end, whatever stopped it.
         if let Some((p, rate)) = last {
             tell(Event::Progress(p, rate));

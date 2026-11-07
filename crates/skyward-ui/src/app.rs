@@ -2057,8 +2057,8 @@ enum Drag {
     /// the editor's text, `carry` being the part of a row not yet scrolled.
     History { last: f32, carry: f32, pitch: f32 },
     Pattern,
-    /// The finger that lit the dark panel; nothing it does counts until it
-    /// lifts.
+    /// A finger that landed just after the panel lit; nothing it does
+    /// counts until it lifts.
     Waking,
 }
 
@@ -5653,13 +5653,9 @@ impl App {
     }
 
     pub fn touch(&mut self, ev: Touch, f: &Fonts, now: u64) -> Vec<Effect> {
+        // A finger on the dark panel lights nothing, as on the phone's own
+        // system, where the power key lights it.
         if !self.display_on {
-            // A finger on the dark panel lights it, and does nothing else
-            // until it lifts.
-            if matches!(ev, Touch::Down(..)) {
-                self.wake(now);
-                self.drag = Drag::Waking;
-            }
             return Vec::new();
         }
         // A finger landing just after the panel lit only keeps it awake.
@@ -5981,8 +5977,11 @@ impl App {
         }
         let mut fx = self.let_chord_go();
         if !self.display_on {
-            // Any button lights the dark panel, and does only that.
-            self.wake(now);
+            // The power key lights the dark panel, and does only that, as on
+            // the phone's own system; the other keys leave it dark.
+            if key == Key::Power {
+                self.wake(now);
+            }
             self.button = Some((key, Press::Spent));
             return fx;
         }
@@ -8613,7 +8612,9 @@ mod tests {
         press(&mut app, Key::Power, 0);
         assert!(!app.display_on(), "with the light out, power turns the panel off");
         press(&mut app, Key::VolumeDown, 1000);
-        assert!(app.display_on(), "a button lights the panel");
+        assert!(!app.display_on(), "a volume key leaves the panel dark");
+        press(&mut app, Key::Power, 1100);
+        assert!(app.display_on(), "the power key lights it");
         assert!(!app.keys, "and does only that");
     }
 
@@ -10842,27 +10843,33 @@ mod tests {
     }
 
     #[test]
-    fn a_touch_on_the_dark_panel_only_lights_it() {
+    fn a_touch_on_the_dark_panel_lights_nothing() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
         let (x, y) = spot(&mut app, &f, &i, Action::Open(Screen::Settings));
         press(&mut app, Key::Power, 0);
         assert!(app.touch(Touch::Down(x, y), &f, 100).is_empty());
-        assert_eq!(app.panel(100), Some(SLIDER_START));
         assert!(app.touch(Touch::Move(x, y - 300.0), &f, 120).is_empty());
         assert!(app.touch(Touch::Up, &f, 140).is_empty());
-        assert_eq!(app.screen(), Screen::Home, "the waking tap pressed nothing");
+        assert!(!app.display_on(), "the panel stays dark");
+        assert_eq!(app.screen(), Screen::Home, "the tap pressed nothing");
         assert_eq!(app.top().1, 0.0, "nor scrolled the page");
-        tap_at(&mut app, &f, &i, Action::Open(Screen::Settings), 600);
-        assert_eq!(app.screen(), Screen::Settings, "a tap past the guard does");
+        press(&mut app, Key::Power, 200);
+        assert!(app.display_on());
+        tap_at(&mut app, &f, &i, Action::Open(Screen::Settings), 700);
+        assert_eq!(app.screen(), Screen::Settings, "a tap on the lit panel does");
     }
 
     #[test]
-    fn a_key_lights_the_dark_panel_and_does_nothing_else() {
+    fn only_the_power_key_lights_the_dark_panel_and_does_nothing_else() {
         let (f, i) = (fonts(), info());
         let mut app = opened(Screen::Settings, &f, &i);
         press(&mut app, Key::Power, 0);
-        assert!(app.key(Key::Back, 10).is_empty());
+        for (key, at) in [(Key::Back, 10), (Key::VolumeUp, 20), (Key::VolumeDown, 30)] {
+            assert!(press(&mut app, key, at).is_empty());
+            assert!(!app.display_on(), "{key:?} leaves the panel dark");
+        }
+        assert!(press(&mut app, Key::Power, 40).is_empty());
         assert!(app.display_on());
         assert_eq!(app.screen(), Screen::Settings, "back did not go back");
     }

@@ -57,6 +57,132 @@ impl SdeMode {
     }
 }
 
+/// Sub-pixel rendering by the display processor. A panel that shows two of
+/// the three colours at each pixel, and leaves the rendering for that to the
+/// display processor, names its layout as spr_pack_type in the connector's
+/// capabilities blob; without the rendering, its red sub-pixels show the
+/// blue of the frame. The CRTC takes the setup in SDE_SPR_INIT_CFG_V1, or
+/// in SDE_SPR_INIT_CFG_V2, which adds the cfg18 fields after the first's.
+#[cfg(any(target_os = "android", test))]
+mod spr {
+    use anyhow::{bail, Result};
+
+    /// Red and blue taken at every other pixel, green at each.
+    const DECIMATION: [u16; 4] = [1, 0, 1, 0];
+    /// Two colour phases, eight steps apart.
+    const COLOUR_PHASE_STEP: u16 = 8;
+    const COLOUR_PHASE_REPEAT: u16 = 2;
+    const COLOUR_PHASES: [i32; 24] = [-2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, -2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    /// Filtering through four taps, with their coefficients.
+    const FOUR_TAP: u16 = 2;
+    const FOUR_TAP_COEFFICIENTS: [i32; 16] = [128, 256, 128, 0, 86, 241, 164, 21, 52, 204, 204, 52, 21, 164, 241, 86];
+    const ADAPTIVE_YYGM: u16 = 0;
+    const ADAPTIVE_STRENGTHS: [u16; 5] = [0, 4, 8, 12, 16];
+    const OPR_GAINS: [u16; 4] = [341, 341, 341, 0];
+    const OPR_OFFSETS: [u16; 32] = [
+        0, 132, 264, 396, 529, 661, 793, 925, 1057, 1189, 1321, 1453, 1586, 1718, 1850, 1982, 2114, 2246, 2378, 2510, 2643, 2775, 2907,
+        3039, 3171, 3303, 3435, 3567, 3700, 3832, 3964, 4095,
+    ];
+
+    /// The layout the capabilities blob names, among its key=value lines.
+    pub fn pack_type(capabilities: &str) -> Option<&str> {
+        capabilities.lines().find_map(|line| line.strip_prefix("spr_pack_type="))
+    }
+
+    /// The setup for a panel laid out as `pack_type`, as the CRTC property
+    /// `property` takes it: the driver's structure, its fields in order and
+    /// aligned as the phone's C compiler aligns them.
+    pub fn setup(pack_type: &str, property: &str) -> Result<Vec<u8>> {
+        if pack_type != "pentile" {
+            bail!("the panel's sub-pixels are laid out as {pack_type}, and only a pentile layout is set up");
+        }
+        let cfg18 = match property {
+            "SDE_SPR_INIT_CFG_V1" => false,
+            "SDE_SPR_INIT_CFG_V2" => true,
+            other => bail!("no sub-pixel rendering setup is laid out for {other}"),
+        };
+        let mut out = Vec::new();
+        // flags
+        out.extend(0u64.to_ne_bytes());
+        // cfg0 to cfg9: the block on, no white sub-pixel, and the phases,
+        // filter and adaptive mode
+        put16(&mut out, &[1, 1, 1, 0, 0, COLOUR_PHASE_STEP, COLOUR_PHASE_REPEAT, FOUR_TAP, ADAPTIVE_YYGM, 0]);
+        // cfg10
+        out.extend(0u32.to_ne_bytes());
+        // cfg11 to cfg15
+        put16(&mut out, &DECIMATION);
+        put16(&mut out, &[0; 4]);
+        put16(&mut out, &OPR_GAINS);
+        put16(&mut out, &ADAPTIVE_STRENGTHS);
+        put16(&mut out, &OPR_OFFSETS);
+        // cfg16 and cfg17, on four bytes
+        out.extend([0; 2]);
+        put32(&mut out, &FOUR_TAP_COEFFICIENTS);
+        put32(&mut out, &COLOUR_PHASES);
+        // cfg18_en and cfg18, off
+        if cfg18 {
+            out.extend([0; 9]);
+        }
+        // The structure ends on eight bytes, as its flags are aligned.
+        out.resize(out.len().next_multiple_of(8), 0);
+        Ok(out)
+    }
+
+    fn put16(out: &mut Vec<u8>, values: &[u16]) {
+        for v in values {
+            out.extend(v.to_ne_bytes());
+        }
+    }
+
+    fn put32(out: &mut Vec<u8>, values: &[i32]) {
+        for v in values {
+            out.extend(v.to_ne_bytes());
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        fn u16_at(b: &[u8], at: usize) -> u16 {
+            u16::from_ne_bytes([b[at], b[at + 1]])
+        }
+
+        fn i32_at(b: &[u8], at: usize) -> i32 {
+            i32::from_ne_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]])
+        }
+
+        #[test]
+        fn the_layout_is_read_from_the_capabilities() {
+            let text = "panel name=xiaomi o2 42 02 0a cmd mode dsc dsi panel\nspr_pack_type=pentile\nspr_pack_type_mode=BG-RG Type B\n";
+            assert_eq!(pack_type(text), Some("pentile"));
+            assert_eq!(pack_type("panel name=xiaomi 42 02 0a cmd mode dsc dsi panel\nspr_pack_type_mode=BG-RG Type B\n"), None, "the mode alone names none");
+        }
+
+        #[test]
+        fn the_pentile_setup_is_laid_out_as_the_driver_s_structure() {
+            let v1 = setup("pentile", "SDE_SPR_INIT_CFG_V1").unwrap();
+            let v2 = setup("pentile", "SDE_SPR_INIT_CFG_V2").unwrap();
+            assert_eq!((v1.len(), v2.len()), (296, 304));
+            assert_eq!(v1[..292], v2[..292], "the second adds fields after the first's");
+            assert_eq!(v2[292..], [0; 12], "cfg18 off");
+            assert_eq!(u16_at(&v1, 8), 1, "cfg0, the block on");
+            assert_eq!((u16_at(&v1, 18), u16_at(&v1, 20), u16_at(&v1, 22), u16_at(&v1, 24)), (8, 2, 2, 0), "cfg5 to cfg8");
+            assert_eq!((u16_at(&v1, 32), u16_at(&v1, 34)), (1, 0), "cfg11: red decimated, green not");
+            assert_eq!(u16_at(&v1, 68), 132, "cfg15 starts at 66");
+            assert_eq!(u16_at(&v1, 128), 4095, "and ends at 130");
+            assert_eq!((i32_at(&v1, 132), i32_at(&v1, 136)), (128, 256), "cfg16 starts at 132");
+            assert_eq!((i32_at(&v1, 196), i32_at(&v1, 200), i32_at(&v1, 244)), (-2, 2, 2), "cfg17 starts at 196");
+        }
+
+        #[test]
+        fn only_a_pentile_layout_and_the_known_properties_are_set_up() {
+            assert!(setup("rgbw", "SDE_SPR_INIT_CFG_V2").is_err());
+            assert!(setup("pentile", "SDE_SPR_INIT_CFG_V3").is_err());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -503,6 +629,28 @@ pub mod kms {
             }
             req.add_property(crtc, crtc_props.handle("MODE_ID")?, first);
             req.add_property(crtc, crtc_props.handle("ACTIVE")?, property::Value::Boolean(true));
+            // A panel whose sub-pixel rendering is the display processor's
+            // has it set up with the mode; the switch to the fastest refresh,
+            // a mode set of its own, carries it again.
+            let spr = match conn_props.get("capabilities") {
+                Ok((_, caps)) => {
+                    let text = card.get_property_blob(caps).context("read capabilities")?;
+                    match spr::pack_type(&String::from_utf8_lossy(&text)) {
+                        Some(pack_type) => {
+                            let name = ["SDE_SPR_INIT_CFG_V2", "SDE_SPR_INIT_CFG_V1"]
+                                .into_iter()
+                                .find(|name| crtc_props.get(name).is_ok())
+                                .ok_or_else(|| anyhow!("the panel leaves its {pack_type} sub-pixel rendering to a CRTC that takes no setup for it"))?;
+                            Some((crtc_props.handle(name)?, spr::setup(pack_type, name)?, name))
+                        }
+                        None => None,
+                    }
+                }
+                Err(_) => None,
+            };
+            if let Some((id, setup, _)) = &spr {
+                req.add_property(crtc, *id, card.create_property_blob(setup.as_slice()).context("create sub-pixel rendering blob")?);
+            }
             for &other in attached.iter().filter(|&&p| !candidates.iter().any(|c| c.0 == p)) {
                 let props = Props::read(&card, other)?;
                 req.add_property(other, props.handle("FB_ID")?, property::Value::Framebuffer(None));
@@ -535,18 +683,22 @@ pub mod kms {
             if mode.vrefresh() != preferred.vrefresh() {
                 let mut req = atomic::AtomicModeReq::new();
                 req.add_property(crtc, crtc_props.handle("MODE_ID")?, blob);
+                if let Some((id, setup, _)) = &spr {
+                    req.add_property(crtc, *id, card.create_property_blob(setup.as_slice()).context("create sub-pixel rendering blob")?);
+                }
                 commit(&card, req, AtomicCommitFlags::ALLOW_MODESET).context("switch the panel to its fastest refresh")?;
             }
 
             let ids: Vec<u32> = planes.iter().map(|p| u32::from(p.0)).collect();
             let summary = format!(
-                "{:?} connector {} mode {:?} {w}x{h} {} Hz, crtc {}, planes {ids:?} {:?}",
+                "{:?} connector {} mode {:?} {w}x{h} {} Hz, crtc {}, planes {ids:?} {:?}{}",
                 conn.interface(),
                 u32::from(conn.handle()),
                 mode.name(),
                 mode.vrefresh(),
                 u32::from(crtc),
-                fourcc
+                fourcc,
+                spr.as_ref().map(|(_, _, name)| format!(", sub-pixel rendering through {name}")).unwrap_or_default()
             );
             Ok(KmsSurface { card, bufs, back: 1, flipping: false, planes, w, h, order, summary })
         }

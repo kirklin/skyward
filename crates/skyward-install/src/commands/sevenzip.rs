@@ -363,7 +363,7 @@ mod tests {
     fn seven(archive: &Path, args: &[&str]) -> (i32, Vec<u8>, String) {
         let args: Vec<OsString> = args.iter().map(|a| a.replace("{zip}", &archive.display().to_string()).into()).collect();
         let (mut output, mut errors) = (Vec::new(), Vec::new());
-        let code = run(&args, &mut Io { output: &mut output, errors: &mut errors });
+        let code = run(&args, &mut Io { input: &mut io::empty(), output: &mut output, errors: &mut errors });
         (code, output, String::from_utf8(errors).unwrap())
     }
 

@@ -2368,6 +2368,7 @@ dependencies = [
  "x509-cert",
  "zerocopy",
  "zip 8.6.0",
+ "zstd",
 ]
 
 [[package]]

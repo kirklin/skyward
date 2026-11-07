@@ -24,6 +24,7 @@ skyward-vab = { path = "../skyward-vab" }
 x509-cert = "0.2.5"
 zerocopy = { version = "0.8.63", features = ["derive"] }
 zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zstd = { version = "0.14.3", default-features = false }
 
 [target.'cfg(target_os = "android")'.dependencies]
 skyward-sys = { path = "../skyward-sys" }

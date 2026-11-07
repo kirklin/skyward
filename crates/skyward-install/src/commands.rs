@@ -1,18 +1,21 @@
 //! The commands install scripts written for other recoveries run that a
 //! stock recovery does not carry: 7za, which takes a partition image out of
-//! the zip the script came in. This binary runs the one it is started as.
+//! the zip the script came in, and zstd, which decompresses it on its way to
+//! the partition. This binary runs the one it is started as.
 
 use std::ffi::{OsStr, OsString};
 use std::io::{self, Read, Write};
 
 mod sevenzip;
+mod zstandard;
 
 /// How much is read and written at a time: a whole partition image may go
 /// through a command.
 const CHUNK: usize = 1 << 20;
 
-/// What a command writes besides the files it names.
+/// What a command reads and writes besides the files it names.
 struct Io<'a> {
+    input: &'a mut dyn Read,
     output: &'a mut dyn Write,
     errors: &'a mut dyn Write,
 }
@@ -24,6 +27,7 @@ type Command = fn(&[OsString], &mut Io) -> i32;
 fn command(name: &OsStr) -> Option<Command> {
     match name.to_str()? {
         "7za" => Some(sevenzip::run),
+        "zstd" => Some(zstandard::run),
         _ => None,
     }
 }
@@ -35,9 +39,9 @@ pub fn run(name: &OsStr, args: &[OsString]) -> Option<i32> {
     // As with the programs these stand in for, writing to a pipe whose
     // reader has gone ends the command.
     unsafe { libc::signal(libc::SIGPIPE, libc::SIG_DFL) };
-    let (stdout, stderr) = (io::stdout(), io::stderr());
-    let (mut output, mut errors) = (stdout.lock(), stderr.lock());
-    Some(command(args, &mut Io { output: &mut output, errors: &mut errors }))
+    let (stdin, stdout, stderr) = (io::stdin(), io::stdout(), io::stderr());
+    let (mut input, mut output, mut errors) = (stdin.lock(), stdout.lock(), stderr.lock());
+    Some(command(args, &mut Io { input: &mut input, output: &mut output, errors: &mut errors }))
 }
 
 /// Where copying stopped.
@@ -70,6 +74,7 @@ mod tests {
     #[test]
     fn a_program_started_by_a_command_s_name_runs_that_command() {
         assert!(command(OsStr::new("7za")).is_some());
+        assert!(command(OsStr::new("zstd")).is_some());
         assert!(command(OsStr::new("recovery")).is_none());
         assert!(command(OsStr::new("unzip")).is_none(), "the stock recovery carries that one");
     }

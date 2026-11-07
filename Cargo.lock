@@ -2415,6 +2415,7 @@ dependencies = [
  "httparse",
  "libc",
  "md-5",
+ "semver",
  "serde",
  "serde_json",
  "sha2 0.10.9",

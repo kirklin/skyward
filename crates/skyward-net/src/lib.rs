@@ -1,6 +1,7 @@
 pub mod dhcp;
 pub mod dns;
 pub mod download;
+pub mod github;
 pub mod http;
 #[cfg(target_os = "android")]
 pub mod iface;

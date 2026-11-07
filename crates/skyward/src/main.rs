@@ -30,6 +30,8 @@ mod secure;
 #[cfg(target_os = "android")]
 mod services;
 #[cfg(target_os = "android")]
+mod settings;
+#[cfg(target_os = "android")]
 mod ui;
 #[cfg(target_os = "android")]
 mod updates;

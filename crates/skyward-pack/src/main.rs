@@ -115,6 +115,12 @@ fn main() -> Result<()> {
             let read = |p: &PathBuf| std::fs::read(p).with_context(|| format!("read {}", p.display()));
             skyward_config::DeviceConfig::load(&config)?;
             rd.replace(paths::RECOVERY, read(&binary)?)?;
+            // Install scripts look for the commands a stock recovery lacks
+            // among its programs; the recovery binary is each of them.
+            let (_, recovery) = paths::RECOVERY.rsplit_once('/').expect("the recovery binary is in a folder");
+            for command in paths::COMMANDS {
+                rd.link(command, recovery)?;
+            }
             rd.add(paths::CONFIG, 0o644, read(&config)?)?;
             rd.add(paths::FONT, 0o644, read(&font)?)?;
             rd.add(paths::MONO, 0o644, read(&mono)?)?;

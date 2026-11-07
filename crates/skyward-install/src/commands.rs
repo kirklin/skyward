@@ -1,7 +1,8 @@
 //! The commands install scripts written for other recoveries run that a
 //! stock recovery does not carry: 7za, which takes a partition image out of
 //! the zip the script came in, and zstd, which decompresses it on its way to
-//! the partition. This binary runs the one it is started as.
+//! the partition. The ramdisk links each to the recovery service binary,
+//! which runs the one it is started as.
 
 use std::ffi::{OsStr, OsString};
 use std::io::{self, Read, Write};
@@ -70,11 +71,14 @@ fn copy(from: &mut dyn Read, to: &mut dyn Write) -> Result<u64, Failed> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
-    fn a_program_started_by_a_command_s_name_runs_that_command() {
-        assert!(command(OsStr::new("7za")).is_some());
-        assert!(command(OsStr::new("zstd")).is_some());
+    fn every_command_the_ramdisk_links_is_one_this_binary_runs() {
+        for link in skyward_config::ramdisk::COMMANDS {
+            let name = Path::new(link).file_name().expect("a link has a name");
+            assert!(command(name).is_some(), "{link}");
+        }
         assert!(command(OsStr::new("recovery")).is_none());
         assert!(command(OsStr::new("unzip")).is_none(), "the stock recovery carries that one");
     }

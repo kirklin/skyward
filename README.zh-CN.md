@@ -16,6 +16,7 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 
 - 解密 data 分区
 - 安装刷机包、系统更新包和分区镜像，支持内部存储、U 盘和 adb sideload
+- 刷机包的安装脚本可以使用 `7za` 和 `zstd`，支持刷入 super 镜像使用 zstd 压缩的第三方 ROM
 - 在线系统更新
 - 备份和恢复
 - 清除数据、恢复出厂设置

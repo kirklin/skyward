@@ -1,0 +1,84 @@
+diff --git a/.github/workflows/build.yml b/.github/workflows/build.yml
+index d690518..647d0d7 100644
+--- a/.github/workflows/build.yml
++++ b/.github/workflows/build.yml
+@@ -14,6 +14,10 @@ on:
+         description: The codename of the one device to build for; every device when empty
+         required: false
+         default: ""
++      stock_recovery_url:
++        description: Optional HTTPS URL of a local-only device's stock recovery (SHA-256 checked)
++        required: false
++        default: ""
+
+ permissions:
+   contents: read
+@@ -51,12 +55,12 @@ jobs:
+         run: cargo build --locked --release -p skyward-pack
+       - name: Gather them
+         run: |
+-          mkdir tools
+-          cp target/aarch64-linux-android/release/skyward target/release/skyward-pack tools/
++          mkdir tools-bin
++          cp target/aarch64-linux-android/release/skyward target/release/skyward-pack tools-bin/
+       - uses: actions/upload-artifact@v7
+         with:
+           name: tools
+-          path: tools/
++          path: tools-bin/
+           if-no-files-found: error
+           retention-days: 1
+
+@@ -75,7 +79,9 @@ jobs:
+             test -f "devices/$DEVICE.toml"
+             echo "devices=$(jq -nc --arg device "$DEVICE" '[$device]')" >> "$GITHUB_OUTPUT"
+           else
+-            echo "devices=$(basename -s .toml devices/*.toml | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
++            # Devices without a public OTA package are built explicitly
++            # with stock_recovery_url, or locally with --stock.
++            echo "devices=$(python3 -c 'import glob,json,tomllib; from pathlib import Path; print(json.dumps([Path(p).stem for p in sorted(glob.glob("devices/*.toml")) if tomllib.load(open(p,"rb")).get("stock",{}).get("package")]))')" >> "$GITHUB_OUTPUT"
+           fi
+
+   recovery:
+@@ -107,7 +113,18 @@ jobs:
+       # which is several gigabytes in all.
+       - name: Take the recovery partition out of the stock package
+         if: steps.cache.outputs.cache-hit != 'true'
+-        run: tools/skyward-pack stock --config "devices/${{ matrix.device }}.toml" --out stock/recovery.img
++        env:
++          STOCK_URL: ${{ inputs.stock_recovery_url }}
++          DEVICE: ${{ matrix.device }}
++        run: |
++          package=$(tools/skyward-pack stock --config "devices/$DEVICE.toml" | sed -n 's/^package=//p')
++          if [ -n "$package" ]; then
++            tools/skyward-pack stock --config "devices/$DEVICE.toml" --out stock/recovery.img
++          else
++            test -n "$STOCK_URL" || { echo 'Supply stock_recovery_url for this local-only device.' >&2; exit 1; }
++            mkdir -p stock
++            curl --fail --location --proto '=https' --proto-redir '=https' "$STOCK_URL" --output stock/recovery.img
++          fi
+       - name: Check the stock recovery
+         env:
+           RECOVERY: ${{ steps.stock.outputs.recovery }}
+@@ -121,9 +138,11 @@ jobs:
+           if [ "$GITHUB_REF_TYPE" = tag ]; then version="$GITHUB_REF_NAME"; else version="${GITHUB_SHA::7}"; fi
+           name="skyward-$version-$DEVICE-$STOCK"
+           mkdir out
++          overlay=()
++          if [ -d "devices/$DEVICE/ramdisk" ]; then overlay=(--overlay "devices/$DEVICE/ramdisk"); fi
+           tools/skyward-pack recovery --stock stock/recovery.img --binary tools/skyward --config "devices/$DEVICE.toml" \
+             --font resources/fonts/MiSansVF.ttf --mono resources/fonts/KirkMono-Regular.ttf \
+-            --mono-license resources/fonts/KirkMono-OFL.txt --out "out/$name.img"
++            --mono-license resources/fonts/KirkMono-OFL.txt "${overlay[@]}" --out "out/$name.img"
+           echo "name=$name" >> "$GITHUB_OUTPUT"
+       # The image is the whole partition, flashed as it is, and most of it
+       # is the room the recovery leaves empty; it is handed out zipped.
+@@ -171,6 +190,8 @@ jobs:
+         run: |
+           zips=()
+           for config in devices/*.toml; do
++            # The automatic release includes publicly reproducible builds.
++            python3 -c 'import sys,tomllib; sys.exit(not bool(tomllib.load(open(sys.argv[1],"rb")).get("stock",{}).get("package")))' "$config" || continue
+             device=$(basename "$config" .toml)
+             model=$(python3 -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["device"]["model"])' "$config")
+             zip=$(ls images/skyward-"$GITHUB_REF_NAME"-"$device"-*.zip)

@@ -17,6 +17,7 @@ pub mod search;
 pub mod settings;
 pub mod sprite;
 pub mod surface;
+pub mod tablet;
 pub mod term;
 pub mod theme;
 pub mod widgets;

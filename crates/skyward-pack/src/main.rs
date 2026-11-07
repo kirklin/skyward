@@ -65,6 +65,10 @@ enum Cmd {
         /// The monospaced typeface's licence, which goes with it.
         #[arg(long)]
         mono_license: PathBuf,
+        /// Files to add or replace in the stock ramdisk. Only regular
+        /// files and directories are accepted; .sh files get mode 0755.
+        #[arg(long)]
+        overlay: Option<PathBuf>,
         #[arg(long)]
         out: PathBuf,
     },
@@ -103,7 +107,7 @@ fn main() -> Result<()> {
             img.kernel = BootImage::read(&kernel)?.kernel;
             write(&out, &img, &img.to_bytes()?)
         }
-        Cmd::Recovery { stock, binary, config, font, mono, mono_license, out } => {
+        Cmd::Recovery { stock, binary, config, font, mono, mono_license, overlay, out } => {
             let size = partition_size(&stock)?;
             let mut img = BootImage::read(&stock)?;
             let mut rd = Ramdisk::decode(&img.ramdisk)?;
@@ -113,7 +117,16 @@ fn main() -> Result<()> {
                 anyhow::bail!("{} holds {}, which is not a stock recovery", stock.display(), e.name);
             }
             let read = |p: &PathBuf| std::fs::read(p).with_context(|| format!("read {}", p.display()));
-            skyward_config::DeviceConfig::load(&config)?;
+            let cfg = skyward_config::DeviceConfig::load(&config)?;
+            if let Some(expected) = &cfg.stock {
+                let sum = format!("{:x}", Sha256::digest(std::fs::read(&stock)?));
+                ensure!(
+                    sum == expected.recovery,
+                    "stock recovery SHA-256 {sum} does not match {} for {}",
+                    expected.recovery,
+                    cfg.device.codename
+                );
+            }
             rd.replace(paths::RECOVERY, read(&binary)?)?;
             // Install scripts look for the commands a stock recovery lacks
             // among its programs, and its unzip there too, a link to ziptool
@@ -132,6 +145,9 @@ fn main() -> Result<()> {
                 rd.add(paths::TASK_PROFILES, 0o644, TASK_PROFILES.to_vec())?;
             }
             rd.add(paths::MTP_RC, 0o644, MTP_RC.to_vec())?;
+            if let Some(overlay) = overlay {
+                apply_overlay(&mut rd, &overlay, &overlay)?;
+            }
             // On an unlocked device adbd keeps root when ro.secure is 0 and
             // lets any computer in without authorization when ro.adb.secure is
             // 0; init lets a later line of a property file override an earlier
@@ -160,6 +176,32 @@ fn main() -> Result<()> {
     }
 }
 
+/// Device-specific init rules and helpers, over the unmodified stock
+/// ramdisk. Never follow a link in an overlay into an unrelated tree.
+fn apply_overlay(rd: &mut Ramdisk, root: &Path, dir: &Path) -> Result<()> {
+    let mut entries = std::fs::read_dir(dir)?.collect::<std::io::Result<Vec<_>>>()?;
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let path = entry.path();
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            apply_overlay(rd, root, &path)?;
+            continue;
+        }
+        ensure!(kind.is_file(), "overlay {} is not a regular file or directory", path.display());
+        let name = path.strip_prefix(root)?.to_str().context("overlay path is not UTF-8")?.replace('\\', "/");
+        let data = std::fs::read(&path)?;
+        if rd.find(&name).is_some() {
+            rd.replace(&name, data)?;
+        } else {
+            let mode = if path.extension().is_some_and(|ext| ext == "sh") { 0o755 } else { 0o644 };
+            rd.add(&name, mode, data)?;
+        }
+        println!("overlay {name}");
+    }
+    Ok(())
+}
+
 /// The partition a recovery is made on, as a full update package names it.
 const RECOVERY: &str = "recovery";
 
@@ -167,6 +209,7 @@ const RECOVERY: &str = "recovery";
 /// on its server, reading only what that partition takes of it, and write it
 /// to `out` once its SHA-256 is the one the configuration names.
 fn take_stock_recovery(stock: &skyward_config::Stock, out: &Path) -> Result<()> {
+    ensure!(!stock.package.is_empty(), "this device uses a local stock image; supply it with `recovery --stock /path/to/recovery.img`");
     let parent = out.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
     std::fs::create_dir_all(parent).with_context(|| format!("make {}", parent.display()))?;
     // Taken out beside where it goes, so it is moved there whole.
@@ -179,7 +222,9 @@ fn take_stock_recovery(stock: &skyward_config::Stock, out: &Path) -> Result<()> 
                 println!("taking {name} out of the package: {bytes} bytes");
             }
         }
-        unpayload::Event::Extracted(image) => println!("took {} out: {} bytes", image.partition, image.size),
+        unpayload::Event::Extracted(image) => {
+            println!("took {} out: {} bytes", image.partition, image.size)
+        }
         unpayload::Event::Progress { .. } => {}
     };
     let taken = payload.extract(&options, &report).with_context(|| format!("take {RECOVERY} out of {}", stock.package))?;
@@ -276,6 +321,34 @@ fn list(image: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn overlays_replace_init_and_add_helpers_but_never_follow_symlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut rd = Ramdisk { entries: Vec::new() };
+        rd.add("init.recovery.qcom.rc", 0o640, b"stock".to_vec()).unwrap();
+        std::fs::write(dir.path().join("init.recovery.qcom.rc"), b"tablet").unwrap();
+        std::fs::create_dir(dir.path().join("skyward")).unwrap();
+        std::fs::write(dir.path().join("skyward/hardware.sh"), b"#!/system/bin/sh\n").unwrap();
+        apply_overlay(&mut rd, dir.path(), dir.path()).unwrap();
+        let init = rd.find("init.recovery.qcom.rc").unwrap();
+        assert_eq!((init.data.as_slice(), init.mode & 0o777), (b"tablet".as_slice(), 0o640));
+        assert_eq!(rd.find("skyward/hardware.sh").unwrap().mode & 0o777, 0o755);
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("/etc/passwd", dir.path().join("outside")).unwrap();
+            assert!(apply_overlay(&mut Ramdisk { entries: Vec::new() }, dir.path(), dir.path()).is_err());
+        }
+    }
+
+    #[test]
+    fn local_stock_download_fails_before_creating_any_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("not-created/recovery.img");
+        let stock = skyward_config::Stock { version: "local".into(), package: String::new(), recovery: "00".repeat(32) };
+        assert!(take_stock_recovery(&stock, &out).unwrap_err().to_string().contains("recovery --stock"));
+        assert!(!out.parent().unwrap().exists());
+    }
 
     #[test]
     fn the_lines_that_set_a_name_are_the_only_ones_left_out() {

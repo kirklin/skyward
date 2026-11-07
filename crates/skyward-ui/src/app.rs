@@ -2218,6 +2218,13 @@ const LIGHT_HELD_ALPHA: u8 = 72;
 /// How far past the screen, in screens, a long list keeps its rows drawn.
 const NEAR_SCREENS: f32 = 0.5;
 
+/// How the screen's content goes dark as the panel goes off, and comes up
+/// as it lights, as the phone's own system moves it: to black in 365 ms
+/// slowing as the cube of the time left, from black over 520 ms slowing as
+/// its square.
+const DARKEN: Ease = Ease::Out(365, 3);
+const BRIGHTEN: Ease = Ease::Out(520, 2);
+
 /// How a part of the screen eases between shown and hidden.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Ease {
@@ -2225,6 +2232,9 @@ enum Ease {
     Spring(f32),
     /// A straight run over this many milliseconds.
     Linear(u64),
+    /// A run over this many milliseconds that slows to a stop, what is
+    /// left of the way going as this power of the time left.
+    Out(u64, i32),
 }
 
 impl Ease {
@@ -2232,6 +2242,7 @@ impl Ease {
         match self {
             Ease::Spring(period) => motion::settle(ms, period),
             Ease::Linear(span) => (ms as f32 / span as f32).min(1.0),
+            Ease::Out(span, power) => 1.0 - (1.0 - (ms as f32 / span as f32).min(1.0)).powi(power),
         }
     }
 }
@@ -2564,6 +2575,10 @@ pub struct App {
     /// The panel at full brightness, or easing to the dim level it takes
     /// shortly before going off.
     bright: Fade,
+    /// The screen's content against black: it goes dark as the panel goes
+    /// off, under the backlight held then, and comes up as the panel lights.
+    curtain: Fade,
+    darkening: Option<f32>,
     /// While a text field's cursor is up: the page, how many edits had
     /// been typed, and when it came up whole on them. It shows for the
     /// first half of each blink from then on, so it is whole again at each
@@ -2647,6 +2662,8 @@ impl App {
             active: None,
             woke_at: None,
             bright: full_brightness(),
+            curtain: Fade::shown(BRIGHTEN, DARKEN),
+            darkening: None,
             blink: None,
             edits: 0,
             caret_shown: false,
@@ -2717,7 +2734,9 @@ impl App {
                 || self.turn.is_some()
                 || self.row_press.is_some_and(|p| p.changing(now) || p.gone(now))
                 || self.glowing());
-        if moving {
+        // The content going dark or coming up moves a frame at a time while
+        // the panel is lit.
+        if moving || (self.panel(now).is_some() && self.curtain.moving(now)) {
             return Some(0);
         }
         let darkens = self.row_press.map(|p| p.rise).filter(|&rise| rise > now);
@@ -2777,7 +2796,7 @@ impl App {
         // The key waiting for its partner in a screenshot, left alone long
         // enough, does what it does alone.
         if self.chord.is_some_and(|(_, at)| now >= at + CHORD_MS) {
-            fx.extend(self.let_chord_go());
+            fx.extend(self.let_chord_go(now));
         }
         // An entry of the file manager held long enough, under a finger or
         // the power key, opens what can be done with it, a folder as much as
@@ -2798,10 +2817,17 @@ impl App {
         if let (true, Some(after)) = (self.display_on, SCREEN_OFF[self.state.screen_off]) {
             let idle = now.saturating_sub(active);
             if idle >= after {
-                self.sleep();
+                self.sleep(now);
             } else if idle >= after - dim_span(after) {
                 self.bright.set(false, now);
             }
+        }
+        // Once the content is dark, the panel is off.
+        if !self.display_on && self.darkening.is_some() && self.curtain.level(now) <= 0.0 {
+            self.darkening = None;
+        }
+        if self.curtain.moving(now) {
+            self.dirty = true;
         }
         if self.toast.as_ref().is_some_and(|m| now >= m.1) {
             self.toast = None;
@@ -2949,10 +2975,11 @@ impl App {
     }
 
     /// The backlight at `now`: off, or this share of the brightness at the
-    /// slider's top.
+    /// slider's top, which holds as the content goes dark after the panel
+    /// is told to go off.
     pub fn panel(&self, now: u64) -> Option<f32> {
         if !self.display_on {
-            return None;
+            return self.darkening.filter(|_| self.curtain.level(now) > 0.0);
         }
         let (full, level) = (self.state.brightness, self.bright.level(now));
         Some(full * level + dim_level(full) * (1.0 - level))
@@ -2965,11 +2992,14 @@ impl App {
         self.bright.set(true, now);
     }
 
-    /// Light the panel, as if just touched.
+    /// Light the panel, as if just touched: the content comes up from as
+    /// dark as it is.
     fn wake(&mut self, now: u64) {
         if !self.display_on {
             self.display_on = true;
             self.dirty = true;
+            self.darkening = None;
+            self.curtain.set(true, now);
         }
         self.woke_at = Some(now);
         self.stir(now);
@@ -2992,9 +3022,12 @@ impl App {
         self.woke_at.is_some_and(|w| now.saturating_sub(w) < WAKE_GUARD_MS)
     }
 
-    /// Turn the panel off. A finger on the glass lets go of what it held,
-    /// and the page stops where it is.
-    fn sleep(&mut self) {
+    /// Turn the panel off: the content goes dark under the backlight it has
+    /// now, then the panel goes off. A finger on the glass lets go of what
+    /// it held, and the page stops where it is.
+    fn sleep(&mut self, now: u64) {
+        self.darkening = self.panel(now);
+        self.curtain.set(false, now);
         self.display_on = false;
         self.bright = full_brightness();
         match std::mem::replace(&mut self.drag, Drag::Idle) {
@@ -3990,12 +4023,19 @@ impl App {
         top.1 = top.1.clamp(0.0, max);
     }
 
-    /// Draw what the panel shows now: the visible part of the page, pulled
-    /// past an end if it is, its large title fading as it scrolls, the bar
-    /// and its title over a scrolled page, the `<`, the page sliding in or
-    /// out over or under the page left, the status bar, any message, and
-    /// the back cue while a swipe from an edge is under way.
+    /// Draw what the panel shows now: the page, as dark as the content
+    /// stands as the panel goes off or comes up.
     pub fn compose(&mut self, out: &mut Canvas, f: &Fonts, info: &DeviceInfo, clock: &str, now: u64) {
+        self.compose_page(out, f, info, clock, now);
+        out.dim(self.curtain.level(now));
+    }
+
+    /// The visible part of the page, pulled past an end if it is, its large
+    /// title fading as it scrolls, the bar and its title over a scrolled
+    /// page, the `<`, the page sliding in or out over or under the page
+    /// left, the status bar, any message, and the back cue while a swipe
+    /// from an edge is under way.
+    fn compose_page(&mut self, out: &mut Canvas, f: &Fonts, info: &DeviceInfo, clock: &str, now: u64) {
         // A page opened is drawn from its left edge as it slides in.
         let opening = self.turn.as_ref().is_some_and(|t| !t.back);
         self.render(f, info, if opening { 0 } else { self.w });
@@ -5986,7 +6026,7 @@ impl App {
                 return self.screenshot(key, now);
             }
         }
-        let mut fx = self.let_chord_go();
+        let mut fx = self.let_chord_go(now);
         if !self.display_on {
             // The power key lights the dark panel, and does only that, as on
             // the phone's own system; the other keys leave it dark.
@@ -6008,7 +6048,7 @@ impl App {
             self.chord = Some((key, now));
             return fx;
         }
-        fx.extend(self.key_down(key, now));
+        fx.extend(self.key_down(key, now, now));
         fx
     }
 
@@ -6028,25 +6068,26 @@ impl App {
     }
 
     /// The key waiting for its partner in a screenshot does what it does
-    /// alone, as pressed when it went down.
-    fn let_chord_go(&mut self) -> Vec<Effect> {
+    /// alone `now`, as pressed when it went down.
+    fn let_chord_go(&mut self, now: u64) -> Vec<Effect> {
         match self.chord.take() {
-            Some((key, at)) => self.key_down(key, at),
+            Some((key, at)) => self.key_down(key, at, now),
             None => Vec::new(),
         }
     }
 
-    /// What a button going down does on its own.
-    fn key_down(&mut self, key: Key, now: u64) -> Vec<Effect> {
+    /// What a button that went down `at` does on its own, `now`: a key
+    /// held is timed from when it went down, the screen goes off from now.
+    fn key_down(&mut self, key: Key, at: u64, now: u64) -> Vec<Effect> {
         match key {
             Key::Back => {
                 self.button = Some((key, Press::Spent));
-                self.act(Action::Back, now)
+                self.act(Action::Back, at)
             }
             Key::VolumeUp | Key::VolumeDown => {
                 let down = key == Key::VolumeDown;
-                self.button = Some((key, Press::Volume { down, next: now + REPEAT_DELAY_MS }));
-                self.volume(down, now)
+                self.button = Some((key, Press::Volume { down, next: at + REPEAT_DELAY_MS }));
+                self.volume(down, at)
             }
             // A press before the page it lands on is drawn is lost, rather
             // than taken for one on nothing.
@@ -6059,12 +6100,12 @@ impl App {
                     // Held on a swipe-to-confirm control, the key slides
                     // its knob along as a finger would.
                     Some(Spot { stop: Stop::Hit(Action::Confirm(which)), rect, .. }) => {
-                        self.button = Some((key, Press::Slide { which, track: rect, at: now }))
+                        self.button = Some((key, Press::Slide { which, track: rect, at }))
                     }
-                    Some(spot) => self.button = Some((key, Press::Power { spot, at: now })),
+                    Some(spot) => self.button = Some((key, Press::Power { spot, at })),
                     None => {
                         self.button = Some((key, Press::Spent));
-                        self.sleep();
+                        self.sleep(now);
                     }
                 }
                 self.dirty = true;
@@ -6079,7 +6120,7 @@ impl App {
     /// it does alone.
     pub fn key_up(&mut self, key: Key, now: u64) -> Vec<Effect> {
         let mut fx = match self.chord {
-            Some((first, _)) if first == key => self.let_chord_go(),
+            Some((first, _)) if first == key => self.let_chord_go(now),
             _ => Vec::new(),
         };
         let Some((down, press)) = self.button else { return fx };
@@ -10724,14 +10765,14 @@ mod tests {
         assert_eq!(app.panel(0), Some(SLIDER_START), "it waits for volume down first");
         assert_eq!(app.deadline(0), Some(CHORD_MS));
         assert!(app.tick(CHORD_MS).is_empty());
-        assert_eq!(app.panel(CHORD_MS), None, "held on alone, it turns the panel off");
+        assert!(!app.display_on(), "held on alone, it turns the panel off");
         assert!(app.key_up(Key::Power, CHORD_MS + 50).is_empty());
         assert!(app.key(Key::Power, CHORD_MS + 60).is_empty());
         assert_eq!(app.panel(CHORD_MS + 60), Some(SLIDER_START));
         assert!(app.key_up(Key::Power, CHORD_MS + 100).is_empty());
         assert!(app.key(Key::Power, 1000).is_empty());
         assert!(app.key_up(Key::Power, 1050).is_empty());
-        assert_eq!(app.panel(1050), None, "let go sooner, it turns the panel off then");
+        assert!(!app.display_on(), "let go sooner, it turns the panel off then");
     }
 
     #[test]
@@ -10814,9 +10855,11 @@ mod tests {
         assert_eq!(app.panel(DIMS + 500), Some(dim_level(SLIDER_START)));
         assert_eq!(app.deadline(DIMS + 500), Some(OFF), "dim until it goes off");
         app.tick(OFF);
-        assert_eq!(app.panel(OFF), None);
         assert!(!app.display_on());
-        assert_eq!(app.deadline(OFF), None, "nothing to wait for on a dark panel");
+        assert_eq!(app.panel(OFF), Some(dim_level(SLIDER_START)), "the content goes dark under the dim backlight");
+        app.tick(OFF + 365);
+        assert_eq!(app.panel(OFF + 365), None);
+        assert_eq!(app.deadline(OFF + 365), None, "nothing to wait for on a dark panel");
     }
 
     #[test]
@@ -10828,7 +10871,7 @@ mod tests {
         assert_eq!(app.panel(5_000_000), Some(SLIDER_START));
         assert_eq!(app.deadline(5_000_000), Some(5_000_000 + DIMS));
         app.tick(5_000_000 + OFF);
-        assert_eq!(app.panel(5_000_000 + OFF), None);
+        assert!(!app.display_on());
     }
 
     #[test]
@@ -10879,12 +10922,13 @@ mod tests {
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.tick(0);
         app.tick(OFF);
-        assert!(!app.display_on());
+        app.tick(OFF + 365);
+        assert_eq!(app.panel(OFF + 365), None);
         let plugged = OFF + 1000;
         app.plugged(plugged);
         assert!(app.display_on(), "the cable going in lights the panel");
         assert_eq!(app.panel(plugged), Some(SLIDER_START));
-        assert_eq!(app.deadline(plugged), Some(plugged + DIMS), "for the screen-off time");
+        assert_eq!(app.deadline(plugged + 520), Some(plugged + DIMS), "for the screen-off time, once the content is up");
         app.tick(plugged + DIMS);
         assert_eq!(app.panel(plugged + DIMS + 500), Some(dim_level(SLIDER_START)));
         let pulled = plugged + DIMS + 600;
@@ -10893,6 +10937,53 @@ mod tests {
         assert_eq!(app.deadline(pulled + 150), Some(pulled + DIMS), "and the wait starts over");
         press(&mut app, Key::Power, pulled + 200);
         assert!(!app.display_on(), "the power key turns it off at once, as ever");
+    }
+
+    #[test]
+    fn the_content_goes_dark_under_the_backlight_it_had_before_the_panel_goes_off() {
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.tick(0);
+        press(&mut app, Key::Power, 1000);
+        assert!(!app.display_on(), "touches and keys take the screen as off at once");
+        assert_eq!(app.panel(1000), Some(SLIDER_START), "while its content goes dark under the backlight it had");
+        assert_eq!(app.deadline(1000), Some(0), "a frame at a time");
+        assert_eq!(app.panel(1300), Some(SLIDER_START));
+        app.tick(1365);
+        assert_eq!(app.panel(1365), None, "then the panel goes off");
+        assert_eq!(app.deadline(1365), None);
+    }
+
+    #[test]
+    fn the_power_key_as_the_content_goes_dark_brings_it_back() {
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.tick(0);
+        press(&mut app, Key::Power, 1000);
+        app.tick(1100);
+        press(&mut app, Key::Power, 1100);
+        assert!(app.display_on(), "the power key lit it again");
+        let level = app.curtain.level(1100);
+        assert!(level > 0.0 && level < 1.0, "from as dark as it had gone: {level}");
+        assert_eq!(app.curtain.level(1100 + 520), 1.0);
+    }
+
+    #[test]
+    fn the_content_comes_up_from_black_as_the_panel_lights() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.tick(0);
+        press(&mut app, Key::Power, 0);
+        app.tick(365);
+        press(&mut app, Key::Power, 1000);
+        let mut c = Canvas::new(W, H);
+        let light = |c: &Canvas| c.data.as_chunks::<4>().0.iter().map(|p| p[0] as u64 + p[1] as u64 + p[2] as u64).sum::<u64>();
+        app.compose(&mut c, &f, &i, "12:00", 1000);
+        let first = light(&c);
+        app.compose(&mut c, &f, &i, "12:00", 1260);
+        let halfway = light(&c);
+        app.compose(&mut c, &f, &i, "12:00", 1520);
+        let full = light(&c);
+        assert_eq!(first, 0, "black as the panel lights");
+        assert!(halfway > full / 2 && halfway < full, "{halfway} of {full} halfway through");
     }
 
     #[test]
@@ -10981,7 +11072,8 @@ mod tests {
         assert!(!app.display_on(), "reading the package does not light it");
         app.install(Event::Image { kind: ImageKind::Dtbo, size: 1 << 20, partitions: vec!["dtbo"] }, 20);
         assert!(app.display_on(), "an image waiting for its partition does");
-        assert_eq!(app.deadline(20), Some(20 + DIMS));
+        app.tick(20 + 520);
+        assert_eq!(app.deadline(20 + 520), Some(20 + DIMS));
         app.state.install = Install::Flashing { partition: "dtbo", stage: None };
         press(&mut app, Key::Power, 500);
         app.install(Event::Progress(Stage::Flashing { done: 1, total: 2 }), 510);

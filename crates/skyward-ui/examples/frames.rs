@@ -1,5 +1,5 @@
 use skyward_info::{Battery, Boot, Charge, Cpu, DeviceInfo, Storage};
-use skyward_ui::app::{Action, FileKind, FileRow, Screen, Touch};
+use skyward_ui::app::{Action, FileKind, FileRow, Key, Screen, Touch};
 use skyward_ui::pages::Band;
 use skyward_ui::widgets::{self, Cap};
 use skyward_ui::{pages, App, Canvas, Ctx, Fonts, Theme};
@@ -16,7 +16,7 @@ const FRAME_US: u64 = 8333;
 const BUDGET_MS: f64 = 5.5;
 
 /// The moves timed, each from the page it starts on.
-const MOVES: [&str; 10] = ["press", "open", "drag", "fold", "fling", "back", "search", "about", "files", "renders"];
+const MOVES: [&str; 11] = ["press", "open", "drag", "fold", "fling", "back", "search", "about", "files", "dark", "renders"];
 
 /// Times what the UI draws: whole pages rendered, and every frame of the
 /// moves people make, driven the way the runtime drives the app. Run with
@@ -139,6 +139,15 @@ fn run(name: &str, f: &Fonts, i: &DeviceInfo, quiet: bool) {
             p.run(3000);
             p.report("a folder of 5000 photos flung");
         }
+        "dark" => {
+            let mut p = Panel::new(Screen::Settings, f, i, quiet);
+            p.press(Key::Power);
+            p.run(600);
+            p.report("the settings page going dark as the panel goes off");
+            p.press(Key::Power);
+            p.run(600);
+            p.report("the settings page coming up as the panel lights");
+        }
         _ => panic!("no move named {name}; the moves are {MOVES:?}"),
     }
 }
@@ -238,6 +247,15 @@ impl<'a> Panel<'a> {
     fn touch(&mut self, ev: Touch) {
         let now = self.now();
         self.app.touch(ev, self.f, now);
+    }
+
+    /// A quick press of `key`.
+    fn press(&mut self, key: Key) {
+        let now = self.now();
+        self.app.key(key, now);
+        self.frame();
+        let now = self.now();
+        self.app.key_up(key, now);
     }
 
     /// Where the page's control doing `action` is on screen.

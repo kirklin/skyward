@@ -31,6 +31,7 @@ use skyward_net::http::Servers;
 use skyward_net::release::{Installed, Release, Unanswered};
 use skyward_net::wlan::{Power as WlanPower, Stage as Joining, Wlan};
 use skyward_sys::sleep::{Sleeper, Slept};
+use skyward_sys::uevent;
 use skyward_ui::app::{
     App, Asked, BackupAt, BackupEnd, BackupEntry, BackupRefusal, ClashChoice, Data, DownloadEnd, Effect, EraseStop, FileKind, FileOp,
     FileRow, FileTask, FsAction, FsRow, Have, Held, ItemEnd, ItemState, JobEnd, Keys, MountFailure, Part, PartKind, PartStop, Place,
@@ -253,6 +254,18 @@ fn withhold(transfer: &mut Option<Transfer>, app: &mut App, now: u64) -> Result<
 fn fastboot_status() -> Result<(bool, UsbLink)> {
     let running = skyward_sys::prop("init.svc.fastbootd").as_deref() == Some("running");
     Ok((running, usb_link()?))
+}
+
+/// Light the panel, as on a cable going in or out, when the battery as it
+/// `was` and as it `is` disagree on whether a charger or a computer powers
+/// the phone.
+fn plug(app: &mut App, was: &Option<skyward_info::Battery>, is: &Option<skyward_info::Battery>, now: u64) -> Result<()> {
+    let plugged = |b: &Option<skyward_info::Battery>| b.as_ref().is_some_and(|b| b.plugged);
+    if plugged(was) != plugged(is) {
+        skyward_sys::kmsg(if plugged(is) { "a charger or a computer powers the phone" } else { "the phone runs on its battery" })?;
+        app.plugged(now);
+    }
+    Ok(())
 }
 
 /// How far a computer has the USB port, as the port's controller tells.
@@ -1282,6 +1295,10 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     let mut skyward_updater: Option<updates::Worker> = None;
     // The phone sleeps while its screen is off and nothing needs it awake.
     let sleeper = Sleeper::start()?;
+    // A uevent may be a charger or a computer attached or taken away: the
+    // battery is read at once, and the phone stays awake until it is.
+    let uevents = uevent::Listener::open()?;
+    let mut asked: Option<Instant> = None;
     // The USB drive plugged in, looked for each second.
     let mut plugged: Option<Plugged> = None;
     let mut seen: Option<String> = None;
@@ -1316,16 +1333,24 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
         }
         for reading in readings.taken() {
             match reading {
-                Reading::Battery(battery) => {
+                Reading::Battery(battery, at) => {
                     let battery = battery?;
+                    if asked.is_some_and(|asked| at >= asked) {
+                        asked = None;
+                    }
                     if battery != info.battery {
+                        plug(&mut app, &info.battery, &battery, now)?;
                         info.battery = battery;
                         app.refresh();
                     }
                 }
                 Reading::All(all, at) => {
                     let all = (*all)?;
+                    if asked.is_some_and(|asked| at >= asked) {
+                        asked = None;
+                    }
                     if at >= read_at && all != info {
+                        plug(&mut app, &info.battery, &all.battery, now)?;
                         info = all;
                         app.refresh();
                     }
@@ -1398,8 +1423,9 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
         let timeout = if ahead { 0 } else { until_due.into_iter().chain(rest_left).min().map_or(1000, |t| t.clamp(floor, 1000)) };
         // With the display off, the phone sleeps unless something needs it
         // awake: work under way, fastboot or sideload, a restart on its way,
-        // a command running in the terminal, a network being joined, or a
-        // computer on the USB port, whose adb and file transfer stay up.
+        // a command running in the terminal, a network being joined, the
+        // battery read after a uevent, or a computer on the USB port, whose
+        // adb and file transfer stay up.
         let busy = installer.is_some()
             || eraser.is_some()
             || worker.is_some()
@@ -1424,9 +1450,10 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
             && leave_at.is_none()
             && !joining
             && !running
+            && asked.is_none()
             && usb_link()? != UsbLink::Connected;
         sleeper.allow(may_sleep);
-        let mut fds = vec![inputs.fd(), sleeper.fd()];
+        let mut fds = vec![inputs.fd(), uevents.fd(), sleeper.fd()];
         if let Some(i) = &installer {
             fds.push(i.fd());
         }
@@ -1480,6 +1507,10 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                 Slept::Woke => skyward_sys::kmsg("the phone slept and woke")?,
                 Slept::Refused(why) => skyward_sys::kmsg(&format!("the phone did not sleep: {why}"))?,
             }
+        }
+        if uevents.heard()? {
+            readings.ask();
+            asked = Some(Instant::now());
         }
         let mut drive_told = None;
         if drive_at.elapsed().as_secs() >= 1 {

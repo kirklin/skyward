@@ -2975,6 +2975,17 @@ impl App {
         self.stir(now);
     }
 
+    /// A charger or a computer was attached or taken away: the dark panel
+    /// lights, and a lit one stays at full brightness for the screen-off
+    /// time from now, as on the phone's own system.
+    pub fn plugged(&mut self, now: u64) {
+        if self.display_on {
+            self.stir(now);
+        } else {
+            self.wake(now);
+        }
+    }
+
     /// Whether the panel lit so recently that a touch or key should only
     /// keep it awake.
     fn just_woke(&self, now: u64) -> bool {
@@ -3406,7 +3417,7 @@ impl App {
         let battery = info.battery.as_ref();
         Bar {
             clock,
-            battery: battery.map(|b| (b.level, b.plugged().then_some(if b.quick { Bolt::Quick } else { Bolt::Charging }))),
+            battery: battery.map(|b| (b.level, b.charging().then_some(if b.quick { Bolt::Quick } else { Bolt::Charging }))),
             wlan: self.wlan_mark(),
             data: match self.state.data {
                 Data::Erased => None,
@@ -6939,9 +6950,11 @@ mod tests {
         assert_eq!(app.screen(), Screen::Mount);
     }
 
-    /// A battery at `level`, as `charge` has it, 35.2 °C.
+    /// A battery at `level`, as `charge` has it, 35.2 °C, on a charger
+    /// unless it discharges.
     fn battery_at(level: u8, charge: Charge) -> skyward_info::Battery {
-        skyward_info::Battery { level, charge, temp: Some(352), health: None, cycles: None, design: None, full: None, voltage: None, quick: false }
+        let plugged = charge != Charge::Discharging;
+        skyward_info::Battery { level, charge, temp: Some(352), health: None, cycles: None, design: None, full: None, voltage: None, quick: false, plugged }
     }
 
     #[test]
@@ -7786,6 +7799,7 @@ mod tests {
             full: Some(5_095_000),
             voltage: Some(4_200_000),
             quick: false,
+            plugged: false,
         };
         let i = DeviceInfo {
             os_version: Some("OS3.0.305.0.WMACNXM".into()),
@@ -10858,6 +10872,27 @@ mod tests {
         assert!(app.display_on());
         tap_at(&mut app, &f, &i, Action::Open(Screen::Settings), 700);
         assert_eq!(app.screen(), Screen::Settings, "a tap on the lit panel does");
+    }
+
+    #[test]
+    fn a_cable_going_in_or_out_lights_the_dark_panel_and_keeps_a_lit_one_lit() {
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.tick(0);
+        app.tick(OFF);
+        assert!(!app.display_on());
+        let plugged = OFF + 1000;
+        app.plugged(plugged);
+        assert!(app.display_on(), "the cable going in lights the panel");
+        assert_eq!(app.panel(plugged), Some(SLIDER_START));
+        assert_eq!(app.deadline(plugged), Some(plugged + DIMS), "for the screen-off time");
+        app.tick(plugged + DIMS);
+        assert_eq!(app.panel(plugged + DIMS + 500), Some(dim_level(SLIDER_START)));
+        let pulled = plugged + DIMS + 600;
+        app.plugged(pulled);
+        assert_eq!(app.panel(pulled + 150), Some(SLIDER_START), "the cable coming out brightens it");
+        assert_eq!(app.deadline(pulled + 150), Some(pulled + DIMS), "and the wait starts over");
+        press(&mut app, Key::Power, pulled + 200);
+        assert!(!app.display_on(), "the power key turns it off at once, as ever");
     }
 
     #[test]

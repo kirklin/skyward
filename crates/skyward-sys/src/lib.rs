@@ -11,6 +11,8 @@ pub mod control;
 pub mod cpu;
 #[cfg(target_os = "android")]
 pub mod sleep;
+#[cfg(target_os = "android")]
+pub mod uevent;
 pub mod ueventd;
 pub mod usb;
 

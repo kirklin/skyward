@@ -1420,7 +1420,8 @@ fn skyward_newest() -> Newest {
         newer: true,
         build: Some(Build {
             name: "skyward-v0.1.4-nezha-OS4.0.4.0.XPACNXM.zip".into(),
-            url: "https://github.com/kirklin/skyward/releases/download/v0.1.4/skyward-v0.1.4-nezha-OS4.0.4.0.XPACNXM.zip".into(),
+            url: "https://api.github.com/repos/kirklin/skyward/releases/assets/719751747".into(),
+            link: "https://github.com/kirklin/skyward/releases/download/v0.1.4/skyward-v0.1.4-nezha-OS4.0.4.0.XPACNXM.zip".into(),
             size: 43_145_196,
             sha256: "9f6165079529418d8f6635beddfdd9abf9a70c89d69eb467a9922b0db69bfaf1".into(),
         }),

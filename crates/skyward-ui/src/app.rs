@@ -10430,7 +10430,8 @@ mod tests {
             newer,
             build: Some(Build {
                 name: "skyward-v0.1.4-ishtar-OS3.0.308.0.WMACNXM.zip".into(),
-                url: "https://github.com/kirklin/skyward/releases/download/v0.1.4/skyward-v0.1.4-ishtar-OS3.0.308.0.WMACNXM.zip".into(),
+                url: "https://api.github.com/repos/kirklin/skyward/releases/assets/719751598".into(),
+                link: "https://github.com/kirklin/skyward/releases/download/v0.1.4/skyward-v0.1.4-ishtar-OS3.0.308.0.WMACNXM.zip".into(),
                 size: 42_739_608,
                 sha256: "62b66f7d13a0eb6c9af3359b5ec6f9c223fd9a86b1f8abab3e9d2646cb2ce534".into(),
             }),

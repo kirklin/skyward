@@ -154,12 +154,34 @@ impl Worker {
                         let answer = github::ask(&a, &codename, skyward_info::VERSION).map_err(|e| unanswered(&e, github::LATEST, &probe, &servers));
                         tell(Event::SkywardChecked(answer));
                     }
-                    // GitHub sends each download on to a short-lived address
-                    // of its own, and the release's address stays: one
-                    // turned down is tried again as after any failure.
+                    // GitHub's API hands the zip out at a short-lived address
+                    // of the file itself, which it gives again once one has
+                    // run out and is turned down; the release's link on
+                    // github.com is tried after it.
                     Task::UpdateSkyward { build, codename, path } => {
+                        let a = http::agent(servers.clone());
+                        *using.lock().expect("the agent is not held by a thread that panicked") = Some(a.clone());
+                        let located = github::locate(&a, &build.url, skyward_info::VERSION)
+                            .inspect_err(|e| {
+                                let _ = skyward_sys::kmsg(&format!("asking GitHub where {} is: {e:#}", build.name));
+                            })
+                            .ok();
+                        let mut located_again = false;
+                        let mut refused = |a: &ureq::Agent| {
+                            if located_again {
+                                return Again::Retry;
+                            }
+                            located_again = true;
+                            match github::locate(a, &build.url, skyward_info::VERSION) {
+                                Ok(fresh) => Again::From(build.sources(Some(fresh))),
+                                Err(e) => {
+                                    let _ = skyward_sys::kmsg(&format!("asking GitHub again where {} is: {e:#}", build.name));
+                                    Again::Retry
+                                }
+                            }
+                        };
                         let sum = Sum::Sha256(build.sha256.clone());
-                        let end = match fetch(&servers, vec![build.url.clone()], &sum, &build.name, &path, &stopping, &using, &tell, &mut |_| Again::Retry) {
+                        let end = match fetch(&servers, build.sources(located), &sum, &build.name, &path, &stopping, &using, &tell, &mut refused) {
                             // Stopping asked for as the last of it came is
                             // stopping still: nothing is written.
                             End::Downloaded if stopping.load(Ordering::Relaxed) => End::Stopped,

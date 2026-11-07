@@ -1115,7 +1115,7 @@ pub enum Action {
     StopBackup,
     /// Tick or untick a log to export: the recovery's, the kernel's.
     LogPart(usize),
-    /// Save the logs to /tmp, or to internal storage.
+    /// Save the logs to the temporary folder, or to internal storage.
     LogsTo(usize),
     /// Save the logs ticked where they are to go.
     ExportLogs,
@@ -1527,7 +1527,8 @@ pub struct State {
     pub backup_job: Option<BackupJob>,
     /// Which logs to export: the recovery's, the kernel's.
     pub logs: [bool; 2],
-    /// Where the logs go: 0 for /tmp, 1 for internal storage.
+    /// Where the logs go: 0 for the temporary folder, 1 for internal
+    /// storage.
     pub logs_to: usize,
     /// What the phone's boot control holds of the slots, as the runtime
     /// last read it for the slot or reboot page, or why it could not.

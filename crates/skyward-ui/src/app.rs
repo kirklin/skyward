@@ -11,9 +11,9 @@ use crate::glow::{self, GlowClock};
 use crate::lang::{Lang, Text};
 use crate::motion::{self, Spring};
 use crate::pages::{self, Band, Ctx};
-use crate::sprite::{Blurs, Sprite};
 use crate::search;
 use crate::settings::Settings;
+use crate::sprite::{Blurs, Sprite};
 use crate::term::{self, Term, TermKey};
 use crate::theme::Theme;
 use crate::tr;
@@ -204,7 +204,8 @@ pub enum SkywardStage {
     Download(Progress),
     /// The build is written into the recovery partitions and read back:
     /// bytes so far, of all.
-    Write { done: u64, total: u64 },
+    Write { done: u64, total: u64,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -628,7 +629,8 @@ pub enum BackupEnd {
     Saved(String),
     /// A backup restored, but for what it held in the folders of users gone
     /// since, which only the system makes: where those were.
-    Restored { unmade: Vec<String> },
+    Restored { unmade: Vec<String>,
+    },
     /// Stopped as asked: a backup stopped leaves nothing of itself, and a
     /// restore stops only while nothing is written.
     Stopped,
@@ -674,10 +676,12 @@ pub struct FileRow {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FileKind {
     /// A folder, and how many entries it holds when it can be read.
-    Folder { items: Option<usize> },
+    Folder { items: Option<usize>,
+    },
     File,
     /// A symbolic link: where it points, and whether that is a folder.
-    Link { target: String, folder: bool },
+    Link { target: String, folder: bool,
+    },
     /// A device, socket or pipe.
     Special,
 }
@@ -1001,23 +1005,29 @@ pub enum Install {
     Waiting,
     /// The package of `size` bytes is looked at; a zip's signature is
     /// checked, once the installer tells how far.
-    Checking { size: u64, stage: Option<Stage> },
+    Checking { size: u64, stage: Option<Stage>,
+    },
     /// An image waits to be told where it goes.
     Choosing(Choice),
     /// An update waits for the user to agree: the version it brings, and
     /// whether all user data is erased after it.
-    Confirming { version: Option<String>, wipe: bool },
+    Confirming { version: Option<String>, wipe: bool,
+    },
     /// `overwriting` says whether the update writes over the running
     /// system.
-    Updating { version: Option<String>, stage: Option<Stage>, overwriting: bool },
-    Flashing { partition: &'static str, stage: Option<Stage> },
+    Updating { version: Option<String>, stage: Option<Stage>, overwriting: bool,
+    },
+    Flashing { partition: &'static str, stage: Option<Stage>,
+    },
     /// A zip with an install script waits for the user to agree to run it.
     ConfirmingScript,
     /// Its install script is made ready and then, once `running`, runs; how
     /// far it says it is, once it says.
-    Scripting { stage: Option<Stage>, running: bool },
+    Scripting { stage: Option<Stage>, running: bool,
+    },
     /// `damage` is what a failure may have left broken.
-    Finished { outcome: Outcome, damage: Option<Damage> },
+    Finished { outcome: Outcome, damage: Option<Damage>,
+    },
     /// In rescue, all user data is being erased, as the computer asked.
     Wiping,
     /// In rescue, erasing all user data ended: done, or why it stopped.
@@ -1122,7 +1132,8 @@ pub enum Action {
     /// Try opening the data partition again, after it did not open.
     OpenData,
     Back,
-    Theme { dark: bool },
+    Theme { dark: bool,
+    },
     Toggle(Switch),
     RebootTarget(usize),
     /// Choose or leave out what the wipe page erases.
@@ -1536,6 +1547,8 @@ pub struct State {
     /// place in [`TIME_ZONES`].
     pub time_zone: usize,
     pub vibrate: bool,
+    /// Hardware capability, independent of the saved touch-feedback preference.
+    pub supports_vibration: bool,
     /// How strongly the motor taps, from 0 at the slider's left end to 1
     /// at its right.
     pub vibration: f32,
@@ -1695,6 +1708,7 @@ impl Default for State {
             screen_off: 3,
             time_zone: 0,
             vibrate: true,
+            supports_vibration: true,
             vibration: SLIDER_START,
             file_transfer: true,
             reboot: 0,
@@ -1883,7 +1897,8 @@ pub enum Effect {
     /// screenshots in the owner's shared storage where `storage` says it is
     /// open, and otherwise held until it is, telling how it went with
     /// [`App::screenshot_saved`].
-    Screenshot { storage: bool },
+    Screenshot { storage: bool,
+    },
     /// Offer internal storage to a computer over USB, or stop.
     FileTransfer(bool),
     /// Start receiving a package over USB.
@@ -1896,7 +1911,8 @@ pub enum Effect {
     InstallPath(String),
     /// Write the image the installer holds to `partition` in the slots
     /// `pick` means.
-    Flash { partition: &'static str, pick: Pick },
+    Flash { partition: &'static str, pick: Pick,
+    },
     /// Stop waiting for the computer, for where an image goes, or for an
     /// update to be agreed to.
     Cancel,
@@ -1924,7 +1940,8 @@ pub enum Effect {
     /// Open the own files of `user` with what they entered at their screen
     /// lock, telling what still waits with [`App::data_waiting`] or why it
     /// did not open with [`App::unlock_failed`].
-    Unlock { user: u32, code: String },
+    Unlock { user: u32, code: String,
+    },
     /// Hand the USB port back from fastboot to adb, bring up what the
     /// recovery runs from the slot's partitions, then show its pages with
     /// [`App::enter_recovery`].
@@ -1953,13 +1970,16 @@ pub enum Effect {
     TermInput(Vec<u8>),
     /// Copy or move an entry into a folder; with no choice made yet, a name
     /// taken there is told with [`App::file_clash`] instead of going on.
-    Paste { op: FileOp, path: String, into: String, clash: Option<ClashChoice> },
+    Paste { op: FileOp, path: String, into: String, clash: Option<ClashChoice>,
+    },
     /// Give an entry a new name; how it went comes back with
     /// [`App::renamed`].
-    Rename { path: String, name: String },
+    Rename { path: String, name: String,
+    },
     /// Give an entry these permission bits; how it went comes back with
     /// [`App::mode_set`].
-    SetMode { path: String, mode: u32 },
+    SetMode { path: String, mode: u32,
+    },
     /// Read the file at this path to edit it, as much as
     /// [`editor::MAX_BYTES`] and one byte more, telling what it holds with
     /// [`App::text_opened`].
@@ -1967,7 +1987,8 @@ pub enum Effect {
     /// Write `text` as the contents of the file at `path`, which keeps what
     /// it has beside them; how it went comes back with
     /// [`App::text_saved`].
-    SaveText { path: String, text: String },
+    SaveText { path: String, text: String,
+    },
     /// Delete an entry, folders whole.
     Delete(String),
     /// Stop the work on files under way.
@@ -1987,25 +2008,31 @@ pub enum Effect {
     /// [`App::part_at`], [`App::part_ended`] and [`App::part_work_ended`];
     /// making the data partition afresh as another filesystem is a factory
     /// reset, which tells as erasing tells.
-    Filesystem { name: String, action: FsAction },
+    Filesystem { name: String, action: FsAction,
+    },
     /// Save the logs chosen, the recovery's own and the kernel's, into a
     /// folder of their own in internal storage or the temporary folder,
     /// saying where with [`App::report`].
-    ExportLogs { recovery: bool, kernel: bool, storage: bool },
+    ExportLogs { recovery: bool, kernel: bool, storage: bool,
+    },
     /// Back up the parts ticked, by their place in [`BACKUP_PARTS`], into
     /// a folder of their own in `place`, telling how it goes with
     /// [`App::backup_started`], [`App::backup_plan`], [`App::backup_at`]
     /// and [`App::backup_ended`].
-    Backup { parts: [bool; 4], place: Place, compress: bool, verify: bool },
+    Backup { parts: [bool; 4], place: Place, compress: bool, verify: bool,
+    },
     /// Restore the parts ticked of the backup in the folder `name` of
     /// `place`, telling how it goes as a backup does.
-    Restore { place: Place, name: String, parts: [bool; 4] },
+    Restore { place: Place, name: String, parts: [bool; 4],
+    },
     /// Look for backups in the places that can be read, telling what is
     /// found with [`App::set_backups`].
-    FindBackups { storage: bool, usb: bool },
+    FindBackups { storage: bool, usb: bool,
+    },
     /// Delete the backup in the folder `name` of `place`, telling how it
     /// went with [`App::backup_deleted`].
-    DeleteBackup { place: Place, name: String },
+    DeleteBackup { place: Place, name: String,
+    },
     /// Stop the backup under way, or the check before a restore.
     StopBackup,
     /// Read where the update stands, telling it with [`App::set_update`].
@@ -2014,7 +2041,8 @@ pub enum Effect {
     /// [`App::set_wlan`].
     Wlan(bool),
     ScanWlan,
-    JoinWlan { ssid: Vec<u8>, name: String, security: Security, password: Secret },
+    JoinWlan { ssid: Vec<u8>, name: String, security: Security, password: Secret,
+    },
     LeaveWlan,
     /// Ask the update server for the newest system, telling what it
     /// answered with [`App::update_checked`].
@@ -2042,20 +2070,25 @@ enum Drag {
     /// press began at a screen edge (true for the left one).
     /// `at` is when it came down: held long enough over an entry of the file
     /// manager, it opens what can be done with that entry.
-    Press { x: f32, y: f32, action: Option<Action>, edge: Option<bool>, at: u64 },
+    Press { x: f32, y: f32, action: Option<Action>, edge: Option<bool>, at: u64,
+    },
     /// A press held long enough to have done its work; nothing it does
     /// counts until it lifts.
     Held,
-    Scroll { last: f32 },
+    Scroll { last: f32,
+    },
     /// Swiping in from a screen edge, the finger now `x` across; the cue
     /// keeps to height `cy`, set by where the swipe began. Past the
     /// threshold, lifting goes back.
-    Edge { start: f32, from_left: bool, armed: bool, x: f32, cy: f32 },
+    Edge { start: f32, from_left: bool, armed: bool, x: f32, cy: f32,
+    },
     Slider(Slider, Rect),
-    Confirm { which: Confirm, track: Rect, grab: f32 },
+    Confirm { which: Confirm, track: Rect, grab: f32,
+    },
     /// Scrolling a terminal's screen back through what the shell wrote, or
     /// the editor's text, `carry` being the part of a row not yet scrolled.
-    History { last: f32, carry: f32, pitch: f32 },
+    History { last: f32, carry: f32, pitch: f32,
+    },
     Pattern,
     /// The finger that lit the dark panel; nothing it does counts until it
     /// lifts.
@@ -2473,6 +2506,9 @@ fn keyboard_strip(t: &Theme, frame: &Frame) -> (Canvas, i32) {
 }
 
 pub struct App {
+    tablet: Option<crate::tablet::Tablet>,
+    tablet_mode: bool,
+    minimum_brightness: f32,
     pub state: State,
     /// The pages open, the one shown last: each with how far it is
     /// scrolled and where the keys are on it.
@@ -2608,6 +2644,9 @@ pub struct App {
 impl App {
     pub fn new(start: Screen, w: u32, h: u32, px_per_dp: f32) -> Self {
         App {
+            tablet: None,
+            tablet_mode: false,
+            minimum_brightness: MIN_BRIGHTNESS,
             state: State::default(),
             stack: vec![(start, 0.0, Focus::Unset)],
             frame: None,
@@ -2673,6 +2712,24 @@ impl App {
         self.corners = radius;
     }
 
+    /// Apply device capabilities before the first frame is drawn.
+    pub fn configure_device(&mut self, cfg: &skyward_config::DeviceConfig) {
+        self.state.supports_vibration = cfg.device.supports_vibration.unwrap_or(cfg.haptics.is_some());
+        if let (Some(bottom), Some(top)) = (cfg.display.minimum_brightness, cfg.display.normal_brightness) {
+            self.minimum_brightness = bottom as f32 / top as f32;
+        }
+        if self.screen() != Screen::Fastboot && self.tablet.is_none() && cfg.device.tablet && self.w > self.h && self.h as f32 / self.px_per_dp >= 600.0 {
+            let sidebar = self.w / 3;
+            self.w -= sidebar;
+            self.tablet_mode = true;
+            self.tablet = Some(crate::tablet::Tablet::new(sidebar, self.w, self.h, self.px_per_dp));
+            if self.screen() == Screen::Home {
+                self.stack.push((Screen::About, 0.0, Focus::Unset));
+            }
+        }
+        self.refresh();
+    }
+
     pub fn theme(&self) -> Theme {
         if self.state.dark {
             Theme::dark(self.w, self.h, self.px_per_dp)
@@ -2683,6 +2740,15 @@ impl App {
 
     pub fn screen(&self) -> Screen {
         self.top().0
+    }
+
+    pub(crate) fn tablet_selection(&self) -> Screen {
+        self.stack.iter().map(|p| p.0).find(|&s| crate::tablet::is_section(s)).unwrap_or(Screen::About)
+    }
+
+    fn can_go_back(&self) -> bool {
+        self.stack.len() > 1 && !(self.tablet_mode && self.stack.len() == 2
+            && self.stack[0].0 == Screen::Home && crate::tablet::is_section(self.screen()))
     }
 
     fn top(&self) -> &(Screen, f32, Focus) {
@@ -2761,7 +2827,7 @@ impl App {
         self.state.file = Some(entry);
         self.state.asking_delete = false;
         self.open(Screen::FileInfo);
-        if self.state.vibrate {
+        if self.state.supports_vibration && self.state.vibrate {
             vec![Effect::Haptic]
         } else {
             Vec::new()
@@ -2926,7 +2992,8 @@ impl App {
 
     /// Bring the bar and its title in or out as the page scrolls.
     fn follow_scroll(&mut self, now: u64) {
-        let Some((title, bar)) = self.bar_wanted() else { return };
+        let Some((title, bar)) = self.bar_wanted() else { return;
+        };
         self.title.set(title, now);
         self.bar.set(bar, now);
         if self.title.moving(now) || self.bar.moving(now) {
@@ -3045,6 +3112,9 @@ impl App {
 
     /// The page's readings changed (battery, storage): render it again.
     pub fn refresh(&mut self) {
+        if self.tablet_mode && self.screen() == Screen::Home {
+            self.stack.push((Screen::About, 0.0, Focus::Unset));
+        }
         self.frame = None;
         self.stale.clear();
         self.spots = None;
@@ -3152,7 +3222,8 @@ impl App {
     pub fn term_ended(&mut self, end: TermEnd) {
         let (l, term) = (self.state.lang, self.term.as_mut().expect("only a shell that started ends"));
         let how = fmt::term_end(l, &end);
-        term.feed(tr!(l, "\r\n[{how}。按「回车」重新启动]\r\n", "\r\n[{how}。按「Enter」重新啟動]\r\n", "\r\n[{how}. Press Enter to start it again]\r\n").as_bytes());
+        term.feed(tr!(l, "\r\n[{how}。按「回车」重新启动]\r\n", "\r\n[{how}。按「Enter」重新啟動]\r\n", "\r\n[{how}. Press Enter to start it again]\r\n").as_bytes(),
+        );
         term.running = false;
         if self.screen() == Screen::Terminal {
             self.refresh();
@@ -3419,7 +3490,8 @@ impl App {
     }
 
     pub fn wlan_mark(&self) -> Option<WlanMark> {
-        let Some(Joined { stage: Joining::Connected(link), .. }) = self.state.wlan.as_ref()?.joined.as_ref() else { return None };
+        let Some(Joined { stage: Joining::Connected(link), .. }) = self.state.wlan.as_ref()?.joined.as_ref() else { return None;
+        };
         let t = self.state.traffic;
         let (speed, unit) = fmt::speed(t.rx + t.tx);
         Some(WlanMark { level: fmt::signal_level(link.signal), receiving: t.rx > 0, sending: t.tx > 0, speed, unit })
@@ -3526,7 +3598,9 @@ impl App {
         let l = self.state.lang;
         let bits = match outcome {
             Ok(bits) => bits,
-            Err(why) => return self.report(&tr!(l, "修改权限失败：{why}", "修改權限失敗：{why}", "Couldn't change the permissions: {why}"), now),
+            Err(why) => {
+                return self.report(&tr!(l, "修改权限失败：{why}", "修改權限失敗：{why}", "Couldn't change the permissions: {why}"), now)
+            }
         };
         let entry = self.state.file.as_mut().expect("the permissions page shows an entry");
         entry.mode = (entry.mode & !0o7777) | bits;
@@ -3550,11 +3624,14 @@ impl App {
         let l = self.state.lang;
         let bytes = match read {
             Ok(Some(bytes)) => bytes,
-            Ok(None) => return self.say(l.pick(["暂不支持编辑超过 2 MB 的文件", "尚不支援編輯超過 2 MB 的檔案", "Files over 2 MB can't be edited"]), now),
+            Ok(None) => {
+                return self.say(l.pick(["暂不支持编辑超过 2 MB 的文件", "尚不支援編輯超過 2 MB 的檔案", "Files over 2 MB can't be edited"]), now)
+            }
             Err(why) => return self.report(&tr!(l, "读取失败：{why}", "讀取失敗：{why}", "Couldn't read it: {why}"), now),
         };
         let Some(text) = String::from_utf8(bytes).ok().filter(|text| !text.contains('\0')) else {
-            return self.say(l.pick(["仅支持编辑 UTF-8 编码的文本文件", "僅支援編輯 UTF-8 編碼的文字檔", "Only UTF-8 text files can be edited"]), now);
+            return self.say(l.pick(["仅支持编辑 UTF-8 编码的文本文件", "僅支援編輯 UTF-8 編碼的文字檔", "Only UTF-8 text files can be edited"]), now,
+            );
         };
         let l = editor::layout(&self.theme(), f);
         self.state.editor = Some(Editor::new(path, &text, l.cols as usize, l.rows as usize));
@@ -3858,7 +3935,8 @@ impl App {
             for rows in std::mem::take(&mut self.stale) {
                 let band = Band { rows, cols: (0, self.cols) };
                 let cx = Ctx { t: &t, f, info, state: &self.state, term: self.term.as_ref(), band: Some(band) };
-                let fresh = pages::render(screen, &cx);
+                let mut fresh = pages::render(screen, &cx);
+                if self.tablet_mode && !self.can_go_back() { fresh.back = false; }
                 let mut canvas = self.frame.take().expect("checked above").canvas;
                 assert_eq!(canvas.h, fresh.canvas.h, "a page drawn again in part is as tall as it was");
                 canvas.replace(&fresh.canvas);
@@ -3872,6 +3950,7 @@ impl App {
             let band = Band { rows: (first, first + self.h), cols: (0, wide.min(self.w)) };
             let cx = Ctx { t: &t, f, info, state: &self.state, term: self.term.as_ref(), band: Some(band) };
             let mut frame = pages::render(screen, &cx);
+            if self.tablet_mode && !self.can_go_back() { frame.back = false; }
             // A page drawn in part across holds its rows whole, the columns
             // of them drawn on as they are needed.
             self.cols = frame.canvas.cols().end;
@@ -3906,7 +3985,8 @@ impl App {
     /// it scrolls into view; that done, make the About page field's dither,
     /// for that page to open without making it. Whether any is left to do.
     pub fn draw_ahead(&mut self, f: &Fonts, info: &DeviceInfo) -> bool {
-        let Some(frame) = &self.frame else { return false };
+        let Some(frame) = &self.frame else { return false;
+        };
         let (held, h) = (frame.canvas.held(), frame.canvas.h);
         if self.cols < self.w {
             self.draw_cols(f, info, self.w);
@@ -3985,6 +4065,19 @@ impl App {
     /// out over or under the page left, the status bar, any message, and
     /// the back cue while a swipe from an edge is under way.
     pub fn compose(&mut self, out: &mut Canvas, f: &Fonts, info: &DeviceInfo, clock: &str, now: u64) {
+        if let Some(mut tablet) = self.tablet.take() {
+            self.compose_detail(&mut tablet.detail, f, info, clock, now);
+            tablet.paint(out, f, self);
+            let mut t = self.theme();
+            t.m.w = out.w;
+            widgets::status_bar(out, &t, f, &self.bar(clock, info), t.pal.status);
+            self.tablet = Some(tablet);
+        } else {
+            self.compose_detail(out, f, info, clock, now);
+        }
+    }
+
+    fn compose_detail(&mut self, out: &mut Canvas, f: &Fonts, info: &DeviceInfo, clock: &str, now: u64) {
         // A page opened is drawn from its left edge as it slides in.
         let opening = self.turn.as_ref().is_some_and(|t| !t.back);
         self.render(f, info, if opening { 0 } else { self.w });
@@ -4104,7 +4197,9 @@ impl App {
         }
         self.shown = Some(view);
 
-        widgets::status_bar(out, &t, f, &self.bar(clock, info), t.pal.status);
+        if !self.tablet_mode {
+            widgets::status_bar(out, &t, f, &self.bar(clock, info), t.pal.status);
+        }
         if let Some((text, _)) = &self.toast {
             widgets::toast(out, &t, f, text);
         }
@@ -4374,7 +4469,9 @@ impl App {
         draw_faded(out, disc, 0.0, 0.0, t.pal.search, shown, blur);
         draw_faded(out, cross, 0.0, 0.0, t.pal.text, shown, blur);
         self.morph = Some(morph);
-        widgets::status_bar(out, &t, f, &self.bar(clock, info), t.pal.status);
+        if !self.tablet_mode {
+            widgets::status_bar(out, &t, f, &self.bar(clock, info), t.pal.status);
+        }
         if let Some((text, _)) = &self.toast {
             widgets::toast(out, &t, f, text);
         }
@@ -4459,7 +4556,8 @@ impl App {
             return;
         }
         self.end_turn();
-        let Some(view) = self.shown.take() else { return };
+        let Some(view) = self.shown.take() else { return;
+        };
         let mut left = self.backdrop.take().unwrap_or_else(|| Canvas::new(self.w, self.h));
         // The `<` comes up with the finger, before its page goes.
         let view = View { pressing: None, ..view };
@@ -4510,10 +4608,10 @@ impl App {
     /// and in a place, until it reaches the place's top.
     fn back(&mut self, now: u64) -> Vec<Effect> {
         let (l, mut fx) = (self.state.lang, Vec::new());
-        if self.stack.len() <= 1 {
+        if !self.can_go_back() {
             return fx;
         }
-        let morph = self.screen() == Screen::Search && self.stack[self.stack.len() - 2].0 == Screen::Home;
+        let morph = !self.tablet_mode && self.screen() == Screen::Search && self.stack[self.stack.len() - 2].0 == Screen::Home;
         if morph {
             self.start_morph(false, now);
         }
@@ -4544,7 +4642,9 @@ impl App {
                 let changed = self.state.editor.as_ref().expect("the editor page shows a file").changed;
                 if changed && self.unsaved_warned.is_none_or(|at| now >= at + TOAST_MS) {
                     self.unsaved_warned = Some(now);
-                    self.say(l.pick(["修改尚未保存，再次返回将放弃修改", "修改尚未儲存，再次返回將捨棄修改", "Changes aren't saved. Go back again to discard them"]), now);
+                    self.say(l.pick(["修改尚未保存，再次返回将放弃修改", "修改尚未儲存，再次返回將捨棄修改", "Changes aren't saved. Go back again to discard them",
+                        ]), now,
+                    );
                     return fx;
                 }
                 self.state.editor = None;
@@ -4742,7 +4842,9 @@ impl App {
                 _ => {}
             },
             Event::Reflashed(reflash) => self.state.reflash = Some(reflash),
-            Event::Wipe | Event::Reboot(_) => unreachable!("the runtime carries out what rescue asks of it"),
+            Event::Wipe | Event::Reboot(_) => {
+                unreachable!("the runtime carries out what rescue asks of it")
+            }
             Event::Done(outcome) | Event::Finished(outcome) => {
                 let damage = match (&outcome, &*install) {
                     (Outcome::Failed(_), Install::Updating { overwriting: true, .. }) => Some(Damage::System),
@@ -4775,7 +4877,9 @@ impl App {
             Screen::Slot | Screen::Reboot => vec![Effect::ReadSlots],
             Screen::Restore => vec![self.find_backups()],
             Screen::Files => vec![Effect::ReadDir(self.state.files.path.clone())],
-            Screen::Choose(place) if self.state.place_open(place) => vec![Effect::ReadPlace(place, self.state.folder(s).path.clone())],
+            Screen::Choose(place) if self.state.place_open(place) => {
+                vec![Effect::ReadPlace(place, self.state.folder(s).path.clone())]
+            }
             Screen::Search => {
                 self.state.search.clear();
                 self.state.layer = Layer::Letters;
@@ -4806,7 +4910,9 @@ impl App {
                 self.state.skyward_check = SkywardCheck::Asking;
                 vec![Effect::CheckSkyward]
             }
-            Screen::Wlan if self.state.wlan.as_ref().is_some_and(|w| w.power == Power::On) => vec![Effect::ScanWlan],
+            Screen::Wlan if self.state.wlan.as_ref().is_some_and(|w| w.power == Power::On) => {
+                vec![Effect::ScanWlan]
+            }
             _ => Vec::new(),
         }
     }
@@ -4831,7 +4937,7 @@ impl App {
         let l = self.state.lang;
         match action {
             Action::Open(s) => {
-                if s == Screen::Search && self.screen() == Screen::Home {
+                if !self.tablet_mode && s == Screen::Search && self.screen() == Screen::Home {
                     // The bar moves up from where it stands unfolded: a
                     // page easing there for the keys gets there at once.
                     if let Some((rest, _)) = self.seek.take() {
@@ -4919,7 +5025,9 @@ impl App {
                 }
                 self.refresh();
             }
-            Action::Confirm(_) => self.say(l.pick(["请按住圆形按钮向右滑动", "請按住圓形按鈕向右滑動", "Hold the round button and slide it right"]), now),
+            Action::Confirm(_) => {
+                self.say(l.pick(["请按住圆形按钮向右滑动", "請按住圓形按鈕向右滑動", "Hold the round button and slide it right"]), now)
+            }
             Action::Slider(_) | Action::Pattern => {}
             Action::Sideload => match self.state.install {
                 Install::Idle | Install::Finished { .. } => {
@@ -4966,7 +5074,8 @@ impl App {
                 let (path, folder) = (std::path::Path::new(&clip.path), std::path::Path::new(&self.state.files.path));
                 let name = path.file_name().map_or_else(|| clip.path.clone(), |n| n.to_string_lossy().into_owned());
                 if folder.starts_with(path) {
-                    self.say(&tr!(l, "无法将\"{name}\"放入其自身中", "無法將「{name}」放入其本身中", "“{name}” can't go inside itself"), now);
+                    self.say(&tr!(l, "无法将\"{name}\"放入其自身中", "無法將「{name}」放入其本身中", "“{name}” can't go inside itself"), now,
+                    );
                 } else if clip.op == FileOp::Move && path.parent() == Some(folder) {
                     self.say(&tr!(l, "\"{name}\"已在该文件夹中", "「{name}」已在這個資料夾中", "“{name}” is already in this folder"), now);
                 } else {
@@ -5125,7 +5234,8 @@ impl App {
                 self.refresh_text();
             }
             Action::TermKey(key) => {
-                let Some(term) = self.term.as_mut() else { return Vec::new() };
+                let Some(term) = self.term.as_mut() else { return Vec::new();
+                };
                 let bytes = term.key(key);
                 let running = term.running;
                 self.refresh();
@@ -5200,15 +5310,18 @@ impl App {
             Action::JoinNetwork(i) => {
                 let w = self.state.wlan.as_ref().expect("networks show on a phone whose WLAN is brought up");
                 // A scan may have changed the list since the page was drawn.
-                let Some(network) = w.networks.get(i).cloned() else { return Vec::new() };
+                let Some(network) = w.networks.get(i).cloned() else { return Vec::new();
+                };
                 if w.joined.as_ref().is_some_and(|j| j.ssid == network.ssid) {
                     return self.act(Action::OpenJoined, now);
                 }
                 match network.security {
-                    Security::Wep => self.say(l.pick(["暂不支持 WEP 加密的网络", "尚不支援 WEP 加密的網路", "WEP networks aren't supported"]), now),
-                    Security::Enterprise => {
-                        self.say(l.pick(["暂不支持需要账号登录的网络", "尚不支援需要帳號登入的網路", "Networks that need an account sign-in aren't supported"]), now)
+                    Security::Wep => {
+                        self.say(l.pick(["暂不支持 WEP 加密的网络", "尚不支援 WEP 加密的網路", "WEP networks aren't supported"]), now)
                     }
+                    Security::Enterprise => self.say(l.pick(["暂不支持需要账号登录的网络", "尚不支援需要帳號登入的網路", "Networks that need an account sign-in aren't supported",
+                        ]), now,
+                    ),
                     s if s.password() => self.ask_password(network),
                     _ => {
                         return vec![Effect::JoinWlan {
@@ -5222,13 +5335,15 @@ impl App {
             }
             Action::NetworkDetails(i) => {
                 let w = self.state.wlan.as_ref().expect("networks show on a phone whose WLAN is brought up");
-                let Some(network) = w.networks.get(i).cloned() else { return Vec::new() };
+                let Some(network) = w.networks.get(i).cloned() else { return Vec::new();
+                };
                 self.state.details = Some(network);
                 self.open(Screen::WlanNetwork);
             }
             Action::OpenJoined => {
                 let w = self.state.wlan.as_ref().expect("a network is chosen on a phone whose WLAN is brought up");
-                let Some(j) = w.joined.clone() else { return Vec::new() };
+                let Some(j) = w.joined.clone() else { return Vec::new();
+                };
                 // As found, where it still is; as it was chosen otherwise.
                 let found = w.networks.iter().find(|n| n.ssid == j.ssid).cloned();
                 let network = found.unwrap_or(Network {
@@ -5445,7 +5560,8 @@ impl App {
             self.state.layer = Layer::Letters;
         }
         self.refresh();
-        let Some(term) = self.term.as_mut() else { return Vec::new() };
+        let Some(term) = self.term.as_mut() else { return Vec::new();
+        };
         if !term.running {
             return if cap == Cap::Enter { vec![Effect::StartShell(self.shell_folder.clone())] } else { Vec::new() };
         }
@@ -5566,11 +5682,13 @@ impl App {
             Cap::Show(layer) => self.state.layer = layer,
             Cap::Enter => match self.screen() {
                 Screen::Search => {
-                    if let Some(first) = search::find_on(&self.state.search, l, |screen| self.state.offers(screen)).first() {
+                    if let Some(first) = search::find_available(&self.state.search, l, |screen| self.state.offers(screen), self.state.supports_vibration).first() {
                         return self.act(Action::Open(first.screen), now);
                     }
                 }
-                Screen::Decrypt if self.state.code.is_empty() => self.say(l.pick(["请输入锁屏密码", "請輸入螢幕鎖定密碼", "Enter the screen lock"]), now),
+                Screen::Decrypt if self.state.code.is_empty() => {
+                    self.say(l.pick(["请输入锁屏密码", "請輸入螢幕鎖定密碼", "Enter the screen lock"]), now)
+                }
                 Screen::Decrypt => {
                     let code = std::mem::take(&mut self.state.code);
                     return self.unlock(code);
@@ -5583,8 +5701,12 @@ impl App {
                     let taken = self.state.files.entries.as_ref().is_ok_and(|entries| entries.iter().any(|e| e.name == name));
                     match name.as_str() {
                         "" => self.say(l.pick(["请输入名称", "請輸入名稱", "Enter a name"]), now),
-                        "." | ".." => self.say(l.pick(["名称不能为\".\"或\"..\"", "名稱不能是「.」或「..」", "A name can't be “.” or “..”"]), now),
-                        _ if name.contains('/') => self.say(l.pick(["名称不能包含\"/\"", "名稱不能包含「/」", "A name can't hold “/”"]), now),
+                        "." | ".." => {
+                            self.say(l.pick(["名称不能为\".\"或\"..\"", "名稱不能是「.」或「..」", "A name can't be “.” or “..”"]), now)
+                        }
+                        _ if name.contains('/') => {
+                            self.say(l.pick(["名称不能包含\"/\"", "名稱不能包含「/」", "A name can't hold “/”"]), now)
+                        }
                         _ if name == *current => return self.back(now),
                         _ if taken => self.say_taken(now),
                         _ => return vec![Effect::Rename { path: self.entry_path(), name }],
@@ -5653,6 +5775,62 @@ impl App {
     }
 
     pub fn touch(&mut self, ev: Touch, f: &Fonts, now: u64) -> Vec<Effect> {
+        if let Some(mut tablet) = self.tablet.take() {
+            if matches!(ev, Touch::Down(..)) && (!self.display_on || self.just_woke(now)) {
+                self.wake(now);
+                tablet.cancel_gesture();
+                self.tablet = Some(tablet);
+                return Vec::new();
+            }
+            let routed = tablet.route(ev);
+            let effects = match routed {
+                crate::tablet::Input::Detail(event) => self.touch_detail(event, f, now),
+                crate::tablet::Input::Select(screen) if self.display_on && !self.just_woke(now) => {
+                    self.stir(now);
+                    self.tablet_section(screen, now)
+                }
+                crate::tablet::Input::Select(_) => { self.wake(now); Vec::new() }
+                crate::tablet::Input::Sidebar => { self.stir(now); self.dirty = true; Vec::new() }
+            };
+            self.tablet = Some(tablet);
+            return effects;
+        }
+        self.touch_detail(ev, f, now)
+    }
+
+    fn tablet_section(&mut self, screen: Screen, now: u64) -> Vec<Effect> {
+        if self.screen() == screen { return Vec::new(); }
+        // Keep modal workflows and in-flight work on their existing pages.
+        if matches!(self.screen(), Screen::Editor | Screen::Installing | Screen::BackupJob | Screen::PartWork |
+            Screen::Erase | Screen::Relabel | Screen::SkywardUpdate | Screen::FileJob | Screen::CantStart |
+            Screen::Unhandled | Screen::Fastboot) || matches!(self.state.data, Data::Opening | Data::Locked { checking: true, .. }) {
+            self.say(self.state.lang.pick(["请先完成当前操作或返回", "請先完成目前操作或返回", "Finish this operation or go back first"]), now);
+            return Vec::new();
+        }
+        self.end_turn();
+        self.leave(false);
+        self.morph = None;
+        self.drag = Drag::Idle;
+        self.state.password.clear();
+        self.state.code.clear();
+        self.state.pattern.clear();
+        self.state.joining = None;
+        self.state.details = None;
+        self.state.clip = None;
+        self.state.adding = None;
+        self.state.mount_failure = None;
+        self.state.next_slot = None;
+        self.state.restore = None;
+        self.state.file = None;
+        self.state.asking_delete = false;
+        self.stack.truncate(1);
+        self.stack[0] = (Screen::Home, 0.0, Focus::Unset);
+        let effects = self.act(Action::Open(screen), now);
+        self.keys = false;
+        effects
+    }
+
+    fn touch_detail(&mut self, ev: Touch, f: &Fonts, now: u64) -> Vec<Effect> {
         if !self.display_on {
             // A finger on the dark panel lights it, and does nothing else
             // until it lifts.
@@ -5700,7 +5878,7 @@ impl App {
                 };
                 // The first page has nothing to go back to: its edges are
                 // like the rest of it.
-                let at_edge = side.filter(|_| self.stack.len() > 1);
+                let at_edge = side.filter(|_| self.can_go_back());
                 // A swipe in from an edge goes back over whatever the page is
                 // doing: a finger landing there leaves a gliding or springing
                 // page alone until it drags the page, and presses nothing.
@@ -5753,7 +5931,9 @@ impl App {
                 // the finger lands on it, if the finger stays.
                 let row = hit
                     .filter(|&(a, r)| self.frame.as_ref().is_some_and(|fr| fr.hits.contains(&Hit { rect: r, action: a })))
-                    .filter(|&(a, r)| row_wide(&t, r) && !matches!(a, Action::Open(Screen::Search) | Action::Confirm(_) | Action::TypeInto(_)))
+                    .filter(|&(a, r)| {
+                        row_wide(&t, r) && !matches!(a, Action::Open(Screen::Search) | Action::Confirm(_) | Action::TypeInto(_))
+                    })
                     .map(|(_, r)| r);
                 self.drag = match hit {
                     Some((Action::Slider(which), track)) => {
@@ -5817,7 +5997,7 @@ impl App {
                     let ready = travel > m.dp(BACK_SWIPE_DP);
                     // A tap of the motor as the `<` appears, as the system
                     // gives.
-                    if ready && !armed && self.state.vibrate {
+                    if ready && !armed && self.state.supports_vibration && self.state.vibrate {
                         fx.push(Effect::Haptic);
                     }
                     self.drag = Drag::Edge { start, from_left, armed: ready, x, cy };
@@ -5904,7 +6084,7 @@ impl App {
                 Drag::Pattern => fx.extend(self.drawn(now)),
                 // Let go, the strength slider taps the motor as strongly as
                 // it was left at.
-                Drag::Slider(Slider::Vibration, _) if self.state.vibrate => fx.push(Effect::Haptic),
+                Drag::Slider(Slider::Vibration, _) if self.state.supports_vibration && self.state.vibrate => fx.push(Effect::Haptic),
                 _ => {}
             },
         }
@@ -6010,7 +6190,7 @@ impl App {
         self.stir(now);
         self.button = Some((key, Press::Spent));
         let mut fx = Vec::new();
-        if self.state.vibrate {
+        if self.state.supports_vibration && self.state.vibrate {
             fx.push(Effect::Haptic);
         }
         fx.push(Effect::Screenshot { storage: self.state.place_open(Place::Storage) });
@@ -6072,7 +6252,8 @@ impl App {
             Some((first, _)) if first == key => self.let_chord_go(),
             _ => Vec::new(),
         };
-        let Some((down, press)) = self.button else { return fx };
+        let Some((down, press)) = self.button else { return fx;
+        };
         if down != key {
             return fx;
         }
@@ -6097,7 +6278,8 @@ impl App {
     /// Whatever the button held down was doing comes to nothing until it is
     /// let go: a knob it slid goes back.
     fn drop_button(&mut self) {
-        let Some((key, press)) = self.button else { return };
+        let Some((key, press)) = self.button else { return;
+        };
         if let Press::Slide { which, track, .. } = press {
             self.let_knob_go(which, track);
         }
@@ -6143,7 +6325,8 @@ impl App {
                 let refused = if !s.backup.contains(&true) {
                     Some(["请选择要备份的内容", "請選擇要備份的內容", "Choose what to back up"])
                 } else if s.backup[2] && s.data != Data::Open {
-                    Some(["备份 data 分区需先完成「解密」", "備份 data 分割區需先完成「解密」", "Decrypt before backing up the data partition"])
+                    Some(["备份 data 分区需先完成「解密」", "備份 data 分割區需先完成「解密」", "Decrypt before backing up the data partition",
+                    ])
                 } else if s.place_open(s.backup_to) {
                     None
                 } else {
@@ -6166,7 +6349,9 @@ impl App {
                 if !parts.contains(&true) {
                     self.say(l.pick(["请选择要恢复的内容", "請選擇要還原的內容", "Choose what to restore"]), now);
                 } else if parts[2] && self.state.data != Data::Open {
-                    self.say(l.pick(["恢复 data 分区需先完成「解密」", "還原 data 分割區需先完成「解密」", "Decrypt before restoring the data partition"]), now);
+                    self.say(l.pick(["恢复 data 分区需先完成「解密」", "還原 data 分割區需先完成「解密」", "Decrypt before restoring the data partition",
+                        ]), now,
+                    );
                 } else {
                     fx.push(restore);
                 }
@@ -6199,9 +6384,9 @@ impl App {
                 Data::Open | Data::Locked { .. } => fx.push(Effect::Relabel),
                 Data::Opening => self.say(l.pick(DATA_OPENING), now),
                 Data::Erased => self.say(l.pick(DATA_ERASED), now),
-                Data::Closed | Data::Failed(_) => {
-                    self.say(l.pick(["请先在「解密」中打开 data 分区", "請先在「解密」中開啟 data 分割區", "Open the data partition in Decrypt first"]), now)
-                }
+                Data::Closed | Data::Failed(_) => self.say(l.pick(["请先在「解密」中打开 data 分区", "請先在「解密」中開啟 data 分割區", "Open the data partition in Decrypt first",
+                    ]), now,
+                ),
             },
             // The data partition is reached through its own key whether or
             // not it is open, but not while it is being opened or erased.
@@ -6239,10 +6424,10 @@ impl App {
                 self.adjusting = !self.adjusting;
                 if self.adjusting {
                     let said = match which {
-                        Slider::Brightness => ["按音量键调节亮度，按电源键完成", "按音量鍵調整亮度，按電源鍵完成", "Set the brightness with the volume keys, then press the power key"],
-                        Slider::Vibration => {
-                            ["按音量键调节振动强度，按电源键完成", "按音量鍵調整震動強度，按電源鍵完成", "Set the vibration with the volume keys, then press the power key"]
-                        }
+                        Slider::Brightness => ["按音量键调节亮度，按电源键完成", "按音量鍵調整亮度，按電源鍵完成", "Set the brightness with the volume keys, then press the power key",
+                        ],
+                        Slider::Vibration => ["按音量键调节振动强度，按电源键完成", "按音量鍵調整震動強度，按電源鍵完成", "Set the vibration with the volume keys, then press the power key",
+                        ],
                     };
                     self.say(l.pick(said), now);
                 }
@@ -6252,7 +6437,9 @@ impl App {
             Stop::Dot(i) if self.state.pattern.last() == Some(&i) => self.drawn(now),
             Stop::Dot(i) => {
                 if self.state.pattern.is_empty() {
-                    self.say(l.pick(["连接完成后，在最后一个点上再按一次电源键", "連接完成後，在最後一個點上再按一次電源鍵", "When the pattern is done, press the power key again on its last dot"]), now);
+                    self.say(l.pick(["连接完成后，在最后一个点上再按一次电源键", "連接完成後，在最後一個點上再按一次電源鍵", "When the pattern is done, press the power key again on its last dot",
+                        ]), now,
+                    );
                 }
                 self.join(&self.theme(), i);
                 Vec::new()
@@ -6285,7 +6472,7 @@ impl App {
             if let Some(Spot { stop: Stop::Hit(Action::Slider(which)), rect, .. }) = self.lit() {
                 let level = self.level(which) + if down { -SLIDER_STEP } else { SLIDER_STEP };
                 self.set_level(&self.theme(), which, rect, level);
-                if which == Slider::Vibration && self.state.vibrate {
+                if which == Slider::Vibration && self.state.supports_vibration && self.state.vibrate {
                     return vec![Effect::Haptic];
                 }
             }
@@ -6359,7 +6546,9 @@ impl App {
             };
             match cur {
                 Some(i) if page(i) => (0..i).rev().find(|&k| page(k)).map_or_else(before, To::Spot),
-                Some(i) if docked(i) => (0..i).rev().find(|&k| docked(k)).or_else(|| (0..n).rev().find(|&k| from_bottom(k))).map_or_else(before, To::Spot),
+                Some(i) if docked(i) => {
+                    (0..i).rev().find(|&k| docked(k)).or_else(|| (0..n).rev().find(|&k| from_bottom(k))).map_or_else(before, To::Spot)
+                }
                 Some(i) => (0..i).rev().find(|&k| held(k)).map_or(if scroll > 0.0 { To::Scroll } else { To::Round }, To::Spot),
                 None => (0..n).rev().find(|&k| from_bottom(k)).map_or_else(before, To::Spot),
             }
@@ -6515,7 +6704,8 @@ impl App {
     /// A page come to rest with its search bar part folded eases on from
     /// there to fold the bar away or unfold it whole, whichever is nearer.
     fn settle_fold(&mut self, now: u64) {
-        let Some(fr) = self.frame.as_ref() else { return };
+        let Some(fr) = self.frame.as_ref() else { return;
+        };
         let at = self.top().1;
         let rest = fr.settle(at).min(self.max_scroll());
         if rest != at {
@@ -6615,7 +6805,7 @@ impl App {
             Slider::Brightness => &mut self.state.brightness,
             Slider::Vibration => &mut self.state.vibration,
         };
-        *value = level.clamp(if which == Slider::Brightness { MIN_BRIGHTNESS } else { 0.0 }, 1.0);
+        *value = level.clamp(if which == Slider::Brightness { self.minimum_brightness } else { 0.0 }, 1.0);
         let value = *value;
         if let Some(fr) = self.frame.as_mut() {
             fr.canvas.fill_rect(track.x, track.y, track.w, track.h, t.pal.card);
@@ -6643,7 +6833,8 @@ impl App {
 
     /// Add the dot under the finger to the pattern being drawn.
     fn trace(&mut self, t: &Theme, x: f32, y: f32) {
-        let Some((cx, cy, span)) = self.frame.as_ref().and_then(|fr| fr.pattern) else { return };
+        let Some((cx, cy, span)) = self.frame.as_ref().and_then(|fr| fr.pattern) else { return;
+        };
         let reach = t.m.dp(widgets::PATTERN_REACH_DP);
         let dots = widgets::pattern_dots(cx, cy, span);
         if let Some(i) = dots.iter().position(|&(dx, dy)| (dx - x).hypot(dy - y) < reach) {
@@ -6675,8 +6866,10 @@ impl App {
     }
 
     fn repaint_pattern(&mut self, t: &Theme) {
-        let Some(fr) = self.frame.as_mut() else { return };
-        let Some((cx, cy, span)) = fr.pattern else { return };
+        let Some(fr) = self.frame.as_mut() else { return;
+        };
+        let Some((cx, cy, span)) = fr.pattern else { return;
+        };
         let r = span / 2.0 + t.m.dp(16.0);
         fr.canvas.fill_rect(cx - r, cy - r, r * 2.0, r * 2.0, t.pal.bg);
         widgets::pattern_lock(&mut fr.canvas, t, cx, cy, span, &self.state.pattern);
@@ -6700,6 +6893,89 @@ mod tests {
     const H: u32 = 3200;
     const PPD: f32 = 3.5;
 
+    #[test]
+    fn tablet_fastboot_stays_fullscreen_and_recovery_restores_the_sidebar() {
+        let cfg = skyward_config::DeviceConfig::parse(include_str!("../../../devices/sheng.toml")).unwrap();
+        let mut app = App::new(Screen::Fastboot, 3048, 2032, 2.5);
+        app.configure_device(&cfg);
+        assert_eq!(app.w, 3048);
+        assert!(app.tablet.is_none());
+        assert!(!app.tablet_mode);
+        let f = fonts();
+        let i = info();
+        let mut canvas = Canvas::new(3048, 2032);
+        app.tick(1000);
+        app.compose(&mut canvas, &f, &i, "12:00", 1000);
+        app.enter_recovery();
+        app.configure_device(&cfg);
+        assert_eq!(app.w, 2032);
+        assert!(app.tablet.is_some());
+        assert!(app.tablet_mode);
+        assert_eq!(app.screen(), Screen::About);
+        app.tick(1100);
+        app.compose(&mut canvas, &f, &i, "12:00", 1100);
+    }
+
+    #[test]
+    fn tablet_navigation_stays_beside_details_and_hides_unsupported_vibration() {
+        let cfg = skyward_config::DeviceConfig::parse(include_str!("../../../devices/sheng.toml")).unwrap();
+        let f = fonts();
+        let i = info();
+        let mut app = App::new(Screen::Home, 3048, 2032, 2.5);
+        app.state.data = Data::Open;
+        app.configure_device(&cfg);
+        app.configure_device(&cfg);
+        assert_eq!(app.w, 2032, "configuration does not shrink the detail pane twice");
+        assert_eq!(app.screen(), Screen::About);
+        app.tick(0);
+        let mut canvas = Canvas::new(3048, 2032);
+        app.compose(&mut canvas, &f, &i, "12:00", 0);
+        let mut global = app.theme();
+        global.m.w = 3048;
+        let mut bar = Canvas::filled(3048, 100, global.pal.bg);
+        widgets::status_bar(&mut bar, &global, &f, &app.bar("12:00", &i), global.pal.status);
+        assert_eq!(canvas.crop(0, 0, 350, 100).data, bar.crop(0, 0, 350, 100).data,
+            "the time uses the left edge of the physical display");
+        let (x, y) = app.tablet.as_ref().unwrap().section_center(Screen::Settings);
+        app.touch(Touch::Down(x, y), &f, 1000);
+        app.touch(Touch::Up, &f, 1010);
+        assert_eq!(app.screen(), Screen::Settings);
+        assert_eq!(app.tablet_selection(), Screen::Settings);
+        let frame = app.frame(&f, &i);
+        assert!(!frame.back, "the section is selected from the fixed sidebar");
+        assert!(frame.hits.iter().all(|h| !matches!(h.action,
+            Action::Slider(Slider::Vibration) | Action::Toggle(Switch::Vibrate))));
+        let track = frame.hits.iter().find(|h| h.action == Action::Slider(Slider::Brightness)).unwrap().rect;
+        app.end_turn();
+        app.compose(&mut canvas, &f, &i, "12:00", 1100);
+        // Input coordinates include the sidebar offset; the original controls do not.
+        let x = 1016.0 + track.x;
+        let cy = track.y + track.h/2.0;
+        app.touch(Touch::Down(x, cy), &f, 1200);
+        app.touch(Touch::Up, &f, 1210);
+        assert!((app.state.brightness - 1.0/4095.0).abs() < 0.00001);
+        assert!(search::find_available("vibr", Lang::En, |_| true, app.state.supports_vibration).is_empty());
+        app.back(1300);
+        assert_eq!(app.screen(), Screen::Settings, "back cannot expose the phone home menu");
+        app.stack.push((Screen::Installing, 0.0, Focus::Unset));
+        app.state.install = Install::Flashing { partition: "recovery", stage: None };
+        assert!(app.tablet_section(Screen::Wipe, 1400).is_empty());
+        assert_eq!(app.screen(), Screen::Installing, "sidebar navigation cannot leave partition writes");
+    }
+
+    #[test]
+    fn a_sidebar_touch_that_wakes_the_tablet_cannot_open_a_page() {
+        let cfg = skyward_config::DeviceConfig::parse(include_str!("../../../devices/sheng.toml")).unwrap();
+        let mut app = App::new(Screen::Home, 3048, 2032, 2.5);
+        app.configure_device(&cfg);
+        app.display_on = false;
+        let f = fonts();
+        app.touch(Touch::Down(150.0, 1700.0), &f, 1000);
+        assert!(app.display_on);
+        app.touch(Touch::Up, &f, 5000);
+        assert_eq!(app.screen(), Screen::About);
+    }
+
     fn fonts() -> Fonts {
         crate::font::bundled()
     }
@@ -6713,6 +6989,7 @@ mod tests {
             ram_kib: 15_556_972,
             panel: Some((W, H)),
             screen: Some(6.73),
+            battery_capacity_mah: None,
             os_version: None,
             android: None,
             locale: None,
@@ -6942,7 +7219,8 @@ mod tests {
 
     /// A battery at `level`, as `charge` has it, 35.2 °C.
     fn battery_at(level: u8, charge: Charge) -> skyward_info::Battery {
-        skyward_info::Battery { level, charge, temp: Some(352), health: None, cycles: None, design: None, full: None, voltage: None, quick: false }
+        skyward_info::Battery { level, charge, temp: Some(352), health: None, cycles: None, design: None, full: None, voltage: None, quick: false,
+        }
     }
 
     #[test]
@@ -7061,9 +7339,7 @@ mod tests {
         // The bar's top along a column through it, clear of the title and
         // the placeholder: the first row in the field's grey.
         let x = m.dp(300.0) as u32;
-        let top = |screen: &Canvas| {
-            (m.dp(40.0) as u32..H).find(|&y| screen.data[((y * W + x) * 4) as usize] == t.pal.search.r).map(|y| y as f32)
-        };
+        let top = |screen: &Canvas| (m.dp(40.0) as u32..H).find(|&y| screen.data[((y * W + x) * 4) as usize] == t.pal.search.r).map(|y| y as f32);
         let grey = |screen: &Canvas, y: f32| screen.data[((y as u32 * W + W / 2) * 4) as usize];
         let (home, field) = (m.content_top, widgets::search_layout(&t).0.y);
         // The device card under the home page's bar.
@@ -10133,11 +10409,13 @@ mod tests {
         assert!(app.act(Action::Open(Screen::Wlan), 0).is_empty(), "a WLAN that is off is not scanned");
         assert_eq!(tap(&mut app, &f, &i, Action::Toggle(Switch::Wlan)), vec![Effect::Wlan(true)]);
         assert_eq!(app.state.wlan.as_ref().unwrap().power, Power::Starting, "the switch moves at once");
-        let nearby = vec![network("Skyward", -34, Security::Psk), network("Skyward-Open", -72, Security::Open), network("Skyward-WEP", -60, Security::Wep)];
+        let nearby = vec![network("Skyward", -34, Security::Psk), network("Skyward-Open", -72, Security::Open), network("Skyward-WEP", -60, Security::Wep),
+        ];
         app.set_wlan(Wlan { power: Power::On, networks: nearby, joined: None });
         tap(&mut app, &f, &i, Action::JoinNetwork(2));
         assert_eq!(toast(&app), Some("暂不支持 WEP 加密的网络"));
-        let cafe = Effect::JoinWlan { ssid: b"Skyward-Open".to_vec(), name: "Skyward-Open".into(), security: Security::Open, password: Secret::default() };
+        let cafe = Effect::JoinWlan { ssid: b"Skyward-Open".to_vec(), name: "Skyward-Open".into(), security: Security::Open, password: Secret::default(),
+        };
         assert_eq!(tap(&mut app, &f, &i, Action::JoinNetwork(1)), vec![cafe], "an open network is joined at once");
         tap(&mut app, &f, &i, Action::JoinNetwork(0));
         assert_eq!(app.screen(), Screen::WlanPassword);
@@ -10152,7 +10430,8 @@ mod tests {
         tap(&mut app, &f, &i, Action::Type(Cap::Show(Layer::Digits)));
         type_in(&mut app, "12");
         let fx = tap(&mut app, &f, &i, Action::Type(Cap::Enter));
-        let join = Effect::JoinWlan { ssid: b"Skyward".to_vec(), name: "Skyward".into(), security: Security::Psk, password: Secret("secret12".into()) };
+        let join = Effect::JoinWlan { ssid: b"Skyward".to_vec(), name: "Skyward".into(), security: Security::Psk, password: Secret("secret12".into()),
+        };
         assert_eq!(format!("{join:?}"), r#"JoinWlan { ssid: [83, 107, 121, 119, 97, 114, 100], name: "Skyward", security: Psk, password: Secret(8 characters) }"#, "what is printed leaves the password out");
         assert_eq!(fx, vec![join]);
         assert_eq!(app.screen(), Screen::Wlan, "the WLAN page shows how joining goes");
@@ -10251,7 +10530,8 @@ mod tests {
         tap(&mut app, &f, &i, Action::Type(Cap::Show(Layer::Digits)));
         type_in(&mut app, "12");
         let fx = tap(&mut app, &f, &i, Action::Type(Cap::Enter));
-        let join = Effect::JoinWlan { ssid: b"skyward".to_vec(), name: "skyward".into(), security: Security::Psk, password: Secret("secret12".into()) };
+        let join = Effect::JoinWlan { ssid: b"skyward".to_vec(), name: "skyward".into(), security: Security::Psk, password: Secret("secret12".into()),
+        };
         assert_eq!(fx, vec![join]);
         assert_eq!(app.screen(), Screen::Wlan, "the WLAN page shows how joining goes");
         assert_eq!((app.state.adding.as_ref(), app.state.password.as_str()), (None, ""), "nothing typed is kept");

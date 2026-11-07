@@ -88,7 +88,9 @@ pub struct DeviceConfig {
 pub struct Stock {
     /// The build's version, such as OS4.0.4.0.XPACNXM.
     pub version: String,
-    /// Where the package is downloaded from, over HTTPS.
+    /// Where the package is downloaded from, over HTTPS. Empty for a
+    /// local-only stock image, supplied with `recovery --stock`.
+    #[serde(default)]
     pub package: String,
     /// The recovery partition's SHA-256, in lowercase hex.
     pub recovery: String,
@@ -147,6 +149,9 @@ pub struct FirmwarePartition {
 /// A file a driver asks the firmware loader for, and where it is.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Firmware {
+    /// Some units keep the address in secure storage instead of this file.
+    #[serde(default)]
+    pub optional: bool,
     /// The name the driver asks for, from the top of the loader's folders.
     pub name: String,
     /// Where the file is: a path in the running recovery, or from the top
@@ -254,6 +259,11 @@ pub struct Names {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Device {
+    /// Tablet navigation uses a persistent master column on wide displays.
+    #[serde(default)]
+    pub tablet: bool,
+    #[serde(default)]
+    pub supports_vibration: Option<bool>,
     pub codename: String,
     #[serde(default)]
     pub brand: String,
@@ -264,6 +274,9 @@ pub struct Device {
     /// SoC marketing name shown on the About page.
     #[serde(default)]
     pub soc: Option<Names>,
+    /// Marketed typical battery capacity; kernel design/full readings stay unchanged.
+    #[serde(default)]
+    pub battery_capacity_mah: Option<u32>,
     /// System property that carries the vendor OS version.
     #[serde(default = "default_os_version_prop")]
     pub os_version_prop: String,
@@ -284,6 +297,13 @@ pub struct Display {
     /// sliding over another rounds its leading corners to it.
     #[serde(default)]
     pub corner_radius: u32,
+    /// Explicit normal brightness limit for panels without Xiaomi's
+    /// phone-specific normal-maximum properties in their device tree.
+    #[serde(default)]
+    pub normal_brightness: Option<u32>,
+    /// Lowest lit raw backlight level, independent of the screen-off value 0.
+    #[serde(default)]
+    pub minimum_brightness: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -313,6 +333,26 @@ pub struct Touch {
     /// step of starting the controller.
     #[serde(default)]
     pub writes: Vec<Write>,
+    /// Swap normalized axes before flipping them into display coordinates.
+    #[serde(default)]
+    pub swap_xy: bool,
+    #[serde(default)]
+    pub flip_x: bool,
+    #[serde(default)]
+    pub flip_y: bool,
+    /// Input device names to leave out, such as a tablet's separate pen.
+    #[serde(default)]
+    pub ignored_devices: Vec<String>,
+}
+
+impl Touch {
+    /// Convert normalized controller coordinates to normalized screen
+    /// coordinates. Normalize before swapping: landscape panels may have
+    /// different ranges on the two controller axes.
+    pub fn map(&self, x: f32, y: f32) -> (f32, f32) {
+        let (x, y) = if self.swap_xy { (y, x) } else { (x, y) };
+        (if self.flip_x { 1.0 - x } else { x }, if self.flip_y { 1.0 - y } else { y })
+    }
 }
 
 /// Partitions as the phone itself mounts them.
@@ -574,8 +614,10 @@ impl DeviceConfig {
         }
         if let Some(stock) = &cfg.stock {
             let name = stock.package.rsplit('/').next().unwrap_or_default();
+            ensure!(!stock.version.is_empty(), "[stock] version must not be empty");
             ensure!(
-                stock.package.starts_with("https://") && name.ends_with(".zip") && name.contains(&stock.version) && !stock.version.is_empty(),
+                stock.package.is_empty()
+                    || (stock.package.starts_with("https://") && name.ends_with(".zip") && name.contains(&stock.version)),
                 "[stock] package: {} is not an HTTPS address of the full package of {}",
                 stock.package,
                 stock.version
@@ -586,6 +628,14 @@ impl DeviceConfig {
                 stock.recovery
             );
         }
+        ensure!(cfg.display.normal_brightness != Some(0), "[display] normal_brightness must be positive");
+        if let Some(minimum) = cfg.display.minimum_brightness {
+            ensure!(minimum > 0 && cfg.display.normal_brightness.is_some_and(|top| minimum <= top),
+                "[display] minimum_brightness must be positive and at most normal_brightness, which must be set");
+        }
+        ensure!(cfg.device.supports_vibration != Some(true) || cfg.haptics.is_some(),
+            "[device] supports_vibration = true requires [haptics]");
+        ensure!(cfg.device.battery_capacity_mah != Some(0), "[device] battery_capacity_mah must be positive");
         if let Some(wlan) = &cfg.wlan {
             ensure!(wlan.probe.starts_with("http://"), "[wlan] probe: {} is not a plain HTTP address", wlan.probe);
             for file in &wlan.firmware {
@@ -632,6 +682,49 @@ mod tests {
         assert!(cfg.modules.load.is_empty());
         assert_eq!((cfg.firmware, cfg.wlan, cfg.update), (None, None, None), "a phone may have none of them");
         assert_eq!(cfg.logd, None, "a recovery's own logd usually has all it needs");
+    }
+
+    #[test]
+    fn touch_mapping_preserves_defaults_and_rotates_normalized_tablet_axes() {
+        assert_eq!(Touch::default().map(0.25, 0.75), (0.25, 0.75));
+        let touch = Touch { swap_xy: true, flip_y: true, ..Touch::default() };
+        // Portrait controller -> landscape display: all four corners,
+        // followed by an interior point to catch axis/range mixups.
+        for (raw, screen) in [
+            ((0.0, 0.0), (0.0, 1.0)),
+            ((1.0, 0.0), (0.0, 0.0)),
+            ((0.0, 1.0), (1.0, 1.0)),
+            ((1.0, 1.0), (1.0, 0.0)),
+            ((0.25, 0.75), (0.75, 0.75)),
+        ] {
+            assert_eq!(touch.map(raw.0, raw.1), screen);
+        }
+        let flip_x = Touch { flip_x: true, ..Touch::default() };
+        assert_eq!(flip_x.map(0.25, 0.75), (0.75, 0.75));
+    }
+
+    #[test]
+    fn local_stock_still_requires_a_version_and_hash() {
+        let local = "[device]\ncodename = \"x\"\n[stock]\nversion = \"OS3.0.303.0.WNXCNXM\"\nrecovery = \"4b66cca647e21929870dfcc38c5915e35c004016bbe815bb91a87239230d649f\"\n";
+        assert!(DeviceConfig::parse(local).unwrap().stock.unwrap().package.is_empty());
+        assert!(DeviceConfig::parse(&local.replace("OS3.0.303.0.WNXCNXM", "")).is_err());
+        assert!(DeviceConfig::parse(&local.replace("4b66cca647e21929870dfcc38c5915e35c004016bbe815bb91a87239230d649f", "bad")).is_err());
+        assert!(DeviceConfig::parse("[device]\ncodename = \"x\"\n[display]\nnormal_brightness = 0\n").is_err());
+    }
+
+    #[test]
+    fn sheng_uses_the_tablets_controller_in_native_landscape() {
+        let cfg = DeviceConfig::parse(include_str!("../../../devices/sheng.toml")).unwrap();
+        assert_eq!(cfg.device.codename, "sheng");
+        assert_eq!(cfg.device.battery_capacity_mah, Some(10000));
+        assert_eq!((cfg.display.width, cfg.display.height), (3048, 2032));
+        assert_eq!(cfg.touch.map(0.25, 0.75), (0.75, 0.75));
+        assert!(cfg.touch.ignored_devices.iter().any(|name| name == "NVTCapacitivePen"));
+        assert_eq!(cfg.modules.load, ["nt36532_touch"]);
+        assert_eq!(cfg.services[0].path, "/odm/bin/touch_report_debug");
+        assert!(cfg.haptics.is_none());
+        assert_eq!(cfg.backup.efs, ["persist"]);
+        assert!(cfg.stock.unwrap().package.is_empty());
     }
 
     #[test]

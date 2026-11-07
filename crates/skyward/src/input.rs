@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use evdev::raw_stream::RawDevice;
 use evdev::{AbsoluteAxisCode, EventSummary, InputEvent, KeyCode, PropType, SynchronizationCode};
-use skyward_config::Write;
+use skyward_config::Touch as TouchConfig;
 use skyward_ui::app::{Key, Touch};
 use std::collections::HashSet;
 use std::ffi::CString;
@@ -113,6 +113,7 @@ impl Panel {
         // so a touch landing where the last one lifted carries no position;
         // start from what the panel holds now.
         panel.resync().context("read the touch state")?;
+        skyward_sys::kmsg("touch input ready")?;
         eprintln!("touch {:?}: x {:?} y {:?}, {slots} slots, slot 0 at {:?}", panel.dev.name().unwrap_or("?"), x_range, y_range, panel.raw);
         Ok(panel)
     }
@@ -129,7 +130,7 @@ impl Panel {
         Ok(())
     }
 
-    fn read(&mut self, w: f32, h: f32, out: &mut Vec<Event>) -> io::Result<()> {
+    fn read(&mut self, w: f32, h: f32, touch: &TouchConfig, out: &mut Vec<Event>) -> io::Result<()> {
         let events: Vec<InputEvent> = match self.dev.fetch_events() {
             Ok(events) => events.collect(),
             Err(e) if e.kind() == ErrorKind::WouldBlock => return Ok(()),
@@ -146,8 +147,10 @@ impl Panel {
                     let time = e.as_ref().time;
                     let at = time.tv_sec as u64 * 1000 + time.tv_usec as u64 / 1000;
                     let span = |r: (i32, i32)| (r.1 - r.0).max(1) as f32;
-                    let x = (self.raw.0 - self.x_range.0) as f32 / span(self.x_range) * w;
-                    let y = (self.raw.1 - self.y_range.0) as f32 / span(self.y_range) * h;
+                    let x = (self.raw.0 - self.x_range.0) as f32 / span(self.x_range);
+                    let y = (self.raw.1 - self.y_range.0) as f32 / span(self.y_range);
+                    let (x, y) = touch.map(x, y);
+                    let (x, y) = (x * w, y * h);
                     match (self.was_down, self.down) {
                         (false, true) => out.push(Event::Touch(Touch::Down(x, y), at)),
                         (true, true) if self.moved => out.push(Event::Touch(Touch::Move(x, y), at)),
@@ -184,13 +187,13 @@ pub struct Inputs {
     buttons: Vec<(PathBuf, RawDevice)>,
     seen: HashSet<PathBuf>,
     /// What the touchscreen is told each time its panel is taken in.
-    touch_writes: Vec<Write>,
+    touch: TouchConfig,
     w: f32,
     h: f32,
 }
 
 impl Inputs {
-    pub fn open(w: u32, h: u32, touch_writes: Vec<Write>) -> Result<Self> {
+    pub fn open(w: u32, h: u32, touch: TouchConfig) -> Result<Self> {
         let fd = unsafe { libc::inotify_init1(libc::IN_NONBLOCK | libc::IN_CLOEXEC) };
         if fd < 0 {
             return Err(io::Error::last_os_error()).context("create inotify instance");
@@ -203,7 +206,7 @@ impl Inputs {
             return Err(io::Error::last_os_error()).context("watch /dev/input");
         }
         let mut inputs =
-            Inputs { watch, panel: None, buttons: Vec::new(), seen: HashSet::new(), touch_writes, w: w as f32, h: h as f32 };
+            Inputs { watch, panel: None, buttons: Vec::new(), seen: HashSet::new(), touch, w: w as f32, h: h as f32 };
         inputs.scan()?;
         if inputs.panel.is_none() {
             eprintln!("no touch panel yet; waiting for one to appear under /dev/input");
@@ -220,6 +223,10 @@ impl Inputs {
             if !self.seen.insert(path.clone()) {
                 continue;
             }
+            if self.touch.ignored_devices.iter().any(|name| Some(name.as_str()) == dev.name()) {
+                eprintln!("input {}: ignoring {:?}", path.display(), dev.name());
+                continue;
+            }
             let direct = dev.properties().contains(PropType::DIRECT);
             let mt = dev
                 .supported_absolute_axes()
@@ -228,7 +235,7 @@ impl Inputs {
             eprintln!("input {}: {:?} direct={direct} multitouch={mt} keys={keys}", path.display(), dev.name().unwrap_or("?"));
             if direct && mt && self.panel.is_none() {
                 self.panel = Some(Panel::new(path, dev)?);
-                for w in &self.touch_writes {
+                for w in &self.touch.writes {
                     fs::write(&w.path, &w.value).with_context(|| format!("write {} to {}", w.value, w.path))?;
                     skyward_sys::kmsg(&format!("wrote {} to {} for the touchscreen", w.value, w.path))?;
                 }
@@ -278,7 +285,7 @@ impl Inputs {
         }
         let mut out = Vec::new();
         if let Some(panel) = &mut self.panel {
-            match panel.read(self.w, self.h, &mut out) {
+            match panel.read(self.w, self.h, &self.touch, &mut out) {
                 Ok(()) => {}
                 Err(e) if gone(&e) => {
                     eprintln!("input {}: removed", panel.path.display());

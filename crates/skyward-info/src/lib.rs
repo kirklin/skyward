@@ -42,6 +42,8 @@ pub struct DeviceInfo {
     pub kernel: String,
     pub storage: Storage,
     pub battery: Option<Battery>,
+    /// Marketed typical capacity in mAh, separate from the gauge's design capacity.
+    pub battery_capacity_mah: Option<u32>,
     pub slot: Option<Slot>,
     pub snapshot: SnapshotState,
     pub boot: Boot,
@@ -156,6 +158,7 @@ pub fn collect(cfg: &DeviceConfig) -> Result<DeviceInfo> {
         kernel: kernel_release()?,
         storage: storage()?,
         battery: battery(Path::new(POWER_SUPPLY))?,
+        battery_capacity_mah: cfg.device.battery_capacity_mah,
         slot: skyward_vab::current_slot()?,
         snapshot: skyward_vab::snapshot_state()?,
         boot: Boot { unlocked, verified: skyward_block::boot_param("androidboot.verifiedbootstate")? },

@@ -2447,8 +2447,11 @@ pub fn output_row(c: &mut Canvas, t: &Theme, f: &Fonts, lines: &[String], i: usi
 /// ring and an accent caption. The rows are the light and the dark choice.
 pub fn theme_picker(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32) -> Block {
     let m = &t.m;
-    let gap = m.dp(4.0);
-    let slot_w = (m.w as f32 - m.margin * 2.0 - gap) / 2.0;
+    let wide = m.w as f32 / m.px_per_dp >= 600.0;
+    let gap = m.dp(if wide { 20.0 } else { 4.0 });
+    let available = (m.w as f32 - m.margin * 2.0 - gap) / 2.0;
+    let slot_w = if wide { available.min(m.dp(180.0)) } else { available };
+    let left = if wide { (m.w as f32 - 2.0*slot_w - gap)/2.0 } else { m.margin };
     let (ring, inset) = (m.dp(3.0), m.dp(6.0));
     let tile = slot_w - inset * 2.0;
     let label_px = m.dp(15.9);
@@ -2458,7 +2461,7 @@ pub fn theme_picker(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32) -> 
     let mut rects = Vec::new();
     let modes = [(["浅色模式", "淺色模式", "Light mode"], false), (["深色模式", "深色模式", "Dark mode"], true)];
     for (i, (label, dark)) in modes.map(|(label, dark)| (l.pick(label), dark)).into_iter().enumerate() {
-        let sx = m.margin + (slot_w + gap) * i as f32;
+        let sx = left + (slot_w + gap) * i as f32;
         let on = t.dark == dark;
         if on {
             let r = m.dp(26.0) - ring / 2.0;

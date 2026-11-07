@@ -1,0 +1,70 @@
+{
+  "device": "sheng",
+  "model": "Xiaomi Pad 6S Pro 12.4",
+  "status": "experimental-hardware-tested",
+  "date": "2026-11-07",
+  "upstream": {
+    "repository": "https://github.com/kirklin/skyward",
+    "commit": "b7690405357ee4ef7cefb956421f525ffca923ea"
+  },
+  "stock": {
+    "version": "OS3.0.303.0.WNXCNXM",
+    "source": "User-supplied official fastboot images; opened read-only",
+    "recovery_size": 104857600,
+    "recovery_header": 4,
+    "recovery_kernel_size": 0,
+    "recovery_sha256": "4b66cca647e21929870dfcc38c5915e35c004016bbe815bb91a87239230d649f",
+    "super_partitions_extracted": [
+      "odm_a",
+      "vendor_a"
+    ],
+    "original_super_preserved": true,
+    "temporary_unsparsed_super_removed": true
+  },
+  "reference": {
+    "archive": "twrp_device_xiaomi_sheng-20261104-2045.zip",
+    "uses": [
+      "native DRM orientation",
+      "touch transform and pen exclusion",
+      "touch processing binary",
+      "ADSP remoteproc and stable firmware mount sequence",
+      "backlight maximum",
+      "gatekeeper SPU setting"
+    ],
+    "not_reused": [
+      "TWRP or OrangeFox UI",
+      "TWRP v2 standalone boot layout",
+      "Magisk addon",
+      "AVB modification tools"
+    ]
+  },
+  "hardware_tested": true,
+  "branch": "Pad",
+  "validation": {
+    "date": "2026-11-07",
+    "tested_system": "OS4.0.2.0.XPYCNXM_peiyuesheng / Android 17",
+    "kernel": "5.15.211-peiyuesheng-sm8550-kernel-android13+",
+    "vendor": "Android 13 / VNDK 33",
+    "passed": [
+      "boot recovery_a",
+      "3048x2032 display",
+      "touch RAM firmware loaded before first recovery frame; user confirms immediate response",
+      "ADSP and battery",
+      "ADB root",
+      "user 0 file decryption",
+      "MTP session",
+      "backup creation (user test)",
+      "USB drive reading (user test)",
+      "WLAN association, DHCP IPv4 and internet reachability, including return from fastbootd",
+      "Pad split layout with full-width status bar, original colored tiles and default About page",
+      "fastbootd original fullscreen layout confirmed by user",
+      "fastbootd read-only queries: is-userspace, product, current-slot, partition-size:recovery_a"
+    ],
+    "pending": [
+      "minimum backlight level user confirmation",
+      "long-running WLAN stability across additional routers",
+      "full package installation",
+      "backup restore writing"
+    ]
+  }
+}

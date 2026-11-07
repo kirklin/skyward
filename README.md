@@ -2,6 +2,11 @@
 
 # Skyward
 
+This checkout also contains an experimental, hardware-tested Xiaomi Pad
+6S Pro 12.4 (`sheng`) port. Build it with `tools/build-sheng.sh` and a local
+OS3.0.303.0.WNXCNXM stock recovery image; see
+[the device notes](devices/sheng/README.zh-CN.md) for its required ramdisk overlay.
+
 English | [简体中文](README.zh-CN.md)
 
 Skyward is a recovery written in Rust, from scratch.

@@ -678,6 +678,11 @@ fn recovery() -> Result<()> {
         std::fs::set_permissions(skyward_sys::RUN, std::fs::Permissions::from_mode(0o755))
             .with_context(|| format!("open {} to the recovery's other users", skyward_sys::RUN))?;
         skyward_sys::keep_log(Path::new(skyward_sys::LOG))?;
+        let panic_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let _ = skyward_sys::kmsg(&format!("recovery panic: {info}"));
+            panic_hook(info);
+        }));
         // A recovery that ended with a function of its own in the port took
         // the port with it; going through "none" takes that function off.
         if skyward_sys::prop("sys.usb.state").is_some_and(|s| s != "adb") {

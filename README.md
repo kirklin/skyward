@@ -18,6 +18,7 @@ Skyward is a recovery written in Rust, from scratch.
 - Install zips, system update packages and partition images, from internal storage, a USB drive or adb sideload
 - `7za` and `zstd` for install scripts, which ROMs with a super image compressed by zstd use to flash it, and an `unzip` whose `-p` streams the image as it reads it
 - Online system updates
+- Skyward's own updates, from its newest release on GitHub
 - Backup and restore
 - Wipe data and factory reset
 - Mount partitions, repair and format filesystems
@@ -76,9 +77,10 @@ fastboot flash recovery skyward-v0.1.3-nezha-OS4.0.4.0.XPACNXM.img
 fastboot reboot recovery
 ```
 
-Afterwards a newer image, unzipped, installs from Skyward's own Install page. With
-**Flash Skyward again** on, a system update or zip that writes over the recovery
-partitions gets Skyward back in them.
+Afterwards Skyward updates itself over Wi-Fi from its newest release, on the
+Skyward update page in Settings; a newer image, unzipped, also installs from its own
+Install page. With **Flash Skyward again** on, a system update or zip that writes
+over the recovery partitions gets Skyward back in them.
 
 Without a system in super, Skyward still starts, with its screen and keys, adb,
 `adb sideload` and fastbootd, enough to install one. Touch, WLAN and decryption run

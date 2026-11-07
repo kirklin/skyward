@@ -21,6 +21,7 @@ use crate::widgets::{self, Bar, Bolt, Cap, Layer, WlanMark};
 use skyward_info::DeviceInfo;
 use skyward_install::{Event, ImageKind, Outcome, Reflash, Refusal, Stage};
 use skyward_net::download::{Failure, Progress};
+use skyward_net::github::{Build, Newest};
 use skyward_net::release::{Release, Unanswered};
 use skyward_net::supplicant::Security;
 use skyward_net::wlan::{Joined, Network, Power, Stage as Joining, Traffic, Wlan};
@@ -88,6 +89,9 @@ pub enum Screen {
     /// Where an update the system installed stands, and merging it into
     /// the slot it went to.
     Update,
+    /// Skyward's newest release, and updating to it: its build for the
+    /// phone downloaded and written into the recovery partitions.
+    SkywardUpdate,
     /// Skyward's own licence.
     License,
     /// The interface typeface and the terms it is used under.
@@ -169,6 +173,54 @@ pub enum DownloadEnd {
     Downloaded,
     Stopped,
     Failed(Failure),
+}
+
+/// How far asking GitHub for Skyward's newest release has come.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum SkywardCheck {
+    #[default]
+    Idle,
+    Asking,
+    Failed(Unanswered),
+    Answered(Newest),
+}
+
+/// Updating Skyward, as its page shows it: downloading the newest release's
+/// build for the phone, then writing it into the recovery partitions, how
+/// far that has come, and how it ended.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SkywardJob {
+    /// None until the download has begun.
+    pub stage: Option<SkywardStage>,
+    /// Bytes a second, while it downloads.
+    pub rate: u64,
+    pub outcome: Option<SkywardEnd>,
+    /// Stopping the download was asked for and is under way.
+    pub stopping: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SkywardStage {
+    Download(Progress),
+    /// The build is written into the recovery partitions and read back:
+    /// bytes so far, of all.
+    Write { done: u64, total: u64 },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SkywardEnd {
+    /// The build is in the recovery partitions of these slots.
+    Updated(Vec<Slot>),
+    /// The download was stopped; what it downloaded is kept to go on from.
+    Stopped,
+    /// The download did not end with the build whole.
+    Download(Failure),
+    /// The build could not go in, or where it goes could not be told: why.
+    /// Nothing was written.
+    NotWritten(String),
+    /// Writing it into the recovery partitions of these slots failed, after
+    /// some of it was written: why.
+    WriteFailed(Vec<Slot>, String),
 }
 
 /// Where the full packages downloaded go, from the top of internal
@@ -1204,6 +1256,13 @@ pub enum Action {
     StopDownload,
     /// Install the full package downloaded.
     InstallDownloaded,
+    /// Ask GitHub for Skyward's newest release.
+    CheckSkyward,
+    /// Download the newest release's build for the phone and write it into
+    /// the recovery partitions.
+    UpdateSkyward,
+    /// Stop downloading the build.
+    StopSkywardUpdate,
     /// A control whose work is not wired up yet; touching it says so.
     Unavailable(&'static str),
 }
@@ -1618,6 +1677,9 @@ pub struct State {
     /// Downloading the newest system's full package, or how that last
     /// ended.
     pub download: Option<DownloadJob>,
+    pub skyward_check: SkywardCheck,
+    /// Updating Skyward, or how that last ended.
+    pub skyward_job: Option<SkywardJob>,
     /// How fast data went over the network joined in the last second.
     pub traffic: Traffic,
 }
@@ -1697,6 +1759,8 @@ impl Default for State {
             check: Check::Idle,
             have: Have::Nothing,
             download: None,
+            skyward_check: SkywardCheck::Idle,
+            skyward_job: None,
             traffic: Traffic::default(),
         }
     }
@@ -1756,6 +1820,30 @@ impl State {
     /// Whether the full package is being downloaded.
     pub fn downloading(&self) -> bool {
         self.download.as_ref().is_some_and(|d| d.outcome.is_none())
+    }
+
+    /// Skyward's newest release, as GitHub told of it.
+    pub fn skyward_newest(&self) -> Option<&Newest> {
+        match &self.skyward_check {
+            SkywardCheck::Answered(n) => Some(n),
+            _ => None,
+        }
+    }
+
+    /// Whether Skyward is being updated.
+    pub fn updating_skyward(&self) -> bool {
+        self.skyward_job.as_ref().is_some_and(|j| j.outcome.is_none())
+    }
+
+    /// Whether the phone has the page `screen`: the WLAN page where the
+    /// recovery brings the phone's WLAN up, and updating Skyward where the
+    /// phone also keeps its recovery in a partition of each slot.
+    pub fn offers(&self, screen: Screen) -> bool {
+        match screen {
+            Screen::Wlan => self.wlan.is_some(),
+            Screen::SkywardUpdate => self.wlan.is_some() && self.recovery_partitions,
+            _ => true,
+        }
     }
 }
 
@@ -1935,6 +2023,14 @@ pub enum Effect {
     /// goes with [`App::download_progress`] and [`App::download_ended`].
     Download(Release),
     StopDownload,
+    /// Ask GitHub for Skyward's newest release, telling what it answered
+    /// with [`App::skyward_checked`].
+    CheckSkyward,
+    /// Download `build` and write it into the recovery partitions, telling
+    /// how it goes with [`App::skyward_progress`] and
+    /// [`App::skyward_ended`].
+    UpdateSkyward(Build),
+    StopSkywardUpdate,
     /// Merge the update that waits in the slot the phone runs from,
     /// telling how it goes with [`App::set_update`].
     Merge,
@@ -3285,7 +3381,7 @@ impl App {
             return;
         }
         self.state.wlan = Some(w);
-        if matches!(self.screen(), Screen::Home | Screen::Wlan | Screen::WlanNetwork | Screen::Update) {
+        if matches!(self.screen(), Screen::Home | Screen::Wlan | Screen::WlanNetwork | Screen::Update | Screen::SkywardUpdate) {
             self.refresh();
         }
         // The status bar shows the network joined over every page.
@@ -3360,6 +3456,38 @@ impl App {
         job.stopping = false;
         job.outcome = Some(end);
         self.state.have = have;
+        self.wake(now);
+        self.refresh();
+    }
+
+    /// What GitHub answered of Skyward's newest release.
+    pub fn skyward_checked(&mut self, answer: Result<Newest, Unanswered>) {
+        self.state.skyward_check = match answer {
+            Ok(newest) => SkywardCheck::Answered(newest),
+            Err(why) => SkywardCheck::Failed(why),
+        };
+        if matches!(self.screen(), Screen::Settings | Screen::SkywardUpdate) {
+            self.refresh();
+        }
+    }
+
+    /// How far updating Skyward has come, and how fast the download goes,
+    /// in bytes a second.
+    pub fn skyward_progress(&mut self, stage: SkywardStage, rate: u64) {
+        let job = self.state.skyward_job.as_mut().expect("only an update under way moves on");
+        job.stage = Some(stage);
+        job.rate = rate;
+        if self.screen() == Screen::SkywardUpdate {
+            self.refresh();
+        }
+    }
+
+    /// Updating Skyward has ended: its page says how, lit for the user to
+    /// read.
+    pub fn skyward_ended(&mut self, end: SkywardEnd, now: u64) {
+        let job = self.state.skyward_job.as_mut().expect("only an update under way ends");
+        job.stopping = false;
+        job.outcome = Some(end);
         self.wake(now);
         self.refresh();
     }
@@ -4469,6 +4597,19 @@ impl App {
                 self.state.restore = None;
                 self.state.asking_delete = false;
             }
+            // The page stays while Skyward is updated: once downloaded, the
+            // build is written at once, which nothing may cut short.
+            Screen::SkywardUpdate => match self.state.skyward_job.as_ref().filter(|j| j.outcome.is_none()).map(|j| j.stage) {
+                Some(Some(SkywardStage::Write { .. })) => {
+                    self.say(l.pick(["正在写入，请等待写入完成", "正在寫入，請等待寫入完成", "Writing. Wait for it to finish"]), now);
+                    return fx;
+                }
+                Some(_) => {
+                    self.say(l.pick(WAIT_OR_STOP), now);
+                    return fx;
+                }
+                None => {}
+            },
             // A restore that has begun writing cannot be stopped.
             Screen::BackupJob => {
                 let job = self.state.backup_job.as_ref().expect("the backup page shows work");
@@ -4659,6 +4800,11 @@ impl App {
                     fx.push(Effect::CheckUpdate);
                 }
                 fx
+            }
+            // Skyward's own page asks GitHub the same way.
+            Screen::SkywardUpdate if matches!(self.state.skyward_check, SkywardCheck::Idle | SkywardCheck::Failed(_)) && self.state.online() => {
+                self.state.skyward_check = SkywardCheck::Asking;
+                vec![Effect::CheckSkyward]
             }
             Screen::Wlan if self.state.wlan.as_ref().is_some_and(|w| w.power == Power::On) => vec![Effect::ScanWlan],
             _ => Vec::new(),
@@ -5184,6 +5330,46 @@ impl App {
                 let Have::Whole(size) = self.state.have else { unreachable!("only a whole package is offered to install") };
                 return self.install_file(Place::Storage, format!("{DOWNLOADS}/{name}"), size, now);
             }
+            // Asking takes a network, which the WLAN page joins.
+            Action::CheckSkyward => {
+                if !self.state.online() {
+                    self.open(Screen::Wlan);
+                    return self.arrive_at(Screen::Wlan);
+                }
+                if self.state.skyward_check != SkywardCheck::Asking {
+                    self.state.skyward_check = SkywardCheck::Asking;
+                    self.refresh();
+                    return vec![Effect::CheckSkyward];
+                }
+            }
+            // The build goes into the recovery partitions an install may
+            // write too, so one waits for the other.
+            Action::UpdateSkyward => {
+                let build = self.state.skyward_newest().and_then(|n| n.build.clone()).expect("the update is offered for the newest release's build");
+                if !self.state.online() {
+                    self.open(Screen::Wlan);
+                    return self.arrive_at(Screen::Wlan);
+                }
+                if !matches!(self.state.install, Install::Idle | Install::Finished { .. }) {
+                    self.say(l.pick(INSTALL_UNFINISHED), now);
+                    return Vec::new();
+                }
+                if !self.state.updating_skyward() {
+                    self.state.skyward_job = Some(SkywardJob { stage: None, rate: 0, outcome: None, stopping: false });
+                    self.refresh();
+                    return vec![Effect::UpdateSkyward(build)];
+                }
+            }
+            // Only the download stops: writing, once begun, goes on to its
+            // end.
+            Action::StopSkywardUpdate => {
+                let job = self.state.skyward_job.as_mut().expect("only an update under way is stopped");
+                if job.outcome.is_none() && !job.stopping && !matches!(job.stage, Some(SkywardStage::Write { .. })) {
+                    job.stopping = true;
+                    self.refresh();
+                    return vec![Effect::StopSkywardUpdate];
+                }
+            }
             Action::Unavailable(text) => self.say(text, now),
         }
         Vec::new()
@@ -5380,7 +5566,7 @@ impl App {
             Cap::Show(layer) => self.state.layer = layer,
             Cap::Enter => match self.screen() {
                 Screen::Search => {
-                    if let Some(first) = search::find_on(&self.state.search, l, self.state.wlan.is_some()).first() {
+                    if let Some(first) = search::find_on(&self.state.search, l, |screen| self.state.offers(screen)).first() {
                         return self.act(Action::Open(first.screen), now);
                     }
                 }
@@ -6566,6 +6752,7 @@ mod tests {
             Screen::TimeZone,
             Screen::Logs,
             Screen::Update,
+            Screen::SkywardUpdate,
             Screen::License,
             Screen::FontLicense,
             Screen::Slot,
@@ -10235,6 +10422,79 @@ mod tests {
         app.update_checked(Err(Unanswered::Failed("update.miui.com did not answer".into())), Have::Nothing);
         app.key(Key::Back, 0);
         assert_eq!(tap(&mut app, &f, &i, Action::Open(Screen::Update)), vec![Effect::ReadUpdate, Effect::CheckUpdate], "a failed check is tried again");
+    }
+
+    fn skyward_newest(newer: bool) -> Newest {
+        Newest {
+            version: "0.1.4".into(),
+            newer,
+            build: Some(Build {
+                name: "skyward-v0.1.4-ishtar-OS3.0.308.0.WMACNXM.zip".into(),
+                url: "https://github.com/kirklin/skyward/releases/download/v0.1.4/skyward-v0.1.4-ishtar-OS3.0.308.0.WMACNXM.zip".into(),
+                size: 42_739_608,
+                sha256: "62b66f7d13a0eb6c9af3359b5ec6f9c223fd9a86b1f8abab3e9d2646cb2ce534".into(),
+            }),
+        }
+    }
+
+    #[test]
+    fn skyward_updates_from_its_newest_release_and_its_page_stays_until_the_build_is_in() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Settings, W, H, PPD);
+        app.refresh();
+        let offered = |app: &mut App| app.frame(&f, &i).hits.iter().any(|h| h.action == Action::Open(Screen::SkywardUpdate));
+        assert!(!offered(&mut app), "a phone whose WLAN the recovery does not bring up");
+        app.state.wlan = Some(Wlan::default());
+        app.refresh();
+        assert!(!offered(&mut app), "a phone that keeps no recovery partition in each slot");
+        app.state.recovery_partitions = true;
+        app.refresh();
+        assert!(tap(&mut app, &f, &i, Action::Open(Screen::SkywardUpdate)).is_empty(), "nothing is asked without a network");
+        assert!(tap(&mut app, &f, &i, Action::CheckSkyward).is_empty());
+        assert_eq!(app.screen(), Screen::Wlan, "asking takes a network, which the WLAN page joins");
+        app.key(Key::Back, 0);
+        app.set_wlan(connected("Skyward"));
+        assert_eq!(tap(&mut app, &f, &i, Action::CheckSkyward), vec![Effect::CheckSkyward]);
+        assert_eq!(app.state.skyward_check, SkywardCheck::Asking);
+        app.skyward_checked(Ok(skyward_newest(true)));
+        let build = skyward_newest(true).build.unwrap();
+        app.state.install = Install::Waiting;
+        assert!(tap(&mut app, &f, &i, Action::UpdateSkyward).is_empty(), "an install under way goes first");
+        app.state.install = Install::Idle;
+        assert_eq!(tap(&mut app, &f, &i, Action::UpdateSkyward), vec![Effect::UpdateSkyward(build.clone())]);
+        app.skyward_progress(SkywardStage::Download(Progress::Downloading { done: 10_000_000, total: 42_739_608 }), 2_000_000);
+        app.key(Key::Back, 0);
+        assert_eq!(app.screen(), Screen::SkywardUpdate, "the page stays while the build downloads");
+        assert_eq!(tap(&mut app, &f, &i, Action::StopSkywardUpdate), vec![Effect::StopSkywardUpdate]);
+        assert!(!app.frame(&f, &i).hits.iter().any(|h| h.action == Action::StopSkywardUpdate), "stopping, it is not asked again");
+        // An end lights the panel, and a touch just after only keeps it lit.
+        app.skyward_ended(SkywardEnd::Stopped, 0);
+        assert_eq!(tap_at(&mut app, &f, &i, Action::UpdateSkyward, 2000), vec![Effect::UpdateSkyward(build.clone())], "a download stopped carries on");
+        app.skyward_progress(SkywardStage::Write { done: 1 << 20, total: 4 << 20 }, 0);
+        assert!(!app.frame(&f, &i).hits.iter().any(|h| h.action == Action::StopSkywardUpdate), "writing goes on to its end");
+        app.key(Key::Back, 2100);
+        assert_eq!(app.screen(), Screen::SkywardUpdate, "nor is the page left while the build is written");
+        app.skyward_ended(SkywardEnd::Updated(vec![Slot::A, Slot::B]), 3000);
+        assert_eq!(tap_at(&mut app, &f, &i, Action::RebootTo(Target::Recovery), 5000), vec![Effect::Reboot(Target::Recovery)]);
+        app.key(Key::Back, 5100);
+        assert_eq!(app.screen(), Screen::Settings);
+    }
+
+    #[test]
+    fn the_skyward_page_asks_github_as_it_opens_once_a_network_is_joined() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Settings, W, H, PPD);
+        app.state.wlan = Some(connected("Skyward"));
+        app.state.recovery_partitions = true;
+        app.refresh();
+        assert_eq!(tap(&mut app, &f, &i, Action::Open(Screen::SkywardUpdate)), vec![Effect::CheckSkyward]);
+        app.skyward_checked(Err(Unanswered::Failed("GitHub answered 403 Forbidden: API rate limit exceeded".into())));
+        app.key(Key::Back, 0);
+        assert_eq!(tap(&mut app, &f, &i, Action::Open(Screen::SkywardUpdate)), vec![Effect::CheckSkyward], "a failed check is tried again");
+        app.skyward_checked(Ok(skyward_newest(false)));
+        assert!(!app.frame(&f, &i).hits.iter().any(|h| h.action == Action::UpdateSkyward), "nothing newer to update to");
+        app.key(Key::Back, 0);
+        assert!(tap(&mut app, &f, &i, Action::Open(Screen::SkywardUpdate)).is_empty(), "an answer heard is not asked again");
     }
 
     #[test]

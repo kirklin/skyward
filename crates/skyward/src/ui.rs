@@ -33,7 +33,8 @@ use skyward_net::wlan::{Power as WlanPower, Wlan};
 use skyward_ui::app::{
     App, Asked, BackupAt, BackupEnd, BackupEntry, BackupRefusal, ClashChoice, Data, DownloadEnd, Effect, EraseStop, FileKind, FileOp,
     FileRow, FileTask, FsAction, FsRow, Have, Held, ItemEnd, ItemState, JobEnd, Keys, MountFailure, Part, PartKind, PartStop, Place,
-    RenameRefused, Screen, Shot, Target, UsbDrive, UsbLink, Wipe, DATA_OPENING, DATA_PARTITION, DOWNLOADS, INSTALL_UNFINISHED, USB_DRIVE,
+    RenameRefused, Screen, Shot, SkywardEnd, SkywardStage, Target, UsbDrive, UsbLink, Wipe, DATA_OPENING, DATA_PARTITION, DOWNLOADS,
+    INSTALL_UNFINISHED, USB_DRIVE,
 };
 use skyward_ui::settings::Keeper;
 use skyward_ui::surface::kms::KmsSurface;
@@ -1264,6 +1265,9 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     // Asking the update server, and downloading the full package.
     let mut checker: Option<updates::Worker> = None;
     let mut downloader: Option<updates::Worker> = None;
+    // Asking GitHub for Skyward's newest release, and updating to it.
+    let mut skyward_checker: Option<updates::Worker> = None;
+    let mut skyward_updater: Option<updates::Worker> = None;
     // The USB drive plugged in, looked for each second.
     let mut plugged: Option<Plugged> = None;
     let mut seen: Option<String> = None;
@@ -1398,6 +1402,12 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
         }
         if let Some(d) = &downloader {
             fds.push(d.fd());
+        }
+        if let Some(c) = &skyward_checker {
+            fds.push(c.fd());
+        }
+        if let Some(u) = &skyward_updater {
+            fds.push(u.fd());
         }
         fds.push(readings.fd());
         wait(&fds, timeout)?;
@@ -1730,17 +1740,60 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                             updates::End::Downloaded => DownloadEnd::Downloaded,
                             updates::End::Stopped => DownloadEnd::Stopped,
                             updates::End::Failed(why) => DownloadEnd::Failed(why),
+                            updates::End::Updated(_) | updates::End::NotWritten(_) | updates::End::WriteFailed(..) => {
+                                unreachable!("a system's full package is only downloaded")
+                            }
                         };
                         skyward_sys::kmsg(&format!("downloading {} ended: {end:?}", release.name))?;
                         app.download_ended(end, have(&app, &release), now);
                         fetched = true;
                     }
-                    updates::Event::Checked(_) => unreachable!("a download asks nothing of its own"),
+                    updates::Event::Checked(_) | updates::Event::SkywardChecked(_) | updates::Event::Writing { .. } => {
+                        unreachable!("a download asks nothing of its own, and writes nothing")
+                    }
                 }
             }
         }
         if fetched {
             downloader = None;
+        }
+        let mut asked = false;
+        if let Some(c) = &skyward_checker {
+            for ev in c.events() {
+                let updates::Event::SkywardChecked(answer) = ev else { unreachable!("asking GitHub downloads nothing") };
+                skyward_sys::kmsg(&format!("GitHub told of Skyward's newest release: {answer:?}"))?;
+                app.skyward_checked(answer);
+                asked = true;
+            }
+        }
+        if asked {
+            skyward_checker = None;
+        }
+        let mut updated = false;
+        if let Some(u) = &skyward_updater {
+            for ev in u.events() {
+                match ev {
+                    updates::Event::Progress(progress, rate) => app.skyward_progress(SkywardStage::Download(progress), rate),
+                    updates::Event::Writing { done, total } => app.skyward_progress(SkywardStage::Write { done, total }, 0),
+                    updates::Event::Ended(end) => {
+                        let end = match end {
+                            updates::End::Updated(slots) => SkywardEnd::Updated(slots),
+                            updates::End::Stopped => SkywardEnd::Stopped,
+                            updates::End::Failed(why) => SkywardEnd::Download(why),
+                            updates::End::NotWritten(why) => SkywardEnd::NotWritten(why),
+                            updates::End::WriteFailed(slots, why) => SkywardEnd::WriteFailed(slots, why),
+                            updates::End::Downloaded => unreachable!("Skyward's build is written once it is downloaded"),
+                        };
+                        skyward_sys::kmsg(&format!("updating Skyward ended: {end:?}"))?;
+                        app.skyward_ended(end, now);
+                        updated = true;
+                    }
+                    updates::Event::Checked(_) | updates::Event::SkywardChecked(_) => unreachable!("an update asks nothing of its own"),
+                }
+            }
+        }
+        if updated {
+            skyward_updater = None;
         }
         if let Some(ended) = decryptor.as_ref().and_then(Decryptor::ended) {
             decryptor = None;
@@ -2190,6 +2243,24 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                         }
                     }
                     Effect::StopDownload => downloader.as_ref().context("there is no download to stop")?.stop(),
+                    Effect::CheckSkyward => {
+                        ensure!(skyward_checker.is_none(), "GitHub is being asked already");
+                        let probe = cfg.wlan.as_ref().context("the phone's WLAN is not brought up")?.probe.clone();
+                        let task = updates::Task::CheckSkyward { probe, codename: cfg.device.codename.clone() };
+                        skyward_checker = Some(updates::Worker::start(task, servers.clone())?);
+                    }
+                    // The zip goes into the recovery's own folder, which is
+                    // in memory, before its image goes into the recovery
+                    // partitions.
+                    Effect::UpdateSkyward(build) => {
+                        ensure!(skyward_updater.is_none(), "Skyward is being updated already");
+                        ensure!(installer.is_none(), "an installer is running already");
+                        skyward_sys::kmsg(&format!("updating Skyward to {}", build.name))?;
+                        let path = Path::new(skyward_sys::RUN).join(&build.name);
+                        let task = updates::Task::UpdateSkyward { build, codename: cfg.device.codename.clone(), path };
+                        skyward_updater = Some(updates::Worker::start(task, servers.clone())?);
+                    }
+                    Effect::StopSkywardUpdate => skyward_updater.as_ref().context("Skyward is not being updated")?.stop(),
                     // Logs that cannot be saved are the page's to report;
                     // the recovery carries on.
                     Effect::ExportLogs { recovery, kernel, storage } => {

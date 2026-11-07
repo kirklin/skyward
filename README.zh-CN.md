@@ -18,6 +18,7 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 - 安装刷机包、系统更新包和分区镜像，支持内部存储、U 盘和 adb sideload
 - 刷机包的安装脚本可以使用 `7za` 和 `zstd`，支持刷入 super 镜像使用 zstd 压缩的第三方 ROM；`unzip -p` 边解压边输出镜像
 - 在线系统更新
+- 从 GitHub 上的最新版本在线更新 Skyward
 - 备份和恢复
 - 清除数据、恢复出厂设置
 - 挂载分区，修复和格式化文件系统
@@ -70,7 +71,7 @@ fastboot flash recovery skyward-v0.1.3-nezha-OS4.0.4.0.XPACNXM.img
 fastboot reboot recovery
 ```
 
-之后可以在 Skyward 自己的“安装”页面安装解压出来的新版镜像。打开 **自动重新刷入 Skyward** 之后，系统更新或者刷机包覆盖 recovery 分区的时候，Skyward 会重新刷回这些分区。
+之后连接 WLAN，就可以在“设置”的“Skyward 更新”页面更新到最新版本，也可以在 Skyward 自己的“安装”页面安装解压出来的新版镜像。打开 **自动重新刷入 Skyward** 之后，系统更新或者刷机包覆盖 recovery 分区的时候，Skyward 会重新刷回这些分区。
 
 super 中没有系统的时候，Skyward 仍然可以启动：屏幕和按键、adb、`adb sideload` 和 fastbootd 都能使用，足够装回一个系统。触摸、WLAN 和解密依赖已安装系统中的程序，系统装回之后随之恢复。
 

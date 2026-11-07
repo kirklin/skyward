@@ -1,8 +1,9 @@
 use crate::app::{
     Action, BackupAt, BackupEnd, BackupJob, Check, ClashChoice, Confirm, Damage, Data, Dock, DownloadEnd, EraseStop, Field, FileKind,
     FileOp, FileTask, Fold, Folder, Frame, FsAction, FsChoice, FsRow, Have, HeroArt, Hit, Install, JobEnd, Keys, Pick, Place, Rows, Screen,
-    Slider, Source, State, Switch, Target, UsbDrive, UsbLink, Wipe, ADDABLE, BACKUP_PARTS, DATA_ERASED, DATA_PARTITION, DOWNLOADS,
-    FASTBOOT_CHOICES, SCREEN_OFF, TARGETS, TIME_ZONES, USB_DRIVE_UNREADABLE, USB_DRIVE_WANTED, WIPES, installs,
+    SkywardCheck, SkywardEnd, SkywardJob, SkywardStage, Slider, Source, State, Switch, Target, UsbDrive, UsbLink, Wipe, ADDABLE,
+    BACKUP_PARTS, DATA_ERASED, DATA_PARTITION, DOWNLOADS, FASTBOOT_CHOICES, SCREEN_OFF, TARGETS, TIME_ZONES, USB_DRIVE_UNREADABLE,
+    USB_DRIVE_WANTED, WIPES, installs,
 };
 use crate::canvas::Canvas;
 use crate::color::Rgba;
@@ -91,6 +92,7 @@ pub fn render(screen: Screen, cx: &Ctx) -> Frame {
         Screen::TimeZone => time_zone(cx),
         Screen::Logs => logs(cx),
         Screen::Update => update(cx),
+        Screen::SkywardUpdate => skyward_update(cx),
         Screen::License => license(cx),
         Screen::FontLicense => font_license(cx),
         Screen::Slot => slot(cx),
@@ -160,6 +162,7 @@ const SPECS: Text = ["全部参数与信息", "全部規格與資訊", "All spec
 const LOGS: Text = ["导出日志", "匯出記錄", "Export logs"];
 const SCREEN_TIMEOUT: Text = ["息屏时间", "螢幕自動關閉", "Screen timeout"];
 const UPDATE: Text = ["系统更新", "系統更新", "System update"];
+const SKYWARD_UPDATE: Text = ["Skyward 更新", "Skyward 更新", "Skyward update"];
 const FILES: Text = ["文件管理", "檔案管理", "File manager"];
 const TERMINAL: Text = ["终端", "終端機", "Terminal"];
 const LANGUAGE: Text = ["语言", "語言", "Language"];
@@ -295,7 +298,7 @@ pub fn home(cx: &Ctx) -> Frame {
 fn update_value(cx: &Ctx) -> &'static str {
     let (s, l) = (cx.state, cx.state.lang);
     if s.downloading() {
-        return l.pick(["正在下载", "正在下載", "Downloading"]);
+        return l.pick(DOWNLOADING);
     }
     if s.newest().is_some_and(|r| cx.info.os_version.as_deref() != Some(r.version.as_str())) {
         return l.pick(["有新版本", "有新版本", "New version"]);
@@ -345,9 +348,33 @@ pub fn settings(cx: &Ctx) -> Frame {
     let debug = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(TERMINAL)).icon(SLATE, Icon::Terminal)]);
     out.extend(hits(&debug.rows, &[Action::Open(Screen::Terminal)]));
     y = widgets::section(&mut c, t, f, debug.bottom, l.pick(["关于", "關於", "About"]));
-    let about = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(ABOUT)).trail(Trail::Value(VERSION))]);
-    out.extend(hits(&about.rows, &[Action::Open(Screen::About)]));
+    let mut rows = vec![Row::new(l.pick(ABOUT)).trail(Trail::Value(VERSION))];
+    let mut opens = vec![Action::Open(Screen::About)];
+    if s.offers(Screen::SkywardUpdate) {
+        let row = Row::new(l.pick(SKYWARD_UPDATE));
+        rows.push(match skyward_value(cx) {
+            Some(value) => row.trail(Trail::Value(value)),
+            None => row,
+        });
+        opens.push(Action::Open(Screen::SkywardUpdate));
+    }
+    let about = widgets::list(&mut c, t, f, y, &rows);
+    out.extend(hits(&about.rows, &opens));
     Frame::new(t, fit(c, t, about.bottom), out, l.pick(SETTINGS), top)
+}
+
+/// What the settings page says beside its Skyward update entry: an update
+/// under way, or a newer release found.
+fn skyward_value(cx: &Ctx) -> Option<&'static str> {
+    let (s, l) = (cx.state, cx.state.lang);
+    if s.updating_skyward() {
+        return Some(l.pick(["正在更新", "正在更新", "Updating"]));
+    }
+    match (s.skyward_newest(), &s.skyward_job) {
+        (_, Some(SkywardJob { outcome: Some(SkywardEnd::Updated(_)), .. })) => Some(l.pick(["已更新", "已更新", "Updated"])),
+        (Some(n), _) if n.newer && n.build.is_some() => Some(l.pick(["有新版本", "有新版本", "New version"])),
+        _ => None,
+    }
 }
 
 /// How long the screen stays on with nothing touched, opened from the
@@ -1633,7 +1660,7 @@ pub fn search(cx: &Ctx) -> Frame {
         ]);
         widgets::footnote(&mut c, t, f, top, how);
     } else {
-        let found = search::find_on(&s.search, l, s.wlan.is_some());
+        let found = search::find_on(&s.search, l, |screen| s.offers(screen));
         if found.is_empty() {
             let typed = s.search.trim();
             let none = tr!(l, "未找到\"{typed}\"", "找不到「{typed}」", "Nothing found for “{typed}”");
@@ -2454,6 +2481,10 @@ pub fn update(cx: &Ctx) -> Frame {
 /// What downloading or checking for updates needs first, while the phone
 /// has joined no network that reaches the internet.
 const WLAN_FIRST: Text = ["需先连接 WLAN", "需先連接 Wi-Fi", "Connect to Wi-Fi first"];
+const CHECKING: Text = ["正在检查更新", "正在檢查更新", "Checking for updates"];
+const CHECK_FOR_UPDATES: Text = ["检查更新", "檢查更新", "Check for updates"];
+const DOWNLOADING: Text = ["正在下载", "正在下載", "Downloading"];
+const CHECKING_PART: Text = ["正在校验已下载的部分", "正在驗證已下載的部分", "Verifying what was downloaded"];
 
 /// Asking the update server for the newest system, then its full package:
 /// downloading it, how far that has come, and installing it once it is
@@ -2461,10 +2492,10 @@ const WLAN_FIRST: Text = ["需先连接 WLAN", "需先連接 Wi-Fi", "Connect to
 fn online(c: &mut Canvas, cx: &Ctx, y: f32, out: &mut Vec<Hit>) -> f32 {
     let (t, f, s, i, l) = (cx.t, cx.f, cx.state, cx.info, cx.state.lang);
     let release = match &s.check {
-        Check::Asking => return widgets::list(c, t, f, y, &[Row::new(l.pick(["正在检查更新", "正在檢查更新", "Checking for updates"])).trail(Trail::None)]).bottom,
+        Check::Asking => return widgets::list(c, t, f, y, &[Row::new(l.pick(CHECKING)).trail(Trail::None)]).bottom,
         Check::Answered(Some(r)) => r,
         other => {
-            let mut row = Row::new(l.pick(["检查更新", "檢查更新", "Check for updates"]));
+            let mut row = Row::new(l.pick(CHECK_FOR_UPDATES));
             if !s.online() {
                 row = row.subtitle(l.pick(WLAN_FIRST));
             }
@@ -2493,16 +2524,7 @@ fn online(c: &mut Canvas, cx: &Ctx, y: f32, out: &mut Vec<Hit>) -> f32 {
         (Some(job), _) if job.outcome.is_none() => {
             let (heading, detail, share) = match job.progress {
                 None => (l.pick(GETTING_READY), String::new(), None),
-                Some(Progress::Checking { done, total }) => (
-                    l.pick(["正在校验已下载的部分", "正在驗證已下載的部分", "Verifying what was downloaded"]),
-                    format!("{} / {}", fmt::file_size(done), fmt::file_size(total)),
-                    Some(share(done, total)),
-                ),
-                Some(Progress::Downloading { done, total }) => (
-                    l.pick(["正在下载", "正在下載", "Downloading"]),
-                    format!("{} / {} · {}/s", fmt::file_size(done), fmt::file_size(total), fmt::file_size(job.rate)),
-                    Some(share(done, total)),
-                ),
+                Some(p) => downloaded(l, p, job.rate),
             };
             y = widgets::progress_card(c, t, f, y + t.m.card_gap, heading, &detail, share);
             let label = l.pick(if job.stopping { ["正在暂停", "正在暫停", "Pausing"] } else { ["暂停", "暫停", "Pause"] });
@@ -2561,7 +2583,169 @@ fn online(c: &mut Canvas, cx: &Ctx, y: f32, out: &mut Vec<Hit>) -> f32 {
             "After the update the system optimizes itself in the background, and the phone may run warm or use more battery for 1 to 3 days.",
         ]),
     ];
-    widgets::notes(c, t, f, y + t.m.card_gap, l.pick(["注意事项", "注意事項", "Notes"]), &points)
+    widgets::notes(c, t, f, y + t.m.card_gap, l.pick(NOTES), &points)
+}
+
+const NOTES: Text = ["注意事项", "注意事項", "Notes"];
+
+/// What a progress card says of a download, and the share of it done:
+/// what an earlier download left being checked, or the rest coming at
+/// `rate` bytes a second.
+fn downloaded(l: Lang, progress: Progress, rate: u64) -> (&'static str, String, Option<f32>) {
+    match progress {
+        Progress::Checking { done, total } => (l.pick(CHECKING_PART), format!("{} / {}", fmt::file_size(done), fmt::file_size(total)), Some(share(done, total))),
+        Progress::Downloading { done, total } => (
+            l.pick(DOWNLOADING),
+            format!("{} / {} · {}/s", fmt::file_size(done), fmt::file_size(total), fmt::file_size(rate)),
+            Some(share(done, total)),
+        ),
+    }
+}
+
+/// Skyward's own update: the build running now; Skyward's newest release
+/// on GitHub, and updating to it; then what to note before updating.
+pub fn skyward_update(cx: &Ctx) -> Frame {
+    let (t, f, l) = (cx.t, cx.f, cx.state.lang);
+    let mut c = long_page(cx);
+    let top = t.m.content_top;
+    let mut out = Vec::new();
+    let y = widgets::section_first(&mut c, t, f, top, l.pick(["本机", "本機", "This phone"]));
+    let y = widgets::info_card(&mut c, t, f, y, &[(l.pick(["当前版本", "目前版本", "Current version"]), VERSION.to_string())]);
+    let y = widgets::section(&mut c, t, f, y, l.pick(["在线更新", "線上更新", "Online update"]));
+    let y = skyward_online(&mut c, cx, y, &mut out);
+    let points = [
+        l.pick([
+            "新版本从 GitHub 下载，校验 SHA-256 后写入 recovery 分区，不会改动系统和用户数据。",
+            "新版本從 GitHub 下載，驗證 SHA-256 後寫入 recovery 分割區，不會改動系統和使用者資料。",
+            "The new version is downloaded from GitHub and goes into the recovery partitions once its SHA-256 checks out. The system and user data are left as they are.",
+        ]),
+        l.pick([
+            "新版本将写入下次启动所用槽位的 recovery 分区；另一个槽位装有 Skyward 时，也会一并更新。",
+            "新版本將寫入下次啟動所用槽位的 recovery 分割區；另一個槽位裝有 Skyward 時，也會一併更新。",
+            "The new version goes into the recovery partition of the slot that starts next, and into the other slot's where it holds Skyward.",
+        ]),
+        l.pick(["更新完成后，重启到恢复模式即可使用新版本。", "更新完成後，重新啟動到復原模式即可使用新版本。", "Once updated, reboot to recovery to use the new version."]),
+    ];
+    let y = widgets::notes(&mut c, t, f, y + t.m.card_gap, l.pick(NOTES), &points);
+    Frame::new(t, fit(c, t, y), out, l.pick(SKYWARD_UPDATE), top)
+}
+
+/// Asking GitHub for Skyward's newest release, then updating to it: its
+/// build for the phone downloaded and written into the recovery partitions,
+/// how far that has come, and how it ended.
+fn skyward_online(c: &mut Canvas, cx: &Ctx, y: f32, out: &mut Vec<Hit>) -> f32 {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let gap = t.m.card_gap;
+    let newest = match &s.skyward_check {
+        SkywardCheck::Asking => return widgets::list(c, t, f, y, &[Row::new(l.pick(CHECKING)).trail(Trail::None)]).bottom,
+        SkywardCheck::Answered(n) => n,
+        other => {
+            let mut row = Row::new(l.pick(CHECK_FOR_UPDATES));
+            if !s.online() {
+                row = row.subtitle(l.pick(WLAN_FIRST));
+            }
+            let check = widgets::list(c, t, f, y, &[row]);
+            out.extend(hits(&check.rows, &[Action::CheckSkyward]));
+            return match other {
+                SkywardCheck::Failed(why) => widgets::footnote(c, t, f, check.bottom, &fmt::unanswered(l, why)),
+                _ => check.bottom,
+            };
+        }
+    };
+    let version = &newest.version;
+    let (title, detail) = match (newest.newer, &newest.build) {
+        (true, Some(build)) => {
+            let size = fmt::file_size(build.size);
+            (tr!(l, "新版本 {version}", "新版本 {version}", "New version {version}"), tr!(l, "安装包 {size}", "安裝包 {size}", "Package {size}"))
+        }
+        (true, None) => (
+            tr!(l, "新版本 {version}", "新版本 {version}", "New version {version}"),
+            l.pick(["没有本机的安装包", "沒有本機的安裝包", "No package for this phone"]).to_string(),
+        ),
+        (false, _) => (
+            l.pick(["已是最新版本", "已是最新版本", "Up to date"]).to_string(),
+            tr!(l, "最新发布的版本为 {version}", "最新發佈的版本為 {version}", "The newest release is {version}"),
+        ),
+    };
+    let y = widgets::list(c, t, f, y, &[Row::new(&title).icon(GREEN, Icon::Install).subtitle(&detail).trail(Trail::None)]).bottom;
+    if !newest.newer || newest.build.is_none() {
+        return y;
+    }
+    match &s.skyward_job {
+        Some(job) if job.outcome.is_none() => {
+            let (heading, detail, share) = match job.stage {
+                None => (l.pick(GETTING_READY), String::new(), None),
+                Some(SkywardStage::Download(p)) => downloaded(l, p, job.rate),
+                Some(SkywardStage::Write { done, total }) => {
+                    let part = share(done, total);
+                    let p = percent(part);
+                    (l.pick(["正在写入 recovery 分区", "正在寫入 recovery 分割區", "Writing the recovery partitions"]), tr!(l, "已完成 {p}%", "已完成 {p}%", "{p}% done"), Some(part))
+                }
+            };
+            let y = widgets::progress_card(c, t, f, y + gap, heading, &detail, share);
+            if matches!(job.stage, Some(SkywardStage::Write { .. })) {
+                return widgets::footnote(c, t, f, y, l.pick(["写入完成前，请不要关机。", "寫入完成前，請不要關機。", "Don't power off until it's written."]));
+            }
+            let stop = widgets::list(c, t, f, y + gap, &[Row::new(l.pick(if job.stopping { STOPPING } else { STOP })).trail(Trail::None)]);
+            if !job.stopping {
+                out.extend(hits(&stop.rows, &[Action::StopSkywardUpdate]));
+            }
+            stop.bottom
+        }
+        Some(SkywardJob { outcome: Some(SkywardEnd::Updated(slots)), .. }) => {
+            let names = fmt::slots(l, slots);
+            let detail = match (l, slots.len()) {
+                (Lang::En, 1) => format!("Skyward {version} is in {names}'s recovery partition."),
+                _ => tr!(
+                    l,
+                    "已将 Skyward {version} 刷入{names} 的 recovery 分区。",
+                    "已將 Skyward {version} 刷入{names} 的 recovery 分割區。",
+                    "Skyward {version} is in the recovery partitions of {names}."
+                ),
+            };
+            let y = widgets::list(c, t, f, y + gap, &[standing(l.pick(["更新成功", "更新成功", "Updated"]), GREEN, Icon::Install, &detail)]).bottom;
+            let restart = widgets::list(c, t, f, y + gap, &[Row::new(l.pick(["重启到恢复模式", "重新啟動到復原模式", "Reboot to recovery"])).icon(ORANGE, Icon::Power)]);
+            out.extend(hits(&restart.rows, &[Action::RebootTo(Target::Recovery)]));
+            restart.bottom
+        }
+        job => {
+            let mut y = y;
+            match job.as_ref().and_then(|j| j.outcome.as_ref()) {
+                Some(SkywardEnd::Stopped) => y = widgets::footnote(c, t, f, y, l.pick(["已停止下载。", "已停止下載。", "Download stopped."])),
+                Some(SkywardEnd::Download(why)) => y = widgets::footnote(c, t, f, y, &fmt::skyward_download_failure(l, why)),
+                Some(SkywardEnd::NotWritten(why)) => {
+                    y = widgets::footnote(c, t, f, y, l.pick(["更新失败，未写入任何内容。", "更新失敗，未寫入任何內容。", "Couldn't update. Nothing was written."]));
+                    y = widgets::footnote(c, t, f, y, why);
+                }
+                Some(SkywardEnd::WriteFailed(slots, why)) => {
+                    let names = fmt::slots(l, slots);
+                    let warning = match (l, slots.len()) {
+                        (Lang::En, 1) => format!(
+                            "{}'s recovery partition was only partly written, so rebooting to recovery may not start Skyward. Update again, and reboot once it's done.",
+                            capitalized(l, &names)
+                        ),
+                        _ => tr!(
+                            l,
+                            "{names} 的 recovery 分区仅写入了部分内容，重启到恢复模式可能无法进入 Skyward。请重新更新，完成后再重启。",
+                            "{names} 的 recovery 分割區僅寫入了部分內容，重新啟動到復原模式可能無法進入 Skyward。請重新更新，完成後再重新啟動。",
+                            "The recovery partitions of {names} were only partly written, so rebooting to recovery may not start Skyward. Update again, and reboot once it's done."
+                        ),
+                    };
+                    y = widgets::footnote(c, t, f, y, &warning);
+                    y = widgets::footnote(c, t, f, y, why);
+                }
+                Some(SkywardEnd::Updated(_)) => unreachable!("an update that went in shows how it did"),
+                None => {}
+            }
+            let mut row = Row::new(l.pick(["下载并更新", "下載並更新", "Download and update"]));
+            if !s.online() {
+                row = row.subtitle(l.pick(WLAN_FIRST));
+            }
+            let update = widgets::list(c, t, f, y + gap, &[row]);
+            out.extend(hits(&update.rows, &[Action::UpdateSkyward]));
+            update.bottom
+        }
+    }
 }
 
 /// The WLAN switch; then the network chosen and how joining it goes, and
@@ -2578,7 +2762,11 @@ pub fn wlan(cx: &Ctx) -> Frame {
     let mut y = switch.bottom;
     match &w.power {
         Power::Off => {
-            let note = l.pick(["开启后，可连接 WLAN 下载系统更新。", "開啟後，可連接 Wi-Fi 下載系統更新。", "When on, system updates can download over Wi-Fi."]);
+            let note = l.pick([
+                "开启后，可连接 WLAN 下载系统更新和 Skyward 新版本。",
+                "開啟後，可連接 Wi-Fi 下載系統更新和 Skyward 新版本。",
+                "When on, system updates and new versions of Skyward can download over Wi-Fi.",
+            ]);
             y = widgets::footnote(&mut c, t, f, y, note)
         }
         Power::Failed(why) => y = widgets::footnote(&mut c, t, f, y, &tr!(l, "无法开启 WLAN：{why}", "無法開啟 Wi-Fi：{why}", "Couldn't turn on Wi-Fi: {why}")),

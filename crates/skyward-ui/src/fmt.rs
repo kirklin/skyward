@@ -1321,6 +1321,27 @@ pub fn download_failure(l: Lang, f: &DownloadFailure) -> String {
     }
 }
 
+/// Why downloading Skyward's build did not end with it whole. It goes into
+/// the recovery's own folder, which is in memory.
+pub fn skyward_download_failure(l: Lang, f: &DownloadFailure) -> String {
+    match f {
+        DownloadFailure::NoRoom { needed, free } => {
+            let (needed, free) = (file_size(*needed), file_size(*free));
+            tr!(
+                l,
+                "运行内存不足，需 {needed} 可用空间，当前可用 {free}。",
+                "記憶體不足，需要 {needed} 的可用空間，目前可用 {free}。",
+                "Not enough memory: {needed} has to be free, and {free} is."
+            )
+        }
+        DownloadFailure::Damaged => {
+            l.pick(["安装包校验失败，已删除，请重新更新。", "安裝包驗證失敗，已刪除，請重新更新。", "The package didn't verify and was deleted. Update again."]).into()
+        }
+        DownloadFailure::Changed => unreachable!("GitHub is not asked again where a build is"),
+        DownloadFailure::Other(why) => tr!(l, "下载失败：{why}", "下載失敗：{why}", "Download failed: {why}"),
+    }
+}
+
 /// How the terminal page's shell ended.
 pub fn term_end(l: Lang, end: &TermEnd) -> String {
     match end {

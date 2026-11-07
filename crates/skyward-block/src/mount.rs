@@ -299,11 +299,15 @@ mod sys {
     }
 
     fn under_parked(target: &Path, unmount: fn(&Path) -> Result<()>) -> Result<()> {
-        let parked = park(target)?;
+        let mut parked = park(target)?;
         if let Err(e) = unmount(target) {
             unpark(parked).with_context(|| format!("after {e:#}"))?;
             return Err(e);
         }
+        // The mount on `target` that park may have made private is gone.
+        // What shows there now, if anything, is another mount, which park
+        // left as it was.
+        parked.privatized.retain(|p| p != target);
         // What shows at `target` now may lack a folder one of them was on,
         // as the recovery's own root lacks a phone partition's folders.
         for (home, _) in &parked.moved {

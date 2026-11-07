@@ -60,6 +60,11 @@ const LEAVE_AFTER_MS: u64 = 1500;
 /// none by then, the pages are worked with the keys, their light shown.
 const TOUCH_WAIT: Duration = Duration::from_secs(5);
 
+/// How long a panel gone dark rests, ready to light again at once, before
+/// the display turns off; the phone's own system keeps its panel dozing
+/// about as long after the screen goes off.
+const REST: Duration = Duration::from_secs(5);
+
 /// Where logs saved to the temporary folder go, in the recovery service's
 /// own folder, and where in internal storage the others do.
 const TMP_LOGS: &str = "/skyward/run/logs";
@@ -1094,6 +1099,8 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     // Whether the panel's frame memory has been blacked out for an off
     // panel; cleared once a real frame is shown again.
     let mut blanked = false;
+    // When the panel gone dark began to rest.
+    let mut rested_at: Option<Instant> = None;
     // Started for fastboot, the port goes to the phone's own fastbootd. The
     // page says whether it came up and how far a computer has the port;
     // why it did not come up goes to the kernel log and on screen.
@@ -1327,7 +1334,8 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
         let panel = app.panel(now);
         let mut shown = false;
         if panel.is_some() {
-            if app.take_dirty() {
+            // A display turned off comes on again with a frame drawn for it.
+            if app.take_dirty() || !surface.is_on() {
                 let t0 = Instant::now();
                 app.compose(&mut screen, &fonts, &info, &shown_clock, now);
                 surface.present(&screen)?;
@@ -1340,8 +1348,8 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
             blanked = false;
         } else if !blanked {
             // Black out the panel's frame memory before the backlight goes
-            // to 0, so an OLED that floors the backlight above zero rather
-            // than cutting it shows nothing and cannot burn in.
+            // to 0 and the display off, so an OLED that floors the backlight
+            // above zero rather than cutting it shows nothing as it goes off.
             screen.data.fill(0);
             surface.present(&screen)?;
             surface.settle()?;
@@ -1354,6 +1362,22 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
             surface.settle()?;
         }
         backlight.show(panel)?;
+        if panel.is_some() {
+            // Lit, a panel that came on again switches to its fastest
+            // refresh.
+            surface.speed_up()?;
+            rested_at = None;
+        } else if surface.is_on() {
+            // With the backlight off, the panel rests, and the touch
+            // controller following it stops drawing power.
+            surface.rest()?;
+            rested_at = Some(Instant::now());
+        } else if rested_at.is_some_and(|at| at.elapsed() >= REST) {
+            // Rested long enough, the display goes off: the panel and the
+            // display processor feeding it stop drawing power.
+            surface.turn_off()?;
+            rested_at = None;
+        }
         // A page at rest draws the rows it has yet to while nothing else
         // is to be done, a band at a time, looking for input between bands.
         let ahead = panel.is_some() && !shown && app.draw_ahead(&fonts, &info);
@@ -1362,7 +1386,9 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
         // gets at least a millisecond.
         let floor = if shown { 0 } else { 1 };
         let until_due = app.deadline(now).map(|d| d.saturating_sub(now) as i32);
-        let timeout = if ahead { 0 } else { until_due.map_or(1000, |t| t.clamp(floor, 1000)) };
+        // A resting panel turns off once its rest is over.
+        let rest_left = rested_at.map(|at| REST.saturating_sub(at.elapsed()).as_millis() as i32);
+        let timeout = if ahead { 0 } else { until_due.into_iter().chain(rest_left).min().map_or(1000, |t| t.clamp(floor, 1000)) };
         let mut fds = inputs.fds();
         if let Some(i) = &installer {
             fds.push(i.fd());

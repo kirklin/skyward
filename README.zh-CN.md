@@ -27,6 +27,7 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 - 连接 WLAN
 - MTP 文件传输、adb 和 fastbootd
 - 重启到系统、recovery、fastboot、bootloader 和 EDL，切换启动槽位
+- 双系统：在已安装的系统旁边安装第二系统，文件保存在 data 分区中；在首页“双系统”的两张卡片中选择，滑动即可切换
 - 浅色和深色模式，简体中文、繁体中文和英文
 
 ## 支持的机型
@@ -77,6 +78,25 @@ fastboot reboot recovery
 super 中没有系统的时候，Skyward 仍然可以启动：屏幕和按键、adb、`adb sideload` 和 fastbootd 都能使用，足够装回一个系统。触摸、WLAN 和解密依赖已安装系统中的程序，系统装回之后随之恢复。
 
 Skyward 中的 adb 是 root shell，手机上无需授权：手机处于 recovery 的时候，任何人拿到手机和数据线都能访问其中的存储。
+
+## 双系统
+
+Skyward 可以在手机自身分区中的系统旁边安装第二系统，主系统是 HyperOS 或者第三方 ROM 都可以，并在首页的“双系统”中切换。第二系统的根文件系统是 data 分区中的一个文件，文件系统不能移动或删除它，Skyward 直接通过分区读写其中的内容；两个系统的启动镜像保存在另一个这样的文件中。切换系统只改写下次启动槽位的 boot 和 init_boot 分区，每一步都先记录在 /metadata 中，切换过程中断电的话，Skyward 下次启动时会完成这次切换。vendor_boot、dtbo、recovery、vbmeta、固件和 super 都保持不变，第二系统使用主系统的 vendor_boot 和 dtbo 启动。
+
+系统更新尚未合并的时候，暂不切换到第二系统。
+
+第二系统的安装包是 zip 文件，和其他安装包一样在“安装”页面安装：
+
+| 文件 | 内容 |
+| --- | --- |
+| `system.toml` | `id`、`name`、`version` 和 `filesystem`；`init` 是根文件系统中第一个运行的程序，默认为 `/sbin/init`；`minimum` 是根文件系统至少需要的空间，单位为字节 |
+| `boot.img` | bootloader 启动的内核 |
+| `rootfs.img` | 根文件系统的镜像，格式为 `filesystem` 指定的文件系统 |
+| `init_boot.img` | 只有自带第一阶段 ramdisk 的系统需要 |
+
+没有自带 init_boot 镜像的系统，从 Skyward 生成的 init_boot 镜像启动。其中的程序按照主系统第一阶段的方式加载第一阶段的内核模块，包括模块之间的软依赖和内核命令行中给模块的参数，然后在 data 分区中找到根文件系统，挂载之后运行其中的 `init`。启动过程中出现任何错误，这个程序都会在内核日志中写明原因，然后停留在出错的地方。自带第一阶段 ramdisk 的系统可以运行 Skyward 放在 `/skyward/map` 的程序，它把根文件系统映射为块设备，并输出设备节点的路径。每次切换到第二系统，Skyward 都用自己带的程序写入第二系统的 init_boot 镜像，所以更新 Skyward 以后，第二系统也用新的程序启动。
+
+正在运行的系统也可以请求切换：在 misc 中写入 `boot-recovery` 和 `--switch_system=installed`，或者 `--switch_system=` 加上第二系统的 `id`，然后重启到 recovery。
 
 ## 构建
 

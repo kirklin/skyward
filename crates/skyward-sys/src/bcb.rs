@@ -55,16 +55,17 @@ impl Bcb {
 
     /// What the message asks the recovery to do, read the way Android's
     /// own recovery reads it: of several pieces of work it does the first
-    /// in this order, fastboot, an update package, erasing data, asking
-    /// whether to erase data, erasing the cache, erasing by a wipe package,
-    /// sideload, rescue, unsharing blocks, leaving at once. A command with
-    /// no arguments can ask for fastboot or rescue by itself. An option
-    /// given twice counts as it was given last.
+    /// in this order, fastboot, switching systems, which is Skyward's own,
+    /// an update package, erasing data, asking whether to erase data,
+    /// erasing the cache, erasing by a wipe package, sideload, rescue,
+    /// unsharing blocks, leaving at once. A command with no arguments can
+    /// ask for fastboot or rescue by itself. An option given twice counts as
+    /// it was given last.
     pub fn request(&self) -> Request {
         let mut r = Request::default();
         let (mut fastboot, mut wipe_data, mut prompt, mut wipe_cache, mut wipe_ab) = (false, false, false, false, false);
         let (mut rescue, mut unshare, mut exit, mut security) = (false, false, false, false);
-        let mut sideload = None;
+        let (mut sideload, mut switch) = (None, None);
         let (mut update, mut reformat, mut retry, mut wipe_package) = (None, None, 0, 0);
         for arg in &self.args {
             let Some(option) = arg.strip_prefix("--") else {
@@ -112,6 +113,10 @@ impl Bcb {
                     Some(size) => wipe_package = size,
                     None => unread(),
                 },
+                "switch_system" => match value.filter(|v| !v.is_empty()) {
+                    Some(to) => switch = Some(to.to_string()),
+                    None => unread(),
+                },
                 // How Android's own recovery reads a package, and how its
                 // text shows.
                 "install_with_fuse" | "update_wipe" | "export_validate" | "show_text" => {}
@@ -127,6 +132,8 @@ impl Bcb {
         };
         r.work = if fastboot {
             Work::Fastboot
+        } else if let Some(to) = switch {
+            Work::SwitchSystem { to }
         } else if let Some(package) = update {
             Work::Update(Update { package, retry, wipe_cache, security })
         } else if wipe_data {
@@ -235,6 +242,10 @@ pub enum Work {
     /// Undo the sharing of blocks in the slot's ext4 partitions that hold
     /// shared ones, so they can be written to.
     UnshareBlocks,
+    /// Have the bootloader start another system: `installed` for the one in
+    /// the phone's own partitions, or the id of the one Skyward installed
+    /// beside it, as that system asks.
+    SwitchSystem { to: String },
     /// Start the system at once.
     Exit,
     /// Work the recovery does not do, as it was asked.
@@ -397,6 +408,15 @@ mod tests {
         assert_eq!(asked("boot-recovery", &["--just_exit"]).work, Work::Exit);
         assert_eq!(asked("boot-recovery", &[]).work, Work::Menu);
         assert_eq!(asked("boot-recovery", &["--locale=zh-CN"]).work, Work::Menu, "a language alone asks for nothing");
+    }
+
+    #[test]
+    fn a_switch_of_systems_names_the_system() {
+        let r = asked("boot-recovery", &["--switch_system=installed"]);
+        assert_eq!(r.work, Work::SwitchSystem { to: "installed".into() });
+        assert!(r.work.lasts(), "a switch cut off is taken up again");
+        assert_eq!(asked("boot-recovery", &["--switch_system=ubuntu", "--wipe_data"]).work, Work::SwitchSystem { to: "ubuntu".into() });
+        assert_eq!(asked("boot-recovery", &["--switch_system="]).work, Work::Unsupported("--switch_system=".into()), "a switch to no system");
     }
 
     #[test]

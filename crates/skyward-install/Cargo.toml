@@ -21,6 +21,7 @@ skyward-block = { path = "../skyward-block" }
 skyward-config = { path = "../skyward-config" }
 skyward-info = { path = "../skyward-info" }
 skyward-sys = { path = "../skyward-sys" }
+skyward-systems = { path = "../skyward-systems" }
 skyward-vab = { path = "../skyward-vab" }
 x509-cert = "0.2.5"
 zerocopy = { version = "0.8.63", features = ["derive"] }

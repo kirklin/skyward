@@ -20,6 +20,7 @@ serde_json = "1.0.154"
 skyward-info = { path = "../skyward-info" }
 skyward-install = { path = "../skyward-install" }
 skyward-net = { path = "../skyward-net" }
+skyward-systems = { path = "../skyward-systems" }
 skyward-vab = { path = "../skyward-vab" }
 # The icons are outlines written as SVG path data, as the stock Settings
 # writes its own: filled by the nonzero or the even-odd rule, and stroked

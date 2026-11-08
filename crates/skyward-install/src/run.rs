@@ -38,6 +38,7 @@ use std::time::{Duration, Instant};
 pub type Detach = Box<dyn FnOnce() -> Result<()> + Send>;
 
 const METADATA: &str = "/metadata";
+const DATA: &str = "/data";
 
 /// Where a zip's install script is put to run, as Android's recovery puts
 /// it, and the version of the interface the script is told it runs under.
@@ -149,6 +150,11 @@ impl Installer {
         let _ = self.commands.send(Command::Install);
     }
 
+    /// Install the system the installer holds with a root of `size` bytes.
+    pub fn install_system(&self, size: u64) {
+        let _ = self.commands.send(Command::InstallSystem { size });
+    }
+
     /// Tell rescue whether the user data the computer asked to be erased
     /// was.
     pub fn wiped(&self, erased: bool) {
@@ -258,7 +264,7 @@ enum Done {
 fn receive(ctx: &mut Context, mut conn: Connection<Endpoints>, offer: Offer, rescue: bool) -> (Outcome, Connection<Endpoints>) {
     let _ = kmsg(&format!("install: {} bytes offered in blocks of {}", offer.size, offer.block_size));
     let ending = |outcome: &Outcome| match (rescue, outcome) {
-        (true, Outcome::Installed { .. } | Outcome::Flashed { .. } | Outcome::Ran { .. }) | (false, _) => adb::DONE,
+        (true, Outcome::Installed { .. } | Outcome::Flashed { .. } | Outcome::Ran { .. } | Outcome::SystemInstalled { .. }) | (false, _) => adb::DONE,
         (true, _) => adb::FAILED,
     };
     if let Err(e) = offer.check() {
@@ -453,8 +459,69 @@ fn install<S>(ctx: &mut Context, mount: &Mount<S>, size: u64) -> Result<Done> {
         Package::Image(_) if matches!(ctx.origin, Origin::Asked { .. }) => Ok(Done::Decided(Outcome::Refused(Refusal::Image))),
         Package::Image(kind) => flash_image(ctx, kind, size),
         Package::Script => run_script(ctx, size),
+        Package::System(contents) => install_system(ctx, &contents),
         Package::Unknown => Ok(Done::Decided(Outcome::Refused(Refusal::Unknown))),
     }
+}
+
+/// Install the system in the package beside the installed one, once the
+/// user has picked how much room its root takes: its root goes into the
+/// data partition, which has to be open, and nothing of the installed
+/// system is written.
+fn install_system(ctx: &Context, contents: &skyward_systems::package::Contents) -> Result<Done> {
+    let refused = |r| Ok(Done::Decided(Outcome::Refused(r)));
+    if matches!(ctx.origin, Origin::Asked { .. }) {
+        return refused(Refusal::SystemAsked);
+    }
+    if let Some(refusal) = short_of_charge(ctx.origin)? {
+        return refused(refusal);
+    }
+    let state = skyward_vab::snapshot_state()?;
+    if state != SnapshotState::None {
+        return refused(Refusal::Pending(state));
+    }
+    if !skyward_block::mount::is_mount_point(Path::new(DATA))? {
+        return refused(Refusal::DataClosed);
+    }
+    if let Some(other) = skyward_systems::install::state()?.system {
+        return refused(Refusal::SystemInstalled(other.name));
+    }
+    let slot = skyward_vab::current_slot()?.context("not an A/B phone")?;
+    let room = skyward_systems::install::room_now(slot)?;
+    let sizes = skyward_systems::install::sizes(contents.least(), room);
+    if sizes.is_empty() {
+        return refused(Refusal::NoRoom { least: contents.least(), room });
+    }
+    // The screen may have left the page before it heard the package came.
+    if ctx.shared.cancelled() {
+        return Ok(Done::Decided(Outcome::Cancelled));
+    }
+    let name = contents.manifest.name.clone();
+    ctx.send(Event::System { name: name.clone(), version: contents.manifest.version.clone(), sizes: sizes.clone() });
+    let size = match ctx.commands.recv() {
+        Ok(Command::InstallSystem { size }) => size,
+        Ok(Command::Cancel) | Err(_) => return Ok(Done::Decided(Outcome::Cancelled)),
+        Ok(other) => bail!("a system waiting for its size was told {other:?}"),
+    };
+    ensure!(sizes.contains(&size), "{size} bytes is not among the sizes offered, {sizes:?}");
+    let program = Path::new("/").join(skyward_config::ramdisk::SYSTEM_INIT);
+    let program = fs::read(&program).with_context(|| format!("read {}", program.display()))?;
+    let mut zip = zip::ZipArchive::new(BufReader::with_capacity(1 << 20, File::open(fuse::PACKAGE).context("open the package")?)).context("read the package")?;
+    let mut told: Option<Instant> = None;
+    skyward_systems::install::install(&mut zip, contents, size, &program, slot, &mut |step| {
+        let stage = match step {
+            skyward_systems::install::Step::Allocating { done, total } => Stage::Allocating { done, total },
+            skyward_systems::install::Step::Writing { done, total } => Stage::Root { done, total },
+            skyward_systems::install::Step::Finishing => Stage::Storing,
+        };
+        let last = matches!(stage, Stage::Storing) || matches!(stage, Stage::Allocating { done, total } | Stage::Root { done, total } if done == total);
+        if last || told.is_none_or(|t| t.elapsed() >= PROGRESS_EVERY) {
+            ctx.send(Event::Progress(stage));
+            told = Some(Instant::now());
+        }
+    })?;
+    let _ = kmsg(&format!("install: {name} installed beside the installed system, with {size} bytes for its root"));
+    Ok(Done::Decided(Outcome::SystemInstalled { name }))
 }
 
 /// Whether the install waits for the user to agree before it writes. A
@@ -493,6 +560,7 @@ fn describe(package: &Package) -> String {
         Package::Update(u) => format!("an update to {}", u.version().unwrap_or("an unnamed version")),
         Package::Image(kind) => format!("an image of {kind:?}"),
         Package::Script => "a zip with an install script".into(),
+        Package::System(c) => format!("the system {} {}, to install beside the installed one", c.manifest.name, c.manifest.version),
         Package::Unknown => "a file of no known kind".into(),
     }
 }

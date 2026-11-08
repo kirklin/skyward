@@ -266,6 +266,41 @@ pub fn snapshot_slot_note(l: Lang, s: &SnapshotState) -> Option<&'static str> {
     Some(l.pick(text))
 }
 
+/// What the recovery says as it starts, of a switch between the systems
+/// that a restart or a loss of power cut off: finished, or why not.
+pub fn switch_resumed(l: Lang) -> &'static str {
+    l.pick(["已完成上次中断的系统切换", "已完成上次中斷的系統切換", "The switch of systems cut off last time is finished"])
+}
+
+pub fn switch_unfinished(l: Lang, why: &str) -> String {
+    tr!(l, "上次中断的系统切换未能完成：{why}", "上次中斷的系統切換未能完成：{why}", "The switch of systems cut off last time couldn't be finished: {why}")
+}
+
+/// Why the second system does not start yet while an update is in flight,
+/// which the main system has to start once more to merge; `None` when none
+/// is.
+pub fn snapshot_system_note(l: Lang, s: &SnapshotState) -> Option<&'static str> {
+    let text = match s {
+        SnapshotState::None => return None,
+        SnapshotState::Snapshotted | SnapshotState::Merging => [
+            "系统更新合并完成前，暂不切换到第二系统。请先启动主系统，等待更新合并完成。",
+            "系統更新合併完成前，暫不切換到第二系統。請先啟動主系統，等待更新合併完成。",
+            "The second system doesn't start until the system update merges. Start the main system first, and let the update merge.",
+        ],
+        SnapshotState::MergeFailed => [
+            "在主系统中处理完成更新前，暂不切换到第二系统。",
+            "在主系統中處理完成更新前，暫不切換到第二系統。",
+            "The second system doesn't start until the main system deals with the update.",
+        ],
+        SnapshotState::Unknown => [
+            "读取到更新状态前，暂不切换到第二系统。",
+            "讀取到更新狀態前，暫不切換到第二系統。",
+            "The second system doesn't start until the update's status can be read.",
+        ],
+    };
+    Some(l.pick(text))
+}
+
 /// What an install script that writes to super does to an update in
 /// flight; `None` when none is known to be.
 pub fn snapshot_script_note(l: Lang, s: &SnapshotState) -> Option<&'static str> {
@@ -1062,6 +1097,35 @@ pub fn refusal(l: Lang, r: &Refusal, codename: &str, source: Source, zone: usize
         Refusal::Panicked => l
             .pick(["暂无法安装该更新，请重启到系统后重试。", "暫時無法安裝這個更新，請重新啟動到系統後重試。", "This update can't be installed now. Reboot to the system, then try again."])
             .into(),
+        Refusal::SystemAsked => l
+            .pick([
+                "系统请求安装的是另一个系统，只能在本机上手动安装。",
+                "系統要求安裝的是另一個系統，只能在本機上手動安裝。",
+                "The system asked for another system to be installed, which only goes in by hand on this phone.",
+            ])
+            .into(),
+        Refusal::DataClosed => l
+            .pick([
+                "另一个系统将安装在 data 分区中，请先完成「解密」。",
+                "另一個系統將安裝在 data 分割區中，請先完成「解密」。",
+                "The other system goes into the data partition. Decrypt it first.",
+            ])
+            .into(),
+        Refusal::SystemInstalled(name) => tr!(
+            l,
+            "已安装 {name}，请先在「双系统」中删除后重试。",
+            "已安裝 {name}，請先在「雙系統」中刪除後重試。",
+            "{name} is installed already. Remove it in Dual boot, then try again."
+        ),
+        Refusal::NoRoom { least, room } => {
+            let (least, room) = (bytes(*least), bytes(*room));
+            tr!(
+                l,
+                "该系统至少需要 {least}，data 分区仅剩 {room} 可用。",
+                "這個系統至少需要 {least}，data 分割區僅剩 {room} 可用。",
+                "This system needs at least {least}, and the data partition has {room} to spare."
+            )
+        }
         Refusal::NotBrick(_) | Refusal::NoSerial => unreachable!("only a request to erase partitions is refused as {r:?}"),
     }
 }

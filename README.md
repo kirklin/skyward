@@ -27,6 +27,7 @@ Skyward is a recovery written in Rust, from scratch.
 - WLAN
 - MTP file transfer, adb and fastbootd
 - Reboot to system, recovery, fastboot, bootloader or EDL, and switch slots
+- Dual boot: a second system beside the installed one, its files in the data partition, picked from two cards on the home page's Dual boot and switched to with a swipe
 - Light and dark themes; Simplified Chinese, Traditional Chinese and English
 
 ## Supported devices
@@ -89,6 +90,44 @@ from the installed system and come back with it.
 
 adb in Skyward is a root shell that needs no authorization on the phone: anyone
 with the phone and a cable can reach its storage while it is in recovery.
+
+## Dual boot
+
+Skyward installs a second system beside the one in the phone's own partitions,
+whether that is HyperOS or a custom ROM, and switches between them from **Dual boot**
+on its home page. The second system's root is a file in the data partition that the
+filesystem may neither move nor delete, read and written through the partition
+itself; the boot images of both systems are kept in another such file. A switch
+writes only the boot and init_boot partitions of the slot that starts next, and
+keeps each step on /metadata first, so a switch cut off by a loss of power is
+finished when Skyward next starts. vendor_boot, dtbo, recovery, vbmeta, the firmware
+and super stay as they are, and the second system starts with the installed
+system's vendor_boot and dtbo.
+
+The second system waits while a system update is still to be merged.
+
+A second system installs from a zip on the Install page, as any other package does:
+
+| File | What it holds |
+| --- | --- |
+| `system.toml` | `id`, `name`, `version` and `filesystem`; `init`, the program the root starts with, `/sbin/init` unless given; `minimum`, the least room the root takes, in bytes |
+| `boot.img` | The kernel the bootloader starts |
+| `rootfs.img` | The root filesystem's image, of the `filesystem` named |
+| `init_boot.img` | Only for a system with a first ramdisk of its own |
+
+A system without an init_boot image of its own starts from one Skyward makes. Its
+program loads the installed system's first-stage kernel modules the way that
+system's first stage loads them, with their soft dependencies and the settings the
+kernel command line gives them, finds the root in the data partition, mounts it and
+starts `init` there. If anything stops it, it says why in the kernel's log and stays
+where it stopped. A system with a first ramdisk of its own finds Skyward's program
+at `/skyward/map`, which lays the root out as a block device and prints its node.
+Each switch to the second system writes its init_boot image with the program of the
+Skyward that switches, so an updated Skyward starts it with the new program.
+
+A running system switches by writing `boot-recovery` with
+`--switch_system=installed`, or `--switch_system=` and the second system's `id`, to
+misc, and restarting into recovery.
 
 ## Building
 

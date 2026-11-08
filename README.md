@@ -22,6 +22,7 @@ Skyward is a recovery written in Rust, from scratch.
 - Decrypt the data partition
 - Install zips, system update packages and partition images, from internal storage, a USB drive or adb sideload
 - `7za` and `zstd` for install scripts, which ROMs with a super image compressed by zstd use to flash it, and an `unzip` whose `-p` streams the image as it reads it
+- `avbctl` and `resetprop` for install scripts, to turn off verified boot's checks and to read and set properties
 - Online system updates
 - Skyward's own updates, from its newest release on GitHub
 - Backup and restore
@@ -77,8 +78,8 @@ phone's model and codename, such as Xiaomi 17 Ultra (nezha). Check it against
 the slot the phone runs from, with the phone in fastboot mode:
 
 ```sh
-unzip skyward-v0.1.5-nezha-OS4.0.4.0.XPACNXM.zip
-fastboot flash recovery skyward-v0.1.5-nezha-OS4.0.4.0.XPACNXM.img
+unzip skyward-v0.1.6-nezha-OS4.0.4.0.XPACNXM.zip
+fastboot flash recovery skyward-v0.1.6-nezha-OS4.0.4.0.XPACNXM.img
 fastboot reboot recovery
 ```
 

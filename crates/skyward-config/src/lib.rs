@@ -18,11 +18,12 @@ pub mod ramdisk {
     /// The recovery service binary init starts.
     pub const RECOVERY: &str = "system/bin/recovery";
     /// The commands install scripts written for other recoveries run that
-    /// Skyward answers itself: 7za and zstd, which a stock recovery does not
-    /// carry, and unzip, whose stock version holds all that `-p` takes out in
-    /// memory. Each is a link to the recovery service binary beside it, which
-    /// runs the command it is started as.
-    pub const COMMANDS: [&str; 3] = ["system/bin/7za", "system/bin/unzip", "system/bin/zstd"];
+    /// Skyward answers itself: 7za, avbctl, resetprop and zstd, which a
+    /// stock recovery does not carry, and unzip, whose stock version holds
+    /// all that `-p` takes out in memory. Each is a link to the recovery
+    /// service binary beside it, which runs the command it is started as.
+    pub const COMMANDS: [&str; 5] =
+        ["system/bin/7za", "system/bin/avbctl", "system/bin/resetprop", "system/bin/unzip", "system/bin/zstd"];
     /// The first property file init loads in recovery mode.
     pub const PROP_DEFAULT: &str = "prop.default";
     /// The scheduling profiles libprocessgroup reads.

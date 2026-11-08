@@ -17,6 +17,7 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 - 解密 data 分区
 - 安装刷机包、系统更新包和分区镜像，支持内部存储、U 盘和 adb sideload
 - 刷机包的安装脚本可以使用 `7za` 和 `zstd`，支持刷入 super 镜像使用 zstd 压缩的第三方 ROM；`unzip -p` 边解压边输出镜像
+- 刷机包的安装脚本可以使用 `avbctl` 关闭验证启动的校验，使用 `resetprop` 读取和设置属性
 - 在线系统更新
 - 从 GitHub 上的最新版本在线更新 Skyward
 - 备份和恢复
@@ -70,8 +71,8 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 Skyward 需要已解锁的 bootloader。从 [Releases](https://github.com/kirklin/skyward/releases) 下载对应机型的 zip，每个文件都标有机型和代号，例如 Xiaomi 17 Ultra (nezha)。使用 `SHA256SUMS` 核对并解压之后，在手机处于 fastboot 模式的时候，把其中的镜像刷入当前运行槽位的 recovery 分区：
 
 ```sh
-unzip skyward-v0.1.5-nezha-OS4.0.4.0.XPACNXM.zip
-fastboot flash recovery skyward-v0.1.5-nezha-OS4.0.4.0.XPACNXM.img
+unzip skyward-v0.1.6-nezha-OS4.0.4.0.XPACNXM.zip
+fastboot flash recovery skyward-v0.1.6-nezha-OS4.0.4.0.XPACNXM.img
 fastboot reboot recovery
 ```
 

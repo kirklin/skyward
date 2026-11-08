@@ -486,7 +486,10 @@ pub mod kms {
         flipping: bool,
         /// The planes showing the buffer, one per layer mixer, with their
         /// FB_ID properties.
-        planes: Vec<(plane::Handle, property::Handle)>,
+        planes: Vec<(plane::Handle, property::Handle, property::Handle)>,
+        /// Video panels need a complete pipeline restore after power-off.
+        restore: Option<atomic::AtomicModeReq>,
+        conn_crtc: property::Handle,
         /// The CRTC driving the panel, with its ACTIVE and MODE_ID
         /// properties.
         crtc: drm::control::crtc::Handle,
@@ -544,6 +547,7 @@ pub mod kms {
                 .max_by_key(|m| m.vrefresh())
                 .expect("the preferred mode itself has the preferred size");
             let (w, h) = (mode.size().0 as u32, mode.size().1 as u32);
+            let video = mode.name().to_string_lossy().ends_with("vid");
 
             // The CRTC already driving the panel, or the first one an
             // encoder of this connector can drive.
@@ -644,8 +648,11 @@ pub mod kms {
             }
             let crtc_props = Props::read(&card, crtc)?;
             let blob = card.create_property_blob(&mode).context("create mode blob")?;
+            // Take over the boot splash at its preferred timing before switching.
+            // Qualcomm rejects DMS on the first frame of a video splash handoff.
             let first = card.create_property_blob(preferred).context("create mode blob")?;
-            req.add_property(conn.handle(), conn_props.handle("CRTC_ID")?, property::Value::CRTC(Some(crtc)));
+            let conn_crtc = conn_props.handle("CRTC_ID")?;
+            req.add_property(conn.handle(), conn_crtc, property::Value::CRTC(Some(crtc)));
             // The mode is DSC-compressed: select its DSC variant, as Android's
             // compositor does.
             if layout.dsc {
@@ -694,8 +701,9 @@ pub mod kms {
             for (i, (plane, _, props, _)) in candidates.iter().enumerate() {
                 let x = strip * i as u32;
                 let fb_prop = props.handle("FB_ID")?;
+                let crtc_prop = props.handle("CRTC_ID")?;
                 req.add_property(*plane, fb_prop, property::Value::Framebuffer(Some(bufs[0].fb)));
-                req.add_property(*plane, props.handle("CRTC_ID")?, property::Value::CRTC(Some(crtc)));
+                req.add_property(*plane, crtc_prop, property::Value::CRTC(Some(crtc)));
                 req.add_property(*plane, props.handle("SRC_X")?, property::Value::UnsignedRange((x as u64) << 16));
                 req.add_property(*plane, props.handle("SRC_Y")?, property::Value::UnsignedRange(0));
                 req.add_property(*plane, props.handle("SRC_W")?, property::Value::UnsignedRange((strip as u64) << 16));
@@ -704,10 +712,15 @@ pub mod kms {
                 req.add_property(*plane, props.handle("CRTC_Y")?, property::Value::SignedRange(0));
                 req.add_property(*plane, props.handle("CRTC_W")?, property::Value::UnsignedRange(strip as u64));
                 req.add_property(*plane, props.handle("CRTC_H")?, property::Value::UnsignedRange(h as u64));
-                planes.push((*plane, fb_prop));
+                planes.push((*plane, fb_prop, crtc_prop));
             }
             // The panel comes up in its preferred mode, then switches to the
             // fastest, as `to_fastest` says why.
+            let restore = video.then(|| {
+                let mut restore = req.clone();
+                restore.add_property(crtc, mode_id, blob);
+                restore
+            });
             commit(&card, req, AtomicCommitFlags::ALLOW_MODESET).context("set the panel mode")?;
             let fastest = (mode.vrefresh() != preferred.vrefresh()).then_some(blob);
 
@@ -723,17 +736,19 @@ pub mod kms {
                 spr.as_ref().map(|(_, _, name)| format!(", sub-pixel rendering through {name}")).unwrap_or_default()
             );
             let spr = spr.map(|(id, setup, _)| (id, setup));
-            let lp = match conn_props.get("LP") {
+            let lp = if video { None } else { match conn_props.get("LP") {
                 Ok((id, _)) => Some((id, enum_value(&card, id, "ON")?, enum_value(&card, id, "LP2")?)),
                 Err(_) => None,
-            };
+            } };
             let conn = conn.handle();
-            let s = KmsSurface {
+            let mut s = KmsSurface {
                 card,
                 bufs,
                 back: 1,
                 flipping: false,
                 planes,
+                restore,
+                conn_crtc,
                 crtc,
                 active,
                 mode_id,
@@ -750,6 +765,12 @@ pub mod kms {
                 summary,
             };
             s.to_fastest()?;
+            if video {
+                // Once the splash is handed over, stay at the fastest rate on
+                // every wake. Switching rate and ACTIVE together is invalid.
+                s.preferred = blob;
+                s.fastest = None;
+            }
             Ok(s)
         }
 
@@ -796,6 +817,16 @@ pub mod kms {
             self.settle()?;
             let mut req = atomic::AtomicModeReq::new();
             req.add_property(self.crtc, self.active, property::Value::Boolean(false));
+            if self.restore.is_some() {
+                // Leave no stale video timing or plane attachment to be treated
+                // as a seamless refresh change on the next enable.
+                req.add_property(self.crtc, self.mode_id, property::Value::Blob(0));
+                req.add_property(self.conn, self.conn_crtc, property::Value::CRTC(None));
+                for &(plane, fb, crtc) in &self.planes {
+                    req.add_property(plane, fb, property::Value::Framebuffer(None));
+                    req.add_property(plane, crtc, property::Value::CRTC(None));
+                }
+            }
             // Qualcomm's display driver sends no event for a commit that
             // turns its CRTC off, so this one is made to return once it is
             // done.
@@ -876,8 +907,10 @@ pub mod kms {
                     }
                 }
             }
-            let mut req = atomic::AtomicModeReq::new();
-            for &(plane, fb_prop) in &self.planes {
+            let mut req = if self.power == Power::Off {
+                self.restore.clone().unwrap_or_default()
+            } else { atomic::AtomicModeReq::new() };
+            for &(plane, fb_prop, _) in &self.planes {
                 req.add_property(plane, fb_prop, property::Value::Framebuffer(Some(buf.fb)));
             }
             let mut flags = AtomicCommitFlags::NONBLOCK | AtomicCommitFlags::PAGE_FLIP_EVENT;

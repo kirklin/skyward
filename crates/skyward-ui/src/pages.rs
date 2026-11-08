@@ -323,8 +323,16 @@ pub fn settings(cx: &Ctx) -> Frame {
         out.push(Hit { rect: r, action: Action::Open(Screen::ScreenOff) });
     }
     y = slider.bottom;
+    if s.tablet {
+        y = widgets::section(&mut c, t, f, y, l.pick(["屏幕方向", "螢幕方向", "Screen orientation"]));
+        let rotation = widgets::list(&mut c, t, f, y, &[
+            Row::new(l.pick(["自动旋转", "自動旋轉", "Auto-rotate"])).trail(Trail::Switch(s.auto_rotate)),
+        ]);
+        out.extend(hits(&rotation.rows, &[Action::Toggle(Switch::AutoRotate)]));
+        y = rotation.bottom;
+    }
     if s.supports_vibration {
-        y = widgets::section(&mut c, t, f, slider.bottom, l.pick(["振动", "震動", "Vibration"]));
+        y = widgets::section(&mut c, t, f, y, l.pick(["振动", "震動", "Vibration"]));
         let below = Row::new(l.pick(["触摸振动", "觸控震動", "Touch vibration"])).trail(Trail::Switch(s.vibrate));
         let vibration = widgets::slider_card(
             &mut c,

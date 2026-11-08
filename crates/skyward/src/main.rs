@@ -17,6 +17,8 @@ mod haptics;
 mod input;
 #[cfg(target_os = "android")]
 mod merge;
+#[cfg(any(target_os = "android", test))]
+mod orientation;
 #[cfg(target_os = "android")]
 mod partwork;
 #[cfg(target_os = "android")]

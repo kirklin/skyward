@@ -30,6 +30,11 @@ swap_xy = true
 flip_y = true
 ignored_devices = ["NVTCapacitivePen", "NVTCapacitivePenM80p", "NVTCapacitivePenP81c"]
 
+[orientation]
+backend = "ssc"
+swap_xy = true
+flip_x = true
+
 [modules]
 sources = ["vendor_boot", "vendor_dlkm", "vendor"]
 load = ["nt36532_touch"]
@@ -42,6 +47,17 @@ libraries = ["/odm/lib64", "/vendor/lib64", "/system/lib64"]
 user = "root"
 groups = ["root", "input", "system"]
 capabilities = ["SYS_NICE"]
+
+[[service]]
+path = "/vendor/bin/pd-mapper"
+mount_setup = "/skyward/sheng-sensors.sh"
+libraries = ["/system/lib64", "/vendor/lib64"]
+
+[[service]]
+path = "/vendor/bin/sscrpcd"
+args = ["sensorspd"]
+mount_setup = "/skyward/sheng-sensors.sh"
+libraries = ["/system/lib64", "/vendor/lib64"]
 
 [[service]]
 path = "/vendor/bin/qseecomd"

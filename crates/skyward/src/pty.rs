@@ -81,6 +81,14 @@ impl Shell {
         [self.master.as_raw_fd(), self.ended.as_raw_fd()]
     }
 
+    pub fn resize(&self, rows: u16, cols: u16) -> Result<()> {
+        let size = libc::winsize { ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0 };
+        if unsafe { libc::ioctl(self.master.as_raw_fd(), libc::TIOCSWINSZ as _, &size) } < 0 {
+            return Err(io::Error::last_os_error()).context("resize the pseudo-terminal");
+        }
+        Ok(())
+    }
+
     /// What the shell wrote since the last call. Once nothing holds the
     /// shell's side open, there is nothing more to read.
     pub fn read(&mut self) -> Result<Vec<u8>> {

@@ -61,6 +61,11 @@ impl Term {
         self.parser.screen()
     }
 
+    pub fn resize(&mut self, rows: u16, cols: u16) {
+        let (rows, cols) = (NonZeroU16::new(rows).expect("a screen has rows"), NonZeroU16::new(cols).expect("a screen has columns"));
+        self.parser.set_size(rows, cols);
+    }
+
     /// Take what the shell wrote; the view returns to the live screen.
     pub fn feed(&mut self, bytes: &[u8]) {
         self.parser.process(bytes);

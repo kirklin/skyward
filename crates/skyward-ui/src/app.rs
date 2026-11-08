@@ -541,6 +541,7 @@ pub enum Slider {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Switch {
     Vibrate,
+    AutoRotate,
     /// Offer internal storage to a computer over USB.
     FileTransfer,
     /// Compress a backup.
@@ -1552,6 +1553,9 @@ pub struct State {
     pub supports_vibration: bool,
     /// Use the tablet layout and offer tablet display preferences.
     pub tablet: bool,
+    /// Follow the orientation sensor; off keeps the current direction.
+    pub auto_rotate: bool,
+    pub rotation: crate::rotation::Rotation,
     /// How strongly the motor taps, from 0 at the slider's left end to 1
     /// at its right.
     pub vibration: f32,
@@ -1713,6 +1717,8 @@ impl Default for State {
             vibrate: true,
             supports_vibration: true,
             tablet: false,
+            auto_rotate: true,
+            rotation: crate::rotation::Rotation::Native,
             vibration: SLIDER_START,
             file_transfer: true,
             reboot: 0,
@@ -2625,6 +2631,7 @@ pub struct App {
     /// while other pages show.
     term: Option<Term>,
     display_on: bool,
+    touching: bool,
     /// When the screen was last touched or a key pressed; set on the first
     /// tick, so the time before the UI started does not count.
     active: Option<u64>,
@@ -2730,6 +2737,7 @@ impl App {
             glow: None,
             term: None,
             display_on: true,
+            touching: false,
             active: None,
             woke_at: None,
             bright: full_brightness(),
@@ -2809,6 +2817,26 @@ impl App {
         self.glow = glow;
         self.refresh();
         self.spare.clear();
+    }
+
+    /// Fastbootd always uses the panel's original direction and full width.
+    pub fn rotation(&self) -> crate::rotation::Rotation {
+        if self.state.tablet && self.screen() != Screen::Fastboot {
+            self.state.rotation
+        } else {
+            crate::rotation::Rotation::Native
+        }
+    }
+
+    /// A stable sensor reading may change direction while the panel is lit.
+    pub fn follow_rotation(&mut self, rotation: crate::rotation::Rotation) {
+        if self.rotation_enabled() && !self.touching {
+            self.state.rotation = rotation;
+        }
+    }
+
+    pub fn rotation_enabled(&self) -> bool {
+        self.state.tablet && self.state.auto_rotate && self.display_on && self.screen() != Screen::Fastboot
     }
 
     pub fn theme(&self) -> Theme {
@@ -3210,6 +3238,7 @@ impl App {
         self.darkening = self.panel(now);
         self.curtain.set(false, now);
         self.display_on = false;
+        self.touching = false;
         self.bright = full_brightness();
         match std::mem::replace(&mut self.drag, Drag::Idle) {
             Drag::Confirm { .. } => {
@@ -3364,6 +3393,13 @@ impl App {
     pub fn term_started(&mut self, rows: u16, cols: u16) {
         self.term = Some(Term::new(rows, cols));
         self.refresh();
+    }
+
+    pub fn term_resized(&mut self, rows: u16, cols: u16) {
+        if let Some(term) = &mut self.term {
+            term.resize(rows, cols);
+            self.refresh();
+        }
     }
 
     /// What the shell wrote.
@@ -5168,6 +5204,7 @@ impl App {
             Action::Toggle(switch) => {
                 let on = match switch {
                     Switch::Vibrate => &mut self.state.vibrate,
+                    Switch::AutoRotate => &mut self.state.auto_rotate,
                     Switch::FileTransfer => &mut self.state.file_transfer,
                     Switch::Compress => &mut self.state.compress,
                     Switch::Verify => &mut self.state.verify,
@@ -5963,6 +6000,11 @@ impl App {
     }
 
     pub fn touch(&mut self, ev: Touch, f: &Fonts, now: u64) -> Vec<Effect> {
+        match ev {
+            Touch::Down(..) => self.touching = true,
+            Touch::Up => self.touching = false,
+            Touch::Move(..) => {},
+        }
         if !self.display_on {
             return Vec::new();
         }
@@ -7149,6 +7191,37 @@ mod tests {
             app.resize(width, height);
             assert_eq!(app.w, width - width / 3);
         }
+    }
+
+    #[test]
+    fn rotation_waits_for_release_and_obeys_the_switch_and_fastboot() {
+        use crate::rotation::Rotation;
+        let cfg = skyward_config::DeviceConfig::parse(include_str!("../../../devices/sheng.toml")).unwrap();
+        let mut app = App::new(Screen::Home, 3048, 2032, 2.5);
+        app.configure_device(&cfg);
+        let f = fonts();
+        app.touch(Touch::Down(10.0,10.0), &f, 1000);
+        app.follow_rotation(Rotation::Right);
+        assert_eq!(app.rotation(), Rotation::Native);
+        app.touch(Touch::Up, &f, 1010);
+        app.follow_rotation(Rotation::Right);
+        assert_eq!(app.rotation(), Rotation::Right);
+        app.state.auto_rotate = false;
+        app.follow_rotation(Rotation::Left);
+        assert_eq!(app.rotation(), Rotation::Right, "off keeps the current direction");
+        app.state.auto_rotate = true;
+        app.sleep(2000);
+        assert!(!app.rotation_enabled());
+        app.follow_rotation(Rotation::Left);
+        assert_eq!(app.rotation(), Rotation::Right);
+        app.display_on = true;
+        app.stack.push((Screen::Fastboot, 0.0, Focus::Unset));
+        assert!(!app.rotation_enabled());
+        assert_eq!(app.rotation(), Rotation::Native);
+        app.follow_rotation(Rotation::Left);
+        assert_eq!(app.state.rotation, Rotation::Right);
+        app.stack.pop();
+        assert_eq!(app.rotation(), Rotation::Right);
     }
 
     #[test]

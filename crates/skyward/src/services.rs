@@ -218,15 +218,31 @@ fn run(s: &Service, who: &Credentials) -> Result<String> {
 /// tree, reading and writing nothing of the recovery's, finding its
 /// libraries where it names them, and as `who`.
 fn command(s: &Service, who: &Credentials) -> Command {
-    let mut cmd = Command::new(&s.path);
+    let mut cmd = if let Some(setup) = &s.mount_setup {
+        let mut cmd = Command::new("/system/bin/sh");
+        cmd.arg(setup).arg(&s.path);
+        cmd
+    } else {
+        Command::new(&s.path)
+    };
     cmd.args(&s.args).current_dir("/").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     if !s.libraries.is_empty() {
         cmd.env("LD_LIBRARY_PATH", s.libraries.join(":"));
     }
     let who = who.clone();
+    let private = s.mount_setup.is_some();
     // Only system calls run between the fork and the exec, on what was
     // worked out before it.
-    unsafe { cmd.pre_exec(move || who.take_on()) };
+    unsafe {
+        cmd.pre_exec(move || {
+            if private && (libc::unshare(libc::CLONE_NEWNS) != 0
+                    || libc::mount(std::ptr::null(), c"/".as_ptr(), std::ptr::null(),
+                        libc::MS_REC | libc::MS_PRIVATE, std::ptr::null()) != 0) {
+                return Err(io::Error::last_os_error());
+            }
+            who.take_on()
+        })
+    };
     cmd
 }
 

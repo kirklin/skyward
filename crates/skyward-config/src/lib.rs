@@ -45,6 +45,9 @@ pub struct DeviceConfig {
     pub modules: Modules,
     #[serde(default)]
     pub touch: Touch,
+    /// The orientation sensor and its axes relative to the native panel.
+    #[serde(default)]
+    pub orientation: Option<Orientation>,
     #[serde(default)]
     pub partitions: Partitions,
     /// Where the firmware the phone's drivers ask for is, on phones whose
@@ -133,6 +136,25 @@ pub struct Wlan {
 pub struct Write {
     pub path: String,
     pub value: String,
+}
+
+/// Qualcomm SSC acceleration, mapped to native screen axes (right, up).
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Orientation {
+    pub backend: OrientationBackend,
+    #[serde(default)]
+    pub swap_xy: bool,
+    #[serde(default)]
+    pub flip_x: bool,
+    #[serde(default)]
+    pub flip_y: bool,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OrientationBackend {
+    #[default]
+    Ssc,
 }
 
 /// The partition holding the firmware images of a phone's processors and
@@ -370,6 +392,10 @@ pub struct Partitions {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Service {
     pub path: String,
+    /// Run this shell setup in a private mount namespace, then exec `path`.
+    /// The script receives the program and its arguments as "$@".
+    #[serde(default)]
+    pub mount_setup: Option<String>,
     /// What the program is given after its own path, as init gives a
     /// service the words after its path.
     #[serde(default)]
@@ -565,6 +591,11 @@ impl DeviceConfig {
             );
         }
         for s in &cfg.services {
+            if let Some(setup) = &s.mount_setup {
+                ensure!(Path::new(setup).is_absolute(), "[[service]] mount_setup must be an absolute path");
+                ensure!(s.user.as_deref().is_none_or(|u| u == "root") && s.capabilities.is_empty(),
+                    "[[service]] mount_setup needs root with mount privileges");
+            }
             ensure!(s.user.is_none() || !s.groups.is_empty(), "[[service]] {}: a program given a user is given its group too", s.path);
             for name in s.user.iter().chain(&s.groups) {
                 ensure!(!name.is_empty() && !name.contains(char::is_whitespace), "[[service]] {}: {name:?} is not an account's name", s.path);
@@ -676,6 +707,20 @@ mod tests {
         assert!(cfg.modules.load.is_empty());
         assert_eq!((cfg.firmware, cfg.wlan, cfg.update), (None, None, None), "a phone may have none of them");
         assert_eq!(cfg.logd, None, "a recovery's own logd usually has all it needs");
+    }
+
+    #[test]
+    fn orientation_is_optional_and_service_mount_setup_keeps_root_privileges() {
+        let base = "[device]\ncodename = 'x'\n";
+        assert!(DeviceConfig::parse(base).unwrap().orientation.is_none());
+        let configured = DeviceConfig::parse(&format!("{base}[orientation]\nbackend = 'ssc'\nswap_xy = true\nflip_x = true\n")).unwrap();
+        let orientation = configured.orientation.unwrap();
+        assert!(orientation.swap_xy && orientation.flip_x && !orientation.flip_y);
+        assert!(DeviceConfig::parse(&format!("{base}[orientation]\nbackend = 'unknown'\n")).is_err());
+        let service = format!("{base}[[service]]\npath='/vendor/bin/sscrpcd'\nmount_setup='/skyward/sensors.sh'\n");
+        assert!(DeviceConfig::parse(&service).is_ok());
+        assert!(DeviceConfig::parse(&format!("{service}user='system'\ngroups=['system']\n")).is_err());
+        assert!(DeviceConfig::parse(&service.replace("/skyward/sensors.sh", "sensors.sh")).is_err());
     }
 
     #[test]

@@ -4,6 +4,7 @@ use crate::filework;
 use crate::haptics::Haptics;
 use crate::input::{monotonic_ms, Event, Inputs};
 use crate::merge;
+use crate::orientation::Sensor;
 use crate::partwork;
 use crate::pty;
 use crate::readings::{Reading, Readings};
@@ -39,6 +40,7 @@ use skyward_ui::app::{
     INSTALL_UNFINISHED, USB_DRIVE,
 };
 use skyward_ui::settings::Keeper;
+use skyward_ui::rotation::Rotation;
 use skyward_ui::surface::kms::KmsSurface;
 use skyward_ui::{Canvas, Fonts, Lang, Surface};
 use skyward_vab::{Merge, Standing};
@@ -1060,6 +1062,16 @@ fn wait(fds: &[i32], timeout_ms: i32) -> Result<()> {
     Ok(())
 }
 
+fn present(surface: &mut KmsSurface, screen: &Canvas, rotation: Rotation, native: &mut Option<Canvas>) -> Result<()> {
+    if rotation == Rotation::Native {
+        return surface.present(screen);
+    }
+    let (w, h) = surface.size();
+    let out = native.get_or_insert_with(|| Canvas::new(w, h));
+    rotation.paint(screen, out);
+    surface.present(out)
+}
+
 /// Run the pages. What `request`, read from misc, asks for decides the
 /// first of them; asking for nothing, they start at `start`.
 pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, start: Screen, dump: Option<&Path>) -> Result<()> {
@@ -1127,7 +1139,12 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     // after each change; why they cannot be read is the page's to say.
     let mounts = || read_mounts(&cfg.services).map_err(|e| format!("{e:#}"));
 
-    let mut screen = Canvas::new(w, h);
+    let mut rotation = app.rotation();
+    let (logical_w, logical_h) = rotation.size(w, h);
+    app.resize(logical_w, logical_h);
+    let mut screen = Canvas::new(logical_w, logical_h);
+    let mut native = None;
+    let mut orientation = cfg.orientation.as_ref().filter(|_| cfg.device.tablet).map(Sensor::new);
     // A page sliding over another draws on three screens' worth of canvas
     // besides the panel's: made ready now, the first slide finds them so.
     Canvas::keep_ready(w, h, 3);
@@ -1324,6 +1341,22 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     let mut first_touch = true;
     loop {
         let now = monotonic_ms();
+        if let Some(sensor) = &mut orientation {
+            if let Some(direction) = sensor.read(app.rotation_enabled(), now) {
+                app.follow_rotation(direction);
+            }
+        }
+        if app.rotation() != rotation {
+            rotation = app.rotation();
+            let (logical_w, logical_h) = rotation.size(w, h);
+            app.resize(logical_w, logical_h);
+            screen = Canvas::new(logical_w, logical_h);
+            let (rows, cols) = app.term_size(&fonts);
+            app.term_resized(rows, cols);
+            if let Some(shell) = &mut shell {
+                shell.resize(rows, cols)?;
+            }
+        }
         if leave_at.is_some_and(|at| now >= at) {
             leave_at = None;
             power(leave)?;
@@ -1396,7 +1429,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
             if app.take_dirty() || !surface.is_on() {
                 let t0 = Instant::now();
                 app.compose(&mut screen, &fonts, &info, &shown_clock, now);
-                surface.present(&screen)?;
+                present(&mut surface, &screen, rotation, &mut native)?;
                 if first_frame || (ui_started.elapsed() < Duration::from_secs(15) && t0.elapsed() >= Duration::from_millis(250)) {
                     skyward_sys::kmsg(&format!("UI frame {:?}: {} ms, {} ms since UI start, first={first_frame}",
                         app.screen(), t0.elapsed().as_millis(), ui_started.elapsed().as_millis()))?;
@@ -1414,7 +1447,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
             // to 0 and the display off, so an OLED that floors the backlight
             // above zero rather than cutting it shows nothing as it goes off.
             screen.data.fill(0);
-            surface.present(&screen)?;
+            present(&mut surface, &screen, rotation, &mut native)?;
             surface.settle()?;
             blanked = true;
         }
@@ -1531,6 +1564,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
             fds.push(u.fd());
         }
         fds.push(readings.fd());
+        if let Some(fd) = orientation.as_ref().and_then(Sensor::fd) { fds.push(fd); }
         wait(&fds, timeout)?;
         let now = monotonic_ms();
         for slept in sleeper.slept() {
@@ -2026,7 +2060,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                             ui_started.elapsed().as_millis(), monotonic_ms().saturating_sub(at)))?;
                         first_touch = false;
                     }
-                    app.touch(t, &fonts, at)
+                    app.touch(rotation.touch(t, w, h), &fonts, at)
                 }
                 Incoming::Input(Event::Key(k, true)) => app.key(k, now),
                 Incoming::Input(Event::Key(k, false)) => app.key_up(k, now),

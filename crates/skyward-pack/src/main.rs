@@ -67,6 +67,15 @@ enum Cmd {
         /// The monospaced typeface's licence, which goes with it.
         #[arg(long)]
         mono_license: PathBuf,
+        /// A folder whose whole tree is added to the ramdisk, each file at
+        /// the place its name gives under the ramdisk's own root, and a
+        /// file the ramdisk already holds replaced by it. This is for what
+        /// the stock ramdisk lacks and one device's own programs need: the
+        /// recovery's linker searches nothing but its own system folder, so
+        /// a library the vendor partition's programs ask for has to be put
+        /// there, and no device description can say that by itself.
+        #[arg(long)]
+        extra: Option<PathBuf>,
         #[arg(long)]
         out: PathBuf,
     },
@@ -105,7 +114,7 @@ fn main() -> Result<()> {
             img.kernel = BootImage::read(&kernel)?.kernel;
             write(&out, &img, &img.to_bytes()?)
         }
-        Cmd::Recovery { stock, binary, system_init, config, font, mono, mono_license, out } => {
+        Cmd::Recovery { stock, binary, system_init, config, font, mono, mono_license, extra, out } => {
             let size = partition_size(&stock)?;
             let mut img = BootImage::read(&stock)?;
             let mut rd = Ramdisk::decode(&img.ramdisk)?;
@@ -135,6 +144,9 @@ fn main() -> Result<()> {
                 rd.add(paths::TASK_PROFILES, 0o644, TASK_PROFILES.to_vec())?;
             }
             rd.add(paths::MTP_RC, 0o644, MTP_RC.to_vec())?;
+            if let Some(root) = &extra {
+                add_tree(&mut rd, root, root)?;
+            }
             // On an unlocked device adbd keeps root when ro.secure is 0 and
             // lets any computer in without authorization when ro.adb.secure is
             // 0; init lets a later line of a property file override an earlier
@@ -191,6 +203,52 @@ fn take_stock_recovery(stock: &skyward_config::Stock, out: &Path) -> Result<()> 
     ensure!(sum == stock.recovery, "the {RECOVERY} partition in {} has the SHA-256 {sum}, where the configuration names {}", stock.package, stock.recovery);
     std::fs::rename(&image.path, out).with_context(|| format!("move {} to {}", image.path.display(), out.display()))?;
     println!("wrote {} ({} bytes), its SHA-256 the one the configuration names", out.display(), image.size);
+    Ok(())
+}
+
+/// Add every file under `dir` to the ramdisk, at the path the file's name
+/// gives from `root`. Directories are walked in order, so that the same tree
+/// gives the same archive every time. A file the ramdisk already holds is
+/// replaced: the folder is the one that knows best what a device needs.
+fn add_tree(rd: &mut Ramdisk, root: &Path, dir: &Path) -> Result<()> {
+    let mut entries: Vec<_> = std::fs::read_dir(dir)
+        .with_context(|| format!("read {}", dir.display()))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .with_context(|| format!("read {}", dir.display()))?;
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
+        let path = entry.path();
+        let meta = std::fs::symlink_metadata(&path).with_context(|| format!("stat {}", path.display()))?;
+        if meta.is_dir() {
+            add_tree(rd, root, &path)?;
+            continue;
+        }
+        let name = path.strip_prefix(root).with_context(|| format!("{} is not under {}", path.display(), root.display()))?;
+        let name = name.to_string_lossy().replace('\\', "/");
+        // A link goes in as the link it is, so that what follows it finds
+        // what the phone's own partition would give it.
+        if meta.file_type().is_symlink() {
+            let target = std::fs::read_link(&path).with_context(|| format!("read link {}", path.display()))?;
+            rd.link(&name, &target.to_string_lossy().replace('\\', "/"))?;
+            continue;
+        }
+        let mode = {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                meta.permissions().mode() & 0o7777
+            }
+            #[cfg(not(unix))]
+            {
+                // A host that keeps no Unix mode still has to part a program
+                // from a plain file, or a program arrives that cannot be
+                // started at all. Under bin a file is a program.
+                if name.starts_with("system/bin/") || name.contains("/bin/") { 0o755 } else { 0o644 }
+            }
+        };
+        let data = std::fs::read(&path).with_context(|| format!("read {}", path.display()))?;
+        rd.put(&name, mode as u32, data)?;
+    }
     Ok(())
 }
 

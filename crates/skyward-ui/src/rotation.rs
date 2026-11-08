@@ -15,6 +15,14 @@ pub enum Rotation {
 }
 
 impl Rotation {
+    fn turns(self) -> i32 {
+        match self { Self::Native => 0, Self::Right => 1, Self::Inverted => 2, Self::Left => 3 }
+    }
+
+    fn angle_to(self, next: Self) -> f32 {
+        let turns = (next.turns() - self.turns() + 2).rem_euclid(4) - 2;
+        turns as f32 * std::f32::consts::FRAC_PI_2
+    }
     pub fn size(self, width: u32, height: u32) -> (u32, u32) {
         match self {
             Self::Native | Self::Inverted => (width, height),
@@ -110,6 +118,146 @@ impl Gravity {
     }
 }
 
+/// A rotating crossfade of the old and reflowed pages, in native panel space.
+/// Motion snapshots are bounded to 1024 pixels on their long edge. The final
+/// frame is the original full-resolution canvas, without an extra copy at rest.
+pub struct Turn {
+    original: Canvas,
+    before: Canvas,
+    after: Canvas,
+    frame: Canvas,
+    angle: f32,
+    start: u64,
+    columns: Vec<(usize, u32)>,
+    rows: Vec<(usize, u32)>,
+    upper: Vec<[u8; 4]>,
+    lower: Vec<[u8; 4]>,
+}
+
+impl Turn {
+    pub const MS: u64 = 420;
+
+    /// Cubic-bezier (0.4, 0, 0.2, 1): a short acceleration and a long,
+    /// gentle stop. Solve the time coordinate before reading the angle.
+    fn progress(t: f32) -> f32 {
+        if t <= 0.0 || t >= 1.0 { return t.clamp(0.0, 1.0); }
+        let (mut low, mut high) = (0.0, 1.0);
+        for _ in 0..12 {
+            let s = (low + high) * 0.5;
+            let x = 3.0*(1.0-s)*(1.0-s)*s*0.4 + 3.0*(1.0-s)*s*s*0.2 + s*s*s;
+            if x < t { low = s; } else { high = s; }
+        }
+        let s = (low + high) * 0.5;
+        s*s*(3.0-2.0*s)
+    }
+
+    pub fn new(before: &Canvas, after: &Canvas, from: Rotation, to: Rotation, now: u64) -> Self {
+        assert_eq!((before.w, before.h), (after.w, after.h));
+        let scale = before.w.max(before.h).div_ceil(1024).max(1);
+        let small = |source: &Canvas| {
+            let (w, h) = (source.w.div_ceil(scale), source.h.div_ceil(scale));
+            let mut out = Canvas::new(w, h);
+            for y in 0..h {
+                for x in 0..w {
+                    let i = ((y * w + x)*4) as usize;
+                    let j = (((y*scale).min(source.h-1)*source.w + (x*scale).min(source.w-1))*4) as usize;
+                    out.data[i..i+4].copy_from_slice(&source.data[j..j+4]);
+                }
+            }
+            out
+        };
+        let original = before.clone();
+        let samples = |size: u32, small: u32| (0..size).map(|p| {
+            let at = ((p as f32 + 0.5)/scale as f32 - 0.5).clamp(0.0, (small-1) as f32);
+            (at.floor() as usize, ((at-at.floor())*256.0).round() as u32)
+        }).collect();
+        let before = small(before);
+        let after = small(after);
+        let frame = Canvas::new(before.w, before.h);
+        let columns = samples(original.w, frame.w);
+        let rows = samples(original.h, frame.h);
+        let upper = vec![[0;4]; original.w as usize];
+        let lower = upper.clone();
+        Self { original, before, after, frame, angle: from.angle_to(to), start: now, columns, rows, upper, lower }
+    }
+
+    pub fn done(&self, now: u64) -> bool { now.saturating_sub(self.start) >= Self::MS }
+
+    pub fn paint(&mut self, out: &mut Canvas, background: crate::Rgba, now: u64) {
+        let t = (now.saturating_sub(self.start) as f32 / Self::MS as f32).clamp(0.0, 1.0);
+        if t == 0.0 {
+            out.data.copy_from_slice(&self.original.data);
+            return;
+        }
+        let q = Self::progress(t);
+        self.frame.clear(background);
+        // Both snapshots' text turns through the same angle while their layout
+        // dissolves from one set of dimensions to the other.
+        Self::layer(&self.before, &mut self.frame, self.angle*q, 1.0);
+        Self::layer(&self.after, &mut self.frame, -self.angle*(1.0-q), q);
+        self.expand(out);
+    }
+
+    /// Separable bilinear sampling: expand each small row once, then interpolate
+    /// between two cached rows. Motion never exposes nearest-neighbour blocks.
+    fn expand(&mut self, out: &mut Canvas) {
+        let width = self.frame.w as usize;
+        let source = self.frame.data.as_chunks::<4>().0;
+        let expand_row = |y: usize, row: &mut [[u8;4]]| {
+            let source = &source[y*width..(y+1)*width];
+            for (pixel, &(x, weight)) in row.iter_mut().zip(&self.columns) {
+                *pixel = Self::mix(source[x], source[(x+1).min(width-1)], weight);
+            }
+        };
+        let mut top: Option<usize> = None;
+        for (y, &(index, weight)) in self.rows.iter().enumerate() {
+            if top != Some(index) {
+                if top.and_then(|v| v.checked_add(1)) == Some(index) {
+                    std::mem::swap(&mut self.upper, &mut self.lower);
+                } else {
+                    expand_row(index, &mut self.upper);
+                }
+                expand_row((index+1).min(self.frame.h as usize-1), &mut self.lower);
+                top = Some(index);
+            }
+            let stride = out.w as usize*4;
+            let row = &mut out.data[y*stride..(y+1)*stride];
+            let weight = weight as u16;
+            for ((pixel, &a), &b) in row.iter_mut().zip(self.upper.as_flattened()).zip(self.lower.as_flattened()) {
+                *pixel = ((a as u16*(256-weight) + b as u16*weight + 128) >> 8) as u8;
+            }
+        }
+    }
+
+    #[inline]
+    fn mix(a: [u8;4], b: [u8;4], weight: u32) -> [u8;4] {
+        // Two independent 16-bit lanes per word, with rounding before shifting.
+        let (a, b) = (u32::from_le_bytes(a), u32::from_le_bytes(b));
+        let lanes = |a, b| (a*(256-weight) + b*weight + 0x0080_0080) & 0xff00_ff00;
+        let rb = lanes(a & 0x00ff_00ff, b & 0x00ff_00ff) >> 8;
+        let ga = lanes((a >> 8) & 0x00ff_00ff, (b >> 8) & 0x00ff_00ff);
+        (rb | ga).to_le_bytes()
+    }
+
+    fn layer(src: &Canvas, out: &mut Canvas, angle: f32, alpha: f32) {
+        if alpha <= 0.0 { return; }
+        let (sin, cos) = angle.sin_cos();
+        let (w, h) = (out.w as f32, out.h as f32);
+        // Keep the screen at its original size throughout the turn; corners
+        // rotate beyond the viewport and are clipped instead of zooming out.
+        let (a, b) = (cos, sin);
+        let transform = tiny_skia::Transform::from_row(a, b, -b, a,
+            (w-a*src.w as f32+b*src.h as f32)/2.0,
+            (h-b*src.w as f32-a*src.h as f32)/2.0);
+        let paint = tiny_skia::PixmapPaint { opacity: alpha, quality: tiny_skia::FilterQuality::Nearest, ..Default::default() };
+        // Composed screen snapshots are opaque, so straight and premultiplied
+        // RGBA coincide and the existing rasterizer can read them directly.
+        let source = tiny_skia::PixmapRef::from_bytes(&src.data, src.w, src.h).unwrap();
+        let mut target = tiny_skia::PixmapMut::from_bytes(&mut out.data, out.w, out.h).unwrap();
+        target.draw_pixmap(0, 0, source, &paint, transform, None);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -132,6 +280,69 @@ mod tests {
         let mut gravity = Gravity::default();
         gravity.sample([9.8,0.,0.], 0);
         assert_eq!(gravity.sample([9.8,0.,0.], 2000), None, "a stale reading cannot complete a turn");
+    }
+
+    #[test]
+    fn rotation_animation_uses_the_shortest_path_in_both_directions() {
+        assert_eq!(Rotation::Native.angle_to(Rotation::Right), std::f32::consts::FRAC_PI_2);
+        assert_eq!(Rotation::Right.angle_to(Rotation::Native), -std::f32::consts::FRAC_PI_2);
+        assert_eq!(Rotation::Left.angle_to(Rotation::Native), std::f32::consts::FRAC_PI_2);
+        let before = Canvas::filled(8, 6, crate::Rgba::rgb(255,0,0));
+        let after = Canvas::filled(8, 6, crate::Rgba::rgb(0,0,255));
+        let mut turn = Turn::new(&before, &after, Rotation::Native, Rotation::Right, 10);
+        let mut out = Canvas::new(8,6);
+        turn.paint(&mut out, crate::Rgba::rgb(0,0,0), 10);
+        assert_eq!(out.data, before.data);
+        turn.paint(&mut out, crate::Rgba::rgb(0,0,0), 10+Turn::MS);
+        assert_eq!(out.data, after.data);
+        assert!(!turn.done(10+Turn::MS-1));
+        assert!(turn.done(10+Turn::MS));
+    }
+
+    #[test]
+    fn motion_uses_smooth_samples_and_clips_without_shrinking() {
+        assert_eq!(Turn::mix([0,128,255,255], [255,0,0,128], 128), [128,64,128,192]);
+        let before = Canvas::filled(1201, 901, crate::Rgba::rgb(0,0,0));
+        let mut turn = Turn::new(&before, &before, Rotation::Native, Rotation::Right, 0);
+        for (i, pixel) in turn.frame.data.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+            *pixel = if (i%turn.frame.w as usize).is_multiple_of(2) { [0,0,0,255] } else { [255,255,255,255] };
+        }
+        let mut out = Canvas::new(1201,901);
+        turn.expand(&mut out);
+        assert_eq!(&out.data[4..12], &[64,64,64,255,191,191,191,255]);
+        let red = Canvas::filled(80,60, crate::Rgba::rgb(255,0,0));
+        let mut out = Canvas::filled(80,60, crate::Rgba::rgb(0,0,0));
+        Turn::layer(&red, &mut out, std::f32::consts::FRAC_PI_4, 1.0);
+        let pixel = ((30*80+1)*4) as usize;
+        assert_eq!(&out.data[pixel..pixel+4], &[255,0,0,255]);
+    }
+
+    #[test]
+    fn rotation_easing_accelerates_then_settles_without_overshoot() {
+        assert_eq!(Turn::progress(0.0), 0.0);
+        assert_eq!(Turn::progress(1.0), 1.0);
+        assert!(Turn::progress(0.5) > 0.7);
+        let mut previous = 0.0;
+        for step in 0..=100 {
+            let next = Turn::progress(step as f32/100.0);
+            assert!((previous..=1.0).contains(&next));
+            previous = next;
+        }
+        assert!(Turn::progress(0.1) < 0.05);
+        assert!(Turn::progress(0.9) > 0.98);
+    }
+
+    #[test]
+    fn bounded_animation_covers_the_last_row_and_column_of_odd_sized_panels() {
+        let before = Canvas::filled(1201, 901, crate::Rgba::rgb(255,0,0));
+        let after = Canvas::filled(1201, 901, crate::Rgba::rgb(0,0,255));
+        let mut turn = Turn::new(&before, &after, Rotation::Native, Rotation::Left, 0);
+        assert!(turn.frame.w.max(turn.frame.h) <= 1024);
+        let mut out = Canvas::new(1201,901);
+        turn.paint(&mut out, crate::Rgba::rgb(0,0,0), 0);
+        assert_eq!(out.data, before.data);
+        turn.paint(&mut out, crate::Rgba::rgb(0,0,0), Turn::MS);
+        assert_eq!(out.data, after.data);
     }
 
     #[test]

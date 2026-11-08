@@ -40,7 +40,7 @@ use skyward_ui::app::{
     INSTALL_UNFINISHED, USB_DRIVE,
 };
 use skyward_ui::settings::Keeper;
-use skyward_ui::rotation::Rotation;
+use skyward_ui::rotation::{Rotation, Turn};
 use skyward_ui::surface::kms::KmsSurface;
 use skyward_ui::{Canvas, Fonts, Lang, Surface};
 use skyward_vab::{Merge, Standing};
@@ -1144,6 +1144,9 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     app.resize(logical_w, logical_h);
     let mut screen = Canvas::new(logical_w, logical_h);
     let mut native = None;
+    let mut turn: Option<Turn> = None;
+    let mut turn_canvas = None;
+    let mut blocked_touch = false;
     let mut orientation = cfg.orientation.as_ref().filter(|_| cfg.device.tablet).map(Sensor::new);
     // A page sliding over another draws on three screens' worth of canvas
     // besides the panel's: made ready now, the first slide finds them so.
@@ -1343,10 +1346,20 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
         let now = monotonic_ms();
         if let Some(sensor) = &mut orientation {
             if let Some(direction) = sensor.read(app.rotation_enabled(), now) {
-                app.follow_rotation(direction);
+                if turn.is_none() && !blocked_touch { app.follow_rotation(direction); }
             }
         }
+        if (turn.as_ref().is_some_and(|turn| turn.done(now)) || !app.display_on()) && turn.take().is_some() {
+            app.redraw();
+        }
         if app.rotation() != rotation {
+            let animate = app.display_on() && app.screen() != Screen::Fastboot && !first_frame;
+            let before = if animate {
+                let mut before = Canvas::new(w, h);
+                rotation.paint(&screen, &mut before);
+                Some(before)
+            } else { None };
+            let previous = rotation;
             rotation = app.rotation();
             let (logical_w, logical_h) = rotation.size(w, h);
             app.resize(logical_w, logical_h);
@@ -1355,6 +1368,12 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
             app.term_resized(rows, cols);
             if let Some(shell) = &mut shell {
                 shell.resize(rows, cols)?;
+            }
+            if let Some(before) = before {
+                app.compose(&mut screen, &fonts, &info, &shown_clock, now);
+                let after = native.get_or_insert_with(|| Canvas::new(w, h));
+                rotation.paint(&screen, after);
+                turn = Some(Turn::new(&before, after, previous, rotation, monotonic_ms()));
             }
         }
         if leave_at.is_some_and(|at| now >= at) {
@@ -1426,10 +1445,16 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
         let mut shown = false;
         if panel.is_some() {
             // A display turned off comes on again with a frame drawn for it.
-            if app.take_dirty() || !surface.is_on() {
+            if app.take_dirty() || !surface.is_on() || turn.is_some() {
                 let t0 = Instant::now();
-                app.compose(&mut screen, &fonts, &info, &shown_clock, now);
-                present(&mut surface, &screen, rotation, &mut native)?;
+                if let Some(turn) = &mut turn {
+                    let out = turn_canvas.get_or_insert_with(|| Canvas::new(w, h));
+                    turn.paint(out, app.theme().pal.bg, now);
+                    surface.present(out)?;
+                } else {
+                    app.compose(&mut screen, &fonts, &info, &shown_clock, now);
+                    present(&mut surface, &screen, rotation, &mut native)?;
+                }
                 if first_frame || (ui_started.elapsed() < Duration::from_secs(15) && t0.elapsed() >= Duration::from_millis(250)) {
                     skyward_sys::kmsg(&format!("UI frame {:?}: {} ms, {} ms since UI start, first={first_frame}",
                         app.screen(), t0.elapsed().as_millis(), ui_started.elapsed().as_millis()))?;
@@ -1484,7 +1509,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
         let until_due = app.deadline(now).map(|d| d.saturating_sub(now) as i32);
         // A resting panel turns off once its rest is over.
         let rest_left = rested_at.map(|at| REST.saturating_sub(at.elapsed()).as_millis() as i32);
-        let timeout = if ahead { 0 } else { until_due.into_iter().chain(rest_left).min().map_or(1000, |t| t.clamp(floor, 1000)) };
+        let timeout = if ahead || turn.is_some() { 0 } else { until_due.into_iter().chain(rest_left).min().map_or(1000, |t| t.clamp(floor, 1000)) };
         // With the display off, the phone sleeps unless something needs it
         // awake: work under way, fastboot or sideload, a restart on its way,
         // a command running in the terminal, a network being joined, the
@@ -2055,6 +2080,10 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     answer(asked, fastboot)
                 }
                 Incoming::Input(Event::Touch(t, at)) => {
+                    if turn.is_some() || blocked_touch {
+                        blocked_touch = t != skyward_ui::app::Touch::Up;
+                        continue;
+                    }
                     if first_touch {
                         skyward_sys::kmsg(&format!("first touch delivered: {} ms since UI start, event age {} ms",
                             ui_started.elapsed().as_millis(), monotonic_ms().saturating_sub(at)))?;

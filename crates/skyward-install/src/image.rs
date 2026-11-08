@@ -315,12 +315,7 @@ pub(crate) mod samples {
         cpio::newc::trailer(out).unwrap()
     }
 
-    pub fn lz4_legacy(data: &[u8]) -> Vec<u8> {
-        let info = lz4_flex::frame::FrameInfo::new().legacy_frame(true);
-        let mut w = lz4_flex::frame::FrameEncoder::with_frame_info(info, Vec::new());
-        w.write_all(data).unwrap();
-        w.finish().unwrap()
-    }
+    pub use skyward_bootimg::lz4_legacy;
 
     /// A recovery image, Skyward's or the stock one it is packed on.
     pub fn recovery(skyward: bool) -> Vec<u8> {

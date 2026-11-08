@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="../../readme.css">
+</head>
+<body>
+<main class="slide feature">
+  <header class="head">
+    <p class="eyebrow">终端</p>
+    <h1 class="headline">手机上就能<br>运行 root shell。</h1>
+    <p class="body">终端提供 Esc、Tab、Ctrl 和方向键，<br>可以在文件管理的当前文件夹中打开。<br>连接电脑后，adb shell 同样是 root 权限。</p>
+  </header>
+  <div class="visual">
+<pre class="term" translate="no"><span class="ps">ishtar:/ #</span> getprop ro.product.device
+ishtar
+<span class="ps">ishtar:/ #</span> ls --color=always /
+<span class="dir">acct</span>  <span class="dir">apex</span>  <span class="link">bin</span>  <span class="dir">config</span>  <span class="dir">data</span>  <span class="dir">dev</span>
+<span class="link">etc</span>  <span class="exe">init</span>  <span class="dir">metadata</span>  <span class="dir">mnt</span>  <span class="dir">odm</span>
+<span class="dir">proc</span>  <span class="dir">sys</span>  <span class="dir">system</span>  <span class="dir">tmp</span>  <span class="dir">vendor</span>
+<span class="ps">ishtar:/ #</span> df -h /metadata
+Filesystem      Size Used Avail Use% Mounted on
+/dev/block/sda9  59M 7.0M   52M  12% /metadata
+<span class="ps">ishtar:/ #</span> <span class="caret"></span></pre>
+    <ul class="keys" translate="no">
+      <li>Esc</li>
+      <li>Tab</li>
+      <li>Ctrl</li>
+      <li><svg viewBox="0 0 24 24"><path class="icon-line" d="M19 12H5M11 6l-6 6 6 6"/></svg></li>
+      <li><svg viewBox="0 0 24 24"><path class="icon-line" d="M12 19V5M6 11l6-6 6 6"/></svg></li>
+      <li><svg viewBox="0 0 24 24"><path class="icon-line" d="M12 5v14M6 13l6 6 6-6"/></svg></li>
+      <li><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12h14M13 6l6 6-6 6"/></svg></li>
+    </ul>
+  </div>
+</main>
+</body>
+</html>

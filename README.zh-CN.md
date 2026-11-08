@@ -14,21 +14,72 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 
 ## 功能
 
-- 解密 data 分区
-- 安装刷机包、系统更新包和分区镜像，支持内部存储、U 盘和 adb sideload
-- 刷机包的安装脚本可以使用 `7za` 和 `zstd`，支持刷入 super 镜像使用 zstd 压缩的第三方 ROM；`unzip -p` 边解压边输出镜像
-- 刷机包的安装脚本可以使用 `avbctl` 关闭验证启动的校验，使用 `resetprop` 读取和设置属性
-- 在线系统更新
-- 从 GitHub 上的最新版本在线更新 Skyward
-- 备份和恢复
-- 清除数据、恢复出厂设置
-- 挂载分区，修复和格式化文件系统
-- 文件管理和终端
-- 连接 WLAN
-- MTP 文件传输、adb 和 fastbootd
+### 双系统
+
+![一台手机可以安装两个系统](slides/zh-CN/out/01-dual-boot.png)
+
+![切换系统只改写两个分区](slides/zh-CN/out/02-dual-boot-partitions.png)
+
+第二系统的安装包格式和启动过程见下文的[双系统的工作方式](#双系统的工作方式)。
+
+### 解密
+
+![用锁屏图案或密码解密 data 分区](slides/zh-CN/out/03-decrypt.png)
+
+### 安装
+
+![从三个来源安装四种安装包](slides/zh-CN/out/04-install.png)
+
+刷机包的安装脚本可以使用 `7za` 和 `zstd`，支持刷入 super 镜像使用 zstd 压缩的第三方 ROM；`unzip -p` 边解压边输出镜像。安装脚本还可以使用 `avbctl` 关闭验证启动的校验，使用 `resetprop` 读取和设置属性。
+
+### 在线更新
+
+![系统和 Skyward 都能在线更新](slides/zh-CN/out/05-updates.png)
+
+### 备份和恢复
+
+![系统、应用和 IMEI 都可以备份](slides/zh-CN/out/06-backup.png)
+
+### 文件管理
+
+![在 Skyward 中管理手机里的文件](slides/zh-CN/out/07-files.png)
+
+### 终端
+
+![手机上就能运行 root shell](slides/zh-CN/out/08-terminal.png)
+
+### 连接电脑
+
+![用数据线连接电脑，传文件和刷写分区](slides/zh-CN/out/09-computer.png)
+
+### 清除数据
+
+![每一项都写明会清除哪些内容](slides/zh-CN/out/10-wipe.png)
+
+### 替换原厂 recovery
+
+![系统发来的请求，Skyward 照常处理](slides/zh-CN/out/11-requests.png)
+
+### 搜索
+
+![输入拼音首字母，就能找到功能](slides/zh-CN/out/12-search.png)
+
+### 高级
+
+![系统出了问题，可以先在这里修复](slides/zh-CN/out/13-tools.png)
+
+### 关于本机
+
+![电池剩余容量和充电循环都能查看](slides/zh-CN/out/14-specs.png)
+
+### 其他功能
+
 - 重启到系统、recovery、fastboot、bootloader 和 EDL，切换启动槽位
-- 双系统：在已安装的系统旁边安装第二系统，文件保存在 data 分区中；在首页“双系统”的两张卡片中选择，滑动即可切换
 - 浅色和深色模式，简体中文、繁体中文和英文
+
+### 没有系统时
+
+![super 中没有系统，也能装回一个系统](slides/zh-CN/out/15-no-system.png)
 
 ## 支持的机型
 
@@ -63,7 +114,7 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 | 🚧 REDMI K100 Pro | `athens` | OS4.0.4.0.XPICNXM（Android 17） |
 | 🚧 REDMI K100 Pro Max | `songyuan` | OS4.0.4.0.XGNCNXM（Android 17） |
 
-## 安装
+## 安装 Skyward
 
 Skyward 需要已解锁的 bootloader。从 [Releases](https://github.com/kirklin/skyward/releases) 下载对应机型的 zip，每个文件都标有机型和代号，例如 Xiaomi 17 Ultra (nezha)。使用 `SHA256SUMS` 核对并解压之后，在手机处于 fastboot 模式的时候，把其中的镜像刷入当前运行槽位的 recovery 分区：
 
@@ -75,11 +126,9 @@ fastboot reboot recovery
 
 之后连接 WLAN，就可以在“设置”的“Skyward 更新”页面更新到最新版本，也可以在 Skyward 自己的“安装”页面安装解压出来的新版镜像。打开 **自动重新刷入 Skyward** 之后，系统更新或者刷机包覆盖 recovery 分区的时候，Skyward 会重新刷回这些分区。
 
-super 中没有系统的时候，Skyward 仍然可以启动：屏幕和按键、adb、`adb sideload` 和 fastbootd 都能使用，足够装回一个系统。触摸、WLAN 和解密依赖已安装系统中的程序，系统装回之后随之恢复。
-
 Skyward 中的 adb 是 root shell，手机上无需授权：手机处于 recovery 的时候，任何人拿到手机和数据线都能访问其中的存储。
 
-## 双系统
+## 双系统的工作方式
 
 Skyward 可以在手机自身分区中的系统旁边安装第二系统，主系统是 HyperOS 或者第三方 ROM 都可以，并在首页的“双系统”中切换。第二系统的根文件系统是 data 分区中的一个文件，文件系统不能移动或删除它，Skyward 直接通过分区读写其中的内容；两个系统的启动镜像保存在另一个这样的文件中。切换系统只改写下次启动槽位的 boot 和 init_boot 分区，每一步都先记录在 /metadata 中，切换过程中断电的话，Skyward 下次启动时会完成这次切换。vendor_boot、dtbo、recovery、vbmeta、固件和 super 都保持不变，第二系统使用主系统的 vendor_boot 和 dtbo 启动。
 

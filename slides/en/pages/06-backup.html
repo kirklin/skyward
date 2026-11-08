@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="../../readme.css">
+</head>
+<body>
+<main class="slide feature">
+  <header class="head">
+    <p class="eyebrow">Backup and restore</p>
+    <h1 class="headline">Back up the system,<br>apps and IMEI.</h1>
+    <p class="body">Backups go to internal storage or a USB drive, compressed and verified if you choose. A restore checks the whole backup before it writes anything.</p>
+  </header>
+  <div class="visual">
+    <p class="ui-section">Contents</p>
+    <ul class="ui-list tight">
+      <li>
+        <div><b>Boot partitions</b><small>boot, init_boot, vendor_boot, dtbo, vbmeta and recovery</small></div>
+        <span class="check on"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      </li>
+      <li>
+        <div><b>System partitions</b><small>The current slot's partitions in super</small></div>
+        <span class="check on"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      </li>
+      <li>
+        <div><b>data partition</b><small>Apps, accounts and settings, without internal storage, the screen lock or fingerprints</small></div>
+        <span class="check on"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      </li>
+      <li>
+        <div><b>Modem and EFS</b><small>IMEI, modem settings and sensor calibration</small></div>
+        <span class="check on"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      </li>
+    </ul>
+    <p class="ui-section">Options</p>
+    <ul class="ui-list tight">
+      <li>
+        <div><b>Compress</b><small>Smaller, and slower to make</small></div>
+        <span class="switch on"></span>
+      </li>
+      <li>
+        <div><b>Verify when done</b><small>Checks the backup's files are whole</small></div>
+        <span class="switch on"></span>
+      </li>
+    </ul>
+  </div>
+</main>
+</body>
+</html>

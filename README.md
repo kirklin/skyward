@@ -14,21 +14,76 @@ Skyward is a recovery written in Rust, from scratch.
 
 ## Features
 
-- Decrypt the data partition
-- Install zips, system update packages and partition images, from internal storage, a USB drive or adb sideload
-- `7za` and `zstd` for install scripts, which ROMs with a super image compressed by zstd use to flash it, and an `unzip` whose `-p` streams the image as it reads it
-- `avbctl` and `resetprop` for install scripts, to turn off verified boot's checks and to read and set properties
-- Online system updates
-- Skyward's own updates, from its newest release on GitHub
-- Backup and restore
-- Wipe data and factory reset
-- Mount partitions, repair and format filesystems
-- File manager and terminal
-- WLAN
-- MTP file transfer, adb and fastbootd
+### Dual boot
+
+![One phone holds two systems](slides/en/out/01-dual-boot.png)
+
+![A switch rewrites only two partitions](slides/en/out/02-dual-boot-partitions.png)
+
+How a second system is packaged and started is in
+[How dual boot works](#how-dual-boot-works).
+
+### Decryption
+
+![Decrypt data with the screen lock](slides/en/out/03-decrypt.png)
+
+### Installing
+
+![Four kinds of packages from three places](slides/en/out/04-install.png)
+
+Install scripts get `7za` and `zstd`, which ROMs with a super image compressed by
+zstd use to flash it, and an `unzip` whose `-p` streams the image as it reads it.
+They also get `avbctl` and `resetprop`, to turn off verified boot's checks and to
+read and set properties.
+
+### Online updates
+
+![Update the system and Skyward online](slides/en/out/05-updates.png)
+
+### Backup and restore
+
+![Back up the system, apps and IMEI](slides/en/out/06-backup.png)
+
+### File manager
+
+![Manage the phone's files in Skyward](slides/en/out/07-files.png)
+
+### Terminal
+
+![Run a root shell right on the phone](slides/en/out/08-terminal.png)
+
+### Connecting a computer
+
+![Move files and flash partitions over USB](slides/en/out/09-computer.png)
+
+### Wiping data
+
+![Every choice says what it wipes](slides/en/out/10-wipe.png)
+
+### Replacing the stock recovery
+
+![Skyward does what the system asks](slides/en/out/11-requests.png)
+
+### Search
+
+![Type a few letters to find a feature](slides/en/out/12-search.png)
+
+### Advanced
+
+![When something breaks, fix it here first](slides/en/out/13-tools.png)
+
+### About phone
+
+![Check battery health and charge cycles](slides/en/out/14-specs.png)
+
+### Other features
+
 - Reboot to system, recovery, fastboot, bootloader or EDL, and switch slots
-- Dual boot: a second system beside the installed one, its files in the data partition, picked from two cards on the home page's Dual boot and switched to with a swipe
 - Light and dark themes; Simplified Chinese, Traditional Chinese and English
+
+### Without a system
+
+![Skyward starts even without a system](slides/en/out/15-no-system.png)
 
 ## Supported devices
 
@@ -40,7 +95,7 @@ Skyward is a recovery written in Rust, from scratch.
 ### 🚧 Under construction
 
 These images are built from each phone's stock firmware and have not been tried
-on the phone. They set up the screen, touch, WLAN and vibration, and do not decrypt
+on the phone. They set up the screen, touch, Wi-Fi and vibration, and do not decrypt
 the data partition.
 
 | Device | Codename | Built on |
@@ -65,7 +120,7 @@ the data partition.
 | 🚧 REDMI K100 Pro | `athens` | OS4.0.4.0.XPICNXM (Android 17) |
 | 🚧 REDMI K100 Pro Max | `songyuan` | OS4.0.4.0.XGNCNXM (Android 17) |
 
-## Installing
+## Installing Skyward
 
 Skyward needs an unlocked bootloader. Download the zip for your phone from
 [Releases](https://github.com/kirklin/skyward/releases), where each shows as the
@@ -84,14 +139,10 @@ Skyward update page in Settings; a newer image, unzipped, also installs from its
 Install page. With **Flash Skyward again** on, a system update or zip that writes
 over the recovery partitions gets Skyward back in them.
 
-Without a system in super, Skyward still starts, with its screen and keys, adb,
-`adb sideload` and fastbootd, enough to install one. Touch, WLAN and decryption run
-from the installed system and come back with it.
-
 adb in Skyward is a root shell that needs no authorization on the phone: anyone
 with the phone and a cable can reach its storage while it is in recovery.
 
-## Dual boot
+## How dual boot works
 
 Skyward installs a second system beside the one in the phone's own partitions,
 whether that is HyperOS or a custom ROM, and switches between them from **Dual boot**

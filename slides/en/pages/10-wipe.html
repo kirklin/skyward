@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="../../readme.css">
+</head>
+<body>
+<main class="slide feature">
+  <header class="head">
+    <p class="eyebrow">Wiping data</p>
+    <h1 class="headline">Every choice says<br>what it wipes.</h1>
+    <p class="body">Wipe only app caches, the ART cache, logs or downloaded updates, or reset the phone. A factory reset leaves the system and its installed updates alone.</p>
+  </header>
+  <div class="visual">
+    <p class="ui-section">data partition</p>
+    <ul class="ui-list tight">
+      <li>
+        <div><b>Internal storage</b><small><span class="path">/data/media</span>: the photos, videos and files in <span class="path">/sdcard</span></small></div>
+        <span class="check"></span>
+      </li>
+      <li>
+        <div><b>App caches</b><small>cache and <span class="path">code_cache</span> in each app's data, and cache in <span class="path">Android/data</span>. Apps make them again as they need them</small></div>
+        <span class="check on"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      </li>
+      <li>
+        <div><b>System caches</b><small><span class="path">/data/system/package_cache</span>, <span class="path">/data/resource-cache</span> and <span class="path">/data/cache</span>, made again at the next start</small></div>
+        <span class="check on"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      </li>
+      <li>
+        <div><b>Downloaded updates</b><small>System update packages in <span class="path">/data/ota_package</span></small></div>
+        <span class="check on"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      </li>
+    </ul>
+    <p class="ui-note">Wiping app data or app caches needs the data partition decrypted first. What is wiped can't be brought back.</p>
+    <div class="ui-slider danger">
+      <span class="knob"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+      <span class="label">Slide to wipe</span>
+    </div>
+  </div>
+</main>
+</body>
+</html>

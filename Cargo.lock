@@ -2296,6 +2296,7 @@ dependencies = [
  "anyhow",
  "libc",
  "procfs",
+ "serde",
  "zerocopy",
 ]
 

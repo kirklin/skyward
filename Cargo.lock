@@ -2300,6 +2300,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "skyward-bootimg"
+version = "0.1.6"
+dependencies = [
+ "abootimg-oxide",
+ "anyhow",
+ "cpio",
+ "lz4_flex",
+]
+
+[[package]]
 name = "skyward-config"
 version = "0.1.6"
 dependencies = [
@@ -2426,13 +2436,11 @@ dependencies = [
 name = "skyward-pack"
 version = "0.1.6"
 dependencies = [
- "abootimg-oxide",
  "anyhow",
  "clap",
- "cpio",
- "lz4_flex",
  "serde_json",
  "sha2 0.10.9",
+ "skyward-bootimg",
  "skyward-config",
  "tempfile",
  "unpayload",

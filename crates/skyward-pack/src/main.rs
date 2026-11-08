@@ -7,11 +7,8 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 mod avb;
-mod image;
-mod ramdisk;
 
-use image::BootImage;
-use ramdisk::Ramdisk;
+use skyward_bootimg::{BootImage, Ramdisk};
 
 /// Builds Skyward recovery images from a device's own stock images.
 #[derive(Parser)]

@@ -401,9 +401,9 @@ pub fn screen_off(cx: &Ctx) -> Frame {
     let times = widgets::list(&mut c, t, f, top, &rows);
     let picks: Vec<Action> = (0..SCREEN_OFF.len()).map(Action::ScreenOff).collect();
     let note = l.pick([
-        "超过所选时间未操作，屏幕将变暗并熄灭，轻触屏幕或按任意键即可点亮。",
-        "超過所選時間未操作，螢幕將變暗並關閉，輕觸螢幕或按任意鍵即可喚醒。",
-        "After the time chosen with nothing touched, the screen dims and turns off. Touch it or press any key to light it again.",
+        "超过所选时间未操作，屏幕将变暗并熄灭，按电源键即可点亮。",
+        "超過所選時間未操作，螢幕將變暗並關閉，按電源鍵即可喚醒。",
+        "After the time chosen with nothing touched, the screen dims and turns off. Press the power key to light it again.",
     ]);
     let y = widgets::footnote(&mut c, t, f, times.bottom, note);
     if SCREEN_OFF[s.screen_off].is_none() {

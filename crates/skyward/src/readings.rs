@@ -5,23 +5,25 @@ use anyhow::{Context, Result};
 use skyward_config::DeviceConfig;
 use skyward_info::{Battery, DeviceInfo};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
-/// The battery is read this often, so plugging the cable in or pulling it
-/// shows at once; all the readings every so many times instead.
+/// The battery is read this often, and at once when asked; all the
+/// readings every so many times instead.
 const BATTERY_EVERY: Duration = Duration::from_secs(1);
 const ALL_EVERY: u32 = 30;
 
 pub enum Reading {
-    Battery(Result<Option<Battery>>),
+    /// The battery, and when reading it started.
+    Battery(Result<Option<Battery>>, Instant),
     /// All the readings, and when taking them started.
     All(Box<Result<DeviceInfo>>, Instant),
 }
 
 pub struct Readings {
     taken: Receiver<Reading>,
+    asks: Sender<()>,
     /// Readable while readings wait.
     wake: OwnedFd,
 }
@@ -36,17 +38,29 @@ impl Readings {
         }
         let (wake, signal) = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
         let (tx, taken) = mpsc::channel();
+        let (asks, asked) = mpsc::channel::<()>();
         let cfg = cfg.clone();
         thread::Builder::new()
             .name("readings".into())
             .spawn(move || {
-                for k in 1u32.. {
-                    thread::sleep(BATTERY_EVERY);
-                    let reading = if k % ALL_EVERY == 0 {
-                        let at = Instant::now();
+                let mut ticks = 0u32;
+                loop {
+                    let at_once = match asked.recv_timeout(BATTERY_EVERY) {
+                        Ok(()) => {
+                            while asked.try_recv().is_ok() {}
+                            true
+                        }
+                        Err(RecvTimeoutError::Timeout) => false,
+                        Err(RecvTimeoutError::Disconnected) => return,
+                    };
+                    if !at_once {
+                        ticks += 1;
+                    }
+                    let at = Instant::now();
+                    let reading = if !at_once && ticks.is_multiple_of(ALL_EVERY) {
                         Reading::All(Box::new(skyward_info::collect(&cfg)), at)
                     } else {
-                        Reading::Battery(skyward_info::battery_now())
+                        Reading::Battery(skyward_info::battery_now(), at)
                     };
                     if tx.send(reading).is_err() {
                         return;
@@ -55,11 +69,16 @@ impl Readings {
                 }
             })
             .context("start the readings thread")?;
-        Ok(Readings { taken, wake })
+        Ok(Readings { taken, asks, wake })
     }
 
     pub fn fd(&self) -> RawFd {
         self.wake.as_raw_fd()
+    }
+
+    /// Read the battery at once.
+    pub fn ask(&self) {
+        self.asks.send(()).expect("the readings thread runs while its readings are taken");
     }
 
     /// The readings taken since the last call.

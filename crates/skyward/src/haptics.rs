@@ -1,13 +1,13 @@
 use anyhow::{anyhow, ensure, Context, Result};
 use evdev::raw_stream::RawDevice;
 use skyward_config::Strength;
-use std::f32::consts::TAU;
+use std::f32::consts::{FRAC_PI_2, TAU};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::os::fd::AsRawFd;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 // linux/input-event-codes.h
 const EV_FF: u16 = 0x15;
@@ -22,6 +22,35 @@ const RATE: u32 = 8000;
 /// it, then swings turned over that stop it, so that it does not ring on.
 const DRIVE_SWINGS: f32 = 2.0;
 const BRAKE_SWINGS: f32 = 1.5;
+/// The ticks of the screen going off by the power key, as the phone's own
+/// system plays them on the 17 Ultra, whose motor swings at [`TICKS_HZ`]:
+/// two crisp ticks, the second lighter, each six half-swings at about one
+/// and a half times the motor's frequency. Each half-swing of a tick is its
+/// start, peak and end in milliseconds, its signed share of the full, and
+/// how it rises to its peak and falls from it: as a quarter of a sine
+/// raised to that power, 1 crossing zero at its steepest, higher powers
+/// setting off and dying away more gently. Each of the ticks is when it
+/// starts, in milliseconds, and its share of the tick in full. For another
+/// motor the times go in proportion. They are made at [`TICKS_RATE`].
+const TICKS_HZ: f32 = 172.7;
+const TICK: [(f32, f32, f32, f32, f32, f32); 6] = [
+    (0.125, 1.717, 2.375, 0.531, 2.6, 1.0),
+    (2.375, 3.45, 4.5, -1.0, 1.1, 1.0),
+    (4.5, 5.448, 6.375, 0.913, 1.0, 1.0),
+    (6.375, 7.227, 8.063, -0.801, 1.0, 1.0),
+    (8.063, 9.029, 10.025, 0.935, 1.0, 1.1),
+    (10.025, 10.671, 12.167, -0.508, 1.0, 2.3),
+];
+const TICKS: [(f32, f32); 2] = [(0.0, 1.0), (55.125, 0.79)];
+const TICKS_RATE: u32 = 24000;
+/// The ticks play at this share of the drive the driver gives samples at in
+/// full, whatever the slider says: the 17 Ultra's own system plays them at
+/// 3527 mV of the 8500 mV its device tree gives.
+const TICKS_STRENGTH: f32 = 0.415;
+/// How long the ticks stay loaded once their samples have run out, as the
+/// phone's own system leaves them: the motor comes to rest on its own
+/// before taking them away brakes it.
+const TICKS_REST: Duration = Duration::from_millis(40);
 
 /// The vibration motor, played through the kernel's force-feedback
 /// events. The driver fills its queue with a made click's samples as the
@@ -32,6 +61,7 @@ const BRAKE_SWINGS: f32 = 1.5;
 pub struct Haptics {
     dev: File,
     click: Click,
+    ticks: Click,
     strength: Strength,
     /// The click playing, by its slot and its count, until it is taken
     /// away; a click taken away early by the next is not taken away again.
@@ -44,8 +74,9 @@ enum Click {
     /// A waveform the driver keeps, by its number. The driver says how long
     /// it plays as it loads it.
     Kept(i16),
-    /// Samples made at the motor's resonant frequency, played at [`RATE`].
-    Made(Vec<i8>),
+    /// Samples made at the motor's resonant frequency, which the driver
+    /// plays as they are, at `rate` a second.
+    Samples { data: Vec<i8>, rate: u32 },
 }
 
 impl Haptics {
@@ -54,38 +85,54 @@ impl Haptics {
     /// only as it is played.
     pub fn open(cfg: &skyward_config::Haptics) -> Result<Haptics> {
         let (path, dev) = motor()?;
-        let click = match (cfg.click, &cfg.resonance) {
-            (Some(id), _) => {
-                eprintln!("haptics {}: clicks with waveform {id}", path.display());
+        let hz = resonance(&cfg.resonance)?;
+        let click = match cfg.click {
+            Some(id) => {
+                eprintln!("haptics {}: clicks with waveform {id}, ticks made for a motor swinging at {hz} Hz", path.display());
                 Click::Kept(id)
             }
-            (None, Some(file)) => {
-                let hz = resonance(file)?;
-                eprintln!("haptics {}: clicks made for a motor swinging at {hz} Hz", path.display());
-                Click::Made(made(hz))
+            None => {
+                eprintln!("haptics {}: clicks and ticks made for a motor swinging at {hz} Hz", path.display());
+                Click::Samples { data: made(hz), rate: RATE }
             }
-            (None, None) => unreachable!("the configuration names a click of one kind"),
         };
-        Ok(Haptics { dev, click, strength: cfg.strength, playing: Arc::new(Mutex::new(None)), clicks: 0 })
+        let ticks = Click::Samples { data: ticks(hz), rate: TICKS_RATE };
+        Ok(Haptics { dev, click, ticks, strength: cfg.strength, playing: Arc::new(Mutex::new(None)), clicks: 0 })
     }
 
     /// One short click at the strength the slider's `position` gives, after
     /// taking away one still playing. Gives how long it plays.
     pub fn click(&mut self, position: f32) -> Result<Duration> {
+        self.start(false, share(&self.strength, position))
+    }
+
+    /// The ticks of the screen going off, as strong as the phone's own
+    /// system plays them whatever the slider says. Gives how long they play.
+    pub fn ticks(&mut self) -> Result<Duration> {
+        self.start(true, TICKS_STRENGTH)
+    }
+
+    /// Play the ticks, or else the click, at `share` of its full strength,
+    /// after taking away what still plays.
+    fn start(&mut self, ticks: bool, share: f32) -> Result<Duration> {
         let mut playing = self.playing.lock().expect("no thread panics while it holds the click playing");
         if let Some((slot, _)) = playing.take() {
             erase(&self.dev, slot).context("take away the click still playing")?;
         }
-        let loaded = upload(&self.dev, &self.click, share(&self.strength, position)).context("load the click")?;
+        let effect = if ticks { &self.ticks } else { &self.click };
+        let loaded = upload(&self.dev, effect, share).context("load the click")?;
         play(&mut self.dev, loaded.slot).context("play the click")?;
         self.clicks += 1;
         let this = (loaded.slot, self.clicks);
         *playing = Some(this);
         drop(playing);
         let dev = self.dev.try_clone().context("share the motor")?;
-        let (playing, length) = (self.playing.clone(), loaded.length);
+        let length = loaded.length + if ticks { TICKS_REST } else { Duration::ZERO };
+        // Timed from now: a thread may wait a while before it first runs.
+        let until = Instant::now() + length;
+        let playing = self.playing.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(length);
+            std::thread::sleep(until.saturating_duration_since(Instant::now()));
             let mut playing = playing.lock().expect("no thread panics while it holds the click playing");
             if *playing == Some(this) {
                 *playing = None;
@@ -98,15 +145,20 @@ impl Haptics {
     }
 }
 
-/// Play the configured click once at the slider's `position`, saying how
-/// strongly and for how long, for trying out a motor.
-pub fn probe(cfg: &skyward_config::Haptics, position: f32) -> Result<()> {
+/// Play the configured click once at the slider's `position`, or else the
+/// ticks of the screen going off, saying how strongly and for how long, for
+/// trying out a motor.
+pub fn probe(cfg: &skyward_config::Haptics, position: f32, ticks: bool) -> Result<()> {
     let mut haptics = Haptics::open(cfg)?;
-    let length = haptics.click(position)?;
-    // Once it has played out, the click goes with the device as the
+    let (what, strength, length) = if ticks {
+        ("ticks", TICKS_STRENGTH, haptics.ticks()?)
+    } else {
+        ("click", share(&cfg.strength, position), haptics.click(position)?)
+    };
+    // Once it has played out, what played goes with the device as the
     // command ends.
     std::thread::sleep(length);
-    println!("played the click at {:.3} of its full strength, {} ms long", share(&cfg.strength, position), length.as_millis());
+    println!("played the {what} at {strength:.3} of the full strength, {} ms long", length.as_millis());
     Ok(())
 }
 
@@ -153,6 +205,27 @@ fn made(hz: f32) -> Vec<i8> {
         .collect()
 }
 
+/// The ticks at [`TICKS_RATE`] for a motor that swings at `hz`, still
+/// between them.
+fn ticks(hz: f32) -> Vec<i8> {
+    let scale = TICKS_HZ / hz;
+    let at = |ms: f32| (ms * scale * TICKS_RATE as f32 / 1000.0).round() as usize;
+    let (last, _) = TICKS[TICKS.len() - 1];
+    let mut samples = vec![0i8; at(last + TICK[TICK.len() - 1].2)];
+    for (offset, strength) in TICKS {
+        for (start, peak, end, share, rise, fall) in TICK {
+            let (start, peak, end) = (start + offset, peak + offset, end + offset);
+            for (i, sample) in samples.iter_mut().enumerate().take(at(end)).skip(at(start)) {
+                let t = i as f32 * 1000.0 / TICKS_RATE as f32 / scale;
+                let (way, power) = if t < peak { ((t - start) / (peak - start), rise) } else { ((end - t) / (end - peak), fall) };
+                let k = (FRAC_PI_2 * way.clamp(0.0, 1.0)).sin().powf(power);
+                *sample = (strength * share * k * f32::from(i8::MAX)).round() as i8;
+            }
+        }
+    }
+    samples
+}
+
 /// A click as the driver loaded it: the slot the kernel keeps it in, and
 /// how long it plays.
 struct Loaded {
@@ -187,9 +260,10 @@ fn upload(dev: &File, click: &Click, share: f32) -> Result<Loaded> {
             kept[0] = *id;
             (std::mem::size_of_val(&kept), kept.as_mut_ptr())
         }
-        Click::Made(made) => {
-            samples.length = u32::try_from(made.len())?;
-            samples.data = made.as_ptr();
+        Click::Samples { data, rate } => {
+            samples.length = u32::try_from(data.len())?;
+            samples.rate = *rate;
+            samples.data = data.as_ptr();
             (std::mem::size_of::<Samples>(), (&mut samples as *mut Samples).cast::<i16>())
         }
     };
@@ -228,7 +302,7 @@ fn upload(dev: &File, click: &Click, share: f32) -> Result<Loaded> {
             length
         }
         // The queue is full before the samples start playing.
-        Click::Made(made) => Duration::from_secs_f64(made.len() as f64 / f64::from(RATE)),
+        Click::Samples { data, rate } => Duration::from_secs_f64(data.len() as f64 / f64::from(*rate)),
     };
     Ok(Loaded { slot: effect.id, length })
 }
@@ -264,6 +338,24 @@ mod tests {
         let quarter = (RATE as f32 / 172.4 / 4.0).round() as usize;
         assert!(samples[quarter] > 120, "it rises first");
         assert!(samples[drive + quarter] < -120, "it falls first once turned over");
+    }
+
+    #[test]
+    fn the_screen_going_off_ticks_twice_crisply_the_second_lighter() {
+        let at = |ms: f32| (ms * TICKS_RATE as f32 / 1000.0).round() as usize;
+        let samples = ticks(TICKS_HZ);
+        let (first, second) = (&samples[..at(12.167)], &samples[at(55.125)..]);
+        assert_eq!(samples.len(), at(55.125 + 12.167));
+        assert!(samples[at(12.167)..at(55.125)].iter().all(|&s| s == 0), "still between");
+        let halves = |s: &[i8]| 1 + s.iter().filter(|&&s| s != 0).map(|&s| s > 0).collect::<Vec<_>>().windows(2).filter(|w| w[0] != w[1]).count();
+        assert_eq!((halves(first), halves(second)), (6, 6), "six half-swings each");
+        let motor = TICKS_RATE as f32 / TICKS_HZ / 2.0;
+        assert!((at(12.167 - 0.125) as f32 / 6.0) < motor, "each quicker than the motor's own");
+        assert_eq!(first.iter().min(), Some(&-i8::MAX), "the first swings to the full");
+        for (i, (&a, &b)) in first.iter().zip(second).enumerate() {
+            assert!((f32::from(a) * 0.79 - f32::from(b)).abs() <= 1.0, "the second is the first at 0.79: {a} and {b} at {i}");
+        }
+        assert_eq!(ticks(TICKS_HZ * 2.0).len(), samples.len().div_ceil(2), "a motor twice as quick ticks in half the time");
     }
 
     #[test]

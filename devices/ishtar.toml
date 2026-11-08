@@ -183,9 +183,11 @@ recovery = "ed63e2d3cbb1b06a15579f5384c87e7d80505e44140b3a767f5034d532a3568a"
 # qcom-hv-haptics. Waveform 0 is the click: 8 pattern samples at 6667 µs
 # each (its debugfs entry, haptics/effect0). Qualcomm's vibrator HAL plays
 # its light strength at half of a waveform's drive and its strong one at
-# the whole of it.
+# the whole of it. The driver says the motor's resonant frequency, which
+# the ticks of the screen going off are made at, in lra_frequency_hz.
 [haptics]
 click = 0
+resonance = "/sys/class/qcom-haptics/lra_frequency_hz"
 strength = { lightest = 0.5, strongest = 1.0 }
 
 # The partitions a backup of the baseband and EFS takes: the baseband's

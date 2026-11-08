@@ -467,6 +467,16 @@ pub mod kms {
     /// Direct scanout on the built-in panel: its fastest mode on the CRTC
     /// driving it, three dumb buffers taken in turn on its primary planes,
     /// and every other connector and plane taken off that CRTC.
+    /// How the display stands.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Power {
+        On,
+        /// The panel rests in its low-power mode, the display processor
+        /// stopped.
+        Resting,
+        Off,
+    }
+
     pub struct KmsSurface {
         card: Card,
         bufs: [Buf; 3],
@@ -477,6 +487,27 @@ pub mod kms {
         /// The planes showing the buffer, one per layer mixer, with their
         /// FB_ID properties.
         planes: Vec<(plane::Handle, property::Handle)>,
+        /// The CRTC driving the panel, with its ACTIVE and MODE_ID
+        /// properties.
+        crtc: drm::control::crtc::Handle,
+        active: property::Handle,
+        mode_id: property::Handle,
+        /// The panel's preferred mode, which it comes up in, and its
+        /// fastest, which it switches to after, where that is another.
+        preferred: property::Value<'static>,
+        fastest: Option<property::Value<'static>>,
+        /// The sub-pixel rendering setup the CRTC takes with each mode,
+        /// where the panel leaves its sub-pixel rendering to the display.
+        spr: Option<(property::Handle, property::Value<'static>)>,
+        /// The panel's connector, with its low-power switch where the
+        /// display driver has one, and the switch's values for running and
+        /// for resting.
+        conn: connector::Handle,
+        lp: Option<(property::Handle, u64, u64)>,
+        power: Power,
+        /// The display came on again in the panel's preferred mode, and the
+        /// panel has yet to switch to its fastest.
+        slow: bool,
         w: u32,
         h: u32,
         order: Order,
@@ -627,11 +658,12 @@ pub mod kms {
             if let Ok((id, _)) = conn_props.get("frame_trigger_mode") {
                 req.add_property(conn.handle(), id, property::Value::UnsignedRange(enum_value(&card, id, "posted_start")?));
             }
-            req.add_property(crtc, crtc_props.handle("MODE_ID")?, first);
-            req.add_property(crtc, crtc_props.handle("ACTIVE")?, property::Value::Boolean(true));
+            let (mode_id, active) = (crtc_props.handle("MODE_ID")?, crtc_props.handle("ACTIVE")?);
+            req.add_property(crtc, mode_id, first);
+            req.add_property(crtc, active, property::Value::Boolean(true));
             // A panel whose sub-pixel rendering is the display processor's
-            // has it set up with the mode; the switch to the fastest refresh,
-            // a mode set of its own, carries it again.
+            // has it set up with each mode set: this one, the switch to the
+            // fastest refresh, and each time the display comes on again.
             let spr = match conn_props.get("capabilities") {
                 Ok((_, caps)) => {
                     let text = card.get_property_blob(caps).context("read capabilities")?;
@@ -641,15 +673,16 @@ pub mod kms {
                                 .into_iter()
                                 .find(|name| crtc_props.get(name).is_ok())
                                 .ok_or_else(|| anyhow!("the panel leaves its {pack_type} sub-pixel rendering to a CRTC that takes no setup for it"))?;
-                            Some((crtc_props.handle(name)?, spr::setup(pack_type, name)?, name))
+                            let setup = card.create_property_blob(spr::setup(pack_type, name)?.as_slice()).context("create sub-pixel rendering blob")?;
+                            Some((crtc_props.handle(name)?, setup, name))
                         }
                         None => None,
                     }
                 }
                 Err(_) => None,
             };
-            if let Some((id, setup, _)) = &spr {
-                req.add_property(crtc, *id, card.create_property_blob(setup.as_slice()).context("create sub-pixel rendering blob")?);
+            if let Some((id, setup, _)) = spr {
+                req.add_property(crtc, id, setup);
             }
             for &other in attached.iter().filter(|&&p| !candidates.iter().any(|c| c.0 == p)) {
                 let props = Props::read(&card, other)?;
@@ -674,20 +707,9 @@ pub mod kms {
                 planes.push((*plane, fb_prop));
             }
             // The panel comes up in its preferred mode, then switches to the
-            // fastest. Powered up in the fast mode directly, the display
-            // controller runs at the fast rate but the panel keeps its own:
-            // the 13 Ultra's sends its TE at 60 Hz, and every frame waits two
-            // TEs. Switching a running panel sends it the commands for the
-            // new rate, as Android's switches do.
+            // fastest, as `to_fastest` says why.
             commit(&card, req, AtomicCommitFlags::ALLOW_MODESET).context("set the panel mode")?;
-            if mode.vrefresh() != preferred.vrefresh() {
-                let mut req = atomic::AtomicModeReq::new();
-                req.add_property(crtc, crtc_props.handle("MODE_ID")?, blob);
-                if let Some((id, setup, _)) = &spr {
-                    req.add_property(crtc, *id, card.create_property_blob(setup.as_slice()).context("create sub-pixel rendering blob")?);
-                }
-                commit(&card, req, AtomicCommitFlags::ALLOW_MODESET).context("switch the panel to its fastest refresh")?;
-            }
+            let fastest = (mode.vrefresh() != preferred.vrefresh()).then_some(blob);
 
             let ids: Vec<u32> = planes.iter().map(|p| u32::from(p.0)).collect();
             let summary = format!(
@@ -700,11 +722,114 @@ pub mod kms {
                 fourcc,
                 spr.as_ref().map(|(_, _, name)| format!(", sub-pixel rendering through {name}")).unwrap_or_default()
             );
-            Ok(KmsSurface { card, bufs, back: 1, flipping: false, planes, w, h, order, summary })
+            let spr = spr.map(|(id, setup, _)| (id, setup));
+            let lp = match conn_props.get("LP") {
+                Ok((id, _)) => Some((id, enum_value(&card, id, "ON")?, enum_value(&card, id, "LP2")?)),
+                Err(_) => None,
+            };
+            let conn = conn.handle();
+            let s = KmsSurface {
+                card,
+                bufs,
+                back: 1,
+                flipping: false,
+                planes,
+                crtc,
+                active,
+                mode_id,
+                preferred: first,
+                fastest,
+                spr,
+                conn,
+                lp,
+                power: Power::On,
+                slow: false,
+                w,
+                h,
+                order,
+                summary,
+            };
+            s.to_fastest()?;
+            Ok(s)
         }
 
         pub fn describe(&self) -> &str {
             &self.summary
+        }
+
+        pub fn is_on(&self) -> bool {
+            self.power == Power::On
+        }
+
+        pub fn is_off(&self) -> bool {
+            self.power == Power::Off
+        }
+
+        /// Let the panel rest, ready to light again at once: in its
+        /// low-power mode, as Android rests it while dozing, with the
+        /// display processor stopped. The 13 Ultra's lights from there in
+        /// 13 ms, where coming on from off takes 158, most of it the panel
+        /// waiting 120 ms after leaving sleep as its own commands say.
+        /// Where the display driver has no low-power mode, the display
+        /// turns off. A touch controller that follows the panel, as
+        /// Xiaomi's do, rests with it either way.
+        pub fn rest(&mut self) -> Result<()> {
+            if self.power != Power::On {
+                return Ok(());
+            }
+            let Some((id, _, rest)) = self.lp else { return self.turn_off() };
+            self.settle()?;
+            let mut req = atomic::AtomicModeReq::new();
+            req.add_property(self.conn, id, property::Value::UnsignedRange(rest));
+            self.card.atomic_commit(AtomicCommitFlags::empty(), req).context("rest the panel")?;
+            self.power = Power::Resting;
+            Ok(())
+        }
+
+        /// Turn the display off: the panel and the display processor feeding
+        /// it stop drawing power. The next frame presented turns it on
+        /// again.
+        pub fn turn_off(&mut self) -> Result<()> {
+            if self.power == Power::Off {
+                return Ok(());
+            }
+            self.settle()?;
+            let mut req = atomic::AtomicModeReq::new();
+            req.add_property(self.crtc, self.active, property::Value::Boolean(false));
+            // Qualcomm's display driver sends no event for a commit that
+            // turns its CRTC off, so this one is made to return once it is
+            // done.
+            self.card.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, req).context("turn the display off")?;
+            self.power = Power::Off;
+            Ok(())
+        }
+
+        /// Switch a panel that came on again in its preferred mode to its
+        /// fastest. It is called once the backlight is on, which need not
+        /// wait the frames the switch takes.
+        pub fn speed_up(&mut self) -> Result<()> {
+            if self.slow {
+                self.settle()?;
+                self.to_fastest()?;
+                self.slow = false;
+            }
+            Ok(())
+        }
+
+        /// The panel, up in its preferred mode, switched to its fastest.
+        /// Powered up in the fast mode directly, the display controller runs
+        /// at the fast rate but the panel keeps its own: the 13 Ultra's sends
+        /// its TE at 60 Hz, and every frame waits two TEs. Switching a
+        /// running panel sends it the commands for the new rate, as Android's
+        /// switches do.
+        fn to_fastest(&self) -> Result<()> {
+            let Some(fastest) = self.fastest else { return Ok(()) };
+            let mut req = atomic::AtomicModeReq::new();
+            req.add_property(self.crtc, self.mode_id, fastest);
+            if let Some((id, setup)) = self.spr {
+                req.add_property(self.crtc, id, setup);
+            }
+            commit(&self.card, req, AtomicCommitFlags::ALLOW_MODESET).context("switch the panel to its fastest refresh")
         }
     }
 
@@ -728,6 +853,8 @@ pub mod kms {
         /// before comes, to be sent from the next TE, and drawn while that
         /// one is sent: into the buffer of the frame before both, which the
         /// panel finished reading before the frame now being sent started.
+        /// A display turned off comes on again with the frame, in the
+        /// panel's preferred mode, as it first came up.
         fn present(&mut self, canvas: &Canvas) -> Result<()> {
             if (canvas.w, canvas.h) != (self.w, self.h) {
                 return Err(anyhow!("canvas {}x{} does not match the display {}x{}", canvas.w, canvas.h, self.w, self.h));
@@ -753,9 +880,28 @@ pub mod kms {
             for &(plane, fb_prop) in &self.planes {
                 req.add_property(plane, fb_prop, property::Value::Framebuffer(Some(buf.fb)));
             }
+            let mut flags = AtomicCommitFlags::NONBLOCK | AtomicCommitFlags::PAGE_FLIP_EVENT;
+            if self.power != Power::On {
+                // The panel runs again, and coming on from off it would
+                // otherwise rest again as it last did.
+                if let Some((id, run, _)) = self.lp {
+                    req.add_property(self.conn, id, property::Value::UnsignedRange(run));
+                }
+            }
+            if self.power == Power::Off {
+                req.add_property(self.crtc, self.active, property::Value::Boolean(true));
+                req.add_property(self.crtc, self.mode_id, self.preferred);
+                if let Some((id, setup)) = self.spr {
+                    req.add_property(self.crtc, id, setup);
+                }
+                flags |= AtomicCommitFlags::ALLOW_MODESET;
+            }
             self.settle()?;
-            let flags = AtomicCommitFlags::NONBLOCK | AtomicCommitFlags::PAGE_FLIP_EVENT;
-            self.card.atomic_commit(flags, req).context("flip")?;
+            self.card.atomic_commit(flags, req).context(if self.power == Power::On { "flip" } else { "turn the display on" })?;
+            if self.power == Power::Off {
+                self.slow = self.fastest.is_some();
+            }
+            self.power = Power::On;
             self.flipping = true;
             self.back = (self.back + 1) % self.bufs.len();
             Ok(())

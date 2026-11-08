@@ -1,5 +1,6 @@
 pub mod app;
 pub mod canvas;
+pub mod charge;
 pub mod color;
 pub mod editor;
 pub mod files;

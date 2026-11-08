@@ -1557,6 +1557,7 @@ fn nezha(cfg: &DeviceConfig) -> DeviceInfo {
             voltage: Some(4_442_000),
             // The recovery has no fast charging handshake with the charger.
             quick: false,
+            plugged: true,
         }),
         slot: Some(Slot::B),
         snapshot: SnapshotState::None,

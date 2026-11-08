@@ -5,7 +5,7 @@
 This checkout also contains an experimental, hardware-tested Xiaomi Pad
 6S Pro 12.4 (`sheng`) port. Build it with `tools/build-sheng.sh` and a local
 OS3.0.303.0.WNXCNXM stock recovery image; see
-[the device notes](devices/sheng/README.zh-CN.md) for its required ramdisk overlay.
+[the build script](tools/build-sheng.sh) for its required ramdisk overlay.
 
 English | [简体中文](README.zh-CN.md)
 
@@ -77,8 +77,8 @@ phone's model and codename, such as Xiaomi 17 Ultra (nezha). Check it against
 the slot the phone runs from, with the phone in fastboot mode:
 
 ```sh
-unzip skyward-v0.1.4-nezha-OS4.0.4.0.XPACNXM.zip
-fastboot flash recovery skyward-v0.1.4-nezha-OS4.0.4.0.XPACNXM.img
+unzip skyward-v0.1.5-nezha-OS4.0.4.0.XPACNXM.zip
+fastboot flash recovery skyward-v0.1.5-nezha-OS4.0.4.0.XPACNXM.img
 fastboot reboot recovery
 ```
 

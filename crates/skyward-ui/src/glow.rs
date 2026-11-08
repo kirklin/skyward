@@ -305,7 +305,7 @@ fn hash(x: f32, y: f32) -> f32 {
 }
 
 /// Smooth value noise in 0..1.
-fn perlin(x: f32, y: f32) -> f32 {
+pub(crate) fn perlin(x: f32, y: f32) -> f32 {
     let (ix, iy) = (x.floor(), y.floor());
     let (fx, fy) = (x - ix, y - iy);
     let (a, b, c, d) = (hash(ix, iy), hash(ix + 1.0, iy), hash(ix, iy + 1.0), hash(ix + 1.0, iy + 1.0));
@@ -425,6 +425,23 @@ fn field_span(px: &mut [[u8; 4]], noise: &[i8], x0: usize, cell: usize, start: &
             ];
         }
         x = end;
+    }
+}
+
+/// Fill the rows of `out` from `top` down with `field`, whose first grid
+/// row lies on row `top`, as many as the field reaches or the screen
+/// holds, dithered at full strength.
+pub fn paint_band(out: &mut Canvas, field: &Field, top: usize, dither: &Dither) {
+    let w = out.w as usize;
+    assert_eq!(dither.w, w, "the dither was made for this screen");
+    assert!(out.whole(), "the field fills whole rows of a whole screen");
+    let bottom = (top + (field.rows - 1) * field.cell).min(out.h as usize);
+    let mut start = vec![[0i32; 3]; field.cols - 1];
+    let mut step = vec![[0i32; 3]; field.cols - 1];
+    for y in top..bottom {
+        field.row(y - top, &mut start, &mut step);
+        let row = out.data[y * w * 4..(y + 1) * w * 4].as_chunks_mut::<4>().0;
+        field_span(row, &dither.steps[y * w..(y + 1) * w], 0, field.cell, &start, &step, 4096);
     }
 }
 

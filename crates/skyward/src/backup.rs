@@ -381,6 +381,12 @@ fn backup(t: BackupTask, tell: &dyn Fn(Event), cancel: &AtomicBool) -> Result<Pa
             plan.push((Part::Efs, name.clone(), Source::Block(device), size));
         }
     }
+    for (part, selected) in Part::ALL.into_iter().zip(t.parts) {
+        if selected {
+            ensure!(plan.iter().any(|(planned, _, _, _)| *planned == part), "no backup sources found for {part:?}");
+        }
+    }
+    ensure!(!plan.is_empty(), "no backup sources selected");
     // Compressed, what the files take is not known until they are written.
     needed += plan.iter().map(|p| p.3).sum::<u64>();
     let free = free_bytes(&t.into)?;

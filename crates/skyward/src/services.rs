@@ -183,7 +183,7 @@ fn ready(s: &Service) -> Result<()> {
             }
         }
         if Instant::now() >= until {
-            bail!("{} {waited_on} in {} seconds", s.path, READY_TIMEOUT.as_secs());
+            bail!("{} {waited_on} in {} seconds{}", s.path, READY_TIMEOUT.as_secs(), it_said(s));
         }
         thread::sleep(READY_POLL);
     }
@@ -211,15 +211,52 @@ fn supervise(s: &Service, who: &Credentials) -> ! {
 fn run(s: &Service, who: &Credentials) -> Result<String> {
     let mut child = command(s, who).spawn().with_context(|| format!("start {}", s.path))?;
     let status = child.wait().context("wait for it")?;
-    Ok(format!("pid {} ended: {status}", child.id()))
+    Ok(format!("pid {} ended: {status}{}", child.id(), it_said(s)))
+}
+
+/// What a program wrote before it ended, the last few lines of it, as the
+/// recovery's log carries it: a program that stops at once otherwise leaves
+/// only its exit status to go on.
+fn it_said(s: &Service) -> String {
+    let Ok(bytes) = fs::read(log_of(s)) else { return String::new() };
+    let text = String::from_utf8_lossy(&bytes);
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    if lines.is_empty() {
+        return String::new();
+    }
+    let tail: Vec<&str> = lines.iter().rev().take(6).rev().copied().collect();
+    format!("; it said: {}", tail.join(" | "))
+}
+
+/// Where a program's own output is kept, named after the program itself
+/// rather than the loader it may be started through.
+fn log_of(s: &Service) -> PathBuf {
+    let named = s.args.first().cloned().unwrap_or_else(|| s.path.clone());
+    let name = Path::new(&named).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "service".into());
+    PathBuf::from("/tmp").join(format!("{name}.log"))
 }
 
 /// The program as it is started: with what it is given, from the top of the
-/// tree, reading and writing nothing of the recovery's, finding its
-/// libraries where it names them, and as `who`.
+/// tree, finding its libraries where it names them, and as `who`. Its own
+/// output is kept in a file, which a program that ends at once is read back
+/// from.
 fn command(s: &Service, who: &Credentials) -> Command {
     let mut cmd = Command::new(&s.path);
-    cmd.args(&s.args).current_dir("/").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    cmd.args(&s.args).current_dir("/").stdin(Stdio::null());
+    match fs::OpenOptions::new().create(true).append(true).open(log_of(s)) {
+        Ok(file) => match file.try_clone() {
+            Ok(copy) => {
+                cmd.stdout(Stdio::from(copy));
+                cmd.stderr(Stdio::from(file));
+            }
+            Err(_) => {
+                cmd.stdout(Stdio::null()).stderr(Stdio::null());
+            }
+        },
+        Err(_) => {
+            cmd.stdout(Stdio::null()).stderr(Stdio::null());
+        }
+    }
     if !s.libraries.is_empty() {
         cmd.env("LD_LIBRARY_PATH", s.libraries.join(":"));
     }

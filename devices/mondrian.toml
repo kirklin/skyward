@@ -1,0 +1,151 @@
+[device]
+codename = "mondrian"
+brand = "Xiaomi"
+model = "Redmi K60"
+ab = true
+soc = { hans = "第一代骁龙®8+移动平台", hant = "Snapdragon® 8+ Gen 1 行動平台", en = "Snapdragon® 8+ Gen 1 Mobile Platform" }
+os_version_prop = "ro.mi.os.version.incremental"
+
+[display]
+width = 1440
+height = 3200
+density = 560
+diagonal = 6.67
+corner_radius = 120
+
+# The touchscreen is a Goodix one on the panel's SPI bus, described in the
+# device tree as xiaomi,m11a-spi. Its driver registers with Xiaomi's own
+# touch core, which makes /dev/xiaomi-touch and the folders under
+# /sys/class/touch; the core has to be in before the driver, which is what
+# modules.dep says of them.
+[modules]
+sources = ["vendor_dlkm", "vendor"]
+load = ["xiaomi_touch", "goodix_core"]
+# The recovery's own init loads goodix_core from the vendor modules before
+# the Xiaomi touch core it registers with, and it binds to nothing. Skyward
+# takes it out and puts it back after the core.
+reload = ["goodix_core"]
+
+# The panel hands raw frames to the host, as the 13 Ultra's does: the
+# kernel's own input device stays silent, and the phone's touch_report turns
+# what /dev/xiaomi-touch carries into touches on the fts input device, which
+# touchsensor tells water, gloves and screen protectors apart on. Both run as
+# the user the phone's init script gives them.
+[[owners]]
+user = "system"
+group = "system"
+mode = 0o664
+paths = [
+    "/dev/xiaomi-touch",
+    "/dev/xiaomi-touch-knock",
+    "/sys/class/touch/touch_dev/fod_press_status",
+    "/sys/class/touch/touch_dev/clicktouch_raw",
+    "/sys/class/touch/touch_dev/update_rawdata",
+    "/sys/class/touch/touch_dev/enable_touch_raw",
+    "/sys/class/touch/touch_dev/enable_touch_delta",
+    "/sys/class/touch/touch_dev/touch_thp_dump",
+    "/sys/class/touch/touch_dev/touch_thp_cmd",
+    "/sys/class/touch/touch_dev/touch_thp_cmd_data",
+    "/sys/class/touch/touch_dev/touch_thp_cmd_ready",
+    "/sys/class/touch/touch_dev/touch_thp_rx_num",
+    "/sys/class/touch/touch_dev/touch_thp_tx_num",
+    "/sys/class/touch/touch_dev/touch_thp_x_resolution",
+    "/sys/class/touch/touch_dev/touch_thp_y_resolution",
+    "/sys/class/touch/touch_dev/touch_thp_smooth",
+    "/sys/class/touch/touch_dev/touch_thp_noisefilter",
+    "/sys/class/touch/touch_dev/touch_thp_downthd",
+    "/sys/class/touch/touch_dev/touch_thp_upthd",
+    "/sys/class/touch/touch_dev/touch_thp_movethd",
+    "/sys/class/touch/touch_dev/touch_thp_islandthd",
+    "/sys/class/touch/touch_dev/touch_thp_mem_notify",
+    "/sys/class/touch/touch_dev/touch_thp_testmode",
+    "/sys/class/touch/touch_dev/touch_thp_testresult",
+    "/sys/class/touch/touch_dev/touch_thp_preset_point",
+    "/sys/class/touch/touch_dev/touch_doze_analysis",
+    "/sys/class/touch/touch_dev/touch_ic_buffer",
+    "/sys/class/touch/touch_dev/abnormal_event",
+    "/sys/class/touch/touch_dev/palm_sensor_data",
+    "/sys/class/touch/touch_dev/palm_sensor",
+    "/sys/class/touch/touch_dev/touch_irq_no",
+    "/sys/class/touch/touch_dev/touch_sensor",
+    "/sys/class/touch/touch_dev/touch_sensor_ctrl",
+    "/sys/class/touch/touch_dev/gesture_single_tap_state",
+    "/sys/class/touch/touch_dev/touch_active_status",
+    "/sys/class/touch/touch_dev/touch_finger_status",
+    "/sys/class/touch/touch_dev/suspend_state",
+    "/sys/class/touch/touch_dev/prox_sensor",
+    "/proc/tp_selftest",
+    "/proc/tp_hal_version",
+    "/proc/tp_fw_version",
+    "/proc/tp_lockdown_info",
+]
+
+[[service]]
+path = "/mnt/system_ext/bin/hwservicemanager"
+libraries = ["/mnt/system/system/lib64/bootstrap", "/mnt/system/system/lib64", "/mnt/system_ext/lib64"]
+ready_property = "hwservicemanager.ready"
+user = "system"
+groups = ["system", "readproc"]
+
+[[service]]
+path = "/vendor/bin/hw/vendor.xiaomi.hw.touchfeature@1.0-service"
+libraries = ["/vendor/lib64", "/system/lib64"]
+ready_hardware_service = "vendor.xiaomi.hw.touchfeature@1.0::ITouchFeature/default"
+user = "system"
+groups = ["system"]
+
+[[service]]
+path = "/vendor/bin/touch_report"
+user = "system"
+groups = ["system", "uhid", "input"]
+capabilities = ["SYS_NICE"]
+
+# The port's wrapped FBE metadata key depends on Qualcomm's secure-world
+# listeners and KeyMint. Match the users and groups in the installed vendor
+# init rules; keep the user's credential entirely on the phone's UI.
+[[service]]
+path = "/vendor/bin/qseecomd"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_property = "vendor.sys.listeners.registered"
+user = "root"
+groups = ["root", "drmrpc"]
+
+[[service]]
+path = "/vendor/bin/hw/android.hardware.security.keymint-service-qti"
+libraries = ["/mnt/system/system/lib64/bootstrap", "/mnt/system/system/lib64", "/system/lib64", "/vendor/lib64"]
+ready_service = "android.hardware.security.keymint.IKeyMintDevice/default"
+user = "system"
+groups = ["system", "drmrpc"]
+
+[[service]]
+path = "/vendor/bin/hw/android.hardware.gatekeeper@1.0-service-qti"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_hardware_service = "android.hardware.gatekeeper@1.0::IGatekeeper/default"
+user = "system"
+groups = ["system"]
+
+
+
+# The reboot page reads the next slot through the installed vendor HAL.
+[[service]]
+path = "/vendor/bin/hw/android.hardware.boot@1.2-service"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_hardware_service = "android.hardware.boot@1.2::IBootControl/default"
+user = "root"
+groups = ["root"]
+
+[backup]
+efs = ["modemst1", "modemst2", "fsg", "fsc", "persist"]
+data_skipped = ["vendor/tzstorage", "vendor/qtee", "vendor/fingerprint", "vendor/fpc", "vendor/goodix"]
+
+[haptics]
+resonance = "/sys/class/qcom-haptics/lra_frequency_hz"
+strength = { lightest = 0.25, strongest = 0.75 }
+
+[stock]
+# Recovery ramdisk source is the last official K60 build. The OS4.0.6.0
+# port supplies the running kernel, vendor_boot and mounted system services;
+# its bundled recovery.img is TWRP and cannot serve as a stock base.
+version = "OS3.0.8.0.VMNCNXM"
+package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS3.0.8.0.VMNCNXM/mondrian-ota_full-OS3.0.8.0.VMNCNXM-user-15.0-3fb07519a6.zip"
+recovery = "38c7a26bdbb9647372552156ee62f2ae79971184e7623dcb37190bb90b73e230"

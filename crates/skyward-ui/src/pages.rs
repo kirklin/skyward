@@ -253,6 +253,11 @@ pub fn home(cx: &Ctx) -> Frame {
         rows.push(Row::new(title).icon(ORANGE, Icon::Power).subtitle(note).trail(Trail::Arrow));
         opens.push(Some(Action::Open(Screen::Slot)));
     }
+    if cx.state.system_notice.is_some() {
+        let why = l.pick(["点按查看原因", "點按查看原因", "Tap to see why"]);
+        rows.push(Row::new(l.pick(SECOND_FAILED)).icon(RED, Icon::Systems).subtitle(why).trail(Trail::Arrow));
+        opens.push(Some(Action::Open(Screen::Systems)));
+    }
     let card = widgets::device_card(&mut c, t, f, y, &i.model, &sub, &rows);
     out.push(Hit { rect: card.rows[0], action: Action::Open(Screen::About) });
     out.extend(card.rows[1..].iter().zip(&opens).filter_map(|(&rect, open)| open.map(|action| Hit { rect, action })));
@@ -3645,6 +3650,10 @@ pub fn slot(cx: &Ctx) -> Frame {
 const MAIN_SYSTEM: Text = ["主系统", "主系統", "Main system"];
 const SECOND_SYSTEM: Text = ["第二系统", "第二系統", "Second system"];
 
+/// What the home page and the systems page say once the second system's
+/// start stopped.
+const SECOND_FAILED: Text = ["第二系统未能启动", "第二系統未能啟動", "The second system couldn't start"];
+
 /// The two systems as big cards one over the other, laid out as the boot
 /// slot page lays out its slots: the main system, in the phone's own
 /// partitions, and the second, whose files lie in the data partition, or
@@ -3719,6 +3728,9 @@ pub fn systems(cx: &Ctx) -> Frame {
     };
     out.extend(hits(&shown.rows, &[Action::PickSystem(Who::Installed), second_opens]));
     let mut y = shown.bottom + t.m.dp(12.0);
+    if let Some(why) = &s.system_notice {
+        y = widgets::info_card(&mut c, t, f, y, &[(l.pick(SECOND_FAILED), why.clone())]);
+    }
     if chosen != starts {
         match (chosen, fmt::snapshot_system_note(l, &i.snapshot)) {
             (Who::Other, Some(note)) => y = widgets::footnote(&mut c, t, f, y, note),

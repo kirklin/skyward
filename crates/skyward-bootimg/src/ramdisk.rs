@@ -1,6 +1,11 @@
 use anyhow::{bail, Context, Result};
 use cpio::{NewcBuilder, NewcReader};
+use std::ffi::{CString, OsStr};
+use std::fs;
 use std::io::{Cursor, Read, Write};
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 /// One cpio entry with the metadata the kernel restores when it unpacks the
@@ -22,6 +27,10 @@ const S_IFMT: u32 = 0o170000;
 const S_IFDIR: u32 = 0o040000;
 const S_IFREG: u32 = 0o100000;
 const S_IFLNK: u32 = 0o120000;
+const S_IFCHR: u32 = 0o020000;
+const S_IFBLK: u32 = 0o060000;
+const S_IFIFO: u32 = 0o010000;
+const S_IFSOCK: u32 = 0o140000;
 
 /// The permissions a stock ramdisk gives its links, such as the commands
 /// in system/bin that stand for toybox.
@@ -106,6 +115,25 @@ impl Ramdisk {
         self.entries.iter().find(|e| e.name == name)
     }
 
+    /// Unpack the archive over `root`, as the kernel unpacks each archive of
+    /// an initramfs over those before it: an entry takes the place of what
+    /// is there of another kind, a folder already there stays, and each
+    /// entry gets the archive's owner, mode and time, a folder's time once
+    /// everything in it is in. Where a file is already there, the entry is
+    /// made anew, where the kernel writes over it, so that a program
+    /// running from that file is left alone.
+    pub fn unpack(&self, root: &Path) -> Result<()> {
+        for e in &self.entries {
+            let path = root.join(&e.name);
+            unpack(e, &path).with_context(|| format!("unpack {}", path.display()))?;
+        }
+        for e in self.entries.iter().filter(|e| e.is_dir()) {
+            let path = root.join(&e.name);
+            set_time(&path, e.mtime).with_context(|| format!("unpack {}", path.display()))?;
+        }
+        Ok(())
+    }
+
     /// Replace a regular file's contents, keeping its owner and mode.
     pub fn replace(&mut self, name: &str, data: Vec<u8>) -> Result<()> {
         match self.entries.iter_mut().find(|e| e.name == name) {
@@ -162,6 +190,66 @@ impl Ramdisk {
 fn root_entry(name: &str, mode: u32, data: Vec<u8>) -> Entry {
     let nlink = if mode & S_IFMT == S_IFDIR { 2 } else { 1 };
     Entry { name: name.to_string(), mode, uid: 0, gid: 0, mtime: 0, nlink, dev: (0, 0), rdev: (0, 0), data }
+}
+
+fn c_path(path: &Path) -> Result<CString> {
+    CString::new(path.as_os_str().as_bytes()).context("a NUL in the path")
+}
+
+/// One entry of [`Ramdisk::unpack`] at `path`.
+fn unpack(e: &Entry, path: &Path) -> Result<()> {
+    let kind = e.mode & S_IFMT;
+    let mode = e.mode & 0o7777;
+    let kept = match fs::symlink_metadata(path) {
+        Ok(there) if there.is_dir() && kind == S_IFDIR => true,
+        Ok(there) if there.is_dir() => {
+            fs::remove_dir(path).context("take away the folder there")?;
+            false
+        }
+        Ok(_) => {
+            fs::remove_file(path).context("take away what is there")?;
+            false
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => false,
+        Err(err) => return Err(err).context("look at what is there"),
+    };
+    match kind {
+        S_IFDIR if kept => {}
+        S_IFDIR => fs::DirBuilder::new().mode(mode).create(path).context("make the folder")?,
+        S_IFREG => {
+            let mut file = fs::OpenOptions::new().write(true).create_new(true).mode(mode).open(path).context("make the file")?;
+            file.write_all(&e.data).context("write the file")?;
+        }
+        S_IFLNK => std::os::unix::fs::symlink(OsStr::from_bytes(&e.data), path).context("make the link")?,
+        S_IFCHR | S_IFBLK | S_IFIFO | S_IFSOCK => {
+            let dev = libc::makedev(e.rdev.0 as _, e.rdev.1 as _);
+            if unsafe { libc::mknod(c_path(path)?.as_ptr(), e.mode as libc::mode_t, dev) } != 0 {
+                return Err(std::io::Error::last_os_error()).context("make the node");
+            }
+        }
+        _ => bail!("mode {:o} is no kind of file", e.mode),
+    }
+    std::os::unix::fs::lchown(path, Some(e.uid), Some(e.gid)).context("give it its owner")?;
+    // Taking an owner clears the set-ID bits, so the mode comes after; a
+    // link has none of its own.
+    if kind != S_IFLNK {
+        fs::set_permissions(path, fs::Permissions::from_mode(mode)).context("give it its mode")?;
+    }
+    if kind != S_IFDIR {
+        set_time(path, e.mtime)?;
+    }
+    Ok(())
+}
+
+/// Give `path` itself, a link or not, `mtime` as the time it was last
+/// changed and read.
+fn set_time(path: &Path, mtime: u32) -> Result<()> {
+    let at = libc::timespec { tv_sec: mtime as libc::time_t, tv_nsec: 0 };
+    let times = [at, at];
+    if unsafe { libc::utimensat(libc::AT_FDCWD, c_path(path)?.as_ptr(), times.as_ptr(), libc::AT_SYMLINK_NOFOLLOW) } != 0 {
+        return Err(std::io::Error::last_os_error()).context("give it its time");
+    }
+    Ok(())
 }
 
 /// The legacy LZ4 framing's magic number.
@@ -281,6 +369,65 @@ mod tests {
         assert!(back.find("sbin").is_some_and(Entry::is_dir), "a missing folder is made");
         assert!(rd.link("system/bin/recovery", "zstd").is_err(), "a file is no link to point anew");
         assert!(rd.link("system/bin/recovery/7za", "recovery").is_err(), "a file holds no links");
+    }
+
+    /// An entry owned by whoever runs the tests, who can give it that owner.
+    fn mine(name: &str, mode: u32, data: &[u8]) -> Entry {
+        let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
+        Entry { name: name.into(), mode, uid, gid, mtime: 1_500_000_000, nlink: 1, dev: (0, 0), rdev: (0, 0), data: data.to_vec() }
+    }
+
+    #[test]
+    fn unpacking_over_an_archive_unpacked_before_follows_the_kernel() {
+        use std::os::unix::fs::{FileTypeExt, MetadataExt};
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // As the archives before it left the root.
+        fs::write(root.join("init"), b"old program").unwrap();
+        fs::create_dir(root.join("skyward")).unwrap();
+        fs::write(root.join("skyward/system.toml"), b"id = \"test\"").unwrap();
+        fs::DirBuilder::new().mode(0o700).create(root.join("dev")).unwrap();
+        fs::write(root.join("etc"), b"a file").unwrap();
+        std::os::unix::fs::symlink("nowhere", root.join("bin")).unwrap();
+        let rd = Ramdisk {
+            entries: vec![
+                mine("init", S_IFLNK | 0o750, b"/system/bin/init"),
+                mine("dev", S_IFDIR | 0o755, b""),
+                mine("etc", S_IFLNK | 0o644, b"/system/etc"),
+                mine("bin", S_IFDIR | 0o751, b""),
+                mine("skyward", S_IFDIR | 0o750, b""),
+                mine("system", S_IFDIR | 0o755, b""),
+                mine("system/bin", S_IFDIR | 0o755, b""),
+                mine("system/bin/init", S_IFREG | 0o750, b"new program"),
+                mine("system/bin/pipe", S_IFIFO | 0o600, b""),
+            ],
+        };
+        rd.unpack(root).unwrap();
+        let meta = |name: &str| fs::symlink_metadata(root.join(name)).unwrap();
+        assert_eq!(fs::read_link(root.join("init")).unwrap(), Path::new("/system/bin/init"), "a link in the file's place");
+        assert_eq!(fs::read(root.join("skyward/system.toml")).unwrap(), b"id = \"test\"", "what the archive leaves out stays");
+        assert_eq!(meta("dev").permissions().mode() & 0o7777, 0o755, "a folder there stays, with the archive's mode");
+        assert_eq!(fs::read_link(root.join("etc")).unwrap(), Path::new("/system/etc"), "a link in the file's place");
+        assert!(meta("bin").is_dir(), "a folder in the link's place");
+        assert_eq!(meta("bin").permissions().mode() & 0o7777, 0o751);
+        assert_eq!(fs::read(root.join("system/bin/init")).unwrap(), b"new program");
+        assert_eq!(meta("system/bin/init").permissions().mode() & 0o7777, 0o750);
+        assert!(meta("system/bin/pipe").file_type().is_fifo());
+        for e in &rd.entries {
+            let m = meta(&e.name);
+            assert_eq!(m.mtime(), 1_500_000_000, "{} has the archive's time", e.name);
+            assert_eq!((m.uid(), m.gid()), (e.uid, e.gid), "{} has the archive's owner", e.name);
+        }
+    }
+
+    #[test]
+    fn a_folder_with_files_in_it_keeps_its_place() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("lib")).unwrap();
+        fs::write(dir.path().join("lib/modules.load"), b"").unwrap();
+        let rd = Ramdisk { entries: vec![mine("lib", S_IFREG | 0o644, b"a file")] };
+        assert!(rd.unpack(dir.path()).is_err());
+        assert!(dir.path().join("lib/modules.load").exists());
     }
 
     #[test]

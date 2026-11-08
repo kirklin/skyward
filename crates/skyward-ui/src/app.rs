@@ -1664,6 +1664,9 @@ pub struct State {
     pub system_pick: Option<Who>,
     /// Work on the systems under way.
     pub systems_work: Option<SystemsWork>,
+    /// Why the second system's start stopped, as its first program told
+    /// it, which the systems page shows.
+    pub system_notice: Option<String>,
     /// Where the data partition stands, and what is typed at the screen
     /// lock its users' own files wait on.
     pub data: Data,
@@ -1793,6 +1796,7 @@ impl Default for State {
             systems: None,
             system_pick: None,
             systems_work: None,
+            system_notice: None,
             data: Data::Closed,
             code: String::new(),
             search: String::new(),
@@ -3893,6 +3897,13 @@ impl App {
         };
         self.say(&said, now);
         self.refresh();
+    }
+
+    /// The second system's start stopped, for `why`, as its first program
+    /// told it: the systems page shows it, over the home page.
+    pub fn system_stopped(&mut self, why: String) {
+        self.state.system_notice = Some(why);
+        self.open(Screen::Systems);
     }
 
     /// A switch to `to` a system asked for before the recovery started is
@@ -9716,6 +9727,23 @@ mod tests {
         app.switch_asked(Who::Installed);
         assert_eq!((app.screen(), app.state.systems_work), (Screen::Systems, Some(SystemsWork::Switching(Who::Installed))));
         assert!(app.frame(&f, &i).hits.is_empty());
+    }
+
+    #[test]
+    fn a_stopped_second_system_says_why_on_its_page_and_from_the_home_card() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.state.dual_boot = true;
+        app.system_stopped("no partition userdata showed within 15s".into());
+        assert_eq!(app.screen(), Screen::Systems);
+        app.set_systems(Ok(Overview { other_starts: true, ..two_systems() }));
+        let page = app.frame(&f, &i);
+        assert!(page.hits.iter().any(|h| h.action == Action::PickSystem(Who::Installed)), "the main system is there to switch back to");
+        assert!(!page.hits.iter().any(|h| h.action == Action::Confirm(Confirm::SwitchSystem)), "nothing is switched until one is picked");
+        app.key(Key::Back, 0);
+        assert_eq!(app.screen(), Screen::Home);
+        let opens = app.frame(&f, &i).hits.iter().filter(|h| h.action == Action::Open(Screen::Systems)).count();
+        assert_eq!(opens, 2, "the card says so above the entry to the systems");
     }
 
     /// Whether the page shows a key of the keypad or keyboard to tap.

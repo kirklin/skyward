@@ -122,15 +122,26 @@ A system without an init_boot image of its own starts from one Skyward makes. It
 program loads the installed system's first-stage kernel modules the way that
 system's first stage loads them, with their soft dependencies and the settings the
 kernel command line gives them, finds the root in the data partition, mounts it and
-starts `init` there. If anything stops it, it says why in the kernel's log and stays
-where it stopped. A system with a first ramdisk of its own finds Skyward's program
-at `/skyward/map`, which lays the root out as a block device and prints its node.
-Each switch to the second system writes its init_boot image with the program of the
-Skyward that switches, so an updated Skyward starts it with the new program.
+starts `init` there. If anything stops it, it brings Skyward up, as a failed start
+of the installed system ends in the recovery: it leaves the reason in misc, unpacks
+the ramdisk of the slot's recovery partition over its own, as the kernel unpacks it
+when the bootloader starts the recovery, and hands over to Skyward's first program,
+so Skyward comes up however the bootloader treats a restart. Skyward shows why, and
+the second system still starts next until the user switches on Dual boot. A start
+that stops moving restarts into the recovery instead, and a phone restarted before
+the hand-over finds the same request in misc at its next start, which brings
+Skyward up before anything else. Where Skyward comes up neither way, the phone stays
+where it stopped, and never starts the same again and again. A system with a first
+ramdisk of its own finds Skyward's program at `/skyward/map`, which lays the root
+out as a block device and prints its node. Each switch to the second system writes
+its init_boot image with the program of the Skyward that switches, so an updated
+Skyward starts it with the new program.
 
 A running system switches by writing `boot-recovery` with
 `--switch_system=installed`, or `--switch_system=` and the second system's `id`, to
-misc, and restarting into recovery.
+misc, and restarting into recovery. Where the bootloader starts the slot again, as
+the 13 Ultra's can with a USB cable in, Skyward's program finds the request in misc
+at the next start and brings Skyward up before anything else.
 
 ## Building
 

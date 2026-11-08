@@ -394,7 +394,7 @@ fn main() -> Result<()> {
     let adding = |app: &mut App, name: &str, security: Security, field: Field, choosing: bool| {
         app.state.adding = Some(Adding { name: name.into(), security, field, choosing });
     };
-    let pages: [PageShot; 176] = [
+    let pages: [PageShot; 177] = [
         ("11-install-light-locked", Screen::Install, false, &|app| {
             app.state.data = Data::Locked { user: 0, keys: Keys::Digits, checking: false };
         }),
@@ -889,9 +889,15 @@ fn main() -> Result<()> {
             app.set_systems(Ok(two_systems()));
             app.state.systems_work = Some(SystemsWork::Switching(Who::Other));
         }),
+        ("202-systems-light-stopped", Screen::Systems, false, &|app| {
+            app.set_systems(Ok(Overview { other_starts: true, ..two_systems() }));
+            app.state.system_notice = Some("the root holds no program /sbin/init to start".into());
+            app.state.data = Data::Closed;
+        }),
         ("203-home-light-systems", Screen::Home, false, &|app| {
             app.state.dual_boot = true;
             app.set_systems(Ok(Overview { other_starts: true, ..two_systems() }));
+            app.state.system_notice = Some("the root holds no program /sbin/init to start".into());
         }),
         ("70-erase-light", Screen::Erase, false, &|app| {
             app.set_asked(reset_asked());

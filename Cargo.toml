@@ -20,6 +20,7 @@ members = [
     "crates/skyward-sys",
     "crates/skyward-lp",
     "crates/skyward-bootimg",
+    "crates/skyward-systems",
 ]
 
 [workspace.package]

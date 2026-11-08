@@ -2474,6 +2474,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "skyward-systems"
+version = "0.1.6"
+dependencies = [
+ "abootimg-oxide",
+ "anyhow",
+ "libc",
+ "serde",
+ "sha2 0.10.9",
+ "skyward-block",
+ "skyward-bootimg",
+ "skyward-config",
+ "skyward-vab",
+ "tempfile",
+ "toml",
+ "zip 8.6.0",
+]
+
+[[package]]
 name = "skyward-ui"
 version = "0.1.6"
 dependencies = [

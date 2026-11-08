@@ -17,6 +17,10 @@ pub mod ramdisk {
     pub const MONO_LICENSE: &str = "skyward/KirkMono-OFL.txt";
     /// The recovery service binary init starts.
     pub const RECOVERY: &str = "system/bin/recovery";
+    /// The first program of a system installed beside the installed one,
+    /// which Skyward puts in that system's init_boot image: linked
+    /// statically, since it runs before any system's libraries are there.
+    pub const SYSTEM_INIT: &str = "skyward/system-init";
     /// The commands install scripts written for other recoveries run that
     /// Skyward answers itself: 7za, avbctl, resetprop and zstd, which a
     /// stock recovery does not carry, and unzip, whose stock version holds

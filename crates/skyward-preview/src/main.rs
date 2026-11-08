@@ -394,10 +394,11 @@ fn main() -> Result<()> {
     let adding = |app: &mut App, name: &str, security: Security, field: Field, choosing: bool| {
         app.state.adding = Some(Adding { name: name.into(), security, field, choosing });
     };
-    let pages: [PageShot; 177] = [
+    let pages: [PageShot; 178] = [
         ("11-install-light-locked", Screen::Install, false, &|app| {
             app.state.data = Data::Locked { user: 0, keys: Keys::Digits, checking: false };
         }),
+        ("11-install-light-dual-boot", Screen::Install, false, &|app| app.state.dual_boot = true),
         ("11-install-dark-usb", Screen::Install, true, &|app| {
             app.set_usb_drive(Some(UsbDrive::Shown));
         }),

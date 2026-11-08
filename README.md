@@ -102,6 +102,13 @@ cargo ndk -t arm64-v8a --platform 30 build --release -p skyward
 cargo build --release -p skyward-pack
 ```
 
+The second system's first program runs before any library is there to load, so it
+is built as a static program:
+
+```sh
+RUSTFLAGS="-C target-feature=+crt-static" cargo ndk -t arm64-v8a --platform 30 build --release -p skyward-system-init --target-dir target/system-init
+```
+
 The packer takes the stock recovery partition out of the build's full update
 package on Xiaomi's server, reading only the part of the package the partition is
 in, and checks its SHA-256 against the device file:
@@ -116,6 +123,7 @@ Then it builds the image on top of it:
 target/release/skyward-pack recovery \
   --stock target/stock/nezha/recovery.img \
   --binary target/aarch64-linux-android/release/skyward \
+  --system-init target/system-init/aarch64-linux-android/release/system-init \
   --config devices/nezha.toml \
   --font resources/fonts/MiSansVF.ttf \
   --mono resources/fonts/KirkMono-Regular.ttf \
@@ -128,7 +136,7 @@ Tests and lints run on the computer; what runs only on the phone is linted for i
 ```sh
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
-cargo ndk -t arm64-v8a --platform 30 clippy -p skyward -p skyward-install -- -D warnings
+cargo ndk -t arm64-v8a --platform 30 clippy -p skyward -p skyward-install -p skyward-systems -p skyward-system-init -- -D warnings
 ```
 
 `skyward-preview` draws the pages on the computer, as PNG files, without a phone:

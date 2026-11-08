@@ -2475,6 +2475,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "skyward-system-init"
+version = "0.1.6"
+dependencies = [
+ "anyhow",
+ "libc",
+ "skyward-block",
+ "skyward-modules",
+ "skyward-systems",
+]
+
+[[package]]
 name = "skyward-systems"
 version = "0.1.6"
 dependencies = [

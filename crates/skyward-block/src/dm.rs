@@ -259,19 +259,33 @@ mod sys {
     /// node; returns /dev/block/dm-N. A device that fails to come up is
     /// removed again.
     pub fn create(name: &str, targets: &[Target], readonly: bool) -> Result<PathBuf> {
+        let (_, minor) = activate(name, targets, readonly)?;
+        let node = PathBuf::from(format!("/dev/block/dm-{minor}"));
+        match wait_for(&node) {
+            Ok(()) => Ok(node),
+            Err(e) => match remove(name) {
+                Ok(()) => Err(e),
+                Err(r) => Err(e.context(format!("removing {name} afterwards failed too: {r:#}"))),
+            },
+        }
+    }
+
+    /// Create device `name` from `targets` and bring it up, where no
+    /// ueventd makes nodes: returns its (major, minor) for the caller to
+    /// make its node by. A device that fails to come up is removed again.
+    pub fn activate(name: &str, targets: &[Target], readonly: bool) -> Result<(u32, u32)> {
         let ctl = control()?;
         let mut io = DmIoctl::new(name)?;
         call(&ctl, DM_DEV_CREATE, io.as_mut_bytes()).with_context(|| format!("create device-mapper device {name}"))?;
-        let node = PathBuf::from(format!("/dev/block/dm-{}", decode(io.dev).1));
+        let dev = decode(io.dev);
         let up = (|| -> Result<()> {
             let mut table = table_load(name, targets, readonly)?;
             call(&ctl, DM_TABLE_LOAD, &mut table).with_context(|| format!("load the table of {name}"))?;
             let mut resume = DmIoctl::new(name)?;
-            call(&ctl, DM_DEV_SUSPEND, resume.as_mut_bytes()).with_context(|| format!("activate {name}"))?;
-            wait_for(&node)
+            call(&ctl, DM_DEV_SUSPEND, resume.as_mut_bytes()).with_context(|| format!("activate {name}"))
         })();
         match up {
-            Ok(()) => Ok(node),
+            Ok(()) => Ok(dev),
             Err(e) => match remove(name) {
                 Ok(()) => Err(e),
                 Err(r) => Err(e.context(format!("removing {name} afterwards failed too: {r:#}"))),
@@ -399,6 +413,10 @@ mod sys {
         bail!("this host has no device-mapper to create {name}")
     }
 
+    pub fn activate(name: &str, _targets: &[Target], _readonly: bool) -> Result<(u32, u32)> {
+        bail!("this host has no device-mapper to create {name}")
+    }
+
     pub fn remove(name: &str) -> Result<()> {
         bail!("this host has no device-mapper to remove {name}")
     }
@@ -416,7 +434,7 @@ mod sys {
     }
 }
 
-pub use sys::{create, readonly, reload, remove, status, table, table_status, target_version};
+pub use sys::{activate, create, readonly, reload, remove, status, table, table_status, target_version};
 
 #[cfg(test)]
 mod tests {

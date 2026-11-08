@@ -21,6 +21,7 @@ members = [
     "crates/skyward-lp",
     "crates/skyward-bootimg",
     "crates/skyward-systems",
+    "crates/skyward-system-init",
 ]
 
 [workspace.package]

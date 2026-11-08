@@ -11,7 +11,7 @@ target_dir=${CARGO_TARGET_DIR:-target}
 target_dir=$(realpath -m "$target_dir")
 cargo ndk -t arm64-v8a --platform 30 build --locked --release -p skyward
 cargo build --locked --release -p skyward-pack
-version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')
+version=$(cargo metadata --locked --no-deps --format-version 1 | python3 -c 'import json, sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "skyward"))')
 name=skyward-v${version}-Pad-sheng-OS3.0.303.0.WNXCNXM-experimental
 "$target_dir/release/skyward-pack" recovery \
     --stock "$stock" \

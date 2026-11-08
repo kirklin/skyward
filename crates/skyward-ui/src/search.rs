@@ -3,6 +3,7 @@ use crate::lang::{Lang, Text};
 
 /// A feature or partition the search finds, and the page it opens.
 pub struct Entry {
+    pub requires_vibration: bool,
     pub title: Text,
     /// Where it lives, shown under the title.
     pub place: Text,
@@ -13,12 +14,17 @@ pub struct Entry {
 }
 
 const fn entry(title: Text, place: Text, screen: Screen, keys: &'static [&'static str]) -> Entry {
-    Entry { title, place, screen, keys }
+    Entry { title, place, screen, keys, requires_vibration: false }
+}
+
+const fn vibration(mut item: Entry) -> Entry {
+    item.requires_vibration = true;
+    item
 }
 
 /// A partition, named the same in every language.
 const fn partition(name: &'static str, place: Text, screen: Screen) -> Entry {
-    Entry { title: [name; 3], place, screen, keys: &[] }
+    Entry { title: [name; 3], place, screen, keys: &[], requires_vibration: false }
 }
 
 const HOME: Text = ["主页", "主頁", "Home"];
@@ -63,8 +69,8 @@ pub const ENTRIES: &[Entry] = &[
     entry(["深色模式", "深色模式", "Dark mode"], SETTINGS, Screen::Settings, &["shensemoshi", "ssms", "dark", "theme"]),
     entry(["屏幕亮度", "螢幕亮度", "Screen brightness"], SETTINGS, Screen::Settings, &["pingmuliangdu", "pmld", "liangdu", "ld", "brightness"]),
     entry(["息屏时间", "螢幕自動關閉", "Screen timeout"], SETTINGS, Screen::ScreenOff, &["xipingshijian", "xpsj", "timeout"]),
-    entry(["振动强度", "震動強度", "Vibration intensity"], SETTINGS, Screen::Settings, &["zhendongqiangdu", "zdqd", "qiangdu", "qd", "intensity", "strength"]),
-    entry(["触摸振动", "觸控震動", "Touch vibration"], SETTINGS, Screen::Settings, &["chumozhendong", "cmzd", "zhendong", "vibrate", "haptic"]),
+    vibration(entry(["振动强度", "震動強度", "Vibration intensity"], SETTINGS, Screen::Settings, &["zhendongqiangdu", "zdqd", "qiangdu", "qd", "intensity", "strength"])),
+    vibration(entry(["触摸振动", "觸控震動", "Touch vibration"], SETTINGS, Screen::Settings, &["chumozhendong", "cmzd", "zhendong", "vibrate", "haptic"])),
     entry(["文件传输", "檔案傳輸", "File transfer"], SETTINGS, Screen::Settings, &["wenjianchuanshu", "wjcs", "chuanshu", "mtp", "usb"]),
     entry(["语言", "語言", "Language"], SETTINGS, Screen::Language, &["yuyan", "yy", "language", "fanti", "jianti", "english"]),
     entry(["时区", "時區", "Time zone"], SETTINGS, Screen::TimeZone, &["shiqu", "sq", "timezone"]),
@@ -138,6 +144,10 @@ pub fn find(query: &str, l: Lang) -> Vec<&'static Entry> {
 /// a phone whose WLAN the recovery does not bring up has no WLAN page.
 pub fn find_on(query: &str, l: Lang, offers: impl Fn(Screen) -> bool) -> Vec<&'static Entry> {
     find(query, l).into_iter().filter(|e| offers(e.screen)).collect()
+}
+
+pub fn find_available(query: &str, l: Lang, offers: impl Fn(Screen) -> bool, vibration: bool) -> Vec<&'static Entry> {
+    find_on(query, l, offers).into_iter().filter(|e| vibration || !e.requires_vibration).collect()
 }
 
 #[cfg(test)]

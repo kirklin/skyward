@@ -21,6 +21,8 @@ skyward-sys = { path = "../skyward-sys" }
 skyward-lp = { path = "../skyward-lp" }
 
 [dev-dependencies]
+libc = { workspace = true }
+skyward-ui = { path = "../skyward-ui" }
 tempfile = "3.27.0"
 zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 zstd = { version = "0.14.3", default-features = false }

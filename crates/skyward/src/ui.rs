@@ -2,12 +2,13 @@ use crate::backup;
 use crate::decrypt::{self, Decryptor};
 use crate::filework;
 use crate::haptics::Haptics;
-use crate::relabel;
 use crate::input::{monotonic_ms, Event, Inputs};
 use crate::merge;
+use crate::orientation::Sensor;
 use crate::partwork;
 use crate::pty;
 use crate::readings::{Reading, Readings};
+use crate::relabel;
 use crate::secure;
 use crate::services;
 use crate::settings;
@@ -16,20 +17,20 @@ use crate::wipe::{self, Eraser, Step};
 use crate::wlan;
 use anyhow::{anyhow, ensure, Context, Result};
 use skyward_block::fsck::Fixed;
+use skyward_block::usb::{self, Drive};
 use skyward_block::{fstab, mount, probe};
 use skyward_config::{DeviceConfig, Service};
 use skyward_crypto::data::{Closed, Opened};
+use skyward_files::Ownership;
 use skyward_install::asked::{self, Needs};
 use skyward_install::{Detach, Installer, Options};
-use skyward_sys::bcb::{self, Work, REFORMATS};
-use skyward_sys::control::{Control, Request};
-use skyward_sys::Power;
-use skyward_files::Ownership;
-use skyward_block::usb::{self, Drive};
 use skyward_net::download::{self, Failure};
 use skyward_net::http::Servers;
 use skyward_net::release::{Installed, Release, Unanswered};
 use skyward_net::wlan::{Power as WlanPower, Stage as Joining, Wlan};
+use skyward_sys::bcb::{self, Work, REFORMATS};
+use skyward_sys::control::{Control, Request};
+use skyward_sys::Power;
 use skyward_sys::sleep::{Sleeper, Slept};
 use skyward_sys::uevent;
 use skyward_ui::app::{
@@ -39,6 +40,7 @@ use skyward_ui::app::{
     INSTALL_UNFINISHED, USB_DRIVE,
 };
 use skyward_ui::settings::Keeper;
+use skyward_ui::rotation::{Rotation, Turn};
 use skyward_ui::surface::kms::KmsSurface;
 use skyward_ui::{Canvas, Fonts, Lang, Surface};
 use skyward_vab::{Merge, Standing};
@@ -88,7 +90,7 @@ struct Backlight {
 }
 
 impl Backlight {
-    fn open() -> Result<Self> {
+    fn open(normal_brightness: Option<u32>) -> Result<Self> {
         let mut dirs: Vec<PathBuf> = fs::read_dir("/sys/class/backlight")
             .context("read /sys/class/backlight")?
             .map(|e| e.map(|e| e.path()))
@@ -108,7 +110,14 @@ impl Backlight {
                 .parse()
                 .with_context(|| format!("parse {name}"))
         };
-        let top = normal_max(read("max_brightness")?)?;
+        let max = read("max_brightness")?;
+        let top = match normal_brightness {
+            Some(top) => {
+                ensure!(top > 0 && top <= max, "configured normal brightness {top} exceeds backlight maximum {max}");
+                top
+            }
+            None => normal_max(max)?,
+        };
         let level = read("brightness")?;
         Ok(Backlight { path: dir.join("brightness"), top, level })
     }
@@ -382,7 +391,9 @@ fn save_screenshot(frame: &Canvas, storage: bool, zone: usize) -> Result<Shot> {
 fn keep_held_screenshots() -> Result<()> {
     let held = Path::new(HELD_SCREENSHOTS);
     let shots = match fs::read_dir(held) {
-        Ok(entries) => entries.map(|e| e.map(|e| e.path())).collect::<std::io::Result<Vec<_>>>().with_context(|| format!("read {}", held.display()))?,
+        Ok(entries) => {
+            entries.map(|e| e.map(|e| e.path())).collect::<std::io::Result<Vec<_>>>().with_context(|| format!("read {}", held.display()))?
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(e) => return Err(e).with_context(|| format!("read {}", held.display())),
     };
@@ -749,7 +760,8 @@ fn read_filesystems() -> Result<Vec<FsRow>> {
     let mut rows = Vec::new();
     for (name, point) in [(DATA_PARTITION, "/data"), ("metadata", "/metadata"), ("cache", "/cache")] {
         let entries = fstab::read(point)?;
-        let Some(entry) = entries.first() else { continue };
+        let Some(entry) = entries.first() else { continue;
+        };
         let device = fstab::device(entry)?;
         let size = skyward_block::size_bytes(&device)?;
         let mut listed: Vec<String> = Vec::new();
@@ -924,8 +936,7 @@ fn read_mounts(services: &[Service]) -> Result<Vec<skyward_ui::app::MountRow>> {
             base,
             point: point.display().to_string(),
             mounted: mounted.is_some(),
-            holders: using.into_iter().collect(),
-        });
+            holders: using.into_iter().collect() });
     }
     Ok(rows)
 }
@@ -984,6 +995,19 @@ fn wlan_worker(w: &Option<wlan::Worker>) -> Result<&wlan::Worker> {
     w.as_ref().context("the phone's WLAN is not brought up")
 }
 
+/// Resolve the installed system's libraries only after its partitions are
+/// mounted. Fastboot starts without them and enters recovery in this process.
+fn start_wlan(cfg: &DeviceConfig, servers: &Servers) -> Result<Option<wlan::Worker>> {
+    cfg.wlan.as_ref().map(|w| {
+        let modules = cfg.modules.sources.iter().map(|s| skyward_modules::source_dir(s)).collect::<Result<Vec<_>>>()?;
+            let libraries = secure::libraries().unwrap_or_else(|e| {
+                let _ = skyward_sys::kmsg(&format!("the vendor interface's libraries are not open: {e:#}"));
+                None
+            });
+        wlan::Worker::start(w.clone(), modules, libraries, servers.clone())
+    }).transpose()
+}
+
 /// The installed system, as the update server is told of it.
 fn installed(cfg: &DeviceConfig, info: &skyward_info::DeviceInfo) -> Result<Installed> {
     let slot = info.slot.context("only an A/B phone is updated")?;
@@ -1038,9 +1062,20 @@ fn wait(fds: &[i32], timeout_ms: i32) -> Result<()> {
     Ok(())
 }
 
+fn present(surface: &mut KmsSurface, screen: &Canvas, rotation: Rotation, native: &mut Option<Canvas>) -> Result<()> {
+    if rotation == Rotation::Native {
+        return surface.present(screen);
+    }
+    let (w, h) = surface.size();
+    let out = native.get_or_insert_with(|| Canvas::new(w, h));
+    rotation.paint(screen, out);
+    surface.present(out)
+}
+
 /// Run the pages. What `request`, read from misc, asks for decides the
 /// first of them; asking for nothing, they start at `start`.
 pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, start: Screen, dump: Option<&Path>) -> Result<()> {
+    let ui_started = Instant::now();
     if cfg.display.density == 0 {
         return Err(anyhow!("{}: [display] density is required to lay out the UI", cfg.device.codename));
     }
@@ -1049,13 +1084,13 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     let mut surface = KmsSurface::open("/dev/dri/card0")?;
     let (w, h) = surface.size();
     eprintln!("display {}", surface.describe());
-    let mut inputs = Inputs::open(w, h, cfg.touch.writes.clone())?;
+    let mut inputs = Inputs::open(w, h, cfg.touch.clone())?;
     let started = Instant::now();
     let mut touch_known = false;
     // adbd and fastbootd ask over it to go over to fastboot and back.
     let control = Control::open()?;
-    let mut haptics = cfg.haptics.as_ref().map(Haptics::open).transpose()?;
-    let mut backlight = Backlight::open()?;
+    let mut haptics = cfg.haptics.as_ref().filter(|_| cfg.device.supports_vibration != Some(false)).map(Haptics::open).transpose()?;
+    let mut backlight = Backlight::open(cfg.display.normal_brightness)?;
     let first = match &request.work {
         Work::Fastboot => Screen::Fastboot,
         Work::PromptWipeData => Screen::CantStart,
@@ -1081,6 +1116,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     let locale = request.locale.as_deref().or(info.locale.as_deref());
     let named = locale.map(Lang::for_locale).transpose()?;
     app.take_settings(kept.settings(), named);
+    app.configure_device(cfg);
     let mut keeper = Keeper::new(&kept);
     skyward_sys::kmsg(&format!(
         "the pages speak {:?}, {}, and the locale named is {}",
@@ -1103,7 +1139,15 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     // after each change; why they cannot be read is the page's to say.
     let mounts = || read_mounts(&cfg.services).map_err(|e| format!("{e:#}"));
 
-    let mut screen = Canvas::new(w, h);
+    let mut rotation = app.rotation();
+    let (logical_w, logical_h) = rotation.size(w, h);
+    app.resize(logical_w, logical_h);
+    let mut screen = Canvas::new(logical_w, logical_h);
+    let mut native = None;
+    let mut turn: Option<Turn> = None;
+    let mut turn_canvas = None;
+    let mut blocked_touch = false;
+    let mut orientation = cfg.orientation.as_ref().filter(|_| cfg.device.tablet).map(Sensor::new);
     // A page sliding over another draws on three screens' worth of canvas
     // besides the panel's: made ready now, the first slide finds them so.
     Canvas::keep_ready(w, h, 3);
@@ -1207,7 +1251,10 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
             let retry = update.retry > 0;
             if !retry && panicked() {
                 skyward_sys::kmsg("the phone came here after its kernel stopped, so the update asked for is not installed")?;
-                app.install(skyward_install::Event::Finished(skyward_install::Outcome::Refused(skyward_install::Refusal::Panicked)), monotonic_ms());
+                app.install(
+                    skyward_install::Event::Finished(skyward_install::Outcome::Refused(skyward_install::Refusal::Panicked)),
+                    monotonic_ms(),
+                );
                 bcb::clear(&misc)?;
                 kept = false;
             } else {
@@ -1273,18 +1320,8 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     // The WLAN, on a phone whose driver the recovery brings up; it starts
     // off. Without the bundle of the vendor interface's libraries the
     // supplicant does not start, and the WLAN page says why.
-    let wlan = match &cfg.wlan {
-        Some(w) => {
-            app.state.wlan = Some(Wlan::default());
-            let modules = cfg.modules.sources.iter().map(|s| skyward_modules::source_dir(s)).collect::<Result<Vec<_>>>()?;
-            let libraries = secure::libraries().unwrap_or_else(|e| {
-                let _ = skyward_sys::kmsg(&format!("the vendor interface's libraries are not open: {e:#}"));
-                None
-            });
-            Some(wlan::Worker::start(w.clone(), modules, libraries, servers.clone())?)
-        }
-        None => None,
-    };
+    app.state.wlan = cfg.wlan.as_ref().map(|_| Wlan::default());
+    let mut wlan = if fastboot { None } else { start_wlan(cfg, &servers)? };
     let mut scanned_at = Instant::now();
     app.state.update_server = cfg.update.is_some();
     // Asking the update server, and downloading the full package.
@@ -1303,8 +1340,42 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     let mut plugged: Option<Plugged> = None;
     let mut seen: Option<String> = None;
     let mut drive_at = Instant::now();
+    let mut first_frame = true;
+    let mut first_touch = true;
     loop {
         let now = monotonic_ms();
+        if let Some(sensor) = &mut orientation {
+            if let Some(direction) = sensor.read(app.rotation_enabled(), now) {
+                if turn.is_none() && !blocked_touch { app.follow_rotation(direction); }
+            }
+        }
+        if (turn.as_ref().is_some_and(|turn| turn.done(now)) || !app.display_on()) && turn.take().is_some() {
+            app.redraw();
+        }
+        if app.rotation() != rotation {
+            let animate = app.display_on() && app.screen() != Screen::Fastboot && !first_frame;
+            let before = if animate {
+                let mut before = Canvas::new(w, h);
+                rotation.paint(&screen, &mut before);
+                Some(before)
+            } else { None };
+            let previous = rotation;
+            rotation = app.rotation();
+            let (logical_w, logical_h) = rotation.size(w, h);
+            app.resize(logical_w, logical_h);
+            screen = Canvas::new(logical_w, logical_h);
+            let (rows, cols) = app.term_size(&fonts);
+            app.term_resized(rows, cols);
+            if let Some(shell) = &mut shell {
+                shell.resize(rows, cols)?;
+            }
+            if let Some(before) = before {
+                app.compose(&mut screen, &fonts, &info, &shown_clock, now);
+                let after = native.get_or_insert_with(|| Canvas::new(w, h));
+                rotation.paint(&screen, after);
+                turn = Some(Turn::new(&before, after, previous, rotation, monotonic_ms()));
+            }
+        }
         if leave_at.is_some_and(|at| now >= at) {
             leave_at = None;
             power(leave)?;
@@ -1374,10 +1445,21 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
         let mut shown = false;
         if panel.is_some() {
             // A display turned off comes on again with a frame drawn for it.
-            if app.take_dirty() || !surface.is_on() {
+            if app.take_dirty() || !surface.is_on() || turn.is_some() {
                 let t0 = Instant::now();
-                app.compose(&mut screen, &fonts, &info, &shown_clock, now);
-                surface.present(&screen)?;
+                if let Some(turn) = &mut turn {
+                    let out = turn_canvas.get_or_insert_with(|| Canvas::new(w, h));
+                    turn.paint(out, app.theme().pal.bg, now);
+                    surface.present(out)?;
+                } else {
+                    app.compose(&mut screen, &fonts, &info, &shown_clock, now);
+                    present(&mut surface, &screen, rotation, &mut native)?;
+                }
+                if first_frame || (ui_started.elapsed() < Duration::from_secs(15) && t0.elapsed() >= Duration::from_millis(250)) {
+                    skyward_sys::kmsg(&format!("UI frame {:?}: {} ms, {} ms since UI start, first={first_frame}",
+                        app.screen(), t0.elapsed().as_millis(), ui_started.elapsed().as_millis()))?;
+                }
+                first_frame = false;
                 eprintln!("frame {:?} in {} ms", app.screen(), t0.elapsed().as_millis());
                 if let Some(path) = dump {
                     fs::write(path, &screen.data).with_context(|| format!("write {}", path.display()))?;
@@ -1390,7 +1472,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
             // to 0 and the display off, so an OLED that floors the backlight
             // above zero rather than cutting it shows nothing as it goes off.
             screen.data.fill(0);
-            surface.present(&screen)?;
+            present(&mut surface, &screen, rotation, &mut native)?;
             surface.settle()?;
             blanked = true;
         }
@@ -1427,7 +1509,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
         let until_due = app.deadline(now).map(|d| d.saturating_sub(now) as i32);
         // A resting panel turns off once its rest is over.
         let rest_left = rested_at.map(|at| REST.saturating_sub(at.elapsed()).as_millis() as i32);
-        let timeout = if ahead { 0 } else { until_due.into_iter().chain(rest_left).min().map_or(1000, |t| t.clamp(floor, 1000)) };
+        let timeout = if ahead || turn.is_some() { 0 } else { until_due.into_iter().chain(rest_left).min().map_or(1000, |t| t.clamp(floor, 1000)) };
         // With the display off, the phone sleeps unless something needs it
         // awake: work under way, fastboot or sideload, a restart on its way,
         // a command running in the terminal, a network being joined, the
@@ -1507,6 +1589,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
             fds.push(u.fd());
         }
         fds.push(readings.fd());
+        if let Some(fd) = orientation.as_ref().and_then(Sensor::fd) { fds.push(fd); }
         wait(&fds, timeout)?;
         let now = monotonic_ms();
         for slept in sleeper.slept() {
@@ -1889,13 +1972,17 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                             updates::End::Failed(why) => SkywardEnd::Download(why),
                             updates::End::NotWritten(why) => SkywardEnd::NotWritten(why),
                             updates::End::WriteFailed(slots, why) => SkywardEnd::WriteFailed(slots, why),
-                            updates::End::Downloaded => unreachable!("Skyward's build is written once it is downloaded"),
+                            updates::End::Downloaded => {
+                                unreachable!("Skyward's build is written once it is downloaded")
+                            }
                         };
                         skyward_sys::kmsg(&format!("updating Skyward ended: {end:?}"))?;
                         app.skyward_ended(end, now);
                         updated = true;
                     }
-                    updates::Event::Checked(_) | updates::Event::SkywardChecked(_) => unreachable!("an update asks nothing of its own"),
+                    updates::Event::Checked(_) | updates::Event::SkywardChecked(_) => {
+                        unreachable!("an update asks nothing of its own")
+                    }
                 }
             }
         }
@@ -1992,7 +2079,18 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     skyward_sys::kmsg(&format!("asked on the recovery socket: {asked:?}"))?;
                     answer(asked, fastboot)
                 }
-                Incoming::Input(Event::Touch(t, at)) => app.touch(t, &fonts, at),
+                Incoming::Input(Event::Touch(t, at)) => {
+                    if turn.is_some() || blocked_touch {
+                        blocked_touch = t != skyward_ui::app::Touch::Up;
+                        continue;
+                    }
+                    if first_touch {
+                        skyward_sys::kmsg(&format!("first touch delivered: {} ms since UI start, event age {} ms",
+                            ui_started.elapsed().as_millis(), monotonic_ms().saturating_sub(at)))?;
+                        first_touch = false;
+                    }
+                    app.touch(rotation.touch(t, w, h), &fonts, at)
+                }
                 Incoming::Input(Event::Key(k, true)) => app.key(k, now),
                 Incoming::Input(Event::Key(k, false)) => app.key_up(k, now),
             };
@@ -2241,7 +2339,9 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                                 continue;
                             }
                             FsAction::Repair => (PartKind::Repair, partwork::Task::Repair(part)),
-                            FsAction::Remake(filesystem) => (PartKind::Remake(filesystem.clone()), partwork::Task::Remake(part, filesystem)),
+                            FsAction::Remake(filesystem) => {
+                                (PartKind::Remake(filesystem.clone()), partwork::Task::Remake(part, filesystem))
+                            }
                         };
                         skyward_sys::kmsg(&format!("{kind:?} the filesystem of {name}, as the filesystem page asked"))?;
                         app.part_work_started(kind, false);
@@ -2434,10 +2534,12 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                         skyward_sys::usb::switch(skyward_sys::usb::resting(), USB_TIMEOUT)?;
                         let slot = skyward_vab::current_slot()?.context("not an A/B phone")?;
                         crate::prepare(cfg, slot)?;
+                        wlan = start_wlan(cfg, &servers)?;
                         read_at = Instant::now();
                         info = skyward_info::collect(cfg)?;
                         fastboot = false;
                         app.enter_recovery();
+                        app.configure_device(cfg);
                     }
                     // A port that something else has takes file transfer
                     // on, or leaves it, when it comes back to rest.
@@ -2456,7 +2558,8 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                                 }
                                 Err(e) => {
                                     skyward_sys::kmsg(&format!("file transfer did not start: {e:#}"))?;
-                                    app.file_transfer_failed(false, &skyward_ui::fmt::transfer_failed(app.state.lang, &format!("{e:#}")), now);
+                                    app.file_transfer_failed(false, &skyward_ui::fmt::transfer_failed(app.state.lang, &format!("{e:#}")), now,
+                                    );
                                 }
                             },
                             (false, Some(t)) => {

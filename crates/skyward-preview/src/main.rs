@@ -130,7 +130,11 @@ fn main() -> Result<()> {
         eprintln!("axis {tag}: {min}..{max} (default {def})");
     }
 
-    let cfg = DeviceConfig::load(root.join("devices/nezha.toml"))?;
+    let config = match args.iter().position(|a| a == "--config") {
+        Some(k) => PathBuf::from(args.get(k + 1).ok_or_else(|| anyhow!("--config needs a device configuration"))?),
+        None => root.join("devices/nezha.toml"),
+    };
+    let cfg = DeviceConfig::load(config)?;
     let (w, h) = (cfg.display.width, cfg.display.height);
     let ppd = cfg.display.density as f32 / 160.0;
     let light = Theme::light(w, h, ppd);
@@ -150,6 +154,31 @@ fn main() -> Result<()> {
     }
 
     let info = nezha(&cfg);
+    if cfg.device.tablet {
+        for (name, screen, dark) in [
+            ("pad-device-light", Screen::Home, false),
+            ("pad-settings-light", Screen::Settings, false),
+            ("pad-settings-dark", Screen::Settings, true),
+            ("pad-wlan-light", Screen::Wlan, false),
+            ("pad-install-light", Screen::Install, false),
+            ("pad-advanced-light", Screen::Advanced, false),
+            ("pad-wipe-light", Screen::Wipe, false),
+        ] {
+            let mut app = opened(screen, w, h, ppd);
+            app.state.dark = dark;
+            app.state.wlan = cfg.wlan.as_ref().map(|_| Wlan::default());
+            app.configure_device(&cfg);
+            let mut canvas = Canvas::new(w, h);
+            app.tick(0);
+            app.compose(&mut canvas, &fonts, &info, CLOCK, 0);
+            app.tick(1000);
+            app.compose(&mut canvas, &fonts, &info, CLOCK, 1000);
+            let path = out.join(format!("{name}.png"));
+            write_png(&path, &canvas)?;
+            println!("wrote {}", path.display());
+        }
+        return Ok(());
+    }
     let pending = DeviceInfo { snapshot: SnapshotState::Snapshotted, ..info.clone() };
     let pattern = Data::Locked { user: 0, keys: Keys::Pattern, checking: false };
     // Whole pages, the way a long screenshot shows them. The About page's
@@ -1479,14 +1508,15 @@ fn whole_page(app: &mut App, f: &Fonts, info: &DeviceInfo) -> Canvas {
 /// config supplies the SoC name, panel and screen size).
 fn nezha(cfg: &DeviceConfig) -> DeviceInfo {
     DeviceInfo {
-        model: "Xiaomi 17 Ultra by Leica".into(),
+        model: cfg.device.model.clone(),
         codename: cfg.device.codename.clone(),
         soc: cfg.device.soc.clone(),
         cpu: Cpu { cores: 8, max_khz: Some(4_608_000) },
         ram_kib: 15_472_464,
         panel: Some((cfg.display.width, cfg.display.height)),
         screen: cfg.display.diagonal,
-        os_version: Some("OS4.0.4.0.XPACNXM".into()),
+        battery_capacity_mah: cfg.device.battery_capacity_mah,
+        os_version: cfg.stock.as_ref().map(|stock| stock.version.clone()),
         android: Some("17".into()),
         locale: Some("zh-CN".into()),
         security_patch: Some(PatchLevel { year: 2026, month: 10, day: 1 }),

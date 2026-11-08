@@ -414,7 +414,8 @@ impl Station {
             Err(e) => return self.lost(e),
         };
         for m in messages {
-            let Some(told) = supplicant::event(&m) else { continue };
+            let Some(told) = supplicant::event(&m) else { continue;
+            };
             match told {
                 Told::ScanResults => {
                     if let Err(e) = self.read_scan() {
@@ -444,7 +445,8 @@ impl Station {
     }
 
     fn joining(&mut self, told: &Told) {
-        let Some(j) = &mut self.state.joined else { return };
+        let Some(j) = &mut self.state.joined else { return;
+        };
         match j.on(told) {
             Next::Show => {}
             Next::Address => self.ask_address(),
@@ -564,7 +566,8 @@ impl Station {
         if self.running.as_ref().is_none_or(|r| r.probed != n) {
             return;
         }
-        let Some(Joined { stage: Stage::Connected(link), .. }) = &mut self.state.joined else { return };
+        let Some(Joined { stage: Stage::Connected(link), .. }) = &mut self.state.joined else { return;
+        };
         let _ = skyward_sys::kmsg(&format!("the network on {} {reach}", self.cfg.interface));
         link.reach = Some(reach);
     }
@@ -646,7 +649,8 @@ impl Station {
     fn poll_link(&mut self) {
         let Some(r) = &mut self.running else { return };
         r.polled_at = Instant::now();
-        let Some(Joined { stage: Stage::Connected(link), .. }) = &mut self.state.joined else { return };
+        let Some(Joined { stage: Stage::Connected(link), .. }) = &mut self.state.joined else { return;
+        };
         // A plain STATUS has Android's supplicant tell every listener again
         // that the network is connected; this one leaves that out.
         let (signal, status) = match (r.control.ask("SIGNAL_POLL"), r.control.ask("STATUS-NO_EVENTS")) {
@@ -701,7 +705,14 @@ fn place(file: &Firmware) -> Result<()> {
             skyward_block::mount::mount_ro(&Path::new(skyward_block::BY_NAME).join(partition), &at)?;
             let read = fs::read(at.join(&file.path)).with_context(|| format!("read {} on {partition}", file.path));
             skyward_block::mount::umount(&at)?;
-            read?
+            match read {
+                Ok(bytes) => bytes,
+                Err(e) if file.optional && e.downcast_ref::<std::io::Error>().is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound) => {
+                    skyward_sys::kmsg(&format!("optional WLAN firmware {} absent; the driver supplies its default", file.name))?;
+                    return Ok(());
+                }
+                Err(e) => return Err(e),
+            }
         }
     };
     fs::write(&to, bytes).with_context(|| format!("write {}", to.display()))

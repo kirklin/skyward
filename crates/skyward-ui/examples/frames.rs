@@ -181,7 +181,8 @@ fn hits(page: &str, f: &Fonts, i: &DeviceInfo) {
 /// theme and held down; only the page named `only`, when one is.
 fn renders(f: &Fonts, i: &DeviceInfo, only: Option<&str>, quiet: bool) {
     let state = skyward_ui::app::State::default();
-    let screens = [Screen::Home, Screen::Settings, Screen::Advanced, Screen::About, Screen::Search, Screen::Install, Screen::Reboot, Screen::Wipe, Screen::Backup, Screen::Specs];
+    let screens = [Screen::Home, Screen::Settings, Screen::Advanced, Screen::About, Screen::Search, Screen::Install, Screen::Reboot, Screen::Wipe, Screen::Backup, Screen::Specs,
+    ];
     for t in [Theme::light(W, H, PPD), Theme::light(W, H, PPD).pressed()] {
         for screen in screens.into_iter().filter(|s| only.is_none_or(|o| format!("{s:?}") == o)) {
             let time = |band| {
@@ -344,6 +345,7 @@ fn info() -> DeviceInfo {
         ram_kib: 15_556_972,
         panel: Some((W, H)),
         screen: Some(6.73),
+        battery_capacity_mah: None,
         os_version: None,
         android: None,
         locale: None,

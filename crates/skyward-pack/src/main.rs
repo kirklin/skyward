@@ -113,7 +113,16 @@ fn main() -> Result<()> {
                 anyhow::bail!("{} holds {}, which is not a stock recovery", stock.display(), e.name);
             }
             let read = |p: &PathBuf| std::fs::read(p).with_context(|| format!("read {}", p.display()));
-            skyward_config::DeviceConfig::load(&config)?;
+            let cfg = skyward_config::DeviceConfig::load(&config)?;
+            if let Some(expected) = &cfg.stock {
+                let sum = format!("{:x}", Sha256::digest(std::fs::read(&stock)?));
+                ensure!(
+                    sum == expected.recovery,
+                    "stock recovery SHA-256 {sum} does not match {} for {}",
+                    expected.recovery,
+                    cfg.device.codename
+                );
+            }
             rd.replace(paths::RECOVERY, read(&binary)?)?;
             // Install scripts look for the commands a stock recovery lacks
             // among its programs, and its unzip there too, a link to ziptool
@@ -132,6 +141,7 @@ fn main() -> Result<()> {
                 rd.add(paths::TASK_PROFILES, 0o644, TASK_PROFILES.to_vec())?;
             }
             rd.add(paths::MTP_RC, 0o644, MTP_RC.to_vec())?;
+            configure_init(&mut rd, &cfg)?;
             // On an unlocked device adbd keeps root when ro.secure is 0 and
             // lets any computer in without authorization when ro.adb.secure is
             // 0; init lets a later line of a property file override an earlier
@@ -158,6 +168,43 @@ fn main() -> Result<()> {
             }
         }
     }
+}
+
+/// Apply declarative init settings without a separate device ramdisk tree.
+fn configure_init(rd: &mut Ramdisk, config: &skyward_config::DeviceConfig) -> Result<()> {
+    let remoteproc = config.firmware.as_ref().is_some_and(|f| f.remoteproc.is_some());
+    if !remoteproc && config.init.writes.is_empty() && config.init.properties.is_empty() {
+        return Ok(());
+    }
+    let path = "init.recovery.qcom.rc";
+    let original = &rd.find(path).context("the stock ramdisk has no Qualcomm recovery init")?.data;
+    let mut text = String::from_utf8(original.clone()).context("Qualcomm recovery init is not UTF-8")?;
+    if remoteproc {
+        // This stock init uses the pre-remoteproc ADSP loader. Keep its
+        // firmware mounts and battery wait, replacing only the obsolete
+        // loader with the recovery binary's firmware command.
+        let wait = "    wait /sys/kernel/boot_adsp/boot\n";
+        let boot = "    write /sys/kernel/boot_adsp/boot 1\n";
+        ensure!(text.matches(wait).count() == 1 && text.matches(boot).count() == 1,
+            "stock init does not contain the expected legacy ADSP loader");
+        text = text.replace(wait, "    exec_start skyward-firmware\n").replace(boot, "");
+        // The recovery basename enters the UI directly. The same binary
+        // under its CLI name accepts the early firmware subcommand.
+        rd.link("system/bin/skyward", "recovery")?;
+        text.push_str("\nservice skyward-firmware /system/bin/skyward firmware\n    user root\n    group root system drmrpc input\n    disabled\n    oneshot\n    seclabel u:r:recovery:s0\n");
+    }
+    if !config.init.writes.is_empty() || !config.init.properties.is_empty() {
+        text.push_str("\non init\n");
+        for write in &config.init.writes {
+            text.push_str(&format!("    write {} {}\n", write.path, write.value));
+        }
+        let mut properties: Vec<_> = config.init.properties.iter().collect();
+        properties.sort_by_key(|(name, _)| *name);
+        for (name, value) in properties {
+            text.push_str(&format!("    setprop {name} {value}\n"));
+        }
+    }
+    rd.replace(path, text.into_bytes())
 }
 
 /// The partition a recovery is made on, as a full update package names it.
@@ -276,6 +323,35 @@ fn list(image: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remoteproc_replaces_only_the_legacy_loader_and_keeps_stock_init() {
+        let mut rd = Ramdisk { entries: Vec::new() };
+        let stock = b"# stock licence\non init\n    setprop sys.usb.configfs 1\non fs\n    mount_all /vendor/etc/charger_fstab.qti --early\n    wait /sys/kernel/boot_adsp/boot\n    write /sys/kernel/boot_adsp/boot 1\n    wait /sys/class/power_supply/battery\n";
+        rd.add("init.recovery.qcom.rc", 0o640, stock.to_vec()).unwrap();
+        let cfg = skyward_config::DeviceConfig::parse(include_str!("../../../devices/sheng.toml")).unwrap();
+        configure_init(&mut rd, &cfg).unwrap();
+        let init = rd.find("init.recovery.qcom.rc").unwrap();
+        let text = std::str::from_utf8(&init.data).unwrap();
+        assert!(text.starts_with("# stock licence\non init\n    setprop sys.usb.configfs 1\n"));
+        assert!(text.contains("    mount_all /vendor/etc/charger_fstab.qti --early\n"));
+        assert!(text.contains("    wait /sys/class/power_supply/battery\n"));
+        assert!(!text.contains("/sys/kernel/boot_adsp/boot"));
+        assert!(text.contains("exec_start skyward-firmware"));
+        assert_eq!(init.mode & 0o777, 0o640);
+        assert_eq!(rd.find("system/bin/skyward").unwrap().data, b"recovery");
+        assert!(!rd.entries.iter().any(|e| e.name.ends_with(".sh")), "no device scripts are added");
+        assert!(configure_init(&mut rd, &cfg).is_err(), "an unexpected init layout must fail rather than pack silently");
+    }
+
+    #[test]
+    fn existing_phone_init_is_unchanged() {
+        let mut rd = Ramdisk { entries: Vec::new() };
+        rd.add("init.recovery.qcom.rc", 0o644, b"stock".to_vec()).unwrap();
+        let cfg = skyward_config::DeviceConfig::parse(include_str!("../../../devices/fuxi.toml")).unwrap();
+        configure_init(&mut rd, &cfg).unwrap();
+        assert_eq!(rd.find("init.recovery.qcom.rc").unwrap().data, b"stock");
+    }
 
     #[test]
     fn the_lines_that_set_a_name_are_the_only_ones_left_out() {

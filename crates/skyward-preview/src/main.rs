@@ -97,13 +97,7 @@ fn phone_filesystems(open: bool) -> Vec<FsRow> {
             size: 237_498_597_376,
             others: Vec::new(),
         },
-        FsRow {
-            name: "metadata".into(),
-            mount_point: "/metadata".into(),
-            filesystem: Some("f2fs".into()),
-            size: 64 << 20,
-            others: Vec::new(),
-        },
+        FsRow { name: "metadata".into(), mount_point: "/metadata".into(), filesystem: Some("f2fs".into()), size: 64 << 20, others: Vec::new() },
     ]
 }
 
@@ -204,9 +198,6 @@ fn main() -> Result<()> {
         ("13-screen-off-light", Screen::ScreenOff, false, &info, Data::Open, &[]),
     ];
     for (name, screen, dark, info, data, pattern) in shots {
-        if args.iter().any(|arg| arg == "--home-only") && screen != Screen::Home {
-            continue;
-        }
         let mut app = App::new(screen, w, h, ppd);
         app.state.lang = lang;
         app.state.dark = dark;
@@ -215,9 +206,6 @@ fn main() -> Result<()> {
         let path = out.join(format!("{name}.png"));
         write_png(&path, &whole_page(&mut app, &fonts, info))?;
         println!("wrote {}", path.display());
-    }
-    if args.iter().any(|arg| arg == "--home-only") {
-        return Ok(());
     }
 
     // The screen kept on, which warns about burn-in.
@@ -275,7 +263,11 @@ fn main() -> Result<()> {
             false,
             Install::Finished { outcome: Outcome::Refused(Refusal::OtherDevice("ishtar".into())), damage: None },
         ),
-        ("39-sideload-failed", false, Install::Finished { outcome: Outcome::Failed(Failure::Engine(9)), damage: Some(Damage::System) }),
+        (
+            "39-sideload-failed",
+            false,
+            Install::Finished { outcome: Outcome::Failed(Failure::Engine(9)), damage: Some(Damage::System) },
+        ),
         (
             "40-sideload-error-dark",
             true,
@@ -296,8 +288,11 @@ fn main() -> Result<()> {
 
     // The mount page as it opens after boot, after an unmount that failed,
     // and while an update waits to merge, with some partitions unmounted.
-    let busy =
-        MountFailure { mounting: false, base: "vendor".into(), detail: "unmount /vendor: Device or resource busy (os error 16)".into() };
+    let busy = MountFailure {
+        mounting: false,
+        base: "vendor".into(),
+        detail: "unmount /vendor: Device or resource busy (os error 16)".into(),
+    };
     let mounting: [MountShot; 3] = [
         ("15-mount-light", false, &info, None, &[]),
         ("16-mount-dark-unmount-failed", true, &info, Some(busy), &[]),
@@ -415,11 +410,7 @@ fn main() -> Result<()> {
         ("19-choose-usb-light", usb_page, false, &|app| {
             app.set_usb_drive(Some(UsbDrive::Shown));
             let made = 1_790_380_800;
-            let rows = vec![
-                folder("ROMs", 4, made),
-                file("boot.img", 100_663_296, made),
-                file("ishtar-ota-OS3.0.306.0.WMACNXM.zip", 7_103_043_868, made),
-            ];
+            let rows = vec![folder("ROMs", 4, made), file("boot.img", 100_663_296, made), file("ishtar-ota-OS3.0.306.0.WMACNXM.zip", 7_103_043_868, made)];
             app.set_place(Place::UsbDrive, String::new(), Ok(rows), LISTED);
         }),
         ("20-install-usb-checking", Screen::Installing, false, &|app| {
@@ -444,10 +435,7 @@ fn main() -> Result<()> {
         }),
         ("20-install-storage-failed", Screen::Installing, false, &|app| {
             let gone = "read /sdcard/Download/OTA_ishtar_OS3.0.305.0.WMACNXM.zip: Input/output error (os error 5)";
-            from_storage(
-                app,
-                Install::Finished { outcome: Outcome::Failed(Failure::Unreadable(gone.into())), damage: Some(Damage::System) },
-            )
+            from_storage(app, Install::Finished { outcome: Outcome::Failed(Failure::Unreadable(gone.into())), damage: Some(Damage::System) })
         }),
         ("20-install-script-confirming", Screen::Installing, false, &|app| {
             script(app, Install::ConfirmingScript, false);
@@ -555,9 +543,7 @@ fn main() -> Result<()> {
         ("49-advanced-light", Screen::Advanced, false, &|_| {}),
         ("50-files-light", Screen::Files, false, &|app| app.set_files("/".into(), Ok(sample_root()), LISTED)),
         ("51-files-dark", Screen::Files, true, &|app| app.set_files("/".into(), Ok(sample_root()), LISTED)),
-        ("52-file-info-light", Screen::FileInfo, false, &|app| {
-            app.state.file = sample_root().into_iter().find(|e| e.name == "init.environ.rc")
-        }),
+        ("52-file-info-light", Screen::FileInfo, false, &|app| app.state.file = sample_root().into_iter().find(|e| e.name == "init.environ.rc")),
         ("52-file-permissions-dark", Screen::Permissions, true, &|app| {
             app.state.file = sample_root().into_iter().find(|e| e.name == "init.environ.rc")
         }),
@@ -601,9 +587,7 @@ fn main() -> Result<()> {
         ("131-home-light-wlan", Screen::Home, false, &|app| app.state.wlan = Some(joined(Joining::Connected(router_link())))),
         ("132-wlan-light-off", Screen::Wlan, false, &|app| app.state.wlan = Some(Wlan::default())),
         ("133-wlan-dark-starting", Screen::Wlan, true, &|app| app.state.wlan = Some(Wlan { power: Power::Starting, ..Wlan::default() })),
-        ("134-wlan-light-nearby", Screen::Wlan, false, &|app| {
-            app.state.wlan = Some(Wlan { power: Power::On, networks: nearby(), joined: None })
-        }),
+        ("134-wlan-light-nearby", Screen::Wlan, false, &|app| app.state.wlan = Some(Wlan { power: Power::On, networks: nearby(), joined: None })),
         ("135-wlan-light-joined", Screen::Wlan, false, &|app| app.state.wlan = Some(joined(Joining::Connected(router_link())))),
         ("136-wlan-dark-wrong-password", Screen::Wlan, true, &|app| app.state.wlan = Some(joined(Joining::WrongPassword))),
         ("137-wlan-light-addressing", Screen::Wlan, false, &|app| app.state.wlan = Some(joined(Joining::Addressing))),
@@ -889,9 +873,7 @@ fn main() -> Result<()> {
             app.state.next_slot = Some(Slot::A);
         }),
         ("60-slot-light-unread", Screen::Slot, false, &|app| {
-            app.set_boot_slots(Err(
-                "android.hardware.boot.IBootControl/default is not running; the phone's boot control has to be started first".into(),
-            ))
+            app.set_boot_slots(Err("android.hardware.boot.IBootControl/default is not running; the phone's boot control has to be started first".into()))
         }),
         ("70-erase-light", Screen::Erase, false, &|app| {
             app.set_asked(reset_asked());
@@ -1150,13 +1132,7 @@ fn battery_states(f: &Fonts, t: &Theme) -> Canvas {
     for (k, &battery) in states.iter().enumerate() {
         let mut bar = Canvas::new(t.m.w, row);
         bar.clear(t.pal.bg);
-        widgets::status_bar(
-            &mut bar,
-            t,
-            f,
-            &Bar { clock: CLOCK, battery: Some(battery), wlan: None, data: None, slot: None, temp: None },
-            t.pal.status,
-        );
+        widgets::status_bar(&mut bar, t, f, &Bar { clock: CLOCK, battery: Some(battery), wlan: None, data: None, slot: None, temp: None }, t.pal.status);
         sheet.put(&bar, (row as usize * k) as i32);
     }
     sheet
@@ -1535,7 +1511,7 @@ fn nezha(cfg: &DeviceConfig) -> DeviceInfo {
         model: cfg.device.model.clone(),
         codename: cfg.device.codename.clone(),
         soc: cfg.device.soc.clone(),
-        cpu: Cpu { cores: 8, max_khz: Some(if cfg.device.codename == "sheng" { 3_187_200 } else { 4_608_000 }) },
+        cpu: Cpu { cores: 8, max_khz: Some(4_608_000) },
         ram_kib: 15_472_464,
         panel: Some((cfg.display.width, cfg.display.height)),
         screen: cfg.display.diagonal,
@@ -1552,8 +1528,8 @@ fn nezha(cfg: &DeviceConfig) -> DeviceInfo {
             temp: Some(350),
             health: Some("Good".into()),
             cycles: Some(300),
-            design: Some(if cfg.device.codename == "sheng" { 9_800_000 } else { 6_800_000 }),
-            full: Some(if cfg.device.codename == "sheng" { 8_873_000 } else { 6_543_000 }),
+            design: Some(6_800_000),
+            full: Some(6_543_000),
             voltage: Some(4_442_000),
             // The recovery has no fast charging handshake with the charger.
             quick: false,

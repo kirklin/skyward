@@ -65,10 +65,6 @@ enum Cmd {
         /// The monospaced typeface's licence, which goes with it.
         #[arg(long)]
         mono_license: PathBuf,
-        /// Files to add or replace in the stock ramdisk. Only regular
-        /// files and directories are accepted; .sh files get mode 0755.
-        #[arg(long)]
-        overlay: Option<PathBuf>,
         #[arg(long)]
         out: PathBuf,
     },
@@ -107,7 +103,7 @@ fn main() -> Result<()> {
             img.kernel = BootImage::read(&kernel)?.kernel;
             write(&out, &img, &img.to_bytes()?)
         }
-        Cmd::Recovery { stock, binary, config, font, mono, mono_license, overlay, out } => {
+        Cmd::Recovery { stock, binary, config, font, mono, mono_license, out } => {
             let size = partition_size(&stock)?;
             let mut img = BootImage::read(&stock)?;
             let mut rd = Ramdisk::decode(&img.ramdisk)?;
@@ -145,9 +141,7 @@ fn main() -> Result<()> {
                 rd.add(paths::TASK_PROFILES, 0o644, TASK_PROFILES.to_vec())?;
             }
             rd.add(paths::MTP_RC, 0o644, MTP_RC.to_vec())?;
-            if let Some(overlay) = overlay {
-                apply_overlay(&mut rd, &overlay, &overlay)?;
-            }
+            configure_init(&mut rd, &cfg)?;
             // On an unlocked device adbd keeps root when ro.secure is 0 and
             // lets any computer in without authorization when ro.adb.secure is
             // 0; init lets a later line of a property file override an earlier
@@ -176,30 +170,41 @@ fn main() -> Result<()> {
     }
 }
 
-/// Device-specific init rules and helpers, over the unmodified stock
-/// ramdisk. Never follow a link in an overlay into an unrelated tree.
-fn apply_overlay(rd: &mut Ramdisk, root: &Path, dir: &Path) -> Result<()> {
-    let mut entries = std::fs::read_dir(dir)?.collect::<std::io::Result<Vec<_>>>()?;
-    entries.sort_by_key(|entry| entry.file_name());
-    for entry in entries {
-        let path = entry.path();
-        let kind = entry.file_type()?;
-        if kind.is_dir() {
-            apply_overlay(rd, root, &path)?;
-            continue;
-        }
-        ensure!(kind.is_file(), "overlay {} is not a regular file or directory", path.display());
-        let name = path.strip_prefix(root)?.to_str().context("overlay path is not UTF-8")?.replace('\\', "/");
-        let data = std::fs::read(&path)?;
-        if rd.find(&name).is_some() {
-            rd.replace(&name, data)?;
-        } else {
-            let mode = if path.extension().is_some_and(|ext| ext == "sh") { 0o755 } else { 0o644 };
-            rd.add(&name, mode, data)?;
-        }
-        println!("overlay {name}");
+/// Apply declarative init settings without a separate device ramdisk tree.
+fn configure_init(rd: &mut Ramdisk, config: &skyward_config::DeviceConfig) -> Result<()> {
+    let remoteproc = config.firmware.as_ref().is_some_and(|f| f.remoteproc.is_some());
+    if !remoteproc && config.init.writes.is_empty() && config.init.properties.is_empty() {
+        return Ok(());
     }
-    Ok(())
+    let path = "init.recovery.qcom.rc";
+    let original = &rd.find(path).context("the stock ramdisk has no Qualcomm recovery init")?.data;
+    let mut text = String::from_utf8(original.clone()).context("Qualcomm recovery init is not UTF-8")?;
+    if remoteproc {
+        // This stock init uses the pre-remoteproc ADSP loader. Keep its
+        // firmware mounts and battery wait, replacing only the obsolete
+        // loader with the recovery binary's firmware command.
+        let wait = "    wait /sys/kernel/boot_adsp/boot\n";
+        let boot = "    write /sys/kernel/boot_adsp/boot 1\n";
+        ensure!(text.matches(wait).count() == 1 && text.matches(boot).count() == 1,
+            "stock init does not contain the expected legacy ADSP loader");
+        text = text.replace(wait, "    exec_start skyward-firmware\n").replace(boot, "");
+        // The recovery basename enters the UI directly. The same binary
+        // under its CLI name accepts the early firmware subcommand.
+        rd.link("system/bin/skyward", "recovery")?;
+        text.push_str("\nservice skyward-firmware /system/bin/skyward firmware\n    user root\n    group root system drmrpc input\n    disabled\n    oneshot\n    seclabel u:r:recovery:s0\n");
+    }
+    if !config.init.writes.is_empty() || !config.init.properties.is_empty() {
+        text.push_str("\non init\n");
+        for write in &config.init.writes {
+            text.push_str(&format!("    write {} {}\n", write.path, write.value));
+        }
+        let mut properties: Vec<_> = config.init.properties.iter().collect();
+        properties.sort_by_key(|(name, _)| *name);
+        for (name, value) in properties {
+            text.push_str(&format!("    setprop {name} {value}\n"));
+        }
+    }
+    rd.replace(path, text.into_bytes())
 }
 
 /// The partition a recovery is made on, as a full update package names it.
@@ -209,7 +214,6 @@ const RECOVERY: &str = "recovery";
 /// on its server, reading only what that partition takes of it, and write it
 /// to `out` once its SHA-256 is the one the configuration names.
 fn take_stock_recovery(stock: &skyward_config::Stock, out: &Path) -> Result<()> {
-    ensure!(!stock.package.is_empty(), "this device uses a local stock image; supply it with `recovery --stock /path/to/recovery.img`");
     let parent = out.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
     std::fs::create_dir_all(parent).with_context(|| format!("make {}", parent.display()))?;
     // Taken out beside where it goes, so it is moved there whole.
@@ -222,9 +226,7 @@ fn take_stock_recovery(stock: &skyward_config::Stock, out: &Path) -> Result<()> 
                 println!("taking {name} out of the package: {bytes} bytes");
             }
         }
-        unpayload::Event::Extracted(image) => {
-            println!("took {} out: {} bytes", image.partition, image.size)
-        }
+        unpayload::Event::Extracted(image) => println!("took {} out: {} bytes", image.partition, image.size),
         unpayload::Event::Progress { .. } => {}
     };
     let taken = payload.extract(&options, &report).with_context(|| format!("take {RECOVERY} out of {}", stock.package))?;
@@ -323,31 +325,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn overlays_replace_init_and_add_helpers_but_never_follow_symlinks() {
-        let dir = tempfile::tempdir().unwrap();
+    fn remoteproc_replaces_only_the_legacy_loader_and_keeps_stock_init() {
         let mut rd = Ramdisk { entries: Vec::new() };
-        rd.add("init.recovery.qcom.rc", 0o640, b"stock".to_vec()).unwrap();
-        std::fs::write(dir.path().join("init.recovery.qcom.rc"), b"tablet").unwrap();
-        std::fs::create_dir(dir.path().join("skyward")).unwrap();
-        std::fs::write(dir.path().join("skyward/hardware.sh"), b"#!/system/bin/sh\n").unwrap();
-        apply_overlay(&mut rd, dir.path(), dir.path()).unwrap();
+        let stock = b"# stock licence\non init\n    setprop sys.usb.configfs 1\non fs\n    mount_all /vendor/etc/charger_fstab.qti --early\n    wait /sys/kernel/boot_adsp/boot\n    write /sys/kernel/boot_adsp/boot 1\n    wait /sys/class/power_supply/battery\n";
+        rd.add("init.recovery.qcom.rc", 0o640, stock.to_vec()).unwrap();
+        let cfg = skyward_config::DeviceConfig::parse(include_str!("../../../devices/sheng.toml")).unwrap();
+        configure_init(&mut rd, &cfg).unwrap();
         let init = rd.find("init.recovery.qcom.rc").unwrap();
-        assert_eq!((init.data.as_slice(), init.mode & 0o777), (b"tablet".as_slice(), 0o640));
-        assert_eq!(rd.find("skyward/hardware.sh").unwrap().mode & 0o777, 0o755);
-        #[cfg(unix)]
-        {
-            std::os::unix::fs::symlink("/etc/passwd", dir.path().join("outside")).unwrap();
-            assert!(apply_overlay(&mut Ramdisk { entries: Vec::new() }, dir.path(), dir.path()).is_err());
-        }
+        let text = std::str::from_utf8(&init.data).unwrap();
+        assert!(text.starts_with("# stock licence\non init\n    setprop sys.usb.configfs 1\n"));
+        assert!(text.contains("    mount_all /vendor/etc/charger_fstab.qti --early\n"));
+        assert!(text.contains("    wait /sys/class/power_supply/battery\n"));
+        assert!(!text.contains("/sys/kernel/boot_adsp/boot"));
+        assert!(text.contains("exec_start skyward-firmware"));
+        assert_eq!(init.mode & 0o777, 0o640);
+        assert_eq!(rd.find("system/bin/skyward").unwrap().data, b"recovery");
+        assert!(!rd.entries.iter().any(|e| e.name.ends_with(".sh")), "no device scripts are added");
+        assert!(configure_init(&mut rd, &cfg).is_err(), "an unexpected init layout must fail rather than pack silently");
     }
 
     #[test]
-    fn local_stock_download_fails_before_creating_any_output() {
-        let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("not-created/recovery.img");
-        let stock = skyward_config::Stock { version: "local".into(), package: String::new(), recovery: "00".repeat(32) };
-        assert!(take_stock_recovery(&stock, &out).unwrap_err().to_string().contains("recovery --stock"));
-        assert!(!out.parent().unwrap().exists());
+    fn existing_phone_init_is_unchanged() {
+        let mut rd = Ramdisk { entries: Vec::new() };
+        rd.add("init.recovery.qcom.rc", 0o644, b"stock".to_vec()).unwrap();
+        let cfg = skyward_config::DeviceConfig::parse(include_str!("../../../devices/fuxi.toml")).unwrap();
+        configure_init(&mut rd, &cfg).unwrap();
+        assert_eq!(rd.find("init.recovery.qcom.rc").unwrap().data, b"stock");
     }
 
     #[test]

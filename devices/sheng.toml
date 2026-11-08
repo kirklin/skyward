@@ -1,5 +1,3 @@
-# Experimental Xiaomi Pad 6S Pro 12.4 port.
-# Build with tools/build-sheng.sh, which applies the required ramdisk overlay.
 [device]
 codename = "sheng"
 tablet = true
@@ -11,8 +9,12 @@ soc = { hans = "第二代骁龙®8移动平台", hant = "Snapdragon® 8 Gen 2 �
 os_version_prop = "ro.mi.os.version.incremental"
 battery_capacity_mah = 10000
 
+[init]
+writes = [{ path = "/sys/fs/selinux/enforce", value = "0" }]
+properties = { "vendor.gatekeeper.disable_spu" = "true" }
+
 [display]
-# Native landscape DRM mode, as recorded in the supplied working TWRP tree.
+# Native landscape panel mode.
 width = 3048
 height = 2032
 # ro.sf.lcd_density in stock odm/etc/build.prop.
@@ -25,22 +27,27 @@ minimum_brightness = 1
 # Load the controller's RAM firmware after DRM has enabled the panel,
 # instead of waiting for the driver's delayed boot update (~14 seconds).
 writes = [{ path = "/proc/xm_htc_sw_reset", value = "1" }]
-# Match the tree's native-landscape TWRP transform; do not rotate the DRM UI.
+# Map the portrait touch controller to the native landscape panel.
 swap_xy = true
 flip_y = true
 ignored_devices = ["NVTCapacitivePen", "NVTCapacitivePenM80p", "NVTCapacitivePenP81c"]
 
 [orientation]
 backend = "ssc"
+firmware = "adsps.jsn"
+calibration = { partition = "persist", path = "sensors" }
 swap_xy = true
 flip_x = true
+
+[firmware]
+partition = "modem"
+remoteproc = "adsp"
 
 [modules]
 sources = ["vendor_boot", "vendor_dlkm", "vendor"]
 load = ["nt36532_touch"]
 
-# The TWRP tree starts this exact host-processing binary, rather than the
-# fts/touch_report combination used on the Xiaomi 13 series.
+# The stock host-processing binary for the Novatek touch controller.
 [[service]]
 path = "/odm/bin/touch_report_debug"
 libraries = ["/odm/lib64", "/vendor/lib64", "/system/lib64"]
@@ -50,13 +57,17 @@ capabilities = ["SYS_NICE"]
 
 [[service]]
 path = "/vendor/bin/pd-mapper"
-mount_setup = "/skyward/sheng-sensors.sh"
+mounts = [
+    { source = "/skyward/run/sensor-firmware", target = "/vendor/firmware_mnt" },
+    { source = "/skyward/run/sensor-firmware/image", target = "/vendor/firmware" },
+]
 libraries = ["/system/lib64", "/vendor/lib64"]
 
 [[service]]
 path = "/vendor/bin/sscrpcd"
 args = ["sensorspd"]
-mount_setup = "/skyward/sheng-sensors.sh"
+mounts = [{ source = "/skyward/run/sensor-persist", target = "/mnt/vendor/persist" }]
+environment = { ADSP_LIBRARY_PATH = "/vendor/lib/rfsa/adsp;/vendor/dsp;/vendor/firmware_mnt/image" }
 libraries = ["/system/lib64", "/vendor/lib64"]
 
 [[service]]
@@ -113,10 +124,9 @@ libraries = ["/vendor/lib64", "/system/lib64"]
 service = "android.hardware.wifi.supplicant.ISupplicant/default"
 probe = "http://connect.rom.miui.com/generate_204"
 
-# Offline stock source: OS3.0.303.0.WNXCNXM fastboot images supplied by the
-# user. No unverified OTA URL is invented; recovery.img is checked on pack.
 [stock]
 version = "OS3.0.303.0.WNXCNXM"
+package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS3.0.303.0.WNXCNXM/sheng-ota_full-OS3.0.303.0.WNXCNXM-user-16.0-a1bf0154a8.zip"
 recovery = "4b66cca647e21929870dfcc38c5915e35c004016bbe815bb91a87239230d649f"
 
 # This Wi-Fi-only tablet has no cellular modem/EFS backup set.

@@ -38,10 +38,6 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 
 ### 🚧 施工中
 
-另有 [小米平板 6S Pro 12.4（sheng）实验适配](devices/sheng.toml)，
-使用本地官方 OS3.0.303.0 镜像构建，需应用专用 ramdisk overlay；已真机验证启动、触摸、解密和 WLAN。
-本地构建命令：`bash tools/build-sheng.sh /只读路径/recovery.img target/sheng-pad`。
-
 这些机型的镜像按照各自的原厂固件构建，还没有在真机上试过。屏幕、触摸、WLAN 和振动已经配置好，不会解密 data 分区。
 
 | 机型 | 代号 | 构建所用的系统版本 |

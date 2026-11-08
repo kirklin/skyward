@@ -12,6 +12,8 @@ mod decrypt;
 #[cfg(target_os = "android")]
 mod filework;
 #[cfg(target_os = "android")]
+mod firmware;
+#[cfg(target_os = "android")]
 mod haptics;
 #[cfg(target_os = "android")]
 mod input;
@@ -74,6 +76,13 @@ enum Cmd {
     },
     /// Run as the recovery service (what init starts as /system/bin/recovery).
     Recovery,
+    /// Make firmware available and start the configured kernel processor
+    /// before init starts the recovery's hardware services.
+    #[cfg(target_os = "android")]
+    Firmware {
+        #[arg(long, default_value = "/skyward/device.toml")]
+        config: String,
+    },
     /// Reboot through init: system, recovery, fastboot, bootloader, edl, or
     /// off.
     Reboot { target: String },
@@ -236,6 +245,11 @@ fn main() -> Result<()> {
             Ok(())
         }
         Cmd::Recovery => recovery(),
+        #[cfg(target_os = "android")]
+        Cmd::Firmware { config } => {
+            let cfg = DeviceConfig::load(config)?;
+            firmware::start(cfg.firmware.as_ref().context("the configuration names no firmware partition")?)
+        },
         Cmd::Reboot { target } => {
             let p = Power::parse(&target).ok_or_else(|| anyhow!("unknown target {target:?}"))?;
             skyward_sys::power(p)
@@ -276,7 +290,11 @@ fn main() -> Result<()> {
         #[cfg(target_os = "android")]
         Cmd::Services { config } => {
             let props = skyward_info::installed_props(booted_slot()?)?;
-            let mut services = DeviceConfig::load(&config)?.services;
+            let cfg = DeviceConfig::load(&config)?;
+            if let Some(orientation) = &cfg.orientation {
+                orientation::prepare(orientation)?;
+            }
+            let mut services = cfg.services;
             services.retain(|s| s.runs_on(&props));
             services::start(&services, secure::libraries()?.as_deref())?;
             loop {
@@ -537,6 +555,11 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot) -> Result<()> {
     let libraries = secure::libraries()?;
     if let Some(dir) = &libraries {
         skyward_sys::kmsg(&format!("the phone's own libraries are at {}", dir.display()))?;
+    }
+    if let Some(orientation) = &cfg.orientation {
+        if let Err(e) = orientation::prepare(orientation) {
+            skyward_sys::kmsg(&format!("orientation services not prepared: {e:#}"))?;
+        }
     }
     services::start(&services, libraries.as_deref())?;
     agree_on_the_notes_key(&registering)

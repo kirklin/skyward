@@ -12,6 +12,67 @@ const CONTROL: u32 = 0xffff_fffe;
 const SSC: u32 = 400;
 const LOOKUP: [u64; 2] = [0xabab_abab_abab_abab; 2];
 
+/// Give SSC only its protection-domain metadata and a RAM copy of its
+/// calibration. The listener can update that copy without changing persist.
+#[cfg(target_os = "android")]
+pub fn prepare(config: &Orientation) -> Result<()> {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::Path;
+
+    if let Some(file) = &config.firmware {
+        let metadata = Path::new("/skyward/run/sensor-firmware/image");
+        fs::create_dir_all(metadata)?;
+        fs::set_permissions(metadata.parent().unwrap(), fs::Permissions::from_mode(0o755))?;
+        fs::set_permissions(metadata, fs::Permissions::from_mode(0o755))?;
+        // pd-mapper scans image/*.jsn; the configured domain keeps unrelated
+        // audio and charging protection domains out of this service.
+        let target = metadata.join(Path::new(file).file_name().context("SSC metadata has no name")?);
+        fs::copy(Path::new("/firmware/image").join(file), &target)?;
+        fs::set_permissions(target, fs::Permissions::from_mode(0o644))?;
+    }
+    if let Some(calibration) = &config.calibration {
+        let state = Path::new("/skyward/run/sensor-persist");
+        let readonly = Path::new("/skyward/run/sensor-persist-ro");
+        fs::create_dir_all(state)?;
+        fs::create_dir_all("/mnt/vendor/persist")?;
+        if !state.join(".ready").exists() {
+            fs::create_dir_all(readonly)?;
+            skyward_block::mount::mount(
+                &Path::new(skyward_block::BY_NAME).join(&calibration.partition),
+                readonly, "ext4", &["ro".into(), "noload".into()],
+            )?;
+            let copied = copy_calibration(&readonly.join(&calibration.path), &state.join(&calibration.path));
+            let unmounted = skyward_block::mount::umount(readonly);
+            copied?;
+            unmounted?;
+            fs::write(state.join(".ready"), [])?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(any(target_os = "android", test))]
+fn copy_calibration(source: &std::path::Path, target: &std::path::Path) -> Result<()> {
+    use std::fs;
+    use std::os::unix::fs::MetadataExt;
+    let metadata = fs::symlink_metadata(source).with_context(|| format!("read {}", source.display()))?;
+    if metadata.is_dir() {
+        fs::create_dir_all(target)?;
+        for entry in fs::read_dir(source)? {
+            let entry = entry?;
+            copy_calibration(&entry.path(), &target.join(entry.file_name()))?;
+        }
+    } else {
+        ensure!(metadata.is_file(), "{} is not a calibration file or directory", source.display());
+        if let Some(parent) = target.parent() { fs::create_dir_all(parent)?; }
+        fs::copy(source, target)?;
+    }
+    fs::set_permissions(target, metadata.permissions())?;
+    std::os::unix::fs::chown(target, Some(metadata.uid()), Some(metadata.gid()))?;
+    Ok(())
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 struct Address { family: u16, node: u32, port: u32 }
@@ -272,6 +333,20 @@ fn request(transaction: u16, uid: [u64; 2], message: u32, payload: &[u8]) -> Vec
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn calibration_copy_is_independent_and_does_not_follow_links() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let target = dir.path().join("ram");
+        std::fs::create_dir_all(source.join("registry")).unwrap();
+        std::fs::write(source.join("registry/settings"), b"calibration").unwrap();
+        copy_calibration(&source, &target).unwrap();
+        std::fs::write(target.join("registry/settings"), b"updated").unwrap();
+        assert_eq!(std::fs::read(source.join("registry/settings")).unwrap(), b"calibration");
+        std::os::unix::fs::symlink("/etc/passwd", source.join("outside")).unwrap();
+        assert!(copy_calibration(&source, &target).is_err());
+    }
 
     #[test]
     fn decodes_packed_and_unpacked_acceleration_and_rejects_short_fields() {

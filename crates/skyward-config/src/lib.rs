@@ -40,6 +40,9 @@ pub mod ramdisk {
 #[derive(Debug, Clone, Deserialize)]
 pub struct DeviceConfig {
     pub device: Device,
+    /// Early init settings needed before the recovery's services start.
+    #[serde(default)]
+    pub init: Init,
     #[serde(default)]
     pub display: Display,
     #[serde(default)]
@@ -92,9 +95,7 @@ pub struct DeviceConfig {
 pub struct Stock {
     /// The build's version, such as OS4.0.4.0.XPACNXM.
     pub version: String,
-    /// Where the package is downloaded from, over HTTPS. Empty for a
-    /// local-only stock image, supplied with `recovery --stock`.
-    #[serde(default)]
+    /// Where the package is downloaded from, over HTTPS.
     pub package: String,
     /// The recovery partition's SHA-256, in lowercase hex.
     pub recovery: String,
@@ -139,16 +140,36 @@ pub struct Write {
     pub value: String,
 }
 
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Init {
+    #[serde(default)]
+    pub writes: Vec<Write>,
+    #[serde(default)]
+    pub properties: HashMap<String, String>,
+}
+
 /// Qualcomm SSC acceleration, mapped to native screen axes (right, up).
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Orientation {
     pub backend: OrientationBackend,
+    /// The SSC protection domain's metadata on the firmware partition.
+    #[serde(default)]
+    pub firmware: Option<String>,
+    /// Calibration copied to RAM before SSC can update its registry.
+    #[serde(default)]
+    pub calibration: Option<Calibration>,
     #[serde(default)]
     pub swap_xy: bool,
     #[serde(default)]
     pub flip_x: bool,
     #[serde(default)]
     pub flip_y: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Calibration {
+    pub partition: String,
+    pub path: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -167,6 +188,10 @@ pub enum OrientationBackend {
 pub struct FirmwarePartition {
     /// The partition's name, without the slot it is of.
     pub partition: String,
+    /// Kernel remoteproc name or domain, on devices whose stock recovery uses
+    /// the older boot_adsp loader.
+    #[serde(default)]
+    pub remoteproc: Option<String>,
 }
 
 /// A file a driver asks the firmware loader for, and where it is.
@@ -393,10 +418,11 @@ pub struct Partitions {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Service {
     pub path: String,
-    /// Run this shell setup in a private mount namespace, then exec `path`.
-    /// The script receives the program and its arguments as "$@".
+    /// Bind mounts visible only to this service, made before dropping root.
     #[serde(default)]
-    pub mount_setup: Option<String>,
+    pub mounts: Vec<ServiceMount>,
+    #[serde(default)]
+    pub environment: HashMap<String, String>,
     /// What the program is given after its own path, as init gives a
     /// service the words after its path.
     #[serde(default)]
@@ -452,6 +478,12 @@ pub struct Service {
     /// names it: it keeps these alone, through its change of user.
     #[serde(default)]
     pub capabilities: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ServiceMount {
+    pub source: String,
+    pub target: String,
 }
 
 /// The kernel's capabilities, by the names init's capabilities lines give
@@ -579,6 +611,28 @@ impl DeviceConfig {
         if let Some(firmware) = &cfg.firmware {
             let name = &firmware.partition;
             ensure!(!name.is_empty() && !name.contains('/'), "[firmware] partition: {name} is not a partition's name");
+            if let Some(name) = &firmware.remoteproc {
+                ensure!(!name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c)),
+                    "[firmware] remoteproc must be a kernel processor name");
+            }
+        }
+        for write in &cfg.init.writes {
+            ensure!(Path::new(&write.path).is_absolute() && !write.path.contains(char::is_whitespace)
+                && !write.value.contains(['\n', '\r', '\0']), "[init] writes must be single init commands");
+        }
+        for (name, value) in &cfg.init.properties {
+            ensure!(!name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
+                && !value.contains(['\n', '\r', '\0']), "[init] properties must be single init commands");
+        }
+        if let Some(orientation) = &cfg.orientation {
+            let relative = |s: &str| !s.is_empty() && Path::new(s).components().all(|c| matches!(c, std::path::Component::Normal(_)));
+            if let Some(file) = &orientation.firmware {
+                ensure!(relative(file), "[orientation] firmware must be inside the firmware image folder");
+            }
+            if let Some(calibration) = &orientation.calibration {
+                ensure!(relative(&calibration.path) && !calibration.partition.is_empty() && !calibration.partition.contains('/'),
+                    "[orientation] calibration must name a partition and a path inside it");
+            }
         }
         for name in &cfg.partitions.mounted {
             ensure!(!name.is_empty() && !name.contains('/'), "[partitions] mounted: {name} is not a partition's name");
@@ -592,10 +646,10 @@ impl DeviceConfig {
             );
         }
         for s in &cfg.services {
-            if let Some(setup) = &s.mount_setup {
-                ensure!(Path::new(setup).is_absolute(), "[[service]] mount_setup must be an absolute path");
-                ensure!(s.user.as_deref().is_none_or(|u| u == "root") && s.capabilities.is_empty(),
-                    "[[service]] mount_setup needs root with mount privileges");
+            for mount in &s.mounts {
+                for path in [&mount.source, &mount.target] {
+                    ensure!(Path::new(path).is_absolute() && !path.contains('\0'), "[[service]] mounts must use absolute paths without NULs");
+                }
             }
             ensure!(s.user.is_none() || !s.groups.is_empty(), "[[service]] {}: a program given a user is given its group too", s.path);
             for name in s.user.iter().chain(&s.groups) {
@@ -642,8 +696,7 @@ impl DeviceConfig {
             let name = stock.package.rsplit('/').next().unwrap_or_default();
             ensure!(!stock.version.is_empty(), "[stock] version must not be empty");
             ensure!(
-                stock.package.is_empty()
-                    || (stock.package.starts_with("https://") && name.ends_with(".zip") && name.contains(&stock.version)),
+                stock.package.starts_with("https://") && name.ends_with(".zip") && name.contains(&stock.version),
                 "[stock] package: {} is not an HTTPS address of the full package of {}",
                 stock.package,
                 stock.version
@@ -711,17 +764,18 @@ mod tests {
     }
 
     #[test]
-    fn orientation_is_optional_and_service_mount_setup_keeps_root_privileges() {
+    fn orientation_is_optional_and_service_mounts_are_absolute() {
         let base = "[device]\ncodename = 'x'\n";
         assert!(DeviceConfig::parse(base).unwrap().orientation.is_none());
         let configured = DeviceConfig::parse(&format!("{base}[orientation]\nbackend = 'ssc'\nswap_xy = true\nflip_x = true\n")).unwrap();
         let orientation = configured.orientation.unwrap();
         assert!(orientation.swap_xy && orientation.flip_x && !orientation.flip_y);
         assert!(DeviceConfig::parse(&format!("{base}[orientation]\nbackend = 'unknown'\n")).is_err());
-        let service = format!("{base}[[service]]\npath='/vendor/bin/sscrpcd'\nmount_setup='/skyward/sensors.sh'\n");
+        let service = format!("{base}[[service]]\npath='/vendor/bin/sscrpcd'\nmounts=[{{ source='/skyward/run/calibration', target='/mnt/vendor/persist' }}]\n");
         assert!(DeviceConfig::parse(&service).is_ok());
-        assert!(DeviceConfig::parse(&format!("{service}user='system'\ngroups=['system']\n")).is_err());
-        assert!(DeviceConfig::parse(&service.replace("/skyward/sensors.sh", "sensors.sh")).is_err());
+        assert!(DeviceConfig::parse(&service.replace("/skyward/run/calibration", "calibration")).is_err());
+        assert!(DeviceConfig::parse(&service.replace("/mnt/vendor/persist", "persist")).is_err());
+        assert!(DeviceConfig::parse(&format!("{base}[orientation]\nbackend='ssc'\ncalibration={{partition='persist',path='../outside'}}\n")).is_err());
     }
 
     #[test]
@@ -744,11 +798,10 @@ mod tests {
     }
 
     #[test]
-    fn local_stock_still_requires_a_version_and_hash() {
-        let local = "[device]\ncodename = \"x\"\n[stock]\nversion = \"OS3.0.303.0.WNXCNXM\"\nrecovery = \"4b66cca647e21929870dfcc38c5915e35c004016bbe815bb91a87239230d649f\"\n";
-        assert!(DeviceConfig::parse(local).unwrap().stock.unwrap().package.is_empty());
-        assert!(DeviceConfig::parse(&local.replace("OS3.0.303.0.WNXCNXM", "")).is_err());
-        assert!(DeviceConfig::parse(&local.replace("4b66cca647e21929870dfcc38c5915e35c004016bbe815bb91a87239230d649f", "bad")).is_err());
+    fn init_commands_cannot_inject_additional_actions() {
+        let base = "[device]\ncodename='x'\n[init]\n";
+        assert!(DeviceConfig::parse(&format!("{base}properties={{'vendor.test'='true'}}\n")).is_ok());
+        assert!(DeviceConfig::parse(&format!("{base}properties={{'vendor.test'=\"true\\non boot\"}}\n")).is_err());
         assert!(DeviceConfig::parse("[device]\ncodename = \"x\"\n[display]\nnormal_brightness = 0\n").is_err());
     }
 
@@ -764,7 +817,7 @@ mod tests {
         assert_eq!(cfg.services[0].path, "/odm/bin/touch_report_debug");
         assert!(cfg.haptics.is_none());
         assert_eq!(cfg.backup.efs, ["persist"]);
-        assert!(cfg.stock.unwrap().package.is_empty());
+        assert!(cfg.stock.unwrap().package.starts_with("https://"));
     }
 
     #[test]
@@ -838,7 +891,7 @@ mod tests {
             [Write { path: "/sys/class/touch/touch_dev/enable_touch_raw".into(), value: "0".into() }],
             "its controller reports positions itself"
         );
-        assert_eq!(cfg.firmware, Some(FirmwarePartition { partition: "modem".into() }));
+        assert_eq!(cfg.firmware, Some(FirmwarePartition { partition: "modem".into(), remoteproc: None }));
         assert_eq!(cfg.partitions.mounted, ["persist"], "the secure world keeps its own files there");
         let paths: Vec<&str> = cfg.services.iter().map(|s| s.path.as_str()).collect();
         assert_eq!(

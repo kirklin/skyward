@@ -37,8 +37,9 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 
 ### 🚧 施工中
 
-另有 [小米平板 6S Pro 12.4（sheng）实验适配](devices/sheng/README.zh-CN.md)，
-使用本地官方 OS3.0.303.0 镜像构建，需应用专用 ramdisk overlay；已真机验证启动、触摸、解密和 WLAN，详情见设备说明。
+另有 [小米平板 6S Pro 12.4（sheng）实验适配](devices/sheng.toml)，
+使用本地官方 OS3.0.303.0 镜像构建，需应用专用 ramdisk overlay；已真机验证启动、触摸、解密和 WLAN。
+本地构建命令：`bash tools/build-sheng.sh /只读路径/recovery.img target/sheng-pad`。
 
 这些机型的镜像按照各自的原厂固件构建，还没有在真机上试过。屏幕、触摸、WLAN 和振动已经配置好，不会解密 data 分区。
 
@@ -69,8 +70,8 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 Skyward 需要已解锁的 bootloader。从 [Releases](https://github.com/kirklin/skyward/releases) 下载对应机型的 zip，每个文件都标有机型和代号，例如 Xiaomi 17 Ultra (nezha)。使用 `SHA256SUMS` 核对并解压之后，在手机处于 fastboot 模式的时候，把其中的镜像刷入当前运行槽位的 recovery 分区：
 
 ```sh
-unzip skyward-v0.1.4-nezha-OS4.0.4.0.XPACNXM.zip
-fastboot flash recovery skyward-v0.1.4-nezha-OS4.0.4.0.XPACNXM.img
+unzip skyward-v0.1.5-nezha-OS4.0.4.0.XPACNXM.zip
+fastboot flash recovery skyward-v0.1.5-nezha-OS4.0.4.0.XPACNXM.img
 fastboot reboot recovery
 ```
 

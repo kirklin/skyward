@@ -11,7 +11,8 @@ target_dir=${CARGO_TARGET_DIR:-target}
 target_dir=$(realpath -m "$target_dir")
 cargo ndk -t arm64-v8a --platform 30 build --locked --release -p skyward
 cargo build --locked --release -p skyward-pack
-name=skyward-v0.1.4-Pad-sheng-OS3.0.303.0.WNXCNXM-experimental
+version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')
+name=skyward-v${version}-Pad-sheng-OS3.0.303.0.WNXCNXM-experimental
 "$target_dir/release/skyward-pack" recovery \
     --stock "$stock" \
     --binary "$target_dir/aarch64-linux-android/release/skyward" \
@@ -20,7 +21,7 @@ name=skyward-v0.1.4-Pad-sheng-OS3.0.303.0.WNXCNXM-experimental
     --mono resources/fonts/KirkMono-Regular.ttf \
     --mono-license resources/fonts/KirkMono-OFL.txt \
     --out "$out/$name.img"
-cp devices/sheng/README.zh-CN.md "$out/README.zh-CN.md"
+cp README.zh-CN.md "$out/README.zh-CN.md"
 cp devices/sheng/provenance.json "$out/source-provenance.json"
 python3 - "$out" "$name" <<'PY'
 import hashlib

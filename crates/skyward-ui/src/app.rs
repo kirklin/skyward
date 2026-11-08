@@ -1,4 +1,5 @@
 use crate::canvas::{Canvas, Run};
+use crate::charge;
 use crate::color::Rgba;
 use crate::editor::{self, Editor};
 use crate::files::{self, FileType};
@@ -1893,6 +1894,10 @@ pub enum Effect {
     Reboot(Target),
     /// A short tap of the vibration motor.
     Haptic,
+    /// The motor's two quick ticks as the power key turns the screen off,
+    /// as strong as the phone's own system plays them whatever the
+    /// vibration settings say.
+    Ticks,
     /// Save what the panel shows as a picture: into the gallery's
     /// screenshots in the owner's shared storage where `storage` says it is
     /// open, and otherwise held until it is, telling how it went with
@@ -2090,8 +2095,8 @@ enum Drag {
     History { last: f32, carry: f32, pitch: f32,
     },
     Pattern,
-    /// The finger that lit the dark panel; nothing it does counts until it
-    /// lifts.
+    /// A finger that landed just after the panel lit; nothing it does
+    /// counts until it lifts.
     Waking,
 }
 
@@ -2251,6 +2256,19 @@ const LIGHT_HELD_ALPHA: u8 = 72;
 /// How far past the screen, in screens, a long list keeps its rows drawn.
 const NEAR_SCREENS: f32 = 0.5;
 
+/// How the screen's content goes dark as the panel goes off, and comes up
+/// as it lights, as the phone's own system moves it: to black in 365 ms
+/// slowing as the cube of the time left, from black over 520 ms slowing as
+/// its square.
+const DARKEN: Ease = Ease::Out(365, 3);
+const BRIGHTEN: Ease = Ease::Out(520, 2);
+/// The charging screen comes over the page as the phone's own does, over
+/// 420 ms slowing as the square of the time left, shows this long from
+/// when the cable went in, and goes in 300 ms.
+const CHARGE_SHOW: Ease = Ease::Out(420, 2);
+const CHARGE_HIDE: Ease = Ease::Out(300, 2);
+const CHARGE_MS: u64 = 4000;
+
 /// How a part of the screen eases between shown and hidden.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Ease {
@@ -2258,6 +2276,9 @@ enum Ease {
     Spring(f32),
     /// A straight run over this many milliseconds.
     Linear(u64),
+    /// A run over this many milliseconds that slows to a stop, what is
+    /// left of the way going as this power of the time left.
+    Out(u64, i32),
 }
 
 impl Ease {
@@ -2265,8 +2286,17 @@ impl Ease {
         match self {
             Ease::Spring(period) => motion::settle(ms, period),
             Ease::Linear(span) => (ms as f32 / span as f32).min(1.0),
+            Ease::Out(span, power) => 1.0 - (1.0 - (ms as f32 / span as f32).min(1.0)).powi(power),
         }
     }
+}
+
+/// The charging screen: when the cable went in, how far it shows over the
+/// page, and whether the panel was dark then and goes dark again after.
+struct Charging {
+    since: u64,
+    shown: Fade,
+    dark_after: bool,
 }
 
 /// A part of the screen fading in or out: where it is headed, since when,
@@ -2600,6 +2630,18 @@ pub struct App {
     /// The panel at full brightness, or easing to the dim level it takes
     /// shortly before going off.
     bright: Fade,
+    /// The screen's content against black: it goes dark as the panel goes
+    /// off, under the backlight held then, and comes up as the panel lights.
+    curtain: Fade,
+    darkening: Option<f32>,
+    /// The charging screen, from when a cable goes in until it has gone,
+    /// with the level and what the charger does drawn for it, and the
+    /// screen it is drawn on while it comes or goes over the page.
+    charging: Option<Charging>,
+    charge_art: Option<charge::Art>,
+    charge_canvas: Option<Canvas>,
+    /// Charging covers the physical display, wider than a tablet detail pane.
+    charge_dither: Option<glow::Dither>,
     /// While a text field's cursor is up: the page, how many edits had
     /// been typed, and when it came up whole on them. It shows for the
     /// first half of each blink from then on, so it is whole again at each
@@ -2686,6 +2728,12 @@ impl App {
             active: None,
             woke_at: None,
             bright: full_brightness(),
+            curtain: Fade::shown(BRIGHTEN, DARKEN),
+            darkening: None,
+            charging: None,
+            charge_art: None,
+            charge_canvas: None,
+            charge_dither: None,
             blink: None,
             edits: 0,
             caret_shown: false,
@@ -2783,7 +2831,10 @@ impl App {
                 || self.turn.is_some()
                 || self.row_press.is_some_and(|p| p.changing(now) || p.gone(now))
                 || self.glowing());
-        if moving {
+        // The content going dark or coming up, and the charging screen's
+        // tide, move a frame at a time while the panel is lit.
+        let lit = self.panel(now).is_some();
+        if moving || (lit && (self.curtain.moving(now) || self.charging.is_some())) {
             return Some(0);
         }
         let darkens = self.row_press.map(|p| p.rise).filter(|&rise| rise > now);
@@ -2843,7 +2894,7 @@ impl App {
         // The key waiting for its partner in a screenshot, left alone long
         // enough, does what it does alone.
         if self.chord.is_some_and(|(_, at)| now >= at + CHORD_MS) {
-            fx.extend(self.let_chord_go());
+            fx.extend(self.let_chord_go(now));
         }
         // An entry of the file manager held long enough, under a finger or
         // the power key, opens what can be done with it, a folder as much as
@@ -2864,10 +2915,32 @@ impl App {
         if let (true, Some(after)) = (self.display_on, SCREEN_OFF[self.state.screen_off]) {
             let idle = now.saturating_sub(active);
             if idle >= after {
-                self.sleep();
+                self.sleep(now);
             } else if idle >= after - dim_span(after) {
                 self.bright.set(false, now);
             }
+        }
+        // The charging screen goes once it has shown long enough: on a
+        // panel lit for it, with the panel, else for the page.
+        if self.display_on && self.charging.as_ref().is_some_and(|c| c.shown.on && now >= c.since + CHARGE_MS) {
+            let c = self.charging.as_mut().expect("the charging screen shows");
+            if c.dark_after {
+                self.sleep(now);
+            } else {
+                c.shown.set(false, now);
+            }
+        }
+        if self.charging.as_ref().is_some_and(|c| !c.shown.on && !c.shown.moving(now)) {
+            self.end_charging();
+        }
+        // Once the content is dark, the panel is off, and what showed goes
+        // with it.
+        if !self.display_on && self.darkening.is_some() && self.curtain.level(now) <= 0.0 {
+            self.darkening = None;
+            self.end_charging();
+        }
+        if self.curtain.moving(now) || self.charging.is_some() {
+            self.dirty = true;
         }
         if self.toast.as_ref().is_some_and(|m| now >= m.1) {
             self.toast = None;
@@ -3016,10 +3089,11 @@ impl App {
     }
 
     /// The backlight at `now`: off, or this share of the brightness at the
-    /// slider's top.
+    /// slider's top, which holds as the content goes dark after the panel
+    /// is told to go off.
     pub fn panel(&self, now: u64) -> Option<f32> {
         if !self.display_on {
-            return None;
+            return self.darkening.filter(|_| self.curtain.level(now) > 0.0);
         }
         let (full, level) = (self.state.brightness, self.bright.level(now));
         Some(full * level + dim_level(full) * (1.0 - level))
@@ -3032,13 +3106,61 @@ impl App {
         self.bright.set(true, now);
     }
 
-    /// Light the panel, as if just touched.
+    /// Light the panel, as if just touched: the content comes up from as
+    /// dark as it is.
     fn wake(&mut self, now: u64) {
         if !self.display_on {
             self.display_on = true;
             self.dirty = true;
+            self.darkening = None;
+            self.curtain.set(true, now);
         }
         self.woke_at = Some(now);
+        self.stir(now);
+    }
+
+    /// A charger or a computer was attached, `cable_in`, or taken away: the
+    /// dark panel lights, and a lit one stays at full brightness for the
+    /// screen-off time from now, as on the phone's own system. A cable
+    /// going in brings up the charging screen, over the page or on the
+    /// panel lit for it, which then goes dark again.
+    pub fn plugged(&mut self, now: u64, cable_in: bool) {
+        if cable_in {
+            let dark = !self.display_on;
+            let mut shown = self.charging.take().map_or(Fade::hidden(CHARGE_SHOW, CHARGE_HIDE), |c| c.shown);
+            if dark {
+                shown.jump(true);
+            } else {
+                shown.set(true, now);
+            }
+            self.charging = Some(Charging { since: now, shown, dark_after: dark });
+            self.dirty = true;
+        }
+        if self.display_on {
+            self.stir(now);
+        } else {
+            self.wake(now);
+        }
+    }
+
+    /// The charging screen has gone, and what was drawn for it with it.
+    fn end_charging(&mut self) {
+        self.charging = None;
+        self.charge_art = None;
+        self.charge_canvas = None;
+    }
+
+    /// Whether the charging screen shows, or is coming up.
+    fn charge_shown(&self) -> bool {
+        self.charging.as_ref().is_some_and(|c| c.shown.on)
+    }
+
+    /// Send the charging screen away for the page, and keep the panel lit.
+    fn dismiss_charging(&mut self, now: u64) {
+        if let Some(c) = &mut self.charging {
+            c.shown.set(false, now);
+            c.dark_after = false;
+        }
         self.stir(now);
     }
 
@@ -3048,9 +3170,12 @@ impl App {
         self.woke_at.is_some_and(|w| now.saturating_sub(w) < WAKE_GUARD_MS)
     }
 
-    /// Turn the panel off. A finger on the glass lets go of what it held,
-    /// and the page stops where it is.
-    fn sleep(&mut self) {
+    /// Turn the panel off: the content goes dark under the backlight it has
+    /// now, then the panel goes off. A finger on the glass lets go of what
+    /// it held, and the page stops where it is.
+    fn sleep(&mut self, now: u64) {
+        self.darkening = self.panel(now);
+        self.curtain.set(false, now);
         self.display_on = false;
         self.bright = full_brightness();
         match std::mem::replace(&mut self.drag, Drag::Idle) {
@@ -3477,7 +3602,7 @@ impl App {
         let battery = info.battery.as_ref();
         Bar {
             clock,
-            battery: battery.map(|b| (b.level, b.plugged().then_some(if b.quick { Bolt::Quick } else { Bolt::Charging }))),
+            battery: battery.map(|b| (b.level, b.charging().then_some(if b.quick { Bolt::Quick } else { Bolt::Charging }))),
             wlan: self.wlan_mark(),
             data: match self.state.data {
                 Data::Erased => None,
@@ -4059,25 +4184,55 @@ impl App {
         top.1 = top.1.clamp(0.0, max);
     }
 
-    /// Draw what the panel shows now: the visible part of the page, pulled
-    /// past an end if it is, its large title fading as it scrolls, the bar
-    /// and its title over a scrolled page, the `<`, the page sliding in or
-    /// out over or under the page left, the status bar, any message, and
-    /// the back cue while a swipe from an edge is under way.
+    /// Draw what the panel shows now: the page, the charging screen over it
+    /// while a cable has just gone in, both as dark as the content stands
+    /// as the panel goes off or comes up.
     pub fn compose(&mut self, out: &mut Canvas, f: &Fonts, info: &DeviceInfo, clock: &str, now: u64) {
-        if let Some(mut tablet) = self.tablet.take() {
-            self.compose_detail(&mut tablet.detail, f, info, clock, now);
-            tablet.paint(out, f, self);
-            let mut t = self.theme();
-            t.m.w = out.w;
-            widgets::status_bar(out, &t, f, &self.bar(clock, info), t.pal.status);
-            self.tablet = Some(tablet);
+        let charge = self.charging.as_ref().map_or(0.0, |c| c.shown.level(now));
+        if charge < 1.0 {
+            if let Some(mut tablet) = self.tablet.take() {
+                self.compose_page(&mut tablet.detail, f, info, clock, now);
+                tablet.paint(out, f, self);
+                let mut t = self.theme();
+                t.m.w = out.w;
+                widgets::status_bar(out, &t, f, &self.bar(clock, info), t.pal.status);
+                self.tablet = Some(tablet);
+            } else {
+                self.compose_page(out, f, info, clock, now);
+            }
+        }
+        if charge > 0.0 {
+            self.compose_charging(out, f, info, charge, now);
+        }
+        out.dim(self.curtain.level(now));
+    }
+
+    /// The charging screen, `level` of the way over the page drawn on `out`.
+    fn compose_charging(&mut self, out: &mut Canvas, f: &Fonts, info: &DeviceInfo, level: f32, now: u64) {
+        let battery = info.battery.as_ref().expect("a cable went in on a phone whose battery is read");
+        let (mut t, lang) = (self.theme(), self.state.lang);
+        t.m.w = out.w;
+        if !self.charge_art.as_ref().is_some_and(|a| a.shows(lang, battery)) {
+            self.charge_art = Some(charge::Art::new(f, &t.m, lang, battery).expect("the screens' face takes the charging screen's weight"));
+        }
+        let since = self.charging.as_ref().map_or(now, |c| c.since);
+        let dither = self.charge_dither.get_or_insert_with(|| glow::Dither::new(out.w as usize, out.h as usize));
+        let art = self.charge_art.as_ref().expect("drawn above");
+        if level >= 1.0 {
+            charge::draw(out, art, &t.m, battery.level, now.saturating_sub(since), dither);
         } else {
-            self.compose_detail(out, f, info, clock, now);
+            let screen = self.charge_canvas.get_or_insert_with(|| Canvas::new(out.w, out.h));
+            charge::draw(screen, art, &t.m, battery.level, now.saturating_sub(since), dither);
+            out.lay(screen, 0, 0, level);
         }
     }
 
-    fn compose_detail(&mut self, out: &mut Canvas, f: &Fonts, info: &DeviceInfo, clock: &str, now: u64) {
+    /// The visible part of the page, pulled past an end if it is, its large
+    /// title fading as it scrolls, the bar and its title over a scrolled
+    /// page, the `<`, the page sliding in or out over or under the page
+    /// left, the status bar, any message, and the back cue while a swipe
+    /// from an edge is under way.
+    fn compose_page(&mut self, out: &mut Canvas, f: &Fonts, info: &DeviceInfo, clock: &str, now: u64) {
         // A page opened is drawn from its left edge as it slides in.
         let opening = self.turn.as_ref().is_some_and(|t| !t.back);
         self.render(f, info, if opening { 0 } else { self.w });
@@ -5775,8 +5930,22 @@ impl App {
     }
 
     pub fn touch(&mut self, ev: Touch, f: &Fonts, now: u64) -> Vec<Effect> {
+        if !self.display_on {
+            return Vec::new();
+        }
+        // Full-screen overlays consume touches before either tablet pane.
+        if self.charge_shown() {
+            if matches!(ev, Touch::Down(..)) {
+                self.dismiss_charging(now);
+                self.drag = Drag::Waking;
+                if let Some(tablet) = &mut self.tablet {
+                    tablet.cancel_gesture();
+                }
+            }
+            return Vec::new();
+        }
         if let Some(mut tablet) = self.tablet.take() {
-            if matches!(ev, Touch::Down(..)) && (!self.display_on || self.just_woke(now)) {
+            if matches!(ev, Touch::Down(..)) && self.just_woke(now) {
                 self.wake(now);
                 tablet.cancel_gesture();
                 self.tablet = Some(tablet);
@@ -5831,11 +6000,16 @@ impl App {
     }
 
     fn touch_detail(&mut self, ev: Touch, f: &Fonts, now: u64) -> Vec<Effect> {
+        // A finger on the dark panel lights nothing, as on the phone's own
+        // system, where the power key lights it.
         if !self.display_on {
-            // A finger on the dark panel lights it, and does nothing else
-            // until it lifts.
+            return Vec::new();
+        }
+        // A finger on the charging screen sends it away for the page, and
+        // does nothing else until it lifts.
+        if self.charge_shown() {
             if matches!(ev, Touch::Down(..)) {
-                self.wake(now);
+                self.dismiss_charging(now);
                 self.drag = Drag::Waking;
             }
             return Vec::new();
@@ -6159,10 +6333,20 @@ impl App {
                 return self.screenshot(key, now);
             }
         }
-        let mut fx = self.let_chord_go();
+        let mut fx = self.let_chord_go(now);
         if !self.display_on {
-            // Any button lights the dark panel, and does only that.
-            self.wake(now);
+            // The power key lights the dark panel, and does only that, as on
+            // the phone's own system; the other keys leave it dark.
+            if key == Key::Power {
+                self.wake(now);
+            }
+            self.button = Some((key, Press::Spent));
+            return fx;
+        }
+        // A key other than power sends the charging screen away for the
+        // page, and does nothing else.
+        if key != Key::Power && self.charge_shown() {
+            self.dismiss_charging(now);
             self.button = Some((key, Press::Spent));
             return fx;
         }
@@ -6178,7 +6362,7 @@ impl App {
             self.chord = Some((key, now));
             return fx;
         }
-        fx.extend(self.key_down(key, now));
+        fx.extend(self.key_down(key, now, now));
         fx
     }
 
@@ -6198,25 +6382,26 @@ impl App {
     }
 
     /// The key waiting for its partner in a screenshot does what it does
-    /// alone, as pressed when it went down.
-    fn let_chord_go(&mut self) -> Vec<Effect> {
+    /// alone `now`, as pressed when it went down.
+    fn let_chord_go(&mut self, now: u64) -> Vec<Effect> {
         match self.chord.take() {
-            Some((key, at)) => self.key_down(key, at),
+            Some((key, at)) => self.key_down(key, at, now),
             None => Vec::new(),
         }
     }
 
-    /// What a button going down does on its own.
-    fn key_down(&mut self, key: Key, now: u64) -> Vec<Effect> {
+    /// What a button that went down `at` does on its own, `now`: a key
+    /// held is timed from when it went down, the screen goes off from now.
+    fn key_down(&mut self, key: Key, at: u64, now: u64) -> Vec<Effect> {
         match key {
             Key::Back => {
                 self.button = Some((key, Press::Spent));
-                self.act(Action::Back, now)
+                self.act(Action::Back, at)
             }
             Key::VolumeUp | Key::VolumeDown => {
                 let down = key == Key::VolumeDown;
-                self.button = Some((key, Press::Volume { down, next: now + REPEAT_DELAY_MS }));
-                self.volume(down, now)
+                self.button = Some((key, Press::Volume { down, next: at + REPEAT_DELAY_MS }));
+                self.volume(down, at)
             }
             // A press before the page it lands on is drawn is lost, rather
             // than taken for one on nothing.
@@ -6225,19 +6410,21 @@ impl App {
                 Vec::new()
             }
             Key::Power => {
+                self.dirty = true;
                 match self.keys.then(|| self.lit()).flatten() {
                     // Held on a swipe-to-confirm control, the key slides
                     // its knob along as a finger would.
                     Some(Spot { stop: Stop::Hit(Action::Confirm(which)), rect, .. }) => {
-                        self.button = Some((key, Press::Slide { which, track: rect, at: now }))
+                        self.button = Some((key, Press::Slide { which, track: rect, at }))
                     }
-                    Some(spot) => self.button = Some((key, Press::Power { spot, at: now })),
+                    Some(spot) => self.button = Some((key, Press::Power { spot, at })),
+                    // Turning the screen off, the key ticks the motor.
                     None => {
                         self.button = Some((key, Press::Spent));
-                        self.sleep();
+                        self.sleep(now);
+                        return vec![Effect::Ticks];
                     }
                 }
-                self.dirty = true;
                 Vec::new()
             }
         }
@@ -6249,7 +6436,7 @@ impl App {
     /// it does alone.
     pub fn key_up(&mut self, key: Key, now: u64) -> Vec<Effect> {
         let mut fx = match self.chord {
-            Some((first, _)) if first == key => self.let_chord_go(),
+            Some((first, _)) if first == key => self.let_chord_go(now),
             _ => Vec::new(),
         };
         let Some((down, press)) = self.button else { return fx;
@@ -6964,16 +7151,63 @@ mod tests {
     }
 
     #[test]
-    fn a_sidebar_touch_that_wakes_the_tablet_cannot_open_a_page() {
+    fn a_sidebar_touch_cannot_wake_the_tablet_or_open_a_page_just_after_power_wakes_it() {
         let cfg = skyward_config::DeviceConfig::parse(include_str!("../../../devices/sheng.toml")).unwrap();
         let mut app = App::new(Screen::Home, 3048, 2032, 2.5);
         app.configure_device(&cfg);
         app.display_on = false;
         let f = fonts();
         app.touch(Touch::Down(150.0, 1700.0), &f, 1000);
-        assert!(app.display_on);
+        assert!(!app.display_on, "only the power key wakes the dark panel");
         app.touch(Touch::Up, &f, 5000);
+        press(&mut app, Key::Power, 6000);
+        assert!(app.display_on);
+        app.touch(Touch::Down(150.0, 1700.0), &f, 6010);
+        app.touch(Touch::Up, &f, 6020);
         assert_eq!(app.screen(), Screen::About);
+    }
+
+    #[test]
+    fn tablet_screen_off_fade_covers_the_sidebar_and_detail() {
+        let cfg = skyward_config::DeviceConfig::parse(include_str!("../../../devices/sheng.toml")).unwrap();
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Home, 3048, 2032, 2.5);
+        app.configure_device(&cfg);
+        app.tick(0);
+        let mut canvas = Canvas::new(3048, 2032);
+        app.compose(&mut canvas, &f, &i, "12:00", 1000);
+        assert!(canvas.data.iter().any(|&v| v != 0));
+        press(&mut app, Key::Power, 1100);
+        app.tick(1465);
+        app.compose(&mut canvas, &f, &i, "12:00", 1465);
+        assert!(canvas.data.as_chunks::<4>().0.iter().all(|p| p[..3] == [0, 0, 0]),
+            "both panes and the full-width status bar fade to black");
+    }
+
+    #[test]
+    fn tablet_charging_covers_both_panes_and_dismisses_without_selecting_a_section() {
+        let cfg = skyward_config::DeviceConfig::parse(include_str!("../../../devices/sheng.toml")).unwrap();
+        let f = fonts();
+        let i = DeviceInfo { battery: Some(battery_at(64, Charge::Charging)), ..info() };
+        let mut app = App::new(Screen::Home, 3048, 2032, 2.5);
+        app.configure_device(&cfg);
+        app.tick(0);
+        let mut canvas = Canvas::new(3048, 2032);
+        app.compose(&mut canvas, &f, &i, "12:00", 1000);
+        assert!(app.dither.is_some(), "the About page has a detail-width dither");
+        let (x, y) = app.tablet.as_ref().unwrap().section_center(Screen::Settings);
+        app.plugged(1100, true);
+        app.tick(2000);
+        app.compose(&mut canvas, &f, &i, "12:00", 2000);
+        let center_foot = ((canvas.h - 4) * canvas.w + canvas.w / 2) as usize * 4;
+        assert!(canvas.data[center_foot + 2] > 40, "charging art spans the physical display");
+        app.touch(Touch::Down(x, y), &f, 2010);
+        app.touch(Touch::Up, &f, 2020);
+        assert!(!app.charge_shown());
+        assert_eq!(app.screen(), Screen::About, "dismissing the overlay does not press the sidebar beneath");
+        app.tick(2400);
+        app.compose(&mut canvas, &f, &i, "12:00", 2400);
+        assert_eq!(app.w, 2032, "the detail pane keeps its own width after charging");
     }
 
     fn fonts() -> Fonts {
@@ -7217,10 +7451,11 @@ mod tests {
         assert_eq!(app.screen(), Screen::Mount);
     }
 
-    /// A battery at `level`, as `charge` has it, 35.2 °C.
+    /// A battery at `level`, as `charge` has it, 35.2 °C, on a charger
+    /// unless it discharges.
     fn battery_at(level: u8, charge: Charge) -> skyward_info::Battery {
-        skyward_info::Battery { level, charge, temp: Some(352), health: None, cycles: None, design: None, full: None, voltage: None, quick: false,
-        }
+        let plugged = charge != Charge::Discharging;
+        skyward_info::Battery { level, charge, temp: Some(352), health: None, cycles: None, design: None, full: None, voltage: None, quick: false, plugged }
     }
 
     #[test]
@@ -8063,6 +8298,7 @@ mod tests {
             full: Some(5_095_000),
             voltage: Some(4_200_000),
             quick: false,
+            plugged: false,
         };
         let i = DeviceInfo {
             os_version: Some("OS3.0.305.0.WMACNXM".into()),
@@ -8626,7 +8862,7 @@ mod tests {
         assert_eq!(lit(&mut app, &f, &i), Some(Stop::Hit(Action::Open(Screen::Search))), "the keys go on working the pages");
         app.touch(Touch::Down(W as f32 / 2.0, 200.0), &f, 0);
         app.touch(Touch::Up, &f, 0);
-        assert!(press(&mut app, Key::Power, 0).is_empty());
+        assert_eq!(press(&mut app, Key::Power, 0), vec![Effect::Ticks]);
         assert!(!app.display_on(), "with the light put out, power turns the panel off");
     }
 
@@ -8889,7 +9125,9 @@ mod tests {
         press(&mut app, Key::Power, 0);
         assert!(!app.display_on(), "with the light out, power turns the panel off");
         press(&mut app, Key::VolumeDown, 1000);
-        assert!(app.display_on(), "a button lights the panel");
+        assert!(!app.display_on(), "a volume key leaves the panel dark");
+        press(&mut app, Key::Power, 1100);
+        assert!(app.display_on(), "the power key lights it");
         assert!(!app.keys, "and does only that");
     }
 
@@ -10988,15 +11226,30 @@ mod tests {
         assert!(app.key(Key::Power, 0).is_empty());
         assert_eq!(app.panel(0), Some(SLIDER_START), "it waits for volume down first");
         assert_eq!(app.deadline(0), Some(CHORD_MS));
-        assert!(app.tick(CHORD_MS).is_empty());
-        assert_eq!(app.panel(CHORD_MS), None, "held on alone, it turns the panel off");
+        assert_eq!(app.tick(CHORD_MS), vec![Effect::Ticks], "held on alone, it turns the panel off, ticking the motor");
+        assert!(!app.display_on());
         assert!(app.key_up(Key::Power, CHORD_MS + 50).is_empty());
         assert!(app.key(Key::Power, CHORD_MS + 60).is_empty());
         assert_eq!(app.panel(CHORD_MS + 60), Some(SLIDER_START));
         assert!(app.key_up(Key::Power, CHORD_MS + 100).is_empty());
         assert!(app.key(Key::Power, 1000).is_empty());
-        assert!(app.key_up(Key::Power, 1050).is_empty());
-        assert_eq!(app.panel(1050), None, "let go sooner, it turns the panel off then");
+        assert_eq!(app.key_up(Key::Power, 1050), vec![Effect::Ticks]);
+        assert!(!app.display_on(), "let go sooner, it turns the panel off then");
+    }
+
+    #[test]
+    fn the_power_key_turning_the_screen_off_ticks_the_motor_whatever_the_settings() {
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.tick(0);
+        assert_eq!(press(&mut app, Key::Power, 1000), vec![Effect::Ticks]);
+        assert!(app.tick(1400).is_empty(), "once");
+        app.state.vibrate = false;
+        press(&mut app, Key::Power, 2000);
+        assert_eq!(press(&mut app, Key::Power, 3000), vec![Effect::Ticks], "with vibration off too");
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.tick(0);
+        assert!(app.tick(OFF).is_empty(), "but not the screen going off by itself");
+        assert!(!app.display_on());
     }
 
     #[test]
@@ -11079,9 +11332,11 @@ mod tests {
         assert_eq!(app.panel(DIMS + 500), Some(dim_level(SLIDER_START)));
         assert_eq!(app.deadline(DIMS + 500), Some(OFF), "dim until it goes off");
         app.tick(OFF);
-        assert_eq!(app.panel(OFF), None);
         assert!(!app.display_on());
-        assert_eq!(app.deadline(OFF), None, "nothing to wait for on a dark panel");
+        assert_eq!(app.panel(OFF), Some(dim_level(SLIDER_START)), "the content goes dark under the dim backlight");
+        app.tick(OFF + 365);
+        assert_eq!(app.panel(OFF + 365), None);
+        assert_eq!(app.deadline(OFF + 365), None, "nothing to wait for on a dark panel");
     }
 
     #[test]
@@ -11093,7 +11348,7 @@ mod tests {
         assert_eq!(app.panel(5_000_000), Some(SLIDER_START));
         assert_eq!(app.deadline(5_000_000), Some(5_000_000 + DIMS));
         app.tick(5_000_000 + OFF);
-        assert_eq!(app.panel(5_000_000 + OFF), None);
+        assert!(!app.display_on());
     }
 
     #[test]
@@ -11122,27 +11377,177 @@ mod tests {
     }
 
     #[test]
-    fn a_touch_on_the_dark_panel_only_lights_it() {
+    fn a_touch_on_the_dark_panel_lights_nothing() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Home, W, H, PPD);
         let (x, y) = spot(&mut app, &f, &i, Action::Open(Screen::Settings));
         press(&mut app, Key::Power, 0);
         assert!(app.touch(Touch::Down(x, y), &f, 100).is_empty());
-        assert_eq!(app.panel(100), Some(SLIDER_START));
         assert!(app.touch(Touch::Move(x, y - 300.0), &f, 120).is_empty());
         assert!(app.touch(Touch::Up, &f, 140).is_empty());
-        assert_eq!(app.screen(), Screen::Home, "the waking tap pressed nothing");
+        assert!(!app.display_on(), "the panel stays dark");
+        assert_eq!(app.screen(), Screen::Home, "the tap pressed nothing");
         assert_eq!(app.top().1, 0.0, "nor scrolled the page");
-        tap_at(&mut app, &f, &i, Action::Open(Screen::Settings), 600);
-        assert_eq!(app.screen(), Screen::Settings, "a tap past the guard does");
+        press(&mut app, Key::Power, 200);
+        assert!(app.display_on());
+        tap_at(&mut app, &f, &i, Action::Open(Screen::Settings), 700);
+        assert_eq!(app.screen(), Screen::Settings, "a tap on the lit panel does");
     }
 
     #[test]
-    fn a_key_lights_the_dark_panel_and_does_nothing_else() {
+    fn a_cable_coming_out_lights_the_dark_panel_and_keeps_a_lit_one_lit() {
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.tick(0);
+        app.tick(OFF);
+        app.tick(OFF + 365);
+        assert_eq!(app.panel(OFF + 365), None);
+        let pulled = OFF + 1000;
+        app.plugged(pulled, false);
+        assert!(app.display_on(), "the cable coming out lights the panel");
+        assert!(!app.charge_shown(), "and shows the page");
+        assert_eq!(app.panel(pulled), Some(SLIDER_START));
+        assert_eq!(app.deadline(pulled + 520), Some(pulled + DIMS), "for the screen-off time, once the content is up");
+        app.tick(pulled + DIMS);
+        assert_eq!(app.panel(pulled + DIMS + 500), Some(dim_level(SLIDER_START)));
+        let again = pulled + DIMS + 600;
+        app.plugged(again, false);
+        assert_eq!(app.panel(again + 150), Some(SLIDER_START), "a cable coming out brightens a lit panel");
+        assert_eq!(app.deadline(again + 150), Some(again + DIMS), "and the wait starts over");
+        press(&mut app, Key::Power, again + 200);
+        assert!(!app.display_on(), "the power key turns it off at once, as ever");
+    }
+
+    #[test]
+    fn a_cable_going_in_on_the_dark_panel_shows_the_charging_screen_and_goes_dark_again() {
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.tick(0);
+        press(&mut app, Key::Power, 0);
+        app.tick(365);
+        assert_eq!(app.panel(365), None);
+        let plugged = 1000;
+        app.plugged(plugged, true);
+        assert!(app.display_on() && app.charge_shown(), "the charging screen lights the panel");
+        assert_eq!(app.deadline(plugged + 1000), Some(0), "its tide moves a frame at a time");
+        app.tick(plugged + CHARGE_MS - 1);
+        assert!(app.display_on());
+        app.tick(plugged + CHARGE_MS);
+        assert!(!app.display_on(), "then the panel goes dark again");
+        assert!(app.panel(plugged + CHARGE_MS + 100).is_some(), "as the charging screen goes dark");
+        app.tick(plugged + CHARGE_MS + 365);
+        assert_eq!(app.panel(plugged + CHARGE_MS + 365), None);
+        assert!(app.charging.is_none(), "and goes with it");
+    }
+
+    #[test]
+    fn a_cable_going_in_on_a_lit_panel_brings_the_charging_screen_over_the_page_and_away() {
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.tick(0);
+        app.plugged(1000, true);
+        assert!(app.display_on() && app.charge_shown());
+        app.tick(1000 + CHARGE_MS);
+        assert!(app.display_on(), "the panel stays lit");
+        assert!(!app.charge_shown(), "as the charging screen goes for the page");
+        app.tick(1000 + CHARGE_MS + 300);
+        assert!(app.charging.is_none());
+    }
+
+    #[test]
+    fn a_touch_or_a_volume_key_sends_the_charging_screen_away_and_keeps_the_panel_lit() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        let (x, y) = spot(&mut app, &f, &i, Action::Open(Screen::Settings));
+        app.tick(0);
+        press(&mut app, Key::Power, 0);
+        app.tick(365);
+        app.plugged(1000, true);
+        app.touch(Touch::Down(x, y), &f, 1500);
+        app.touch(Touch::Up, &f, 1550);
+        assert!(!app.charge_shown(), "the touch sent it away");
+        assert_eq!(app.screen(), Screen::Home, "and pressed nothing");
+        app.tick(1000 + CHARGE_MS);
+        assert!(app.display_on(), "the panel stays lit for the page");
+        app.plugged(10_000, true);
+        press(&mut app, Key::VolumeDown, 10_500);
+        assert!(!app.charge_shown(), "a volume key sends it away too");
+        assert!(app.display_on());
+    }
+
+    #[test]
+    fn the_charging_screen_shows_the_level_over_a_tide_of_light() {
+        let (f, i) = (fonts(), DeviceInfo { battery: Some(battery_at(64, Charge::Charging)), ..info() });
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.tick(0);
+        press(&mut app, Key::Power, 0);
+        app.tick(365);
+        app.plugged(1000, true);
+        let mut c = Canvas::new(W, H);
+        app.compose(&mut c, &f, &i, "12:00", 3000);
+        let px = |x: u32, y: u32| {
+            let k = ((y * W + x) * 4) as usize;
+            [c.data[k], c.data[k + 1], c.data[k + 2]]
+        };
+        assert_eq!(px(0, 0), [0, 0, 0], "on black");
+        let foot = px(W / 2, H - 4);
+        assert!(foot[2] > 40 && foot[2] > foot[0] * 4 && foot[2] > foot[1] * 2, "the tide's light at the foot is blue: {foot:?}");
+    }
+
+    #[test]
+    fn the_content_goes_dark_under_the_backlight_it_had_before_the_panel_goes_off() {
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.tick(0);
+        press(&mut app, Key::Power, 1000);
+        assert!(!app.display_on(), "touches and keys take the screen as off at once");
+        assert_eq!(app.panel(1000), Some(SLIDER_START), "while its content goes dark under the backlight it had");
+        assert_eq!(app.deadline(1000), Some(0), "a frame at a time");
+        assert_eq!(app.panel(1300), Some(SLIDER_START));
+        app.tick(1365);
+        assert_eq!(app.panel(1365), None, "then the panel goes off");
+        assert_eq!(app.deadline(1365), None);
+    }
+
+    #[test]
+    fn the_power_key_as_the_content_goes_dark_brings_it_back() {
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.tick(0);
+        press(&mut app, Key::Power, 1000);
+        app.tick(1100);
+        press(&mut app, Key::Power, 1100);
+        assert!(app.display_on(), "the power key lit it again");
+        let level = app.curtain.level(1100);
+        assert!(level > 0.0 && level < 1.0, "from as dark as it had gone: {level}");
+        assert_eq!(app.curtain.level(1100 + 520), 1.0);
+    }
+
+    #[test]
+    fn the_content_comes_up_from_black_as_the_panel_lights() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.tick(0);
+        press(&mut app, Key::Power, 0);
+        app.tick(365);
+        press(&mut app, Key::Power, 1000);
+        let mut c = Canvas::new(W, H);
+        let light = |c: &Canvas| c.data.as_chunks::<4>().0.iter().map(|p| p[0] as u64 + p[1] as u64 + p[2] as u64).sum::<u64>();
+        app.compose(&mut c, &f, &i, "12:00", 1000);
+        let first = light(&c);
+        app.compose(&mut c, &f, &i, "12:00", 1260);
+        let halfway = light(&c);
+        app.compose(&mut c, &f, &i, "12:00", 1520);
+        let full = light(&c);
+        assert_eq!(first, 0, "black as the panel lights");
+        assert!(halfway > full / 2 && halfway < full, "{halfway} of {full} halfway through");
+    }
+
+    #[test]
+    fn only_the_power_key_lights_the_dark_panel_and_does_nothing_else() {
         let (f, i) = (fonts(), info());
         let mut app = opened(Screen::Settings, &f, &i);
         press(&mut app, Key::Power, 0);
-        assert!(app.key(Key::Back, 10).is_empty());
+        for (key, at) in [(Key::Back, 10), (Key::VolumeUp, 20), (Key::VolumeDown, 30)] {
+            assert!(press(&mut app, key, at).is_empty());
+            assert!(!app.display_on(), "{key:?} leaves the panel dark");
+        }
+        assert!(press(&mut app, Key::Power, 40).is_empty());
         assert!(app.display_on());
         assert_eq!(app.screen(), Screen::Settings, "back did not go back");
     }
@@ -11219,7 +11624,8 @@ mod tests {
         assert!(!app.display_on(), "reading the package does not light it");
         app.install(Event::Image { kind: ImageKind::Dtbo, size: 1 << 20, partitions: vec!["dtbo"] }, 20);
         assert!(app.display_on(), "an image waiting for its partition does");
-        assert_eq!(app.deadline(20), Some(20 + DIMS));
+        app.tick(20 + 520);
+        assert_eq!(app.deadline(20 + 520), Some(20 + DIMS));
         app.state.install = Install::Flashing { partition: "dtbo", stage: None };
         press(&mut app, Key::Power, 500);
         app.install(Event::Progress(Stage::Flashing { done: 1, total: 2 }), 510);

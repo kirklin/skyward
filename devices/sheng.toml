@@ -1,4 +1,4 @@
-# Experimental Xiaomi Pad 6S Pro 12.4 port. See devices/sheng/README.zh-CN.md.
+# Experimental Xiaomi Pad 6S Pro 12.4 port.
 # Build with tools/build-sheng.sh, which applies the required ramdisk overlay.
 [device]
 codename = "sheng"

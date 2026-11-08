@@ -266,6 +266,17 @@ impl Canvas {
         }
     }
 
+    /// Dim this opaque canvas toward black, keeping `level` of its light.
+    pub fn dim(&mut self, level: f32) {
+        let keep = (level.clamp(0.0, 1.0) * 256.0).round() as u32;
+        if keep >= 256 {
+            return;
+        }
+        for p in self.data.as_chunks_mut::<4>().0 {
+            *p = darken(*p, keep);
+        }
+    }
+
     /// Lay `layer`, whose top-left corner goes at (`x`, `y`), over this
     /// opaque canvas at `alpha` of its strength.
     pub fn lay(&mut self, layer: &Canvas, x: i32, y: i32, alpha: f32) {

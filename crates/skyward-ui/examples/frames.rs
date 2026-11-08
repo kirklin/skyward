@@ -1,5 +1,5 @@
 use skyward_info::{Battery, Boot, Charge, Cpu, DeviceInfo, Storage};
-use skyward_ui::app::{Action, FileKind, FileRow, Screen, Touch};
+use skyward_ui::app::{Action, FileKind, FileRow, Key, Screen, Touch};
 use skyward_ui::pages::Band;
 use skyward_ui::widgets::{self, Cap};
 use skyward_ui::{pages, App, Canvas, Ctx, Fonts, Theme};
@@ -16,7 +16,7 @@ const FRAME_US: u64 = 8333;
 const BUDGET_MS: f64 = 5.5;
 
 /// The moves timed, each from the page it starts on.
-const MOVES: [&str; 10] = ["press", "open", "drag", "fold", "fling", "back", "search", "about", "files", "renders"];
+const MOVES: [&str; 12] = ["press", "open", "drag", "fold", "fling", "back", "search", "about", "files", "dark", "charge", "renders"];
 
 /// Times what the UI draws: whole pages rendered, and every frame of the
 /// moves people make, driven the way the runtime drives the app. Run with
@@ -139,6 +139,26 @@ fn run(name: &str, f: &Fonts, i: &DeviceInfo, quiet: bool) {
             p.run(3000);
             p.report("a folder of 5000 photos flung");
         }
+        "dark" => {
+            let mut p = Panel::new(Screen::Settings, f, i, quiet);
+            p.press(Key::Power);
+            p.run(600);
+            p.report("the settings page going dark as the panel goes off");
+            p.press(Key::Power);
+            p.run(600);
+            p.report("the settings page coming up as the panel lights");
+        }
+        "charge" => {
+            let mut p = Panel::new(Screen::Settings, f, i, quiet);
+            let now = p.now();
+            p.app.plugged(now, true);
+            p.run(500);
+            p.report("the charging screen coming over the settings page");
+            p.run(3000);
+            p.report("the charging screen's tide");
+            p.run(1000);
+            p.report("the charging screen going for the page");
+        }
         _ => panic!("no move named {name}; the moves are {MOVES:?}"),
     }
 }
@@ -241,6 +261,15 @@ impl<'a> Panel<'a> {
         self.app.touch(ev, self.f, now);
     }
 
+    /// A quick press of `key`.
+    fn press(&mut self, key: Key) {
+        let now = self.now();
+        self.app.key(key, now);
+        self.frame();
+        let now = self.now();
+        self.app.key_up(key, now);
+    }
+
     /// Where the page's control doing `action` is on screen.
     fn at(&mut self, action: Action) -> (f32, f32) {
         let frame = self.app.frame(self.f, self.i);
@@ -335,6 +364,7 @@ fn info() -> DeviceInfo {
             full: None,
             voltage: None,
             quick: false,
+            plugged: true,
         }),
         slot: Some(Slot::B),
         snapshot: SnapshotState::None,

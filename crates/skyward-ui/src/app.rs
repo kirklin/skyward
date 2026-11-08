@@ -1550,6 +1550,8 @@ pub struct State {
     pub vibrate: bool,
     /// Hardware capability, independent of the saved touch-feedback preference.
     pub supports_vibration: bool,
+    /// Use the tablet layout and offer tablet display preferences.
+    pub tablet: bool,
     /// How strongly the motor taps, from 0 at the slider's left end to 1
     /// at its right.
     pub vibration: f32,
@@ -1710,6 +1712,7 @@ impl Default for State {
             time_zone: 0,
             vibrate: true,
             supports_vibration: true,
+            tablet: false,
             vibration: SLIDER_START,
             file_transfer: true,
             reboot: 0,
@@ -2538,6 +2541,7 @@ fn keyboard_strip(t: &Theme, frame: &Frame) -> (Canvas, i32) {
 pub struct App {
     tablet: Option<crate::tablet::Tablet>,
     tablet_mode: bool,
+    full_width: u32,
     minimum_brightness: f32,
     pub state: State,
     /// The pages open, the one shown last: each with how far it is
@@ -2688,6 +2692,7 @@ impl App {
         App {
             tablet: None,
             tablet_mode: false,
+            full_width: w,
             minimum_brightness: MIN_BRIGHTNESS,
             state: State::default(),
             stack: vec![(start, 0.0, Focus::Unset)],
@@ -2763,19 +2768,47 @@ impl App {
     /// Apply device capabilities before the first frame is drawn.
     pub fn configure_device(&mut self, cfg: &skyward_config::DeviceConfig) {
         self.state.supports_vibration = cfg.device.supports_vibration.unwrap_or(cfg.haptics.is_some());
+        self.state.tablet = cfg.device.tablet;
         if let (Some(bottom), Some(top)) = (cfg.display.minimum_brightness, cfg.display.normal_brightness) {
             self.minimum_brightness = bottom as f32 / top as f32;
         }
-        if self.screen() != Screen::Fastboot && self.tablet.is_none() && cfg.device.tablet && self.w > self.h && self.h as f32 / self.px_per_dp >= 600.0 {
-            let sidebar = self.w / 3;
-            self.w -= sidebar;
-            self.tablet_mode = true;
-            self.tablet = Some(crate::tablet::Tablet::new(sidebar, self.w, self.h, self.px_per_dp));
-            if self.screen() == Screen::Home {
-                self.stack.push((Screen::About, 0.0, Focus::Unset));
-            }
-        }
+        self.resize(self.full_width, self.h);
         self.refresh();
+    }
+
+    /// Rebuild geometry-dependent art without replacing pages, jobs or typed text.
+    pub fn resize(&mut self, width: u32, height: u32) {
+        let tablet = self.state.tablet && self.screen() != Screen::Fastboot
+            && width.min(height) as f32 / self.px_per_dp >= 600.0;
+        if (self.full_width, self.h, self.tablet_mode) == (width, height, tablet) {
+            return;
+        }
+        self.full_width = width;
+        self.h = height;
+        self.tablet_mode = tablet;
+        let sidebar = if tablet { width / 3 } else { 0 };
+        self.w = width - sidebar;
+        self.tablet = tablet.then(|| crate::tablet::Tablet::new(sidebar, self.w, height, self.px_per_dp));
+        self.end_turn();
+        self.backdrop = None;
+        self.morph = None;
+        self.cue = None;
+        self.drag = Drag::Idle;
+        self.tracker = Tracker::default();
+        self.state.held = None;
+        self.state.confirm = 0.0;
+        self.search_words = None;
+        self.chip = None;
+        self.button_chip = None;
+        self.dither = None;
+        self.charge_art = None;
+        self.charge_canvas = None;
+        self.charge_dither = None;
+        let glow = self.glow.take();
+        self.settle_page();
+        self.glow = glow;
+        self.refresh();
+        self.spare.clear();
     }
 
     pub fn theme(&self) -> Theme {
@@ -7079,6 +7112,44 @@ mod tests {
     const W: u32 = 1440;
     const H: u32 = 3200;
     const PPD: f32 = 3.5;
+
+    #[test]
+    fn tablet_rotation_can_compose_about_before_the_next_tick() {
+        let cfg = skyward_config::DeviceConfig::parse(include_str!("../../../devices/sheng.toml")).unwrap();
+        let (f, info) = (fonts(), info());
+        let mut app = App::new(Screen::Home, 3048, 2032, 2.5);
+        app.configure_device(&cfg);
+        app.tick(1000);
+        let mut canvas = Canvas::new(3048, 2032);
+        app.compose(&mut canvas, &f, &info, "12:00", 1000);
+        for (w, h) in [(2032, 3048), (3048, 2032)] {
+            app.resize(w, h);
+            canvas = Canvas::new(w, h);
+            // The runtime needs this snapshot before it starts the turn animation.
+            app.compose(&mut canvas, &f, &info, "12:00", 1500);
+            assert_eq!(app.screen(), Screen::About);
+        }
+    }
+
+    #[test]
+    fn resizing_a_tablet_keeps_its_page_and_work_in_both_directions() {
+        let cfg = skyward_config::DeviceConfig::parse(include_str!("../../../devices/sheng.toml")).unwrap();
+        let mut app = App::new(Screen::Installing, 3048, 2032, 2.5);
+        app.configure_device(&cfg);
+        app.state.code = "123456".into();
+        app.state.install = Install::Flashing { partition: "system", stage: None };
+        for (width, height) in [(2032, 3048), (3048, 2032), (2032, 3048)] {
+            app.resize(width, height);
+            assert!(app.tablet_mode);
+            assert_eq!(app.w, width - width / 3);
+            assert_eq!(app.h, height);
+            assert_eq!(app.screen(), Screen::Installing);
+            assert_eq!(app.state.code, "123456");
+            assert!(matches!(app.state.install, Install::Flashing { partition: "system", .. }));
+            app.resize(width, height);
+            assert_eq!(app.w, width - width / 3);
+        }
+    }
 
     #[test]
     fn tablet_fastboot_stays_fullscreen_and_recovery_restores_the_sidebar() {

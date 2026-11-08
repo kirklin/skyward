@@ -104,7 +104,10 @@ finished when Skyward next starts. vendor_boot, dtbo, recovery, vbmeta, the firm
 and super stay as they are, and the second system starts with the installed
 system's vendor_boot and dtbo.
 
-The second system waits while a system update is still to be merged.
+Before anything else writes the boot partitions, Skyward puts the installed system's
+boot images back: an install, a slot switch, fastboot, a factory reset, and a backup
+or restore of the boot partitions. The second system waits while a system update is
+still to be merged, and backups of the data partition leave it out.
 
 A second system installs from a zip on the Install page, as any other package does:
 

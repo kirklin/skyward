@@ -546,6 +546,17 @@ fn short_of_charge(origin: Origin) -> Result<Option<Refusal>> {
     }
 }
 
+/// Put the installed system's boot set back into the boot partitions where
+/// the second system's is, before anything writes them: Skyward is the only
+/// one to write over the boot set it keeps track of, so that it never puts
+/// back one older than what is there.
+fn installed_boot_set() -> Result<()> {
+    if skyward_systems::install::ensure_installed().context("put the installed system's boot set back")? {
+        let _ = kmsg("install: the installed system's boot set went back into the boot partitions first");
+    }
+    Ok(())
+}
+
 /// Move off the installed system before the first write, where nothing has
 /// yet: rescue may install one package after another.
 fn detach_once(ctx: &mut Context) -> Result<()> {
@@ -593,6 +604,7 @@ fn update_system<S>(ctx: &mut Context, mount: &Mount<S>, update: &Update) -> Res
     }
     ctx.send(Event::Installing { version });
     let kept = hold(ctx, slot)?;
+    installed_boot_set()?;
     detach_once(ctx)?;
     // update_engine mounts /metadata itself, as in the stock recovery, keeps
     // the update's state there, and unmounts it when done. The recovery
@@ -801,6 +813,9 @@ fn flash_image(ctx: &Context, kind: ImageKind, size: u64) -> Result<Done> {
     };
     ensure!(partitions.contains(&partition), "{partition} is not among {partitions:?}");
     ensure!(!slots.is_empty(), "no slot chosen for {partition}");
+    if [skyward_systems::store::BOOT, skyward_systems::store::INIT_BOOT].contains(&partition) {
+        installed_boot_set()?;
+    }
     let devices: Vec<_> = slots.iter().map(|&slot| image::device(dir, partition, slot)).collect();
     let mut file = BufReader::with_capacity(1 << 20, File::open(fuse::PACKAGE).context("open the package")?);
     let mut told: Option<Instant> = None;
@@ -849,6 +864,7 @@ fn run_script(ctx: &mut Context, size: u64) -> Result<Done> {
     extract_script()?;
     shell_at_sbin()?;
     let kept = hold(ctx, slot)?;
+    installed_boot_set()?;
     detach_once(ctx)?;
     // While an update is in flight, the slot's partitions in super are its
     // and stay unmapped.

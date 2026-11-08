@@ -950,6 +950,9 @@ fn set_slot(slot: skyward_vab::Slot) -> Result<skyward_vab::BootSlots, String> {
     let set = || -> Result<skyward_vab::BootSlots> {
         let state = skyward_vab::snapshot_state()?;
         ensure!(state == skyward_vab::SnapshotState::None, "an update is in flight ({state:?}), and it set the slot it needs");
+        // The second system starts only from the slot its boot set was put
+        // in, and the installed system's goes back there first.
+        skyward_systems::install::ensure_installed()?;
         let (binder, hardware) = (skyward_binder::driver::Binder::open()?, skyward_binder::driver::Binder::hardware()?);
         let control = skyward_vab::boot::BootControl::open(&binder, &hardware)?;
         control.set_active(slot)?;
@@ -1186,6 +1189,22 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     let mut switch_asked = false;
     // A switch went through and the phone is restarting into the system.
     let mut switched = false;
+    // fastbootd may write the boot partitions, which the installed system's
+    // boot set goes back into first, and finds /metadata as it was; why the
+    // boot set could not go back is shown, and fastboot goes on, as the way
+    // left to repair the phone.
+    if fastboot && app.state.dual_boot {
+        let metadata = Path::new("/metadata");
+        let mounted = mount::is_mount_point(metadata)?;
+        let put_back = skyward_systems::install::ensure_installed();
+        if !mounted && mount::is_mount_point(metadata)? {
+            mount::umount(metadata)?;
+        }
+        if let Err(e) = put_back {
+            skyward_sys::kmsg(&format!("the installed system's boot set did not go back before fastboot: {e:#}"))?;
+            app.report(&format!("{e:#}"), monotonic_ms());
+        }
+    }
     let mut eraser: Option<Eraser> = None;
     // Erasing the system asked for leaves on its own once it is done, as
     // does erasing an update asked for, sideloaded with a restart after it;

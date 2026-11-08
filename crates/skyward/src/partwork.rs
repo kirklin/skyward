@@ -169,6 +169,9 @@ fn disable(package_size: u64, tell: &mut dyn FnMut(Event)) -> Result<(), Stop> {
         Ok(Wipe::Refused(refusal)) => return Err(Stop::Refused(refusal)),
         Err(e) => return Err(Stop::Failed(said(&e))),
     };
+    // What is erased of the boot partitions is the installed system's,
+    // whose boot set goes back into them first.
+    skyward_systems::install::ensure_installed().map_err(|e| Stop::Failed(said(&e)))?;
     tell(Event::Listed(partitions.clone()));
     for (index, partition) in partitions.iter().enumerate() {
         tell(Event::At(index));

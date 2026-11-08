@@ -221,6 +221,13 @@ impl Plan {
     /// forgotten too.
     pub fn carry_out(self, keep_memtag_mode: bool, tell: &mut dyn FnMut(Event)) -> Result<(), Stop> {
         tell(Event::At(Step::Data));
+        // The second system's boot set, and what keeps it, go with the data
+        // partition and /metadata: the installed system's goes back into
+        // the boot partitions first, while /metadata still tells where it
+        // is kept. One that does not mount keeps track of none.
+        if mount::is_mount_point(Path::new(METADATA)).map_err(failed(Step::Data))? {
+            skyward_systems::install::ensure_installed().map_err(failed(Step::Data))?;
+        }
         release_data().map_err(failed(Step::Data))?;
         let device = fstab::device(&self.data).map_err(failed(Step::Data))?;
         match &self.reformat {

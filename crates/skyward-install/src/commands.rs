@@ -2,7 +2,8 @@
 //! stock recovery does not carry: 7za, which takes a partition image out of
 //! the zip the script came in, and zstd, which decompresses it on its way to
 //! the partition; avbctl, which turns off verified boot's checks before a
-//! script writes a system that would not pass them; and unzip, as the stock
+//! script writes a system that would not pass them, and resetprop, which
+//! reads the phone's properties and sets them; and unzip, as the stock
 //! recovery's own but pouring out what `-p` takes as it reads it. The
 //! ramdisk links each to the recovery service binary, which runs the one it
 //! is started as. Unlike a copy of a command a script brings along, built
@@ -13,6 +14,7 @@ use std::ffi::{OsStr, OsString};
 use std::io::{self, Read, Write};
 
 mod avbctl;
+mod resetprop;
 mod sevenzip;
 mod unzip;
 mod zstandard;
@@ -36,6 +38,7 @@ fn command(name: &OsStr) -> Option<Command> {
     match name.to_str()? {
         "7za" => Some(sevenzip::run),
         "avbctl" => Some(avbctl::run),
+        "resetprop" => Some(resetprop::run),
         "unzip" => Some(unzip::run),
         "zstd" => Some(zstandard::run),
         _ => None,

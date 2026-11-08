@@ -332,12 +332,42 @@ fn say_framework(dir: &Path) -> Result<usize> {
 }
 
 /// Whether a description is of the service registered under `name`, which
-/// reads as the interface and then the instance: the description names the
-/// two separately.
+/// reads as the interface and then the instance. A description may write
+/// the two as one word with a slash between, as Qualcomm's do, or as a
+/// `<name>` and an `<instance>` of their own, as NXP's weaver does; both
+/// name the same service and both have to be recognised, or a service whose
+/// program is on the phone is left out of the directory and what asks for
+/// it is told no such service exists.
 fn describes(text: &str, name: &str) -> bool {
     let Some((interface, instance)) = name.rsplit_once('/') else { return false };
     let Some((package, interface)) = interface.rsplit_once('.') else { return false };
-    text.contains(package) && text.contains(&format!("{interface}/{instance}"))
+    if !text.contains(package) {
+        return false;
+    }
+    if text.contains(&format!("{interface}/{instance}")) {
+        return true;
+    }
+    // The other way of writing it: an element of its own for each, in a
+    // package-wide element of their own.
+    let Some(after) = text.split(package).nth(1) else { return false };
+    named(after, "name", interface) && named(after, "instance", instance)
+}
+
+/// Whether `text` holds an element called `element` whose text is `value`,
+/// ignoring the spaces around it that a hand-written description may keep.
+fn named(text: &str, element: &str, value: &str) -> bool {
+    let open = format!("<{element}>");
+    let close = format!("</{element}>");
+    let mut rest = text;
+    while let Some(at) = rest.find(&open) {
+        let from = &rest[at + open.len()..];
+        let Some(end) = from.find(&close) else { return false };
+        if from[..end].trim() == value {
+            return true;
+        }
+        rest = &from[end + close.len()..];
+    }
+    false
 }
 
 /// Wait until the service directory is a new process and takes calls
@@ -356,5 +386,50 @@ fn answering_again(was: Option<u32>) -> Result<()> {
             anyhow::bail!("the service directory did not come back");
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::describes;
+
+    /// Qualcomm's way: the interface and the instance as one word.
+    #[test]
+    fn recognises_one_word_interface_and_instance() {
+        let text = "<manifest version=\"9.0\" type=\"device\">
+    <hal format=\"aidl\">
+        <name>android.hardware.secure_element</name>
+        <fqname>ISecureElement/SIM1</fqname>
+    </hal>
+</manifest>";
+        assert!(describes(text, "android.hardware.secure_element.ISecureElement/SIM1"));
+        assert!(!describes(text, "android.hardware.secure_element.ISecureElement/SIM2"));
+    }
+
+    /// NXP's way: an element of its own for each. This is the weaver's own
+    /// description, and the one that was turned away before.
+    #[test]
+    fn recognises_separate_name_and_instance() {
+        let text = "<manifest version=\"1.0\" type=\"device\">
+    <hal format=\"aidl\">
+        <name>android.hardware.weaver</name>
+        <version>2</version>
+        <interface>
+            <name>IWeaver</name>
+            <instance>default</instance>
+        </interface>
+    </hal>
+</manifest>";
+        assert!(describes(text, "android.hardware.weaver.IWeaver/default"));
+        assert!(!describes(text, "android.hardware.weaver.IWeaver/second"));
+    }
+
+    /// A description of another package never answers for this one, however
+    /// its own elements happen to read.
+    #[test]
+    fn another_package_is_not_this_one() {
+        let text = "<manifest><hal><name>android.hardware.other</name>
+            <interface><name>IWeaver</name><instance>default</instance></interface></hal></manifest>";
+        assert!(!describes(text, "android.hardware.weaver.IWeaver/default"));
     }
 }

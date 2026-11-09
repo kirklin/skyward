@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 pub const WAIT_MS: u64 = 2000;
 
 /// The parts a backup takes, by name, in the order of the backup page.
-const PARTS: [&str; 4] = ["boot", "system", "data", "modem"];
+const PARTS: [&str; 5] = ["boot", "system", "data", "modem", "firmware"];
 /// Where a backup goes, by name.
 const STORAGE: &str = "storage";
 const USB_DRIVE: &str = "usb_drive";
@@ -310,7 +310,7 @@ mod tests {
             file_transfer: false,
             check_signature: true,
             keep_recovery: false,
-            backup: [false, true, true, false],
+            backup: [false, true, true, false, false],
             backup_to: Place::UsbDrive,
             compress: true,
             verify: false,
@@ -327,7 +327,7 @@ mod tests {
 
     #[test]
     fn each_value_is_kept_as_what_it_means() {
-        let state = State { screen_off: 3, time_zone: 1, backup: [true, false, false, true], ..State::default() };
+        let state = State { screen_off: 3, time_zone: 1, backup: [true, false, false, true, false], ..State::default() };
         let text = Settings::of(&state).text();
         let json: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(json["screen_off"], 120, "two minutes, in seconds");
@@ -369,7 +369,7 @@ mod tests {
         assert_eq!((state.brightness, state.vibration), (start.brightness, start.vibration));
         assert_eq!((state.screen_off, state.time_zone, state.backup_to, state.logs_to), (start.screen_off, start.time_zone, start.backup_to, start.logs_to));
         assert!(!state.language_chosen);
-        assert_eq!(state.backup, [true, false, false, false], "a part this version has not is left out");
+        assert_eq!(state.backup, [true, false, false, false, false], "a part this version has not is left out");
         assert_eq!(state.logs, [false, true]);
     }
 

@@ -37,7 +37,7 @@ impl Start {
 /// beside it, compressed as the vendor ramdisk before it is, for the kernel
 /// to read on into it from there.
 fn archive(at: &str, program: &[u8], start: &Start) -> Result<Vec<u8>> {
-    let mut rd = Ramdisk { entries: Vec::new() };
+    let mut rd = Ramdisk { entries: Vec::new(), compression: skyward_bootimg::Compression::Lz4 };
     rd.add(at, 0o750, program.to_vec())?;
     rd.add(START, 0o644, toml::to_string(start).context("write what the system starts with")?.into_bytes())?;
     Ok(lz4_legacy(&rd.archive()?))

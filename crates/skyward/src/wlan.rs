@@ -416,6 +416,14 @@ impl Station {
             Ok(r) => {
                 self.running = Some(r);
                 self.state.power = Power::On;
+                // A record an earlier build left goes too: nothing is kept
+                // on a phone that asks for nothing to be kept.
+                if !self.cfg.remember {
+                    let path = Path::new(KEPT).join("joined");
+                    if path.exists() && fs::remove_file(&path).is_ok() {
+                        let _ = skyward_sys::kmsg("the network kept is gone: this phone keeps none");
+                    }
+                }
                 self.resume();
                 self.command(Command::Scan);
             }
@@ -492,14 +500,21 @@ impl Station {
         }
         r.control.order(&format!("SELECT_NETWORK {id}"))?;
         // Kept where the data partition has been opened, this network is
-        // joined again by itself on the next start.
-        remember(&commands);
+        // joined again by itself on the next start — unless the phone asks
+        // that nothing is kept, in which case the password never leaves the
+        // running memory.
+        if self.cfg.remember {
+            remember(&commands);
+        }
         Ok(())
     }
 
     /// Join the network kept from a start that opened the data partition,
     /// so that a phone left alone reaches the network it reached before.
     fn resume(&mut self) {
+        if !self.cfg.remember {
+            return;
+        }
         let kept = kept_network();
         if kept.is_empty() {
             return;

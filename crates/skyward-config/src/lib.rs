@@ -136,6 +136,12 @@ pub struct Wlan {
     /// the start a moment while the driver and the supplicant come up.
     #[serde(default)]
     pub auto: bool,
+    /// Whether the network joined is kept on the data partition, so that a
+    /// later start joins it again by itself. On by default, as the phone's
+    /// own supplicant keeps it. Off keeps nothing at rest — the password
+    /// is never written — and the network is picked by hand each start.
+    #[serde(default = "default_true")]
+    pub remember: bool,
 }
 
 /// A value written to a file, such as a switch in sysfs.
@@ -972,6 +978,7 @@ mod tests {
         assert!(cfg.display.covers, "a phone that folds shows its pages on the cover as well");
         let wlan = cfg.wlan.expect("a WLAN to bring up");
         assert!(wlan.auto, "it comes on by itself, once the data partition is open");
+        assert!(wlan.remember, "the network it joined is kept for the next start");
         assert_eq!(wlan.interface, "wlan0");
         assert!(
             wlan.modules.iter().any(|m| m == "qca_cld3_peach_v2"),

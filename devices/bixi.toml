@@ -221,6 +221,11 @@ probe = "http://connect.rom.miui.com/generate_204"
 # /data 里，分区没开时读不到，所以真正的「自动连上」发生在你输完密码之后。
 auto = true
 
+# 上次连的网记在 /data/misc/wifi/skyward/joined（0600、chown wifi、明文 PSK，
+# 与安卓自带 WifiConfigStore 同口径）。不想要这个文件就改成 false：连接只在
+# 内存里，密码不落盘，代价是每次开机都要手动连一次网。
+remember = true
+
 [update]
 server = "https://update.miui.com/updates/miotaV3.php"
 

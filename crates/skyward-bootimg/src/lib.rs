@@ -6,4 +6,4 @@ mod image;
 mod ramdisk;
 
 pub use image::BootImage;
-pub use ramdisk::{lz4_legacy, Entry, Ramdisk};
+pub use ramdisk::{lz4_legacy, Compression, Entry, Ramdisk};

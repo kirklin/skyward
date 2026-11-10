@@ -42,18 +42,34 @@ impl Entry {
     }
 }
 
+/// How the archive is packed. A phone's own ramdisks come in LZ4, as
+/// Android packs boot ramdisks, and in gzip, as some of its older phones'
+/// do, whose boot image carries the recovery.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Compression {
+    Lz4,
+    Gzip,
+}
+
 /// An initramfs held in memory, so entries keep their owners, modes and
 /// device numbers exactly as the archive had them.
 pub struct Ramdisk {
     pub entries: Vec<Entry>,
+    pub compression: Compression,
 }
 
 impl Ramdisk {
-    /// Unpack an LZ4 (legacy framing) compressed newc archive, as Android
-    /// boot images carry.
+    /// Unpack an LZ4 or gzip compressed newc archive, as Android boot
+    /// images carry.
     pub fn decode(compressed: &[u8]) -> Result<Self> {
         let mut cpio = Vec::new();
-        lz4_flex::frame::FrameDecoder::new(compressed).read_to_end(&mut cpio).context("lz4 decode")?;
+        let compression = if compressed.starts_with(&[0x1f, 0x8b]) {
+            flate2::read::MultiGzDecoder::new(compressed).read_to_end(&mut cpio).context("gzip decode")?;
+            Compression::Gzip
+        } else {
+            lz4_flex::frame::FrameDecoder::new(compressed).read_to_end(&mut cpio).context("lz4 decode")?;
+            Compression::Lz4
+        };
         let mut entries = Vec::new();
         let mut rest = Cursor::new(cpio.as_slice());
         loop {
@@ -77,14 +93,19 @@ impl Ramdisk {
             entries.push(entry);
             rest = r.finish().context("cpio entry end")?;
         }
-        Ok(Ramdisk { entries })
+        Ok(Ramdisk { entries, compression })
     }
 
-    /// Pack as a newc archive compressed the way AOSP packs boot ramdisks,
-    /// with the reference `lz4` tool in legacy framing (the kernel's initramfs
-    /// unpacker reads no other LZ4 framing) at its highest compression.
+    /// Pack as a newc archive compressed the way the archive it was read
+    /// from was: an LZ4 one with the reference `lz4` tool in legacy framing
+    /// (the kernel's initramfs unpacker reads no other LZ4 framing) at its
+    /// highest compression, and a gzip one in gzip, at its highest too.
     pub fn encode(&self) -> Result<Vec<u8>> {
-        lz4_tool(&self.archive()?)
+        let cpio = self.archive()?;
+        Ok(match self.compression {
+            Compression::Lz4 => lz4_tool(&cpio)?,
+            Compression::Gzip => gzip_tool(&cpio)?,
+        })
     }
 
     /// Pack as a newc archive, uncompressed.
@@ -293,13 +314,23 @@ fn lz4_tool(input: &[u8]) -> Result<Vec<u8>> {
     Ok(out.stdout)
 }
 
+/// `input` packed in gzip, as the phone's own ramdisk was, at the highest
+/// compression, in process with no `gzip` tool asked for.
+fn gzip_tool(input: &[u8]) -> Result<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut w = flate2::write::GzEncoder::new(&mut out, flate2::Compression::new(9));
+    w.write_all(input).context("pack the archive in gzip")?;
+    w.finish().context("finish the gzip packing")?;
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn round_trip_keeps_metadata() {
-        let mut rd = Ramdisk { entries: Vec::new() };
+        let mut rd = Ramdisk { entries: Vec::new(), compression: Compression::Lz4 };
         rd.add("system/bin/recovery", 0o750, b"binary".to_vec()).unwrap();
         rd.entries.push(Entry {
             name: "dev/console".into(),
@@ -319,6 +350,17 @@ mod tests {
         assert_eq!((bin.mode, bin.data.as_slice()), (S_IFREG | 0o750, b"binary".as_slice()));
         assert_eq!(back.find("dev/console").unwrap().rdev, (5, 1));
         assert!(rd.add("system/bin/recovery", 0o644, Vec::new()).is_err());
+    }
+
+    #[test]
+    fn a_gzip_ramdisk_is_read_and_packed_back_in_gzip() {
+        let mut rd = Ramdisk { entries: Vec::new(), compression: Compression::Gzip };
+        rd.add("system/bin/recovery", 0o750, b"binary".to_vec()).unwrap();
+        let packed = rd.encode().unwrap();
+        assert_eq!(&packed[..2], &[0x1f, 0x8b], "packed in gzip");
+        let back = Ramdisk::decode(&packed).unwrap();
+        assert_eq!(back.compression, Compression::Gzip);
+        assert_eq!(back.find("system/bin/recovery").unwrap().data, b"binary");
     }
 
     /// What the reference `lz4` tool unpacks `packed` to.
@@ -348,9 +390,9 @@ mod tests {
 
     #[test]
     fn a_stream_after_the_vendor_ramdisk_is_read_on_into() {
-        let mut vendor = Ramdisk { entries: Vec::new() };
+        let mut vendor = Ramdisk { entries: Vec::new(), compression: Compression::Lz4 };
         vendor.add("lib/modules/ufs_qcom.ko", 0o644, b"module".to_vec()).unwrap();
-        let mut ours = Ramdisk { entries: Vec::new() };
+        let mut ours = Ramdisk { entries: Vec::new(), compression: Compression::Lz4 };
         ours.add("init", 0o750, b"program".to_vec()).unwrap();
         let joined = [vendor.encode().unwrap(), lz4_legacy(&ours.archive().unwrap())].concat();
         assert_eq!(unpacked_by_the_tool(&joined), [vendor.archive().unwrap(), ours.archive().unwrap()].concat(), "both archives, one after the other");
@@ -358,7 +400,7 @@ mod tests {
 
     #[test]
     fn a_link_is_kept_as_a_link_to_its_target() {
-        let mut rd = Ramdisk { entries: Vec::new() };
+        let mut rd = Ramdisk { entries: Vec::new(), compression: Compression::Lz4 };
         rd.add("system/bin/recovery", 0o750, b"binary".to_vec()).unwrap();
         rd.link("system/bin/zstd", "recovery").unwrap();
         rd.link("sbin/sh", "/system/bin/sh").unwrap();
@@ -390,6 +432,7 @@ mod tests {
         fs::write(root.join("etc"), b"a file").unwrap();
         std::os::unix::fs::symlink("nowhere", root.join("bin")).unwrap();
         let rd = Ramdisk {
+            compression: Compression::Lz4,
             entries: vec![
                 mine("init", S_IFLNK | 0o750, b"/system/bin/init"),
                 mine("dev", S_IFDIR | 0o755, b""),
@@ -425,14 +468,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir(dir.path().join("lib")).unwrap();
         fs::write(dir.path().join("lib/modules.load"), b"").unwrap();
-        let rd = Ramdisk { entries: vec![mine("lib", S_IFREG | 0o644, b"a file")] };
+        let rd = Ramdisk { entries: vec![mine("lib", S_IFREG | 0o644, b"a file")], compression: Compression::Lz4 };
         assert!(rd.unpack(dir.path()).is_err());
         assert!(dir.path().join("lib/modules.load").exists());
     }
 
     #[test]
     fn a_link_already_there_is_pointed_anew_keeping_the_rest_of_its_entry() {
-        let mut rd = Ramdisk { entries: Vec::new() };
+        let mut rd = Ramdisk { entries: Vec::new(), compression: Compression::Lz4 };
         rd.add("system/bin/ziptool", 0o755, b"binary".to_vec()).unwrap();
         rd.entries.push(Entry {
             name: "system/bin/unzip".into(),

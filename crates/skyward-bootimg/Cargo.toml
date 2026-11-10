@@ -8,6 +8,7 @@ license.workspace = true
 abootimg-oxide = "0.5.2"
 anyhow = { workspace = true }
 cpio = "0.4.1"
+flate2 = { version = "1.1.10", default-features = false, features = ["zlib-rs"] }
 libc = { workspace = true }
 lz4_flex = "0.14.0"
 

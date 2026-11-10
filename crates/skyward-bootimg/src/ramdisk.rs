@@ -45,7 +45,7 @@ impl Entry {
 /// How the archive is packed. A phone's own ramdisks come in LZ4, as
 /// Android packs boot ramdisks, and in gzip, as some of its older phones'
 /// do, whose boot image carries the recovery.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Compression {
     Lz4,
     Gzip,

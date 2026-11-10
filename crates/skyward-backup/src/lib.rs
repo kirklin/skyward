@@ -124,7 +124,7 @@ mod tests {
         };
         m.write(&at, Ownership::Kept).unwrap();
         assert_eq!(Manifest::read(&at).unwrap(), m);
-        assert_eq!(m.parts(), [true, false, true, false]);
+        assert_eq!(m.parts(), [true, false, true, false, false]);
         assert_eq!(m.size(), 100_663_296 + 4_500_000_000);
         std::fs::remove_dir_all(&at).unwrap();
     }

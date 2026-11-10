@@ -1,0 +1,100 @@
+[device]
+codename = "alioth"
+brand = "Redmi"
+model = "Redmi K40"
+ab = true
+soc = { hans = "骁龙™870 5G移动平台", hant = "Snapdragon® 870 5G行動平台", en = "Snapdragon® 870 5G Mobile Platform" }
+os_version_prop = "ro.mi.os.version.incremental"
+
+[display]
+width = 1080
+height = 2400
+density = 440
+diagonal = 6.67
+
+[modules]
+sources = ["vendor_boot", "vendor"]
+# alioth's own kernel, a 4.19 of its maker's, builds the touchscreen
+# (FocalTech's, behind Xiaomi's touch layer), the WLAN driver
+# (qcacld-3.0), cnss2, cfg80211 and rfkill into itself, so the recovery
+# loads no modules of its own.
+load = []
+
+# The firmware of the WLAN chip, and the modem's other images the phone's
+# drivers ask for, are on the modem partition, which the phone mounts at
+# /vendor/firmware_mnt and its own recovery leaves unmounted.
+[firmware]
+partition = "modem"
+
+# The persist partition, which the phone mounts at /mnt/vendor/persist and
+# its own recovery leaves unmounted. The WLAN's MAC address is among the
+# files there.
+[partitions]
+mounted = ["persist"]
+
+# What the phone's own init runs once the system has finished starting, as
+# kernel-post-boot in /vendor/etc/init/hw/init.qti.kernel.rc. The kernel
+# starts the CPU clusters on the performance governor, which holds them at
+# their highest clock; the script hands them to WALT, lets idle CPUs power
+# down and sets how the memory bus scales. Without it the CPUs stay at
+# their highest clock and voltage even while idle, and the phone slowly
+# heats up.
+[[service]]
+path = "/vendor/bin/sh"
+args = ["/vendor/bin/init.kernel.post_boot.sh"]
+libraries = ["/system/lib64", "/vendor/lib64"]
+oneshot = true
+user = "root"
+groups = ["root", "system", "wakelock", "graphics"]
+
+# WLAN: Qualcomm's WCN3998 on PCIe. Its driver, cnss2, cfg80211 and rfkill
+# are built into the phone's own kernel, so wlan0 appears once the chip's
+# firmware is loaded from the modem partition, which the recovery mounts
+# for that. wpa_supplicant runs on the recovery's own libraries before the
+# vendor partition's. Whether a network joined reaches the internet is
+# asked of the page the stock system's NetworkStack overlay names, on the
+# product partition.
+[wlan]
+modules = []
+interface = "wlan0"
+supplicant = "/vendor/bin/hw/wpa_supplicant"
+libraries = ["/system/lib64", "/vendor/lib64"]
+service = "android.hardware.wifi.supplicant.ISupplicant/default"
+probe = "http://connect.rom.miui.com/generate_204"
+
+# The update server the stock updater of the Chinese system asks.
+[update]
+server = "https://update.miui.com/updates/miotaV3.php"
+
+# The stock build the recovery is made on: the Chinese system's OS1.0.10.0,
+# whose full update package on the phone maker's own download server holds
+# the boot partition the recovery is built on top of, for the recovery
+# lives in the boot image on this phone, as the phone has no recovery
+# partition of its own.
+[stock]
+version = "OS1.0.10.0.TKHCNXM"
+package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS1.0.10.0.TKHCNXM/miui_ALIOTH_OS1.0.10.0.TKHCNXM_ddf5cf5ea0_13.0.zip"
+recovery = "745ef81b4f68fe7f10473cbc3bd84d3ac622110723ec6d0a2faec3d5dafcdd99"
+partition = "boot"
+
+# The partitions a backup of the baseband and EFS takes: the baseband's
+# settings, with the IMEI, and the sensors' calibration. And what of the
+# data partition a backup leaves out because the secure world keeps it in
+# step with itself: its own storage, and the fingerprint templates.
+[backup]
+efs = ["modemst1", "modemst2", "fsg", "fsc", "persist"]
+data_skipped = ["vendor/tzstorage", "vendor/goodix", "vendor/fingerprint"]
+
+# Where the phone's own programs keep logs in the data partition: the
+# system's, what Xiaomi's log manager keeps of each part of the phone, and
+# what the modem, Wi-Fi and Bluetooth leave when they crash.
+[wipe]
+logs = [
+    "/data/miuilog",
+    "/data/vendor/diag",
+    "/data/vendor/log",
+    "/data/vendor/ramdump",
+    "/data/vendor/ssrdump",
+    "/data/vendor/tombstones",
+    "/data/vendor/wlan_logs",
+]

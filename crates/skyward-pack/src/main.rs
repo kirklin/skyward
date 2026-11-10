@@ -115,7 +115,7 @@ fn main() -> Result<()> {
                 anyhow::bail!("{} holds {}, which is not a stock recovery", stock.display(), e.name);
             }
             let read = |p: &PathBuf| std::fs::read(p).with_context(|| format!("read {}", p.display()));
-            skyward_config::DeviceConfig::load(&config)?;
+            let cfg = skyward_config::DeviceConfig::load(&config)?;
             rd.replace(paths::RECOVERY, read(&binary)?)?;
             // Install scripts look for the commands a stock recovery lacks
             // among its programs, and its unzip there too, a link to ziptool
@@ -150,7 +150,8 @@ fn main() -> Result<()> {
             rd.replace(paths::PROP_DEFAULT, props)?;
             img.ramdisk = rd.encode()?;
             let bytes = img.to_bytes()?;
-            write(&out, &img, &avb::footed(&bytes, "recovery", size, &Sha256::digest(&bytes))?)
+            let partition = cfg.stock.as_ref().map(|s| s.partition()).unwrap_or("recovery");
+            write(&out, &img, &avb::footed(&bytes, partition, size, &Sha256::digest(&bytes))?)
         }
         Cmd::Stock { config, out } => {
             let stock = skyward_config::DeviceConfig::load(&config)?.stock.with_context(|| format!("{} names no stock build", config.display()))?;
@@ -163,19 +164,18 @@ fn main() -> Result<()> {
     }
 }
 
-/// The partition a recovery is made on, as a full update package names it.
-const RECOVERY: &str = "recovery";
-
-/// Take the recovery partition out of the stock build's full update package
-/// on its server, reading only what that partition takes of it, and write it
-/// to `out` once its SHA-256 is the one the configuration names.
+/// Take the partition the recovery is built on out of the stock build's
+/// full update package on its server, reading only what that partition
+/// takes of it, and write it to `out` once its SHA-256 is the one the
+/// configuration names.
 fn take_stock_recovery(stock: &skyward_config::Stock, out: &Path) -> Result<()> {
+    let partition = stock.partition();
     let parent = out.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
     std::fs::create_dir_all(parent).with_context(|| format!("make {}", parent.display()))?;
     // Taken out beside where it goes, so it is moved there whole.
     let work = tempfile::Builder::new().prefix(".stock").tempdir_in(parent).with_context(|| format!("make a folder in {}", parent.display()))?;
     let payload = unpayload::Payload::open_url(&stock.package).with_context(|| format!("open {}", stock.package))?;
-    let options = unpayload::ExtractOptions { output_dir: work.path().to_path_buf(), partitions: vec![RECOVERY.into()], ..Default::default() };
+    let options = unpayload::ExtractOptions { output_dir: work.path().to_path_buf(), partitions: vec![partition.into()], ..Default::default() };
     let report = |event: unpayload::Event<'_>| match event {
         unpayload::Event::Started { partitions } => {
             for (name, bytes) in partitions {
@@ -185,28 +185,36 @@ fn take_stock_recovery(stock: &skyward_config::Stock, out: &Path) -> Result<()> 
         unpayload::Event::Extracted(image) => println!("took {} out: {} bytes", image.partition, image.size),
         unpayload::Event::Progress { .. } => {}
     };
-    let taken = payload.extract(&options, &report).with_context(|| format!("take {RECOVERY} out of {}", stock.package))?;
-    let image = taken.iter().find(|i| i.partition == RECOVERY).with_context(|| format!("{} holds no {RECOVERY} partition", stock.package))?;
+    let taken = payload.extract(&options, &report).with_context(|| format!("take {partition} out of {}", stock.package))?;
+    let image = taken.iter().find(|i| i.partition == partition).with_context(|| format!("{} holds no {partition} partition", stock.package))?;
     let sum: String = image.sha256.as_deref().context("the package's own sum of the image was not checked")?.iter().map(|b| format!("{b:02x}")).collect();
-    ensure!(sum == stock.recovery, "the {RECOVERY} partition in {} has the SHA-256 {sum}, where the configuration names {}", stock.package, stock.recovery);
+    ensure!(sum == stock.recovery, "the {partition} partition in {} has the SHA-256 {sum}, where the configuration names {}", stock.package, stock.recovery);
     std::fs::rename(&image.path, out).with_context(|| format!("move {} to {}", image.path.display(), out.display()))?;
     println!("wrote {} ({} bytes), its SHA-256 the one the configuration names", out.display(), image.size);
     Ok(())
 }
 
 /// The size of the partition `stock` fills: all of it, as the phone and a
-/// full update package hold it, which its AVB footer ends.
+/// full update package hold it. A partition whose image its maker signs
+/// into itself ends in an AVB footer, and the image of one whose maker
+/// keeps its digest in the vbmeta partition instead, as alioth's boot
+/// partition is kept, starts as a boot image and ends in none.
 fn partition_size(stock: &Path) -> Result<usize> {
     let mut file = File::open(stock).with_context(|| format!("open {}", stock.display()))?;
     let size = file.metadata().with_context(|| format!("stat {}", stock.display()))?.len();
+    ensure!(size >= 64, "{} is too short to be a whole partition", stock.display());
     let mut magic = [0u8; 4];
-    if size >= 64 {
-        file.seek(SeekFrom::Start(size - 64)).with_context(|| format!("seek in {}", stock.display()))?;
-        file.read_exact(&mut magic).with_context(|| format!("read {}", stock.display()))?;
+    file.seek(SeekFrom::Start(size - 64)).with_context(|| format!("seek in {}", stock.display()))?;
+    file.read_exact(&mut magic).with_context(|| format!("read {}", stock.display()))?;
+    if &magic == b"AVBf" {
+        return Ok(usize::try_from(size)?);
     }
+    let mut head = [0u8; 8];
+    file.seek(SeekFrom::Start(0)).with_context(|| format!("seek in {}", stock.display()))?;
+    file.read_exact(&mut head).with_context(|| format!("read {}", stock.display()))?;
     ensure!(
-        &magic == b"AVBf",
-        "{} does not end in an AVB footer; give the whole recovery partition, as the phone or a full update package holds it",
+        &head == b"ANDROID!",
+        "{} does not end in an AVB footer nor start as a boot image; give the whole partition, as the phone or a full update package holds it",
         stock.display()
     );
     Ok(usize::try_from(size)?)

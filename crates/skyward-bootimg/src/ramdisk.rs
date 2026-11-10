@@ -288,7 +288,11 @@ pub fn lz4_legacy(input: &[u8]) -> Vec<u8> {
     out
 }
 
+// Kept although `encode` no longer calls it: a caller that would rather use the
+// installed `lz4` than compress in Rust can still ask for it, and on a machine
+// without lz4 the build must not break.
 #[cfg(unix)]
+#[allow(dead_code)]
 fn lz4_tool(input: &[u8]) -> Result<Vec<u8>> {
     let mut child = Command::new("lz4")
         .args(["-l", "-12", "--favor-decSpeed", "-c"])

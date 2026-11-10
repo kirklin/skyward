@@ -282,7 +282,7 @@ impl Transfer {
             skyward_sys::kmsg(&format!(
                 "file transfer offers internal storage: {offer}, holding {} entries",
                 match fs::read_dir(skyward_crypto::data::SDCARD) {
-                    Ok(mut d) => d.count().to_string(),
+                    Ok(d) => d.count().to_string(),
                     Err(e) => format!("an error {e}"),
                 }
             ))?;
@@ -1189,12 +1189,11 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     app.set_asked(asked(&request));
     // Opening the data partition, or a user's own files in it, under way,
     // and the users whose own files are still closed once it is open.
-    let mut decryptor: Option<Decryptor> = None;
     // The data partition is opened as the recovery starts, not by a page: the
     // file page and the computer both read internal storage, and neither is
     // of any use while the partition stays shut. Each user's own files stay
     // closed until their password is entered, exactly as on the page.
-    decryptor = Some(Decryptor::start(decrypt::Job::Open)?);
+    let mut decryptor: Option<Decryptor> = Some(Decryptor::start(decrypt::Job::Open)?);
     let mut closed: Vec<Closed> = Vec::new();
     let mut arriving = Some(Incoming::Arrived);
     // The mount page shows the partitions as they are when it opens and
@@ -1434,6 +1433,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     // off, and comes on with the recovery itself on a phone whose file asks
     // for it. Without the bundle of the vendor interface's libraries the
     // supplicant does not start, and the WLAN page says why.
+    let mut wlan_at_start = false;
     let wlan = match &cfg.wlan {
         Some(w) => {
             app.state.wlan = Some(Wlan::default());
@@ -1444,8 +1444,11 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
             });
             let worker = wlan::Worker::start(w.clone(), modules, libraries, servers.clone())?;
             if w.auto {
-                skyward_sys::kmsg("the WLAN comes on with the recovery")?;
-                worker.send(wlan::Command::On);
+                // Behind the data partition: the networks joined before are
+                // kept there, and the supplicant cannot read them while it
+                // stays shut, so the WLAN comes on once it is open.
+                skyward_sys::kmsg("the WLAN comes on once the data partition is open")?;
+                wlan_at_start = true;
             }
             Some(worker)
         }
@@ -2253,6 +2256,13 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     }
                     closed = opening.closed;
                     show_closed(&mut app, &closed)?;
+                    if wlan_at_start {
+                        wlan_at_start = false;
+                        if let Some(w) = &wlan {
+                            skyward_sys::kmsg("the data partition is open, so the WLAN comes on")?;
+                            w.send(wlan::Command::On);
+                        }
+                    }
                 }
                 decrypt::Ended::Opened(Err(why)) => {
                     skyward_sys::kmsg(&format!("the data partition stays closed: {why}"))?;

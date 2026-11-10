@@ -129,6 +129,13 @@ pub struct Wlan {
     /// The page the stock system asks over plain HTTP to tell whether a
     /// network reaches the internet, which answers 204 with nothing.
     pub probe: String,
+    /// Whether the WLAN comes on as the recovery starts, without the WLAN
+    /// page being opened first. Off by default: the supplicant needs the
+    /// vendor interface's libraries, and on a phone where those do not
+    /// open, the WLAN page is where the reason shows. Turning it on costs
+    /// the start a moment while the driver and the supplicant come up.
+    #[serde(default)]
+    pub auto: bool,
 }
 
 /// A value written to a file, such as a switch in sysfs.
@@ -200,6 +207,19 @@ pub struct Wipe {
 
 /// The data partition, which the folders erasing takes in are in.
 const DATA: &str = "/data";
+
+/// Whether `path` names a place from the root: the target the configuration
+/// describes is a phone, but the packer also runs on hosts whose paths are
+/// not Unix's, where a rooted path like `/data` is not "absolute".
+#[cfg(windows)]
+fn absolute(path: &Path) -> bool {
+    path.has_root()
+}
+
+#[cfg(not(windows))]
+fn absolute(path: &Path) -> bool {
+    path.is_absolute()
+}
 
 /// The vibration motor, played through the kernel's force-feedback events:
 /// its click, a waveform its driver keeps or one made from samples at the
@@ -288,6 +308,12 @@ pub struct Display {
     /// sliding over another rounds its leading corners to it.
     #[serde(default)]
     pub corner_radius: u32,
+    /// Whether the phone shows the pages on its cover as well. A phone that
+    /// folds has a second built-in panel, and while it is shut that one is
+    /// the screen in sight: driving it too keeps the pages at hand, each
+    /// screen laid out to its own size.
+    #[serde(default)]
+    pub covers: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -507,7 +533,7 @@ impl DeviceConfig {
             let path = Path::new(log);
             let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
             ensure!(
-                path.is_absolute() && plain && path.starts_with(DATA) && path != Path::new(DATA),
+                absolute(path) && plain && path.starts_with(DATA) && path != Path::new(DATA),
                 "[wipe] logs: {log} is not a folder inside {DATA}"
             );
         }
@@ -545,7 +571,7 @@ impl DeviceConfig {
         }
         if let Some(haptics) = &cfg.haptics {
             let file = &haptics.resonance;
-            ensure!(Path::new(file).is_absolute(), "[haptics] resonance: {file} is not an absolute path");
+            ensure!(absolute(Path::new(file)), "[haptics] resonance: {file} is not an absolute path");
             let Strength { lightest, strongest } = haptics.strength;
             ensure!(
                 0.0 < lightest && lightest < strongest && strongest <= 1.0,
@@ -556,7 +582,7 @@ impl DeviceConfig {
             for library in &logd.libraries {
                 let path = Path::new(library);
                 let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
-                ensure!(path.is_absolute() && plain && path.file_name().is_some(), "[logd] libraries: {library} is not an absolute path to a file");
+                ensure!(absolute(path) && plain && path.file_name().is_some(), "[logd] libraries: {library} is not an absolute path to a file");
             }
         }
         for owners in &cfg.owners {
@@ -568,7 +594,7 @@ impl DeviceConfig {
             for file in &owners.paths {
                 let path = Path::new(file);
                 let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
-                ensure!(path.is_absolute() && plain && path.file_name().is_some(), "[[owners]] paths: {file} is not an absolute path to a file");
+                ensure!(absolute(path) && plain && path.file_name().is_some(), "[[owners]] paths: {file} is not an absolute path to a file");
             }
         }
         if let Some(stock) = &cfg.stock {
@@ -601,7 +627,7 @@ impl DeviceConfig {
                         );
                         ensure!(plain && !file.path.is_empty(), "[wlan] firmware: {} is not a path from the top of {partition}", file.path);
                     }
-                    None => ensure!(path.is_absolute(), "[wlan] firmware: {} is not an absolute path", file.path),
+                    None => ensure!(absolute(path), "[wlan] firmware: {} is not an absolute path", file.path),
                 }
             }
         }

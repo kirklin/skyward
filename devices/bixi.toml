@@ -1,0 +1,228 @@
+[device]
+codename = "bixi"
+brand = "Xiaomi"
+model = "Xiaomi MIX Flip 2"
+ab = true
+soc = { hans = "骁龙®8至尊版移动平台", hant = "Snapdragon® 8 Elite 行動平台", en = "Snapdragon® 8 Elite Mobile Platform" }
+os_version_prop = "ro.mi.os.version.incremental"
+
+[display]
+width = 1224
+height = 2912
+# 密度取自小米自己的属性：/odm/etc/build.prop 里
+# ro.miui.density.secondaryppi=460（"#xiaomi app autodensity" 一组），
+# 而两块屏按分辨率算出来都是 460 ppi（内屏 1224×2912 / 6.86" = 460.5），
+# 所以 460 是这块屏的原始密度，不是取整出来的估值。
+density = 460
+diagonal = 6.86
+# 圆角取自系统的 DevicesAndroidOverlay（/product/overlay/
+# DevicesAndroidOverlay.apk）：rounded_corner_radius = 134px，
+# 同一份配置里 status_bar_height = 146px；另一份基础配置是 130px。
+corner_radius = 134
+covers = true
+
+[modules]
+sources = ["vendor_boot", "vendor_dlkm", "vendor", "system_dlkm"]
+# 内屏触摸：Synaptics TCM（SPI，DT 节点 synaptics_tcm@0 / compatible
+# "synaptics,tcm-spi"），驱动 synaptics_tcm2.ko，外面套一层小米自己的
+# xiaomi_touch.ko（/sys/class/touch/touch_dev 就是它建的），依赖由
+# vendor_dlkm 的 modules.dep 自动补齐。
+# mitee_dlkm：小米 TEE 的 GlobalPlatform client 驱动，weaver 要开它建出来的
+# 节点才能摸到安全芯片；原厂 recovery 不加载它。
+# nxp-nci：NXP 的 NFC/eSE 驱动，建出 /dev/nq-nci；secure_element HAL 要靠它
+# 给 eSE 上电并取 ATR（eseGetVendorId），没有节点只会报 Unknown eSE HW。
+# goodix_core：外屏（合盖后那块 1208x1392）的触摸，Goodix GT9916K 走 I2C，
+# 固件在 /odm/firmware/goodix_firmware_bixi.bin；它建出的输入设备是
+# virtual 节点（input8 / event8），属性里没有 DIRECT，触摸映射要用它自己的
+# ABS_MT 范围换算到 1208x1392 的页面。
+# 但它不能在这里开机加载：内屏还亮着时把它装进去，随后内屏一灭，驱动就把
+# 控制器当成自己该挂起，切成手势模式，之后只上报手势、不再出坐标（合盖后
+# event8 恒 0 事件，dmesg 只有 DebugInfo 包）。所以由界面在合盖、外屏点亮的
+# 那一刻自己 insmod，开盖再卸载（见 ui.rs 的 load_cover_touch）。
+load = ["synaptics_tcm2", "mitee_dlkm", "nxp-nci"]
+
+# 驱动复位后控制器只上报 raw 帧，要靠小米的 touch 算法（/odm/lib64 里的
+# libtouchreport.so）才变成触摸点；recovery 里跑不了这套，所以让驱动
+# 让控制器自己报坐标。
+[touch]
+writes = [{ path = "/sys/class/touch/touch_dev/enable_touch_raw", value = "0" }]
+
+# modem 分区放着 WLAN 固件和 secure world 要用的镜像，原厂 recovery 不挂，
+# 这里挂到 /vendor/firmware_mnt。
+[firmware]
+partition = "modem"
+
+# persist 分区是 secure world 自己用的（keymint 的不可回滚密钥、WLAN MAC 等）。
+[partitions]
+mounted = ["persist"]
+
+# 原厂 recovery 的 logd 缺 libsysutils / libcap，会起来就退。
+[logd]
+libraries = ["/mnt/system/system/lib64/libsysutils.so", "/mnt/system/system/lib64/libcap.so"]
+
+# 手机自己的 init 在系统起完后跑的脚本，把 CPU 交给 WALT 并让空闲核降频。
+[[service]]
+path = "/vendor/bin/sh"
+args = ["/vendor/bin/init.kernel.post_boot.sh"]
+libraries = ["/system/lib64", "/vendor/lib64"]
+oneshot = true
+user = "root"
+groups = ["root", "system", "wakelock", "graphics"]
+
+# secure world 回调 Android 用的监听器，keymint 少了它用不了任何密钥。
+[[service]]
+path = "/vendor/bin/qseecomd"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_property = "vendor.sys.listeners.registered"
+user = "root"
+groups = ["root", "drmrpc"]
+
+# 访问 secure world 里那些 TA 的中间服务。手机自己的 init 让它以 system 身份
+# 跑在 hal 类里；没有它，keymint / gatekeeper 找不到要调用的 TA 加载器。
+[[service]]
+path = "/vendor/bin/hw/vendor.qti.hardware.qseecom@1.0-service"
+libraries = ["/system/lib64", "/vendor/lib64", "/vendor/lib64/hw"]
+ready_service = "vendor.qti.hardware.qseecom.IQSEECom/default"
+user = "system"
+groups = ["system", "drmrpc"]
+
+# 小米自己的安全服务（qwesd@2.0）。TEE 在它把密钥备好之前不回答任何请求，
+# keymint 与 weaver 都要通过它的 socket 说话。手机上是 class late_start。
+[[service]]
+path = "/vendor/bin/qwesd"
+libraries = ["/system/lib64", "/vendor/lib64"]
+user = "system"
+groups = ["system"]
+
+# ssgtzd：把 modem 分区里的 TA（gpqese、weaver）装载给 secure world。
+# 手机上是 init 替它建好 /dev/socket/ssgtzd 与 ssgtzd_opener 两个 socket，
+# recovery 的 init 不建；它自己会 bind，只要 /dev/socket 可写（extra 里
+# 有一条 early-init 把它放开）。weaver 的请求全靠这两个 socket 转进安全世界。
+[[service]]
+path = "/vendor/bin/ssgtzd"
+libraries = ["/system/lib64", "/vendor/lib64"]
+user = "system"
+# vendor_ssgtzd 就是 2912（oem_2912 的别名），/vendor/etc/group 里有。
+groups = ["system", "vendor_ssgtzd", "wakelock"]
+capabilities = ["WAKE_ALARM", "BLOCK_SUSPEND"]
+
+# KeyMint：唯一能用硬件包裹密钥的服务，也管安全时钟和共享密钥。
+# 库顺序照参照机器：recovery 自带的 lib64 在最前，真实 system 的 lib64 与
+# bootstrap（真实 libdl_android 所在）垫在最后。
+[[service]]
+path = "/vendor/bin/hw/android.hardware.security.keymint-service-qti"
+libraries = ["/system/lib64", "/vendor/lib64", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"]
+ready_service = "android.hardware.security.keymint.IKeyMintDevice/default"
+registers = [
+    "android.hardware.security.keymint.IRemotelyProvisionedComponent/default",
+    "android.hardware.security.secureclock.ISecureClock/default",
+    "android.hardware.security.sharedsecret.ISharedSecret/default",
+]
+# 手机自己的 init 让它以 system 跑，照抄。
+user = "system"
+groups = ["system", "drmrpc"]
+
+# 安全芯片（eSE）服务：把芯片里的 applet 暴露成 Android 的 OMAPI，weaver 就
+# 通过它摸到密钥槽。手机上是 system 身份、属于 nfc 组。它不被等待，晚起也不堵后面。
+[[service]]
+path = "/vendor/bin/hw/android.hardware.secure_element-service.qti"
+libraries = ["/system/lib64", "/vendor/lib64", "/vendor/lib64/hw", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"]
+registers = ["android.hardware.secure_element.ISecureElement/eSE1"]
+user = "system"
+groups = ["system"]
+
+# OMAPI：weaver 问安全芯片要槽位时不走 ssgtzd，而是走 Android 的
+# android.se.omapi.ISecureElementService —— 正式系统里这个服务由 Java 框架的
+# com.android.se 提供，recovery 没有框架，所以必须自己起一个。用 OrangeFox
+# 随包带的 se_omapi（external/se_omapi），它只依赖 libbinder_ndk 与两个 AIDL
+# 库，比 17 Pro 那整只 8.6MB 的 recovery 二进制省事。
+[[service]]
+path = "/system/bin/se_omapi"
+libraries = ["/system/lib64", "/vendor/lib64", "/odm/lib64", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"]
+ready_service = "android.se.omapi.ISecureElementService/default"
+registers = ["android.se.omapi.ISecureElementService/default"]
+user = "root"
+groups = ["root"]
+
+# Weaver：每个用户的密钥都绑在安全芯片的一个槽位上，有没有锁屏都要靠它解封。
+# bixi 的这个程序由小米装在 odm 分区，手机 init 里 user/group 都是
+# vendor_nxp_weaver 并带 WAKE_ALARM；recovery 的账户表里没有这个名字，
+# 用 system 顶上。它要加载 odm 与 vendor 的库，两者都会去要真实 system 的
+# libvndksupport 与 libdl_android，所以真实 system 的库排最后。
+[[service]]
+path = "/odm/bin/hw/android.hardware.weaver-service.nxp-qti"
+libraries = ["/odm/lib64", "/system/lib64", "/vendor/lib64", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"]
+ready_service = "android.hardware.weaver.IWeaver/default"
+registers = ["android.hardware.weaver.IWeaver/default"]
+# bixi 的 odm 清单里 weaver 还是老写法（<interface><name>/<instance>），
+# Skyward 只认 <fqname>IWeaver/default</fqname>，于是这个文件不会被选中、
+# servicemanager 也就拒绝注册。这里给它一份现代写法的描述。
+description = "/system/etc/vintf/weaver-nxp.xml"
+# 参照 songyuan（同为骁龙 + NXP 方案）：weaver 用 root。它要开 TEE 的
+# /dev/teepriv0 这类 root 专属节点，system 身份下请求送不到安全世界。
+user = "root"
+groups = ["root"]
+capabilities = ["WAKE_ALARM"]
+
+# boot control：读写 A/B slot 的选择，放最后，前面的起不来也还能用。
+[[service]]
+path = "/vendor/bin/hw/android.hardware.boot-service.qti"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_service = "android.hardware.boot.IBootControl/default"
+user = "root"
+groups = ["root"]
+
+# WLAN：Qualcomm Peach（qca_cld3_peach_v2）走 cnss2，cfg80211 需要内核自带的
+# rfkill（system_dlkm 里，系统会先加载，recovery 不带）。
+[wlan]
+modules = ["rfkill", "qca_cld3_peach_v2"]
+writes = [{ path = "/sys/kernel/cnss/fs_ready", value = "1" }]
+# cnss2 探针时向内核固件加载器要 wlan/qca_cld/peach_v2/WCNSS_qcom_cfg.ini，
+# 而它只存在于 /vendor/etc/wifi 下；不摆到 /etc/firmware 就会
+# "Failed to probe host driver, err = -1"，wlan0 永远不出现。
+firmware = [
+    { name = "wlan/qca_cld/peach_v2/WCNSS_qcom_cfg.ini", path = "/vendor/etc/wifi/peach_v2/WCNSS_qcom_cfg.ini" },
+    { name = "wlan/qca_cld/peach_v2/wlan_mac.bin", path = "/mnt/vendor/persist/wlan/wlan_mac.bin" },
+]
+interface = "wlan0"
+supplicant = "/vendor/bin/hw/wpa_supplicant"
+libraries = ["/system/lib64", "/vendor/lib64"]
+service = "android.hardware.wifi.supplicant.ISupplicant/default"
+probe = "http://connect.rom.miui.com/generate_204"
+# 开机就起 WLAN，不用先进网络页手动拨一次；supplicant 起不来时原因仍
+# 写在网络页上（也就是默认行为里那句说明）。
+auto = true
+
+[update]
+server = "https://update.miui.com/updates/miotaV3.php"
+
+# qcom-hv-haptics，X1 线性马达，手机自己量到的谐振 170 Hz
+# （ro.odm.mm.vibrator.resonant_frequency=170）。
+[haptics]
+resonance = "/sys/class/qcom-haptics/lra_frequency_hz"
+strength = { lightest = 0.25, strongest = 0.75 }
+
+[backup]
+efs = ["modemst1", "modemst2", "fsg", "fsc", "persist"]
+data_skipped = [
+    "vendor/tzstorage",
+    "vendor/qtee",
+    "vendor/mitee",
+    "vendor/goodix",
+    "vendor/fingerprint",
+    "vendor/fpdata",
+    "vendor/misc/mi_fp",
+]
+
+[wipe]
+logs = [
+    "/data/miuilog",
+    "/data/vendor/diag",
+    "/data/vendor/bsplog",
+    "/data/vendor/log",
+    "/data/vendor/ramdump",
+    "/data/vendor/ramdump_ssr",
+    "/data/vendor/ssrdump",
+    "/data/vendor/tombstones",
+    "/data/vendor/wlan_logs",
+]

@@ -18,6 +18,8 @@ mod input;
 #[cfg(target_os = "android")]
 mod merge;
 #[cfg(target_os = "android")]
+mod orientation;
+#[cfg(target_os = "android")]
 mod partwork;
 #[cfg(target_os = "android")]
 mod pty;

@@ -1,11 +1,15 @@
 use anyhow::{bail, Context, Result};
 use cpio::{NewcBuilder, NewcReader};
-use std::ffi::{CString, OsStr};
 use std::fs;
 use std::io::{Cursor, Read, Write};
+#[cfg(unix)]
+use std::ffi::{CString, OsStr};
+#[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
+#[cfg(unix)]
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
+#[cfg(unix)]
 use std::process::{Command, Stdio};
 
 /// One cpio entry with the metadata the kernel restores when it unpacks the
@@ -84,7 +88,7 @@ impl Ramdisk {
     /// with the reference `lz4` tool in legacy framing (the kernel's initramfs
     /// unpacker reads no other LZ4 framing) at its highest compression.
     pub fn encode(&self) -> Result<Vec<u8>> {
-        lz4_tool(&self.archive()?)
+        Ok(lz4_legacy(&self.archive()?))
     }
 
     /// Pack as a newc archive, uncompressed.
@@ -122,6 +126,7 @@ impl Ramdisk {
     /// everything in it is in. Where a file is already there, the entry is
     /// made anew, where the kernel writes over it, so that a program
     /// running from that file is left alone.
+    #[cfg(unix)]
     pub fn unpack(&self, root: &Path) -> Result<()> {
         for e in &self.entries {
             let path = root.join(&e.name);
@@ -132,6 +137,11 @@ impl Ramdisk {
             set_time(&path, e.mtime).with_context(|| format!("unpack {}", path.display()))?;
         }
         Ok(())
+    }
+
+    #[cfg(not(unix))]
+    pub fn unpack(&self, _root: &Path) -> Result<()> {
+        bail!("unpacking a ramdisk onto a filesystem is supported on unix only")
     }
 
     /// Replace a regular file's contents, keeping its owner and mode.
@@ -192,11 +202,13 @@ fn root_entry(name: &str, mode: u32, data: Vec<u8>) -> Entry {
     Entry { name: name.to_string(), mode, uid: 0, gid: 0, mtime: 0, nlink, dev: (0, 0), rdev: (0, 0), data }
 }
 
+#[cfg(unix)]
 fn c_path(path: &Path) -> Result<CString> {
     CString::new(path.as_os_str().as_bytes()).context("a NUL in the path")
 }
 
 /// One entry of [`Ramdisk::unpack`] at `path`.
+#[cfg(unix)]
 fn unpack(e: &Entry, path: &Path) -> Result<()> {
     let kind = e.mode & S_IFMT;
     let mode = e.mode & 0o7777;
@@ -243,6 +255,7 @@ fn unpack(e: &Entry, path: &Path) -> Result<()> {
 
 /// Give `path` itself, a link or not, `mtime` as the time it was last
 /// changed and read.
+#[cfg(unix)]
 fn set_time(path: &Path, mtime: u32) -> Result<()> {
     let at = libc::timespec { tv_sec: mtime as libc::time_t, tv_nsec: 0 };
     let times = [at, at];
@@ -275,6 +288,7 @@ pub fn lz4_legacy(input: &[u8]) -> Vec<u8> {
     out
 }
 
+#[cfg(unix)]
 fn lz4_tool(input: &[u8]) -> Result<Vec<u8>> {
     let mut child = Command::new("lz4")
         .args(["-l", "-12", "--favor-decSpeed", "-c"])

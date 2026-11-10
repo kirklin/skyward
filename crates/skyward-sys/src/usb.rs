@@ -28,8 +28,19 @@ pub fn set_mtp(on: bool) {
 /// Ask init for `config` and wait until it is in place. Going to "none"
 /// also waits for adbd to be gone, so its function is free.
 pub fn set(config: &str, timeout: Duration) -> Result<()> {
+    // A port left with this set binds nothing at all, whatever asks for it:
+    // adb alone does not come back and the computer finds nothing.
+    if prop("sys.usb.config_disable").as_deref() == Some("1") {
+        set_prop("sys.usb.config_disable", "0")?;
+    }
     set_prop("sys.usb.config", config)?;
-    wait_prop("sys.usb.state", config, timeout)?;
+    if wait_prop("sys.usb.state", config, timeout).is_err() {
+        // Init binds the functions once the programs behind them are
+        // ready, which can take longer than the wait allows; asking again
+        // costs nothing and wakes the rules that had given up.
+        set_prop("sys.usb.config", config)?;
+        wait_prop("sys.usb.state", config, timeout)?;
+    };
     if config == "none" {
         let start = Instant::now();
         while !matches!(prop("init.svc.adbd").as_deref(), None | Some("stopped")) {

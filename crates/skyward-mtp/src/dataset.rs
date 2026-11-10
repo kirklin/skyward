@@ -128,7 +128,8 @@ impl Writer {
             n -= 1;
         }
         if n == 0 {
-            return self.u8(0);
+            self.u8(1);
+            return self.u16(0);
         }
         self.u8(n as u8 + 1);
         for &u in &units[..n] {

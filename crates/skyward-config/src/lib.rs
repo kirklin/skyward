@@ -876,6 +876,7 @@ mod tests {
             (include_str!("../../../devices/miro.toml"), "OS3.0.305.0.WOMCNXM"),
             (include_str!("../../../devices/annibale.toml"), "OS3.0.307.0.WPKCNXM"),
             (include_str!("../../../devices/warsaw.toml"), "OS3.0.309.0.WHPCNXM"),
+            (include_str!("../../../devices/bixi.toml"), "OS4.0.0.11.XOHCNXM"),
         ] {
             let stock = DeviceConfig::parse(text).unwrap().stock.expect("a stock build to build on");
             assert_eq!(stock.version, version);
@@ -960,6 +961,28 @@ mod tests {
         assert_eq!(cfg.services[6].ready_hardware_service.as_deref(), Some("android.hardware.boot@1.2::IBootControl/default"));
         assert_eq!(cfg.backup.efs, ["modemst1", "modemst2", "fsg", "fsc", "persist"]);
         assert!(cfg.backup.data_skipped.contains(&"vendor/tzstorage".to_string()));
+    }
+
+    #[test]
+    fn parses_bixi() {
+        let cfg = DeviceConfig::parse(include_str!("../../../devices/bixi.toml")).unwrap();
+        assert_eq!(cfg.device.codename, "bixi");
+        assert_eq!((cfg.display.width, cfg.display.height, cfg.display.density), (1224, 2912, 460));
+        assert_eq!(cfg.display.corner_radius, 134);
+        assert!(cfg.display.covers, "a phone that folds shows its pages on the cover as well");
+        let wlan = cfg.wlan.expect("a WLAN to bring up");
+        assert!(wlan.auto, "it comes on by itself, once the data partition is open");
+        assert_eq!(wlan.interface, "wlan0");
+        assert!(
+            wlan.modules.iter().any(|m| m == "qca_cld3_peach_v2"),
+            "the platform driver of this build's chip"
+        );
+        assert!(
+            cfg.services.iter().all(|s| s.path != "/vendor/bin/hw/android.hardware.gatekeeper-service-qti"),
+            "gatekeeper is parked: no SPU service and no VINTF instance in a recovery"
+        );
+        assert_eq!(cfg.backup.efs, ["modemst1", "modemst2", "fsg", "fsc", "persist"]);
+        assert!(cfg.backup.data_skipped.contains(&"vendor/secure_element".to_string()));
     }
 
     #[test]

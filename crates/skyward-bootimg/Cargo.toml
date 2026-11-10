@@ -8,8 +8,11 @@ license.workspace = true
 abootimg-oxide = "0.5.2"
 anyhow = { workspace = true }
 cpio = "0.4.1"
+flate2 = "1.1.5"
 libc = { workspace = true }
 lz4_flex = "0.14.0"
+sha1 = "0.10.6"
+sha2 = "0.10.9"
 
 [dev-dependencies]
 tempfile = "3.27.0"

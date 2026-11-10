@@ -97,6 +97,11 @@ pub struct Stock {
     pub package: String,
     /// The recovery partition's SHA-256, in lowercase hex.
     pub recovery: String,
+    /// The size of the recovery partition in bytes, for a build whose
+    /// recovery image does not end in an AVB footer and so does not say it,
+    /// as the builds of phones up to Android 10 often do not.
+    #[serde(default)]
+    pub partition_size: Option<u64>,
 }
 
 /// What brings the phone's WLAN up inside a recovery, which loads none of

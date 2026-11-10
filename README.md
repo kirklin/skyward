@@ -119,6 +119,16 @@ the data partition.
 | 🚧 REDMI K90 Ultra | `warsaw` | OS3.0.309.0.WHPCNXM (Android 16) |
 | 🚧 REDMI K100 Pro | `athens` | OS4.0.4.0.XPICNXM (Android 17) |
 | 🚧 REDMI K100 Pro Max | `songyuan` | OS4.0.4.0.XGNCNXM (Android 17) |
+| 🚧 Xiaomi Mi MIX 2 | `chiron` | V12.0.1.0.PDECNXM (Android 9) |
+| 🚧 Xiaomi Mi MIX 2S | `polaris` | V12.5.1.0.QDGCNXM (Android 10) |
+| 🚧 REDMI K20 Pro | `raphael` | V12.5.6.0.RFKCNXM (Android 11) |
+
+The MIX 2, MIX 2S and K20 Pro are A-only phones without dynamic partitions;
+their recovery images carry boot headers v0 to v2 and a ramdisk compressed
+with gzip or LZ4. Skyward's packer reads and writes those images. Take the
+stock recovery image of each from `images/recovery.img` in its fastboot
+package: `skyward-pack stock` reads the payload of a full update package and
+does not apply to them. None of these images has been tried on a phone yet.
 
 ## Installing Skyward
 
@@ -234,6 +244,30 @@ target/release/skyward-pack recovery \
   --mono-license resources/fonts/KirkMono-OFL.txt \
   --out target/skyward-nezha.img
 ```
+
+The stock recovery image of the MIX 2, MIX 2S and K20 Pro is not in a full
+update package with a payload, but in `images/recovery.img` of each phone's
+fastboot package. Their recovery partition is 64 MiB; when the image taken
+out does not end in an AVB footer, give the partition's size with
+`--partition-size`:
+
+```sh
+target/release/skyward-pack recovery \
+  --stock target/stock/chiron/recovery.img \
+  --binary target/aarch64-linux-android/release/skyward \
+  --system-init target/system-init/aarch64-linux-android/release/system-init \
+  --config devices/chiron.toml \
+  --font resources/fonts/MiSansVF.ttf \
+  --mono resources/fonts/KirkMono-Regular.ttf \
+  --mono-license resources/fonts/KirkMono-OFL.txt \
+  --partition-size 67108864 \
+  --out target/skyward-chiron.img
+```
+
+These three are A-only phones: their recovery images carry boot headers v0
+to v2, with a ramdisk compressed with gzip or LZ4. They run Android 9 to 11,
+so build the `skyward` they carry with `--platform 28`, which uses only
+interfaces Android 9 has.
 
 Tests and lints run on the computer; what runs only on the phone is linted for it:
 

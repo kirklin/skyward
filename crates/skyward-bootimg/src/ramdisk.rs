@@ -46,14 +46,38 @@ impl Entry {
 /// device numbers exactly as the archive had them.
 pub struct Ramdisk {
     pub entries: Vec<Entry>,
+    /// How the archive was compressed in the image it came from, which is
+    /// how it is compressed when it goes back into one: a phone whose
+    /// bootloader was made for one framing may not read another.
+    pub compression: Compression,
+}
+
+/// The framings Android boot images have carried their ramdisks in: LZ4's
+/// legacy framing, which Android 9 and later use, gzip, which Android 8 and
+/// earlier use, and none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Compression {
+    Lz4Legacy,
+    Gzip,
+    None,
+}
+
+impl Default for Ramdisk {
+    fn default() -> Self {
+        Ramdisk { entries: Vec::new(), compression: Compression::Lz4Legacy }
+    }
 }
 
 impl Ramdisk {
-    /// Unpack an LZ4 (legacy framing) compressed newc archive, as Android
-    /// boot images carry.
+    /// An empty archive, compressed as Android 9 and later compress one.
+    pub fn new() -> Self {
+        Ramdisk::default()
+    }
+
+    /// Unpack a compressed newc archive, as Android boot images carry: LZ4
+    /// in its legacy framing, gzip, or neither.
     pub fn decode(compressed: &[u8]) -> Result<Self> {
-        let mut cpio = Vec::new();
-        lz4_flex::frame::FrameDecoder::new(compressed).read_to_end(&mut cpio).context("lz4 decode")?;
+        let (cpio, compression) = decompress(compressed)?;
         let mut entries = Vec::new();
         let mut rest = Cursor::new(cpio.as_slice());
         loop {
@@ -77,14 +101,17 @@ impl Ramdisk {
             entries.push(entry);
             rest = r.finish().context("cpio entry end")?;
         }
-        Ok(Ramdisk { entries })
+        Ok(Ramdisk { entries, compression })
     }
 
-    /// Pack as a newc archive compressed the way AOSP packs boot ramdisks,
-    /// with the reference `lz4` tool in legacy framing (the kernel's initramfs
-    /// unpacker reads no other LZ4 framing) at its highest compression.
+    /// Pack as a newc archive compressed as the archive it came from was.
     pub fn encode(&self) -> Result<Vec<u8>> {
-        lz4_tool(&self.archive()?)
+        let cpio = self.archive()?;
+        match self.compression {
+            Compression::Gzip => gzip(&cpio),
+            Compression::Lz4Legacy => lz4_tool(&cpio),
+            Compression::None => Ok(cpio),
+        }
     }
 
     /// Pack as a newc archive, uncompressed.
@@ -258,6 +285,36 @@ const LZ4_LEGACY_MAGIC: u32 = 0x184C_2102;
 /// more of one.
 const LZ4_LEGACY_BLOCK: usize = 8 << 20;
 
+/// The archive `compressed` holds, and how it was compressed. Android 9 and
+/// later compress boot ramdisks as LZ4's legacy framing; Android 8 and
+/// earlier as gzip, which phones whose bootloader was made for it keep.
+fn decompress(compressed: &[u8]) -> Result<(Vec<u8>, Compression)> {
+    let mut cpio = Vec::new();
+    if compressed.starts_with(&[0x1f, 0x8b]) {
+        flate2::read::GzDecoder::new(compressed).read_to_end(&mut cpio).context("gzip decode")?;
+        return Ok((cpio, Compression::Gzip));
+    }
+    if compressed.starts_with(&LZ4_LEGACY_MAGIC.to_le_bytes()) || compressed.starts_with(&[0x04, 0x22, 0x4d, 0x18]) {
+        lz4_flex::frame::FrameDecoder::new(compressed).read_to_end(&mut cpio).context("lz4 decode")?;
+        return Ok((cpio, Compression::Lz4Legacy));
+    }
+    // An uncompressed newc archive starts with its first entry's magic.
+    if compressed.starts_with(b"070701") || compressed.starts_with(b"070702") {
+        return Ok((compressed.to_vec(), Compression::None));
+    }
+    bail!("the ramdisk is compressed in no framing a boot image carries")
+}
+
+/// `input` compressed as gzip at its highest level, as Android 8 and earlier
+/// pack a boot ramdisk.
+fn gzip(input: &[u8]) -> Result<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut encoder = flate2::write::GzEncoder::new(&mut out, flate2::Compression::best());
+    encoder.write_all(input).context("gzip encode")?;
+    encoder.finish().context("gzip encode")?;
+    Ok(out)
+}
+
 /// `input` compressed in LZ4's legacy framing, the one the kernel's initramfs
 /// unpacker reads: the magic number, then each 8 MiB of `input` as one LZ4
 /// block with its compressed length before it. The kernel reads the ramdisks
@@ -276,12 +333,14 @@ pub fn lz4_legacy(input: &[u8]) -> Vec<u8> {
 }
 
 fn lz4_tool(input: &[u8]) -> Result<Vec<u8>> {
-    let mut child = Command::new("lz4")
-        .args(["-l", "-12", "--favor-decSpeed", "-c"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .context("run lz4 (install it, e.g. `brew install lz4`)")?;
+    let mut child = match Command::new("lz4").args(["-l", "-12", "--favor-decSpeed", "-c"]).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn() {
+        Ok(child) => child,
+        // A computer building an image need not have the reference tool;
+        // the framing Skyward writes itself is the same one, only less
+        // tightly packed.
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(lz4_legacy(input)),
+        Err(err) => return Err(err).context("run lz4 (install it, e.g. `brew install lz4`)"),
+    };
     let mut stdin = child.stdin.take().expect("stdin is piped");
     let input = input.to_vec();
     let writer = std::thread::spawn(move || stdin.write_all(&input));
@@ -299,7 +358,7 @@ mod tests {
 
     #[test]
     fn round_trip_keeps_metadata() {
-        let mut rd = Ramdisk { entries: Vec::new() };
+        let mut rd = Ramdisk::new();
         rd.add("system/bin/recovery", 0o750, b"binary".to_vec()).unwrap();
         rd.entries.push(Entry {
             name: "dev/console".into(),
@@ -348,9 +407,9 @@ mod tests {
 
     #[test]
     fn a_stream_after_the_vendor_ramdisk_is_read_on_into() {
-        let mut vendor = Ramdisk { entries: Vec::new() };
+        let mut vendor = Ramdisk::new();
         vendor.add("lib/modules/ufs_qcom.ko", 0o644, b"module".to_vec()).unwrap();
-        let mut ours = Ramdisk { entries: Vec::new() };
+        let mut ours = Ramdisk::new();
         ours.add("init", 0o750, b"program".to_vec()).unwrap();
         let joined = [vendor.encode().unwrap(), lz4_legacy(&ours.archive().unwrap())].concat();
         assert_eq!(unpacked_by_the_tool(&joined), [vendor.archive().unwrap(), ours.archive().unwrap()].concat(), "both archives, one after the other");
@@ -358,7 +417,7 @@ mod tests {
 
     #[test]
     fn a_link_is_kept_as_a_link_to_its_target() {
-        let mut rd = Ramdisk { entries: Vec::new() };
+        let mut rd = Ramdisk::new();
         rd.add("system/bin/recovery", 0o750, b"binary".to_vec()).unwrap();
         rd.link("system/bin/zstd", "recovery").unwrap();
         rd.link("sbin/sh", "/system/bin/sh").unwrap();
@@ -401,6 +460,7 @@ mod tests {
                 mine("system/bin/init", S_IFREG | 0o750, b"new program"),
                 mine("system/bin/pipe", S_IFIFO | 0o600, b""),
             ],
+            ..Ramdisk::default()
         };
         rd.unpack(root).unwrap();
         let meta = |name: &str| fs::symlink_metadata(root.join(name)).unwrap();
@@ -425,14 +485,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir(dir.path().join("lib")).unwrap();
         fs::write(dir.path().join("lib/modules.load"), b"").unwrap();
-        let rd = Ramdisk { entries: vec![mine("lib", S_IFREG | 0o644, b"a file")] };
+        let rd = Ramdisk { entries: vec![mine("lib", S_IFREG | 0o644, b"a file")], ..Ramdisk::default() };
         assert!(rd.unpack(dir.path()).is_err());
         assert!(dir.path().join("lib/modules.load").exists());
     }
 
     #[test]
     fn a_link_already_there_is_pointed_anew_keeping_the_rest_of_its_entry() {
-        let mut rd = Ramdisk { entries: Vec::new() };
+        let mut rd = Ramdisk::new();
         rd.add("system/bin/ziptool", 0o755, b"binary".to_vec()).unwrap();
         rd.entries.push(Entry {
             name: "system/bin/unzip".into(),

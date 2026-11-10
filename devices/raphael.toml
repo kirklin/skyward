@@ -1,0 +1,34 @@
+[device]
+codename = "raphael"
+brand = "Redmi"
+model = "Redmi K20 Pro"
+# A-only: one boot and one recovery partition, and no dynamic partitions.
+ab = false
+soc = { hans = "骁龙®855移动平台", hant = "Snapdragon® 855 行動平台", en = "Snapdragon® 855 Mobile Platform" }
+os_version_prop = "ro.build.version.incremental"
+
+[display]
+# 6.39 inches, 19.5:9, as the panel reports itself.
+width = 1080
+height = 2340
+density = 440
+diagonal = 6.39
+
+# Android 10 and 11 keep their kernel modules in the vendor partition, in
+# /vendor/lib/modules, the only place the stock recovery loads them from.
+[modules]
+sources = ["vendor"]
+
+# The phone's own table mounts persist at /mnt/vendor/persist, which its
+# recovery leaves unmounted; the sensors' calibration and the WLAN's MAC
+# address are there.
+[partitions]
+mounted = ["persist"]
+
+# The baseband's settings and the sensors' calibration, as every Xiaomi
+# phone of this generation keeps them.
+[backup]
+efs = ["modemst1", "modemst2", "fsg", "fsc", "persist"]
+
+[update]
+server = "https://update.miui.com/updates/miotaV3.php"

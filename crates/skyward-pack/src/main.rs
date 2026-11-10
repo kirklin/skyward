@@ -67,6 +67,11 @@ enum Cmd {
         /// The monospaced typeface's licence, which goes with it.
         #[arg(long)]
         mono_license: PathBuf,
+        /// The size of the recovery partition, for a stock image that does
+        /// not end in an AVB footer and so does not say how large its
+        /// partition is. Phones up to Android 10 often ship one.
+        #[arg(long)]
+        partition_size: Option<u64>,
         #[arg(long)]
         out: PathBuf,
     },
@@ -105,8 +110,9 @@ fn main() -> Result<()> {
             img.kernel = BootImage::read(&kernel)?.kernel;
             write(&out, &img, &img.to_bytes()?)
         }
-        Cmd::Recovery { stock, binary, system_init, config, font, mono, mono_license, out } => {
-            let size = partition_size(&stock)?;
+        Cmd::Recovery { stock, binary, system_init, config, font, mono, mono_license, partition_size: asked, out } => {
+            let cfg = skyward_config::DeviceConfig::load(&config)?;
+            let size = partition_size(&stock, asked.or(cfg.stock.as_ref().and_then(|s| s.partition_size)))?;
             let mut img = BootImage::read(&stock)?;
             let mut rd = Ramdisk::decode(&img.ramdisk)?;
             // A stock recovery ramdisk has no third-party tree; refuse to build
@@ -115,14 +121,29 @@ fn main() -> Result<()> {
                 anyhow::bail!("{} holds {}, which is not a stock recovery", stock.display(), e.name);
             }
             let read = |p: &PathBuf| std::fs::read(p).with_context(|| format!("read {}", p.display()));
-            skyward_config::DeviceConfig::load(&config)?;
-            rd.replace(paths::RECOVERY, read(&binary)?)?;
+            // Android 10 and later keep the recovery service in system/bin;
+            // Android 9 and earlier keep it in sbin, at the root of the
+            // ramdisk, where the kernel's init looks for it.
+            let recovery = if rd.find(paths::RECOVERY).is_some() {
+                paths::RECOVERY
+            } else if rd.find(LEGACY_RECOVERY).is_some() {
+                LEGACY_RECOVERY
+            } else {
+                anyhow::bail!(
+                    "{} holds neither {} nor {}, so it is not a stock recovery",
+                    stock.display(),
+                    paths::RECOVERY,
+                    LEGACY_RECOVERY
+                );
+            };
+            rd.replace(recovery, read(&binary)?)?;
             // Install scripts look for the commands a stock recovery lacks
             // among its programs, and its unzip there too, a link to ziptool
             // until it points here; the recovery binary is each of them.
-            let (_, recovery) = paths::RECOVERY.rsplit_once('/').expect("the recovery binary is in a folder");
+            let (folder, name) = recovery.rsplit_once('/').expect("the recovery binary is in a folder");
             for command in paths::COMMANDS {
-                rd.link(command, recovery)?;
+                let command = command.rsplit_once('/').expect("a command is in a folder").1;
+                rd.link(&format!("{folder}/{command}"), name)?;
             }
             rd.add(paths::SYSTEM_INIT, 0o755, read(&system_init)?)?;
             rd.add(paths::CONFIG, 0o644, read(&config)?)?;
@@ -140,14 +161,19 @@ fn main() -> Result<()> {
             // 0; init lets a later line of a property file override an earlier
             // one. update_engine refuses a package built before the recovery
             // itself unless both of the last two are set; the recovery checks
-            // packages against the installed system instead.
-            let stock_props = &rd
-                .find(paths::PROP_DEFAULT)
-                .with_context(|| format!("{} is not in the ramdisk", paths::PROP_DEFAULT))?
-                .data;
+            // packages against the installed system instead. Android 8 and
+            // earlier call the file default.prop.
+            let prop = if rd.find(paths::PROP_DEFAULT).is_some() {
+                paths::PROP_DEFAULT
+            } else if rd.find(LEGACY_PROP).is_some() {
+                LEGACY_PROP
+            } else {
+                anyhow::bail!("{} holds neither {} nor {}, so it is not a stock recovery", stock.display(), paths::PROP_DEFAULT, LEGACY_PROP);
+            };
+            let stock_props = &rd.find(prop).with_context(|| format!("{prop} is not in the ramdisk"))?.data;
             let mut props = without(stock_props, &BUILD_VERSION);
             props.extend_from_slice(b"\nro.secure=0\nro.adb.secure=0\nro.debuggable=1\nro.ota.allow_downgrade=true\n");
-            rd.replace(paths::PROP_DEFAULT, props)?;
+            rd.replace(prop, props)?;
             img.ramdisk = rd.encode()?;
             let bytes = img.to_bytes()?;
             write(&out, &img, &avb::footed(&bytes, "recovery", size, &Sha256::digest(&bytes))?)
@@ -165,6 +191,11 @@ fn main() -> Result<()> {
 
 /// The partition a recovery is made on, as a full update package names it.
 const RECOVERY: &str = "recovery";
+
+/// Where Android 9 and earlier keep the recovery service and the first
+/// property file in the ramdisk.
+const LEGACY_RECOVERY: &str = "sbin/recovery";
+const LEGACY_PROP: &str = "default.prop";
 
 /// Take the recovery partition out of the stock build's full update package
 /// on its server, reading only what that partition takes of it, and write it
@@ -195,8 +226,10 @@ fn take_stock_recovery(stock: &skyward_config::Stock, out: &Path) -> Result<()> 
 }
 
 /// The size of the partition `stock` fills: all of it, as the phone and a
-/// full update package hold it, which its AVB footer ends.
-fn partition_size(stock: &Path) -> Result<usize> {
+/// full update package hold it, which its AVB footer ends. An image that
+/// does not end in one, as phones up to Android 10 often ship, says nothing
+/// of its partition, and the size has to be given.
+fn partition_size(stock: &Path, asked: Option<u64>) -> Result<usize> {
     let mut file = File::open(stock).with_context(|| format!("open {}", stock.display()))?;
     let size = file.metadata().with_context(|| format!("stat {}", stock.display()))?.len();
     let mut magic = [0u8; 4];
@@ -204,12 +237,30 @@ fn partition_size(stock: &Path) -> Result<usize> {
         file.seek(SeekFrom::Start(size - 64)).with_context(|| format!("seek in {}", stock.display()))?;
         file.read_exact(&mut magic).with_context(|| format!("read {}", stock.display()))?;
     }
+    if &magic == b"AVBf" {
+        ensure!(
+            asked.is_none_or(|asked| asked == size),
+            "{} fills {} bytes, where {} were given as its partition's size",
+            stock.display(),
+            size,
+            asked.unwrap_or_default()
+        );
+        return Ok(usize::try_from(size)?);
+    }
+    let asked = asked.with_context(|| {
+        format!(
+            "{} does not end in an AVB footer, so it does not say how large its partition is; give --partition-size, or [stock] partition_size in the device configuration",
+            stock.display()
+        )
+    })?;
     ensure!(
-        &magic == b"AVBf",
-        "{} does not end in an AVB footer; give the whole recovery partition, as the phone or a full update package holds it",
-        stock.display()
+        asked >= size,
+        "{} is {} bytes, larger than the {} bytes given as its partition's size",
+        stock.display(),
+        size,
+        asked
     );
-    Ok(usize::try_from(size)?)
+    Ok(usize::try_from(asked)?)
 }
 
 /// What a recovery image says about the build it is: the version and patch
@@ -263,7 +314,7 @@ fn list(image: &Path) -> Result<()> {
         h.header_version(),
         img.kernel.len(),
         img.ramdisk.len(),
-        h.osversionpatch
+        h.osversionpatch()
     );
     if img.ramdisk.is_empty() {
         return Ok(());
@@ -337,11 +388,15 @@ ro.vendor.build.security_patch=2026-10-01\nro.vendor.build.security_patch_level=
         let mut whole = vec![0u8; 8192];
         whole[8192 - 64..8192 - 60].copy_from_slice(b"AVBf");
         std::fs::write(&path, &whole).unwrap();
-        assert_eq!(partition_size(&path).unwrap(), 8192);
+        assert_eq!(partition_size(&path, None).unwrap(), 8192);
+        assert_eq!(partition_size(&path, Some(8192)).unwrap(), 8192);
+        assert!(partition_size(&path, Some(16384)).is_err(), "a footer says how large the partition is");
         std::fs::write(&path, &whole[..8000]).unwrap();
-        assert!(partition_size(&path).is_err(), "an image cut short of its partition's end");
+        assert!(partition_size(&path, None).is_err(), "an image cut short of its partition's end");
+        assert_eq!(partition_size(&path, Some(8192)).unwrap(), 8192, "a stock image without a footer takes the size given");
+        assert!(partition_size(&path, Some(4096)).is_err(), "an image larger than the partition it is to fill");
         std::fs::write(&path, b"AVBf").unwrap();
-        assert!(partition_size(&path).is_err(), "too short to end in a footer");
+        assert!(partition_size(&path, None).is_err(), "too short to end in a footer");
     }
 
     #[test]

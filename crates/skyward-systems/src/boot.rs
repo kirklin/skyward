@@ -37,7 +37,7 @@ impl Start {
 /// beside it, compressed as the vendor ramdisk before it is, for the kernel
 /// to read on into it from there.
 fn archive(at: &str, program: &[u8], start: &Start) -> Result<Vec<u8>> {
-    let mut rd = Ramdisk { entries: Vec::new() };
+    let mut rd = Ramdisk::new();
     rd.add(at, 0o750, program.to_vec())?;
     rd.add(START, 0o644, toml::to_string(start).context("write what the system starts with")?.into_bytes())?;
     Ok(lz4_legacy(&rd.archive()?))
@@ -94,7 +94,16 @@ pub(crate) mod tests {
             cmdline: Box::new([0; 1536]),
             v4_signature_size: Some(0),
         };
-        let mut image = BootImage { header, kernel: Vec::new(), ramdisk: ramdisk.to_vec() }.to_bytes().unwrap();
+        let mut image = BootImage {
+            header: skyward_bootimg::Header::V3(header),
+            kernel: Vec::new(),
+            ramdisk: ramdisk.to_vec(),
+            second: Vec::new(),
+            recovery_dtbo: Vec::new(),
+            dtb: Vec::new(),
+        }
+        .to_bytes()
+        .unwrap();
         image.resize(1 << 20, 0);
         image
     }

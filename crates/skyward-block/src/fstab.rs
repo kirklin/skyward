@@ -4,8 +4,11 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
-/// Where the phone's own partitions keep the table.
-pub const FILES: [&str; 2] = ["/vendor/etc/fstab.qcom", "/odm/etc/fstab.qcom"];
+/// Where the phone's own partitions keep the table. Android 10 and later
+/// keep it in the vendor or odm partition; Android 9 and earlier keep it in
+/// the recovery ramdisk as /etc/recovery.fstab, whose fifth column holds
+/// the same flags.
+pub const FILES: [&str; 3] = ["/vendor/etc/fstab.qcom", "/odm/etc/fstab.qcom", "/etc/recovery.fstab"];
 
 /// One filesystem the phone knows about.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -113,6 +113,15 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 | 🚧 REDMI K90 Ultra | `warsaw` | OS3.0.309.0.WHPCNXM（Android 16） |
 | 🚧 REDMI K100 Pro | `athens` | OS4.0.4.0.XPICNXM（Android 17） |
 | 🚧 REDMI K100 Pro Max | `songyuan` | OS4.0.4.0.XGNCNXM（Android 17） |
+| 🚧 小米 MIX 2 | `chiron` | V12.0.1.0.PDECNXM（Android 9） |
+| 🚧 小米 MIX 2S | `polaris` | V12.5.1.0.QDGCNXM（Android 10） |
+| 🚧 REDMI K20 Pro | `raphael` | V12.5.6.0.RFKCNXM（Android 11） |
+
+MIX 2、MIX 2S 和 K20 Pro 是 A-only 机型，没有动态分区，它们的 recovery
+镜像是 boot image v0 到 v2，ramdisk 用 gzip 或 LZ4 压缩。Skyward 的打包工具
+能读写这几种镜像；这三台机器的原厂 recovery 镜像要从 fastboot 线刷包里的
+`images/recovery.img` 取，`skyward-pack stock` 只支持带 payload 的完整包，
+不适用于它们。这些镜像还没有在真机上试过。
 
 ## 安装 Skyward
 
@@ -181,6 +190,27 @@ target/release/skyward-pack recovery \
   --mono-license resources/fonts/KirkMono-OFL.txt \
   --out target/skyward-nezha.img
 ```
+
+MIX 2、MIX 2S 和 K20 Pro 的原厂 recovery 镜像不在带 payload 的完整更新包里，
+而在各自 fastboot 线刷包的 `images/recovery.img` 中。它们的 recovery 分区是
+64 MiB，取出的镜像不以 AVB footer 结尾时，用 `--partition-size` 给出分区大小：
+
+```sh
+target/release/skyward-pack recovery \
+  --stock target/stock/chiron/recovery.img \
+  --binary target/aarch64-linux-android/release/skyward \
+  --system-init target/system-init/aarch64-linux-android/release/system-init \
+  --config devices/chiron.toml \
+  --font resources/fonts/MiSansVF.ttf \
+  --mono resources/fonts/KirkMono-Regular.ttf \
+  --mono-license resources/fonts/KirkMono-OFL.txt \
+  --partition-size 67108864 \
+  --out target/skyward-chiron.img
+```
+
+这三台机器是 A-only 机型，recovery 是 boot image v0 到 v2，ramdisk 用 gzip 或
+LZ4 压缩。它们运行 Android 9 到 11，打包用的 `skyward` 用 `--platform 28`
+构建，只用 Android 9 就有的接口。
 
 测试和代码检查在电脑上运行；只在手机上运行的代码按照手机目标检查：
 

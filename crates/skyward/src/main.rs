@@ -211,7 +211,26 @@ enum Cmd {
     },
 }
 
+/// Phones up to Android 9 keep the links to their partitions under
+/// /dev/block/bootdevice/by-name, where Android 10 and later keep them under
+/// /dev/block/by-name. A link at the newer place lets the recovery, and the
+/// scripts it runs, find either phone's partitions by one path.
+#[cfg(target_os = "android")]
+fn link_by_name() {
+    use std::os::unix::fs::symlink;
+    let new = Path::new(skyward_block::BY_NAME);
+    let old = Path::new("/dev/block/bootdevice/by-name");
+    if !new.exists() && old.is_dir() {
+        if let Some(parent) = new.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = symlink(old, new);
+    }
+}
+
 fn main() -> Result<()> {
+    #[cfg(target_os = "android")]
+    link_by_name();
     // init starts the recovery service by path with no arguments.
     let started_as = std::env::args_os().next().unwrap_or_default();
     let name = Path::new(&started_as).file_name().unwrap_or_default();

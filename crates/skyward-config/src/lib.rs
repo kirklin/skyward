@@ -97,6 +97,18 @@ pub struct Stock {
     pub package: String,
     /// The recovery partition's SHA-256, in lowercase hex.
     pub recovery: String,
+    /// The partition the recovery is built on, which the package holds:
+    /// `recovery` where the phone has the partition, as most do, and `boot`
+    /// on one whose recovery lives in its boot image.
+    #[serde(default)]
+    pub partition: Option<String>,
+}
+
+impl Stock {
+    /// The partition the recovery is built on.
+    pub fn partition(&self) -> &str {
+        self.partition.as_deref().unwrap_or("recovery")
+    }
 }
 
 /// What brings the phone's WLAN up inside a recovery, which loads none of

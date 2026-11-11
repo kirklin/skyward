@@ -12,16 +12,47 @@ use std::path::{Path, PathBuf};
 
 const PARTITION: &str = "recovery";
 
-/// The image the zip at `path` holds, its only entry, read whole.
+/// The image the zip at `path` holds, its only entry, read whole. An entry
+/// kept with zstd, as `.img.zst`, is unpacked by the phone's own `zstd`.
 pub fn unzip(path: &Path) -> Result<Vec<u8>> {
     let file = File::open(path).with_context(|| format!("open {}", path.display()))?;
     let mut zip = zip::ZipArchive::new(file).with_context(|| format!("read {} as a zip", path.display()))?;
     ensure!(zip.len() == 1, "{} holds {} entries, and a release's zip holds its image alone", path.display(), zip.len());
     let mut entry = zip.by_index(0).context("open the image in the zip")?;
-    ensure!(entry.name().ends_with(".img"), "the zip holds {}, which is not an image", entry.name());
-    let mut image = Vec::with_capacity(entry.size() as usize);
-    entry.read_to_end(&mut image).context("unzip the image")?;
-    Ok(image)
+    let name = entry.name().to_string();
+    ensure!(
+        name.ends_with(".img") || name.ends_with(".img.zst"),
+        "the zip holds {name}, which is not an image"
+    );
+    let mut packed = Vec::with_capacity(entry.size() as usize);
+    entry.read_to_end(&mut packed).context("unzip the image")?;
+    if name.ends_with(".img.zst") {
+        return unpack_zstd(&packed, &name);
+    }
+    Ok(packed)
+}
+
+/// `packed`, unpacked by `zstd` from `/system/bin`: a compressed image is
+/// left compressed in a release to keep the download small.
+fn unpack_zstd(packed: &[u8], name: &str) -> Result<Vec<u8>> {
+    use std::process::{Command, Stdio};
+    let file = std::env::temp_dir().join(format!("skyward-update-{}.zst", std::process::id()));
+    std::fs::write(&file, packed).with_context(|| format!("write {}", file.display()))?;
+    let out = Command::new("zstd")
+        .args(["-d", "-q", "-c"])
+        .arg(&file)
+        .stdin(Stdio::null())
+        .output()
+        .with_context(|| format!("unpack {name} with zstd"))?;
+    let _ = std::fs::remove_file(&file);
+    ensure!(
+        out.status.success(),
+        "zstd ended with {}: {}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr).trim()
+    );
+    ensure!(!out.stdout.is_empty(), "zstd gave nothing back for {name}");
+    Ok(out.stdout)
 }
 
 /// Check that `image` is Skyward, packed for the phone `codename` names.

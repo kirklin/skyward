@@ -49,6 +49,15 @@ pub struct Settings {
     pub vibration: f32,
     /// A computer connected over USB is offered internal storage.
     pub file_transfer: bool,
+    /// What opened the data partition once is kept, sealed for this phone,
+    /// and tried again at the next start.
+    pub remember_credential: bool,
+    /// Two taps on the dark screen wake it; the panel then stays lit at no
+    /// brightness instead of going off.
+    pub wake_by_tap: bool,
+    /// Which mirror an address is taken through, as its place in
+    /// [`crate::app::MIRRORS`]; 0 leaves every address alone.
+    pub mirror: usize,
     pub install: Install,
     pub backup: Backup,
     pub logs: Logs,
@@ -126,6 +135,9 @@ impl Settings {
             vibrate: state.vibrate,
             vibration: state.vibration,
             file_transfer: state.file_transfer,
+            remember_credential: state.remember_credential,
+            wake_by_tap: state.wake_by_tap,
+            mirror: state.mirror,
             install: Install { check_signature: state.check_signature, keep_recovery: state.keep_recovery },
             backup: Backup {
                 parts: names(&state.backup, &PARTS),
@@ -184,6 +196,11 @@ impl Settings {
             state.vibration = self.vibration;
         }
         state.file_transfer = self.file_transfer;
+        state.remember_credential = self.remember_credential;
+        state.wake_by_tap = self.wake_by_tap;
+        if self.mirror < crate::app::MIRRORS.len() {
+            state.mirror = self.mirror;
+        }
         state.check_signature = self.install.check_signature;
         state.keep_recovery = self.install.keep_recovery;
         state.backup = picked(&self.backup.parts, &PARTS);

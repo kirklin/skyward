@@ -842,6 +842,45 @@ pub mod kms {
             Ok(())
         }
 
+        /// Turn the panel at `which` off without ever setting it up: the
+        /// bootloader draws its logo on every panel it can, and a panel that
+        /// nothing refreshes keeps that last frame lit until it is sent its
+        /// own off command. Only a commit that takes the panel's CRTC down
+        /// sends it, so this does exactly that and nothing else, never asking
+        /// for a mode. Says whether the panel was driven at all.
+        pub fn darken(&self, which: usize) -> Result<bool> {
+            let res = self.card.resource_handles().context("read KMS resources")?;
+            let mut panels = Vec::new();
+            for &h in res.connectors() {
+                let info = self.card.get_connector(h, true).context("read connector")?;
+                if is_panel(info.interface()) && info.state() == connector::State::Connected {
+                    panels.push(h);
+                }
+            }
+            let Some(&conn) = panels.get(which) else { return Ok(false) };
+            let props = Props::read(&self.card, conn)?;
+            let driven = props.value("CRTC_ID")?;
+            // A panel sharing this screen's own display is left alone:
+            // taking it down would take the pages down with it.
+            if driven == 0 || driven == u64::from(u32::from(self.crtc)) {
+                return Ok(false);
+            }
+            let Some(crtc) = res.crtcs().iter().copied().find(|c| u64::from(u32::from(*c)) == driven) else {
+                return Ok(false);
+            };
+            let crtc_props = Props::read(&self.card, crtc)?;
+            if crtc_props.value("ACTIVE")? == 0 {
+                return Ok(false);
+            }
+            let mut req = atomic::AtomicModeReq::new();
+            // The connector lets the panel go before its display is taken
+            // down: a display detached from nothing is refused.
+            req.add_property(conn, props.handle("CRTC_ID")?, property::Value::CRTC(None));
+            req.add_property(crtc, crtc_props.handle("ACTIVE")?, property::Value::Boolean(false));
+            self.card.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, req).context("darken the panel")?;
+            Ok(true)
+        }
+
         /// Turn the display off: the panel and the display processor feeding
         /// it stop drawing power. The next frame presented turns it on
         /// again.

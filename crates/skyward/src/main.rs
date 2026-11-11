@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 #[cfg(target_os = "android")]
 mod backup;
+mod credential;
 #[cfg(target_os = "android")]
 mod decrypt;
 #[cfg(target_os = "android")]

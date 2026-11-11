@@ -28,13 +28,12 @@ pub fn current_protector(database: &Path, user: u32) -> Result<Option<String>> {
 }
 
 /// What the lock settings keep for `user` under `name`, where they keep
-/// anything. The database is opened as it lies, without being written to
-/// or waiting on anyone, since the phone it belongs to is not running; it
-/// is written without a log of its own, so what it holds is all of it.
+/// anything. The database is copied with its own log into a scratch
+/// directory and read there: what the phone wrote last may still be in the
+/// log, and a protector recorded just before it stopped is exactly what
+/// would otherwise be missed.
 fn value(database: &Path, name: &str, user: u32) -> Result<Option<String>> {
-    let at = format!("file:{}?immutable=1", database.display());
-    let flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI;
-    let db = rusqlite::Connection::open_with_flags(&at, flags).with_context(|| format!("open {}", database.display()))?;
+    let db = open_logged(database)?;
     let mut query = db
         .prepare("SELECT value FROM locksettings WHERE name = ?1 AND user = ?2")
         .context("ask the lock settings what they keep")?;
@@ -45,6 +44,32 @@ fn value(database: &Path, name: &str, user: u32) -> Result<Option<String>> {
         return Ok(None);
     };
     row.get(0).with_context(|| format!("read what {name} is for user {user}"))
+}
+
+/// The database as it stood when the phone stopped, with the log beside it
+/// folded in. The phone is not running, so nothing of its is written: the
+/// database, `locksettings.db-wal` and `-shm` are copied into the temporary
+/// directory, and the copy is opened and read there.
+fn open_logged(database: &Path) -> Result<rusqlite::Connection> {
+    let dir = std::env::temp_dir().join(format!("skyward-locksettings-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).with_context(|| format!("make {}", dir.display()))?;
+    let at = dir.join("locksettings.db");
+    std::fs::copy(database, &at).with_context(|| format!("copy {} to {}", database.display(), at.display()))?;
+    for suffix in ["-wal", "-shm"] {
+        let from = beside(database, suffix);
+        if from.exists() {
+            std::fs::copy(&from, beside(&at, suffix)).with_context(|| format!("copy {}", from.display()))?;
+        }
+    }
+    rusqlite::Connection::open(&at).with_context(|| format!("open {}", at.display()))
+}
+
+/// `path` with `suffix` put after its whole name, as SQLite names its log.
+fn beside(path: &Path, suffix: &str) -> std::path::PathBuf {
+    let mut name = path.as_os_str().to_os_string();
+    name.push(suffix);
+    std::path::PathBuf::from(name)
 }
 
 #[cfg(test)]

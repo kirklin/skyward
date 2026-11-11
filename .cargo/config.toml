@@ -1,0 +1,11 @@
+[target.aarch64-linux-android]
+linker = "D:/rust/android-ndk-r29/toolchains/llvm/prebuilt/windows-x86_64/bin/aarch64-linux-android30-clang.cmd"
+ar = "D:/rust/android-ndk-r29/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe"
+
+[env]
+CC_aarch64-linux-android = "D:/rust/android-ndk-r29/toolchains/llvm/prebuilt/windows-x86_64/bin/aarch64-linux-android30-clang.cmd"
+CXX_aarch64-linux-android = "D:/rust/android-ndk-r29/toolchains/llvm/prebuilt/windows-x86_64/bin/aarch64-linux-android30-clang++.cmd"
+AR_aarch64-linux-android = "D:/rust/android-ndk-r29/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe"
+RANLIB_aarch64-linux-android = "D:/rust/android-ndk-r29/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ranlib.exe"
+ANDROID_NDK_HOME = "D:/rust/android-ndk-r29"
+ANDROID_NDK_ROOT = "D:/rust/android-ndk-r29"

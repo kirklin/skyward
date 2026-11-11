@@ -6,6 +6,15 @@ English | [简体中文](README.zh-CN.md)
 
 Skyward is a recovery written in Rust, from scratch.
 
+> **MIX Flip 2 (`bixi`) · 1.0.0** — this branch builds Skyward for the Xiaomi MIX Flip 2
+> (SM8750, A/B + dynamic partitions, `OS4.0.11.XOHCNXM`). The cover display is the
+> primary screen, `/data` unlocks itself once the password has been kept, images can be
+> kept on a USB stick, `avbctl` flags are written with their before/after difference
+> reported back, and the recovery updates itself from GitHub releases — bare `.img`
+> first, `.zip` after it — through a mirror you pick.
+> Full changelog, what was borrowed from other forks and the known limits:
+> [CHANGELOG-bixi.md](CHANGELOG-bixi.md) · [Releases](https://github.com/XQAB/skyward/releases)
+
 <p align="center">
   <img src="assets/home.png" width="30%" alt="Home">
   <img src="assets/settings-dark.png" width="30%" alt="Settings in dark mode">

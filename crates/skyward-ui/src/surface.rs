@@ -766,9 +766,8 @@ pub mod kms {
             };
             if video {
                 // Video panels on Qualcomm bootloaders start with partial/broken
-                // splash timings. A power cycle cleanly restores the full display pipeline.
-                let _ = s.power(Power::Off);
-                let _ = s.power(Power::On);
+                // splash timings. Turning off and letting present() turn on restores the pipeline.
+                let _ = s.turn_off();
                 s.preferred = blob;
                 s.fastest = None;
             } else {

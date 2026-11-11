@@ -2,20 +2,27 @@
   "schema_version": 1,
   "date": "2026-11-11",
   "device": "REDMI K60 Pro (socrates)",
-  "compiled_commit": "6c4c5694382fb6e96a87a1003a5f02a5b0f6f070",
-  "ci": "https://github.com/Dingtaiqi/skyward/actions/runs/43015523189",
+  "compiled_commit": "3cc1f6b79b40a71c0cb9bbf604d949bace6fe0e9",
+  "ci": "https://github.com/Dingtaiqi/skyward/actions/runs/43028737299",
   "ci_result": "success",
   "stock_recovery_version": "OS3.0.304.0.WMKCNXM",
   "installed_vendor_api": 33,
   "installed_framework_release": "17",
-  "artifact_zip_sha256": "5b5c45db4bf014acceab3d702eb3528f9de64f99bcddbad5d25c215a2a1fc3ce",
-  "recovery_image_sha256": "88c8a6245353edd1e3c8863357b73a79a7e9b9b53878545ba6b6946457f8de9d",
+  "artifact_zip_sha256": "1d1730bb7572348b3674cd2d567199da46fecee404f2b57cf84e56f5bdaab311",
+  "recovery_image_sha256": "81e6472c6360afaa536f65595fd9933a4e49b2a4eae241a291bd96a88ac7b2d0",
   "test_method": {
     "boot_slot": "a",
-    "partition_flashes": false,
-    "container": "RAM-only boot header v3 with the phone's existing boot_a kernel and the unchanged CI recovery ramdisk",
-    "hardware_arguments": "Actual qcom hardware, USB controller and boot-device arguments supplied to the temporary container",
-    "production_recovery_partition_installation_tested": false
+    "partition_flashes": true,
+    "container": "CI recovery image installed in recovery_a and booted through the bootloader recovery target",
+    "hardware_arguments": "Supplied by the normal installed recovery boot path",
+    "production_recovery_partition_installation_tested": true,
+    "partitions_written": [
+      "recovery_a"
+    ],
+    "original_recovery_restored": true,
+    "original_recovery_readback_matches_pretest": true,
+    "native_executable_sha256": "0ddb09cf0e617f0c355f2df090549c4f4947c854c837ca241e47d5fd6725400b",
+    "native_profile_sha256": "0ee1be24bda6e4b4d45503316e11a546dee2c8ddcbcab2012ebbdf8eb9e91b08"
   },
   "confirmed": {
     "display": true,
@@ -33,7 +40,17 @@
     "data_mount_uses_f2fs_ro_norecovery": true,
     "automatic_metadata_key_deletion_disabled": true,
     "cnss_cache_is_in_a_separate_mount_namespace_with_16_mib_tmpfs": true,
-    "cnss_uses_stock_uid_groups_and_net_admin_only": true
+    "cnss_uses_stock_uid_groups_and_net_admin_only": true,
+    "owner_pin_protected_user_unlock": true,
+    "windows_mtp_ascii_and_unicode_file_readback_sha256": true,
+    "haptics_motor": true,
+    "haptics_perceived_strength_adjustment": true,
+    "physical_volume_keys": true,
+    "power_sleep_wake_and_touch": true,
+    "brightness_slider": true,
+    "boot_control_current_and_active_slot_queries": true,
+    "boot_control_query_left_observed_misc_control_region_unchanged": true,
+    "exact_ci_executable_and_profile_hashes_match_native_runtime": true
   },
   "touch_restart_test": {
     "compiled_commit": "038d336f4ec7686843b7d7d74d83c9106ca1a49b",
@@ -41,15 +58,34 @@
     "user_confirmed_touch_without_manual_power_cycle_after_every_restart": true,
     "touch_code_unchanged_in_final_compiled_commit": true
   },
-  "decryption_scope": "Read-only. The tested installation needed no lock-screen credential; PIN, password and pattern protected user unlock remain untested.",
+  "decryption_scope": "Read-only. The owner successfully entered a newly set PIN on the phone and opened original shared-storage folders. Password and pattern credentials remain untested.",
   "not_tested": [
-    "Writing decrypted userdata",
-    "Formatting, wiping or restoring partitions",
-    "Installing updates or switching slots",
-    "Permanent recovery partition installation",
-    "Haptics strength and waveform accuracy",
-    "MTP file transfer"
+    "Writable decrypted userdata (disabled for this profile)",
+    "Actual UFS secure discard or factory reset of personal userdata",
+    "SELinux/fscrypt restore on the phone",
+    "Complete OTA installation, VAB/AVB update and real slot switching",
+    "Password and pattern protected user unlock",
+    "Quantitative haptic waveform or voltage measurement"
   ],
   "post_test_boot_partition_hashes_unchanged": true,
-  "privacy": "No raw device logs, identifiers, network credentials, file names or key material included."
+  "privacy": "No raw device logs, identifiers, network credentials, file names or key material included.",
+  "wifi_test_scope": {
+    "compiled_commit": "6c4c5694382fb6e96a87a1003a5f02a5b0f6f070",
+    "wlan_source_unchanged_in_final_compiled_commit": true
+  },
+  "isolated_component_tests": {
+    "ci": "https://github.com/Dingtaiqi/skyward/actions/runs/43023589389",
+    "proof": "https://github.com/Dingtaiqi/skyward/blob/589f1eb0e734ad6ab2d4d12d0f712bb0b803d587/ci/proofs/disposable-io-43023589389/VALIDATION.json",
+    "ordinary_tests_passed": 197,
+    "explicit_isolated_tests_passed": 2,
+    "real_ext4_f2fs_format_and_checks": true,
+    "image_write_flush_full_device_compare_and_oversize_refusal": true,
+    "compressed_backup_restore_links_permissions_and_exclusions": true,
+    "real_readonly_ext4_mtp_access_reporting_reads_and_eight_mutation_refusals": true,
+    "readonly_test_image_full_hash_unchanged": true,
+    "isolation_negative_control_refuses_host_execution": true,
+    "production_source_binding": "Seven relevant production source files match exactly; the isolated Cargo.lock adds only two test-only workspace path dependencies and retains registry versions/checksums."
+  },
+  "dedicated_shared_storage_fixtures_cleaned": false,
+  "post_test_cleanup": "Only two dedicated shared-storage test files remain pending removal after the owner unlocks HyperOS."
 }

@@ -185,6 +185,7 @@ impl Connection {
                 if words[1] != SSC { continue; }
                 if words[0] == 5 { bail!("SSC service stopped"); }
                 if words[0] == 4 && self.server.is_none() {
+                    let _ = skyward_sys::kmsg(&format!("SSC server discovered on node {} port {}", words[3], words[4]));
                     self.server = Some(Address { family: AF_QRTR as u16, node: words[3], port: words[4] });
                     let mut query = Vec::new();
                     bytes(&mut query, 1, b"accel");
@@ -195,11 +196,13 @@ impl Connection {
             }
             if !self.server.is_some_and(|s| s.node == from.node && s.port == from.port) { continue; }
             for (uid, message, payload) in events(data)? {
+                let _ = skyward_sys::kmsg(&format!("SSC event received: uid={:?} message={}", uid, message));
                 if uid == LOOKUP && message == 768 && self.sensor.is_none() {
                     let fields = fields(payload)?;
                     if !fields.iter().any(|&(tag, wire, value)| tag == 1 && wire == 2 && value == b"accel") { continue; }
                     if let Some(uid) = fields.iter().find_map(|&(tag, wire, value)|
                         (tag == 2 && wire == 2).then(|| sensor_uid(value).ok()).flatten()) {
+                        let _ = skyward_sys::kmsg(&format!("SSC accel sensor UID resolved: {:?}", uid));
                         self.sensor = Some(uid);
                         let mut config = vec![0x0d]; // sns_std_sensor_config.sample_rate
                         config.extend_from_slice(&10f32.to_le_bytes());

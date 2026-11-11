@@ -32,7 +32,7 @@ pub struct Decryptor {
 }
 
 impl Decryptor {
-    pub fn start(job: Job) -> Result<Decryptor> {
+    pub fn start(job: Job, read_only: bool) -> Result<Decryptor> {
         let mut fds = [0; 2];
         if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) } != 0 {
             return Err(std::io::Error::last_os_error()).context("make the decrypting thread's wake pipe");
@@ -43,9 +43,12 @@ impl Decryptor {
             .name("decrypt".into())
             .spawn(move || {
                 let ended_as = match job {
-                    Job::Open => Ended::Opened(with_key_service(data::open_without_credential)),
+                    Job::Open => Ended::Opened(with_key_service_mode(read_only, |service| match read_only {
+                        true => data::open_read_only(service),
+                        false => data::open_without_credential(service),
+                    })),
                     Job::Unlock { closed, user, credential } => {
-                        Ended::Unlocked(with_key_service(|service| data::unlock(service, &closed, user, &credential)))
+                        Ended::Unlocked(with_key_service_mode(read_only, |service| data::unlock(service, &closed, user, &credential)))
                     }
                 };
                 // The screen only stops listening once it has let the
@@ -81,9 +84,14 @@ impl Drop for Decryptor {
 /// Do `work` with the phone's key service, reached afresh for it, and say
 /// why it failed in words for the page.
 pub fn with_key_service<T>(work: impl FnOnce(&KeyMint) -> Result<T>) -> Result<T, String> {
+    with_key_service_mode(false, work)
+}
+
+fn with_key_service_mode<T>(read_only: bool, work: impl FnOnce(&KeyMint) -> Result<T>) -> Result<T, String> {
     let done = (|| {
         let binder = Binder::open()?;
         let service = KeyMint::open(&binder)?;
+        let service = if read_only { service.without_upgrades() } else { service };
         work(&service)
     })();
     done.map_err(|e| format!("{e:#}"))

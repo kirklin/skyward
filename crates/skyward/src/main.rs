@@ -162,6 +162,9 @@ enum Cmd {
     /// wrote, unwrap the key it holds and say how long it is.
     #[cfg(target_os = "android")]
     Keymint {
+        /// Read the service's hardware information without opening any key.
+        #[arg(long, conflicts_with = "alias")]
+        info_only: bool,
         #[arg(long, default_value = "/metadata/vold/metadata_encryption/key")]
         key: PathBuf,
         /// Report instead what the key service keeps under this name, such
@@ -182,6 +185,9 @@ enum Cmd {
     /// files that open; the owner's shared storage then shows at /sdcard.
     #[cfg(target_os = "android")]
     Data {
+        /// Device decryption restrictions, also used by the on-screen unlock.
+        #[arg(long, default_value = "/skyward/device.toml")]
+        config: PathBuf,
         /// What a user would type at their screen lock, where one is set.
         /// A wrong one is counted against that user by the phone's secure
         /// world, the same as a wrong try on the screen itself.
@@ -324,11 +330,14 @@ fn main() -> Result<()> {
             Ok(())
         }
         #[cfg(target_os = "android")]
-        Cmd::Keymint { key, alias } => {
+        Cmd::Keymint { key, alias, info_only } => {
             let binder = skyward_binder::driver::Binder::open()?;
-            let service = skyward_crypto::keymint::KeyMint::open(&binder)?;
+            let service = skyward_crypto::keymint::KeyMint::open(&binder)?.without_upgrades();
             let hw = service.hardware()?;
             println!("keymint {} version {} at security level {} by {}", hw.name, hw.version, hw.security_level, hw.author);
+            if info_only {
+                return Ok(());
+            }
             if let Some(alias) = alias {
                 let held = skyward_crypto::keystore2::key_blob(Path::new(skyward_crypto::keystore2::DATABASE), &alias)?;
                 println!("{alias} is a key of {} bytes", held.len());
@@ -359,14 +368,6 @@ fn main() -> Result<()> {
                 Ok(None) => println!("it numbers its version in its own name"),
                 Err(e) => println!("it will not say which version it serves: {e:#}"),
             }
-            // A credential belonging to no one, which the secure world
-            // cannot recognise and counts against nobody. What comes back
-            // says whether the service takes a check at all, apart from
-            // whether it recognises what it is given.
-            match gatekeeper.verify(NOBODY, &[], &[]) {
-                Ok(_) => println!("it took a credential belonging to no one"),
-                Err(e) => println!("asked about a credential belonging to no one it says: {e:#}"),
-            }
             Ok(())
         }
         #[cfg(target_os = "android")]
@@ -383,11 +384,16 @@ fn main() -> Result<()> {
             Ok(())
         }
         #[cfg(target_os = "android")]
-        Cmd::Data { credential, close: false } => {
+        Cmd::Data { credential, config, close: false } => {
             use skyward_crypto::data;
+            let read_only = DeviceConfig::load(&config)?.decrypt.read_only;
             let binder = skyward_binder::driver::Binder::open()?;
             let service = skyward_crypto::keymint::KeyMint::open(&binder)?;
-            let opening = data::open_without_credential(&service)?;
+            let service = if read_only { service.without_upgrades() } else { service };
+            let opening = match read_only {
+                true => data::open_read_only(&service),
+                false => data::open_without_credential(&service),
+            }?;
             match &opening.mounted {
                 Some(mounted) => {
                     if let Some(checked) = &mounted.checked {
@@ -610,11 +616,6 @@ fn agree_on_the_notes_key(registered: &[String]) -> Result<()> {
     let agreed = skyward_crypto::sharedsecret::agree(&binder, &names)?;
     skyward_sys::kmsg(&format!("{agreed} of the secure world agreed on the key it signs its notes with"))
 }
-
-/// A slot of the credential service that belongs to no user, which the
-/// phone numbers its own from nothing upwards.
-#[cfg(target_os = "android")]
-const NOBODY: u32 = u32::MAX;
 
 /// The switch that has the kernel pass the firmware requests it cannot
 /// answer itself on to ueventd.

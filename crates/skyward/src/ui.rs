@@ -1256,7 +1256,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                 match needs {
                     Needs::Data | Needs::User(_) => {
                         app.asked_opening();
-                        decryptor = Some(Decryptor::start(decrypt::Job::Open)?);
+                        decryptor = Some(Decryptor::start(decrypt::Job::Open, cfg.decrypt.read_only)?);
                         pending = Some(wanted);
                     }
                     Needs::Nothing | Needs::Cache => installer = Some(install_asked(cfg, &app, wanted)?),
@@ -2295,12 +2295,12 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     // under way, and takes nothing more until it is done.
                     Effect::OpenData => {
                         ensure!(decryptor.is_none(), "the data partition is being opened already");
-                        decryptor = Some(Decryptor::start(decrypt::Job::Open)?);
+                        decryptor = Some(Decryptor::start(decrypt::Job::Open, cfg.decrypt.read_only)?);
                     }
                     Effect::Unlock { user, code } => {
                         ensure!(decryptor.is_none(), "the data partition is being opened already");
                         let job = decrypt::Job::Unlock { closed: closed.clone(), user, credential: code.into_bytes() };
-                        decryptor = Some(Decryptor::start(job)?);
+                        decryptor = Some(Decryptor::start(job, cfg.decrypt.read_only)?);
                     }
                     Effect::ReadDir(folder) => list(&mut app, folder)?,
                     Effect::ReadPlace(place, folder) => list_place(&mut app, place, folder)?,

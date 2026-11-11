@@ -13,6 +13,11 @@ height = 3200
 # The same logical DPI as the other 1440-wide SM8550 profiles.
 density = 560
 
+# Bring up existing encrypted data without repairs, journal replay or
+# KeyMint blob upgrades. PIN verification is performed on the phone.
+[decrypt]
+read_only = true
+
 [modules]
 sources = ["vendor_boot", "vendor_dlkm", "vendor"]
 # The phone's modules.load names Goodix, not the FTS driver of fuxi/nuwa.

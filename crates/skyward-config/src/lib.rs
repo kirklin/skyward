@@ -51,6 +51,8 @@ pub struct DeviceConfig {
     #[serde(default)]
     pub touch: Touch,
     #[serde(default)]
+    pub decrypt: Decrypt,
+    #[serde(default)]
     pub partitions: Partitions,
     /// Where the firmware the phone's drivers ask for is, on phones whose
     /// recovery leaves it out of their reach.
@@ -317,6 +319,14 @@ pub struct Touch {
     /// step of starting the controller.
     #[serde(default)]
     pub writes: Vec<Write>,
+}
+
+/// Restrictions while a phone's decryption is being brought up. Reading
+/// its existing keys must not repair its filesystem or renew those keys.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+pub struct Decrypt {
+    #[serde(default)]
+    pub read_only: bool,
 }
 
 /// Partitions as the phone itself mounts them.
@@ -612,6 +622,13 @@ impl DeviceConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decryption_can_be_restricted_to_existing_data() {
+        let base = "[device]\ncodename = \"x\"\n";
+        assert!(!DeviceConfig::parse(base).unwrap().decrypt.read_only);
+        assert!(DeviceConfig::parse(&format!("{base}[decrypt]\nread_only = true\n")).unwrap().decrypt.read_only);
+    }
 
     #[test]
     fn the_commands_sit_beside_the_recovery_service_binary() {

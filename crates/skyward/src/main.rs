@@ -386,42 +386,37 @@ fn main() -> Result<()> {
         #[cfg(target_os = "android")]
         Cmd::Data { credential, config, close: false } => {
             use skyward_crypto::data;
-            let read_only = DeviceConfig::load(&config)?.decrypt.read_only;
-            if read_only {
-                println!("read-only decryption: filesystem repairs and key upgrades are disabled");
-            }
-            let binder = skyward_binder::driver::Binder::open()?;
-            let service = skyward_crypto::keymint::KeyMint::open(&binder)?;
-            let service = if read_only { service.without_upgrades() } else { service };
-            let opening = match read_only {
-                true => data::open_read_only(&service),
-                false => data::open_without_credential(&service),
-            }?;
-            match &opening.mounted {
-                Some(mounted) => {
-                    if let Some(checked) = &mounted.checked {
-                        print!("{}", checked.said);
-                        println!("the check of {} ended with {}", mounted.mapped.display(), checked.status);
+            let policy = DeviceConfig::load(&config)?.decrypt;
+            println!("decryption policy: read_only={}, auto_fsck={}, key_upgrades={}",
+                policy.read_only, policy.checks_filesystem(), policy.upgrades_keys());
+            decrypt::with_key_service(policy, |service| {
+                let opening = data::open_with_options(service, decrypt::options(policy))?;
+                match &opening.mounted {
+                    Some(mounted) => {
+                        if let Some(checked) = &mounted.checked {
+                            print!("{}", checked.said);
+                            println!("the check of {} ended with {}", mounted.mapped.display(), checked.status);
+                        }
+                        println!("{} holds {} at {}", mounted.mapped.display(), mounted.filesystem, data::MOUNT);
                     }
-                    println!("{} holds {} at {}", mounted.mapped.display(), mounted.filesystem, data::MOUNT);
+                    None => println!("{} is mounted already", data::MOUNT),
                 }
-                None => println!("{} is mounted already", data::MOUNT),
-            }
-            let mut closed = opening.closed;
-            let asked = closed.iter().find(|c| !c.made_up).map(|c| c.user);
-            if let (Some(credential), Some(user)) = (&credential, asked) {
-                closed = data::unlock(&service, &closed, user, credential.as_bytes())?;
-            }
-            for c in &closed {
-                match &c.why {
-                    Some(why) => println!("user {}'s own files stay closed: {why}", c.user),
-                    None => println!("user {}'s own files stay closed", c.user),
+                let mut closed = opening.closed;
+                let asked = closed.iter().find(|c| !c.made_up).map(|c| c.user);
+                if let (Some(credential), Some(user)) = (&credential, asked) {
+                    closed = data::unlock(service, &closed, user, credential.as_bytes())?;
                 }
-            }
-            if closed.is_empty() {
-                println!("every user's own files can be read");
-            }
-            Ok(())
+                for c in &closed {
+                    match &c.why {
+                        Some(why) => println!("user {}'s own files stay closed: {why}", c.user),
+                        None => println!("user {}'s own files stay closed", c.user),
+                    }
+                }
+                if closed.is_empty() {
+                    println!("every user's own files can be read");
+                }
+                Ok(())
+            }).map_err(anyhow::Error::msg)
         }
         #[cfg(target_os = "android")]
         Cmd::Ui { config, font, mono, unlock, dump } => {

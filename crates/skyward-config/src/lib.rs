@@ -335,12 +335,38 @@ pub struct Touch {
     pub writes: Vec<Write>,
 }
 
-/// Restrictions while a phone's decryption is being brought up. Reading
-/// its existing keys must not repair its filesystem or renew those keys.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+/// Access to decrypted data and the automatic work allowed while opening it.
+/// An explicit repair or wipe remains a separate, user-requested operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(default)]
 pub struct Decrypt {
-    #[serde(default)]
     pub read_only: bool,
+    /// Run the fstab's pre-mount fsck, which may fix errors automatically.
+    /// This does not govern the kernel's normal writable-mount operations.
+    pub auto_repair: bool,
+    /// Let KeyMint renew existing blobs if it requires an upgrade. When
+    /// disabled, metadata keys are also protected from automatic deletion.
+    pub key_upgrades: bool,
+}
+
+impl Default for Decrypt {
+    fn default() -> Self {
+        Self { read_only: false, auto_repair: true, key_upgrades: true }
+    }
+}
+
+impl Decrypt {
+    pub fn checks_filesystem(self) -> bool {
+        !self.read_only && self.auto_repair
+    }
+
+    pub fn upgrades_keys(self) -> bool {
+        !self.read_only && self.key_upgrades
+    }
+
+    pub fn preserves_keys(self) -> bool {
+        !self.upgrades_keys()
+    }
 }
 
 /// Partitions as the phone itself mounts them.
@@ -647,6 +673,32 @@ mod tests {
         let base = "[device]\ncodename = \"x\"\n";
         assert!(!DeviceConfig::parse(base).unwrap().decrypt.read_only);
         assert!(DeviceConfig::parse(&format!("{base}[decrypt]\nread_only = true\n")).unwrap().decrypt.read_only);
+    }
+
+    #[test]
+    fn writable_decryption_can_preserve_keys_and_skip_automatic_repairs() {
+        let base = "[device]\ncodename = \"x\"\n";
+        let legacy = DeviceConfig::parse(base).unwrap().decrypt;
+        assert!(!legacy.read_only);
+        assert!(legacy.checks_filesystem() && legacy.upgrades_keys());
+        let writable = DeviceConfig::parse(&format!("{base}[decrypt]\nread_only = false\nauto_repair = false\nkey_upgrades = false\n")).unwrap().decrypt;
+        assert!(!writable.read_only && !writable.checks_filesystem());
+        assert!(!writable.upgrades_keys() && writable.preserves_keys());
+        let readonly = Decrypt { read_only: true, ..legacy };
+        assert!(!readonly.checks_filesystem() && !readonly.upgrades_keys());
+        assert!(readonly.preserves_keys(), "read-only remains restrictive regardless of omitted switches");
+        let keys_only = Decrypt { key_upgrades: false, ..legacy };
+        assert!(keys_only.checks_filesystem() && !keys_only.upgrades_keys(), "the restrictions are independent");
+        let fs_only = Decrypt { auto_repair: false, ..legacy };
+        assert!(!fs_only.checks_filesystem() && fs_only.upgrades_keys());
+    }
+
+    #[test]
+    fn socrates_opens_writable_data_without_automatic_fsck_or_key_upgrades() {
+        let cfg: DeviceConfig = toml::from_str(include_str!("../../../devices/socrates.toml")).unwrap();
+        assert_eq!(cfg.decrypt, Decrypt { read_only: false, auto_repair: false, key_upgrades: false });
+        let other: DeviceConfig = toml::from_str(include_str!("../../../devices/ishtar.toml")).unwrap();
+        assert_eq!(other.decrypt, Decrypt::default());
     }
 
     #[test]

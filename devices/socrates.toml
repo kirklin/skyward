@@ -15,10 +15,12 @@ density = 560
 # touch_report restarted under a lit panel needs a fresh panel resume.
 reset_on_start = true
 
-# Bring up existing encrypted data without repairs, journal replay or
-# KeyMint blob upgrades. PIN verification is performed on the phone.
+# Candidate writable access keeps automatic fsck and KeyMint blob upgrades
+# disabled. Normal filesystem checkpoint/journal writes still apply.
 [decrypt]
-read_only = true
+read_only = false
+auto_repair = false
+key_upgrades = false
 
 [modules]
 sources = ["vendor_boot", "vendor_dlkm", "vendor"]

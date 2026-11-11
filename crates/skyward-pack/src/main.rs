@@ -145,7 +145,7 @@ fn main() -> Result<()> {
                 .find(paths::PROP_DEFAULT)
                 .with_context(|| format!("{} is not in the ramdisk", paths::PROP_DEFAULT))?
                 .data;
-            let props = recovery_properties(stock_props, cfg.decrypt.read_only);
+            let props = recovery_properties(stock_props, cfg.decrypt.preserves_keys());
             rd.replace(paths::PROP_DEFAULT, props)?;
             img.ramdisk = rd.encode()?;
             let bytes = img.to_bytes()?;
@@ -220,14 +220,14 @@ fn partition_size(stock: &Path) -> Result<usize> {
 /// fill in from the installed system once it has that mounted.
 const BUILD_VERSION: [&str; 3] = ["ro.build.version.release", "ro.build.version.security_patch", "ro.vendor.build.security_patch"];
 
-/// Stock vold may discard metadata keys if they cannot be opened. A
-/// diagnostic image must leave the existing keys intact on every error.
+/// Stock vold may discard metadata keys if they cannot be opened. A key-
+/// preserving image must leave them intact, even when data is writable.
 const DELETE_METADATA_KEYS: &str = "ro.crypto.metadata_init_delete_all_keys.enabled";
 
-fn recovery_properties(stock_props: &[u8], read_only: bool) -> Vec<u8> {
+fn recovery_properties(stock_props: &[u8], preserve_keys: bool) -> Vec<u8> {
     let mut props = without(stock_props, &BUILD_VERSION);
     props.extend_from_slice(b"\nro.secure=0\nro.adb.secure=0\nro.debuggable=1\nro.ota.allow_downgrade=true\n");
-    if read_only {
+    if preserve_keys {
         props = without(&props, &[DELETE_METADATA_KEYS]);
         props.extend_from_slice(format!("{DELETE_METADATA_KEYS}=false\n").as_bytes());
     }
@@ -304,6 +304,19 @@ mod tests {
         assert!(diagnostic.contains("ro.vndk.version=33\n"));
         let normal = String::from_utf8(recovery_properties(stock.as_bytes(), false)).unwrap();
         assert!(normal.lines().any(|l| l == enabled));
+    }
+
+    #[test]
+    fn writable_key_preserving_decryption_also_disables_metadata_key_deletion() {
+        let stock = format!("{DELETE_METADATA_KEYS}=true\nro.vndk.version=33\n");
+        let disabled = format!("{DELETE_METADATA_KEYS}=false");
+        let enabled = format!("{DELETE_METADATA_KEYS}=true");
+        let policy = skyward_config::Decrypt { read_only: false, auto_repair: false, key_upgrades: false };
+        let props = String::from_utf8(recovery_properties(stock.as_bytes(), policy.preserves_keys())).unwrap();
+        assert!(props.lines().any(|line| line == disabled));
+        assert!(!props.lines().any(|line| line == enabled));
+        let legacy = String::from_utf8(recovery_properties(stock.as_bytes(), skyward_config::Decrypt::default().preserves_keys())).unwrap();
+        assert!(legacy.lines().any(|line| line == enabled));
     }
 
     #[test]

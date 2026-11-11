@@ -167,7 +167,7 @@ impl<'a> KeyMint<'a> {
     pub fn ephemeral_storage_key(&self, key: &[u8]) -> Result<Vec<u8>> {
         match self.convert(key) {
             Err(e) if status::refused_with(&e) == Some(KEY_REQUIRES_UPGRADE) && !self.allow_upgrade => {
-                Err(e.context("the existing storage key requires an upgrade; read-only decryption will not upgrade it"))
+                Err(e.context("the existing storage key requires an upgrade; the decryption policy forbids it"))
             }
             Err(e) if status::refused_with(&e) == Some(KEY_REQUIRES_UPGRADE) && self.allow_upgrade => {
                 // As with a key that decrypts, the key is renewed for the
@@ -231,7 +231,7 @@ impl<'a> KeyMint<'a> {
         let operation = match self.begin(key_blob, app_id, nonce, note) {
             Ok(operation) => operation,
             Err(e) if status::refused_with(&e) == Some(KEY_REQUIRES_UPGRADE) && !self.allow_upgrade => {
-                return Err(e.context("the existing key requires an upgrade; read-only decryption will not upgrade it"));
+                return Err(e.context("the existing key requires an upgrade; the decryption policy forbids it"));
             }
             Err(e) if status::refused_with(&e) == Some(KEY_REQUIRES_UPGRADE) && self.allow_upgrade => {
                 // The phone's firmware has moved on since this key was
@@ -307,7 +307,7 @@ impl<'a> KeyMint<'a> {
     /// build. What it is bound to has to be given again, as `params` write
     /// it, or the service cannot tell it is the right key.
     fn upgrade(&self, key_blob: &[u8], params: impl FnOnce(&mut Parcel)) -> Result<Vec<u8>> {
-        anyhow::ensure!(self.allow_upgrade, "key upgrades are disabled for read-only decryption");
+        anyhow::ensure!(self.allow_upgrade, "key upgrades are disabled by the decryption policy");
         let mut call = Parcel::call(DEVICE);
         call.blob(key_blob);
         params(&mut call);

@@ -44,8 +44,9 @@ pub fn split_options(options: &[String]) -> (u64, String) {
 /// checkpoint forward. A read-only mount alone can still replay a log.
 pub fn read_only_options(filesystem: &str, options: &[String]) -> anyhow::Result<Vec<String>> {
     let no_recovery = match filesystem {
-        "ext4" => "noload",
-        "f2fs" => "norecovery",
+        "ext4" => Some("noload"),
+        "f2fs" => Some("norecovery"),
+        "erofs" => None,
         _ => anyhow::bail!("read-only decryption does not support {filesystem}"),
     };
     let mut options: Vec<String> = options
@@ -53,7 +54,10 @@ pub fn read_only_options(filesystem: &str, options: &[String]) -> anyhow::Result
         .filter(|o| !matches!(o.as_str(), "rw" | "ro" | "discard" | "recovery" | "norecovery" | "noload" | "load"))
         .cloned()
         .collect();
-    options.extend(["ro".into(), no_recovery.into()]);
+    options.push("ro".into());
+    if let Some(no_recovery) = no_recovery {
+        options.push(no_recovery.into());
+    }
     Ok(options)
 }
 
@@ -93,14 +97,17 @@ mod sys {
     }
 
     /// Mount `device` read-only at `target` with the first of [`FILESYSTEMS`]
-    /// the kernel accepts, and return its name. Only the kernel's answers for
-    /// "not this filesystem" move on to the next one.
+    /// the kernel accepts, without journal replay or checkpoint recovery,
+    /// and return its name. Only the kernel's answers for "not this
+    /// filesystem" move on to the next one.
     pub fn mount_ro(device: &Path, target: &Path) -> Result<&'static str> {
         let (src, dst) = (cstr(device)?, cstr(target)?);
         let mut refused = Vec::new();
         for fs in FILESYSTEMS {
             let ty = CString::new(fs).expect("filesystem names hold no NUL");
-            if unsafe { libc::mount(src.as_ptr(), dst.as_ptr(), ty.as_ptr(), libc::MS_RDONLY, null()) } == 0 {
+            let (flags, own) = super::split_options(&super::read_only_options(fs, &[])?);
+            let data = CString::new(own).expect("fixed filesystem options hold no NUL");
+            if unsafe { libc::mount(src.as_ptr(), dst.as_ptr(), ty.as_ptr(), flags as libc::c_ulong, data.as_ptr().cast()) } == 0 {
                 return Ok(fs);
             }
             let e = os_error();
@@ -509,6 +516,7 @@ mod tests {
         let options = ["rw".into(), "discard".into(), "inlinecrypt".into()];
         assert_eq!(read_only_options("f2fs", &options).unwrap(), ["inlinecrypt", "ro", "norecovery"]);
         assert_eq!(read_only_options("ext4", &options).unwrap(), ["inlinecrypt", "ro", "noload"]);
+        assert_eq!(read_only_options("erofs", &[]).unwrap(), ["ro"]);
         assert!(read_only_options("unknown", &options).is_err());
     }
 

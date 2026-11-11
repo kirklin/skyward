@@ -33,6 +33,9 @@ pub struct Decryptor {
 
 impl Decryptor {
     pub fn start(job: Job, read_only: bool) -> Result<Decryptor> {
+        if read_only {
+            skyward_sys::kmsg("read-only decryption: filesystem repairs and key upgrades are disabled")?;
+        }
         let mut fds = [0; 2];
         if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) } != 0 {
             return Err(std::io::Error::last_os_error()).context("make the decrypting thread's wake pipe");

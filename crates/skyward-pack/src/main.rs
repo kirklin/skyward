@@ -115,7 +115,7 @@ fn main() -> Result<()> {
                 anyhow::bail!("{} holds {}, which is not a stock recovery", stock.display(), e.name);
             }
             let read = |p: &PathBuf| std::fs::read(p).with_context(|| format!("read {}", p.display()));
-            skyward_config::DeviceConfig::load(&config)?;
+            let cfg = skyward_config::DeviceConfig::load(&config)?;
             rd.replace(paths::RECOVERY, read(&binary)?)?;
             // Install scripts look for the commands a stock recovery lacks
             // among its programs, and its unzip there too, a link to ziptool
@@ -145,8 +145,7 @@ fn main() -> Result<()> {
                 .find(paths::PROP_DEFAULT)
                 .with_context(|| format!("{} is not in the ramdisk", paths::PROP_DEFAULT))?
                 .data;
-            let mut props = without(stock_props, &BUILD_VERSION);
-            props.extend_from_slice(b"\nro.secure=0\nro.adb.secure=0\nro.debuggable=1\nro.ota.allow_downgrade=true\n");
+            let props = recovery_properties(stock_props, cfg.decrypt.read_only);
             rd.replace(paths::PROP_DEFAULT, props)?;
             img.ramdisk = rd.encode()?;
             let bytes = img.to_bytes()?;
@@ -221,6 +220,20 @@ fn partition_size(stock: &Path) -> Result<usize> {
 /// fill in from the installed system once it has that mounted.
 const BUILD_VERSION: [&str; 3] = ["ro.build.version.release", "ro.build.version.security_patch", "ro.vendor.build.security_patch"];
 
+/// Stock vold may discard metadata keys if they cannot be opened. A
+/// diagnostic image must leave the existing keys intact on every error.
+const DELETE_METADATA_KEYS: &str = "ro.crypto.metadata_init_delete_all_keys.enabled";
+
+fn recovery_properties(stock_props: &[u8], read_only: bool) -> Vec<u8> {
+    let mut props = without(stock_props, &BUILD_VERSION);
+    props.extend_from_slice(b"\nro.secure=0\nro.adb.secure=0\nro.debuggable=1\nro.ota.allow_downgrade=true\n");
+    if read_only {
+        props = without(&props, &[DELETE_METADATA_KEYS]);
+        props.extend_from_slice(format!("{DELETE_METADATA_KEYS}=false\n").as_bytes());
+    }
+    props
+}
+
 /// The scheduling profiles a recovery's programs look up by name. A
 /// recovery's cgroup setup mounts no controllers, so of all a system's
 /// profiles do, only the timer slack applies here.
@@ -279,6 +292,19 @@ fn list(image: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn read_only_decryption_never_requests_metadata_key_deletion() {
+        let stock = format!("{DELETE_METADATA_KEYS}=true\nro.build.version.release=13\nro.vndk.version=33\n");
+        let disabled = format!("{DELETE_METADATA_KEYS}=false");
+        let enabled = format!("{DELETE_METADATA_KEYS}=true");
+        let diagnostic = String::from_utf8(recovery_properties(stock.as_bytes(), true)).unwrap();
+        assert!(diagnostic.lines().any(|l| l == disabled));
+        assert!(!diagnostic.lines().any(|l| l == enabled));
+        assert!(diagnostic.contains("ro.vndk.version=33\n"));
+        let normal = String::from_utf8(recovery_properties(stock.as_bytes(), false)).unwrap();
+        assert!(normal.lines().any(|l| l == enabled));
+    }
 
     #[test]
     fn the_lines_that_set_a_name_are_the_only_ones_left_out() {

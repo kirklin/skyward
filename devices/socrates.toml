@@ -91,6 +91,48 @@ user = "system"
 groups = ["system", "uhid", "input"]
 capabilities = ["SYS_NICE"]
 
+# The phone's vendor rc runs these as root:drmrpc and system:drmrpc.
+# Its vendor ABI is 33; secure::libraries also opens its installed v33
+# VNDK APEX, rather than using the Android 17 port as the vendor ABI.
+[[service]]
+path = "/vendor/bin/qseecomd"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_property = "vendor.sys.listeners.registered"
+user = "root"
+groups = ["root", "drmrpc"]
+
+# Gatekeeper is HIDL 1.0 on this phone. Its service directory comes from
+# the installed system, with that system's loader and libraries.
+[[service]]
+path = "/mnt/system_ext/bin/hwservicemanager"
+libraries = ["/mnt/system/system/lib64/bootstrap", "/mnt/system/system/lib64", "/mnt/system_ext/lib64"]
+ready_property = "hwservicemanager.ready"
+user = "system"
+groups = ["system", "readproc"]
+
+# The actual vendor manifest declares KeyMint V2, shared secret, secure
+# clock and remote provisioning in this process. Naming the shared-secret
+# interface also has Skyward perform the token-key agreement before PINs
+# are checked; no credential or key blob is changed by that agreement.
+[[service]]
+path = "/vendor/bin/hw/android.hardware.security.keymint-service-qti"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_service = "android.hardware.security.sharedsecret.ISharedSecret/default"
+registers = [
+    "android.hardware.security.keymint.IKeyMintDevice/default",
+    "android.hardware.security.secureclock.ISecureClock/default",
+    "android.hardware.security.keymint.IRemotelyProvisionedComponent/default",
+]
+user = "system"
+groups = ["system", "drmrpc"]
+
+[[service]]
+path = "/vendor/bin/hw/android.hardware.gatekeeper@1.0-service-qti"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_hardware_service = "android.hardware.gatekeeper@1.0::IGatekeeper/default"
+user = "system"
+groups = ["system"]
+
 # WCN7850: the stock driver and the settings and MAC address its firmware
 # loader asks for. This does not use the mainline ath12k driver.
 [wlan]

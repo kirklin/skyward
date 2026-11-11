@@ -180,9 +180,9 @@ enum Cmd {
     /// changes nothing.
     #[cfg(target_os = "android")]
     Weaver,
-    /// Open the data partition with the key the phone keeps for it, check
-    /// it and mount it writable as the phone does, and open each user's
-    /// files that open; the owner's shared storage then shows at /sdcard.
+    /// Open the data partition with its existing key under the device's
+    /// decryption restrictions, and open each user's files that open;
+    /// the owner's shared storage then shows at /sdcard.
     #[cfg(target_os = "android")]
     Data {
         /// Device decryption restrictions, also used by the on-screen unlock.
@@ -387,6 +387,9 @@ fn main() -> Result<()> {
         Cmd::Data { credential, config, close: false } => {
             use skyward_crypto::data;
             let read_only = DeviceConfig::load(&config)?.decrypt.read_only;
+            if read_only {
+                println!("read-only decryption: filesystem repairs and key upgrades are disabled");
+            }
             let binder = skyward_binder::driver::Binder::open()?;
             let service = skyward_crypto::keymint::KeyMint::open(&binder)?;
             let service = if read_only { service.without_upgrades() } else { service };

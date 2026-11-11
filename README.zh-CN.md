@@ -83,6 +83,10 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 
 ## 支持的机型
 
+小米 17T Pro（`warhol`）的 vendor_boot 初步适配见
+[contrib/warhol](contrib/warhol/README.md)。该原型尚未真机验证，
+不列入已支持机型，也不参与正式镜像发布。
+
 | 机型 | 代号 | 测试的系统版本 |
 | --- | --- | --- |
 | 小米 17 Ultra | `nezha` | OS4.0.4.0.XPACNXM（Android 17） |

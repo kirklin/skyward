@@ -1,0 +1,25 @@
+# Experimental bring-up for Global 311 on a CN311 base.
+# NOT a declaration of tested hardware support. See contrib/warhol/README.md.
+# Recovery lives in the type-2 vendor_boot v4 fragment, not recovery_a/b.
+[device]
+codename = "warhol"
+brand = "Xiaomi"
+model = "Xiaomi 17T Pro"
+ab = true
+soc = { hans = "联发科天玑 9500", hant = "聯發科天璣 9500", en = "MediaTek Dimensity 9500" }
+os_version_prop = "ro.mi.os.version.incremental"
+
+[display]
+# warhol Global311 device log: physical mode 1280x2772, density 520.
+width = 1280
+height = 2772
+density = 520
+
+[modules]
+sources = ["vendor_boot", "vendor_dlkm", "vendor", "system_dlkm"]
+# Names observed in a warhol Global311 loaded-module list, not copied from Qualcomm.
+# Diagnostic build does not automatically mount vendor or insert these yet.
+load = ["xiaomi_touch_warhol", "goodix_core_warhol"]
+
+# No guessed raw-touch sysfs writes, Qualcomm services, crypto HALs, WLAN,
+# OTA server or independent-recovery stock stanza. Each needs MTK validation.

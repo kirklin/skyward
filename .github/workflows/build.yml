@@ -36,6 +36,8 @@ jobs:
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --locked --workspace
+      - name: Test the experimental warhol image packer
+        run: python3 -m unittest discover -s contrib/warhol -p 'test_*.py' -v
       - name: Lint what runs on the phone
         run: cargo ndk -t arm64-v8a --platform 30 clippy --locked -p skyward -p skyward-install -p skyward-systems -p skyward-system-init -- -D warnings
 

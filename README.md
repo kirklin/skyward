@@ -87,6 +87,10 @@ read and set properties.
 
 ## Supported devices
 
+An untested Xiaomi 17T Pro (`warhol`) vendor_boot bring-up prototype is
+documented in [contrib/warhol](contrib/warhol/README.md). It is excluded from
+the supported-device list and release image builds.
+
 | Device | Codename | Tested system version |
 | --- | --- | --- |
 | Xiaomi 17 Ultra | `nezha` | OS4.0.4.0.XPACNXM (Android 17) |

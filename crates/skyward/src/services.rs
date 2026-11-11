@@ -258,9 +258,13 @@ fn private_memory_data(uid: libc::uid_t, gid: libc::gid_t) -> io::Result<()> {
         )
     })?;
     done(unsafe { libc::mkdir(c(b"/data/vendor\0"), 0o755) })?;
+    // Recovery runs with umask 0077. The daemon must still be able to
+    // traverse the root-owned parent after it gives up root.
+    done(unsafe { libc::chmod(c(b"/data/vendor\0"), 0o755) })?;
     for path in [b"/data/vendor/wifi\0".as_slice(), b"/data/vendor/wifi/sockets\0", b"/data/vendor/wlan_logs\0"] {
         done(unsafe { libc::mkdir(c(path), 0o770) })?;
         done(unsafe { libc::chown(c(path), uid, gid) })?;
+        done(unsafe { libc::chmod(c(path), 0o770) })?;
     }
     Ok(())
 }

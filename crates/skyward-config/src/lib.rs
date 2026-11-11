@@ -222,6 +222,11 @@ pub struct Haptics {
     /// tenths of a hertz whatever its label.
     pub resonance: String,
     pub strength: Strength,
+    /// Scale custom FIFO samples instead of their effect magnitude, for
+    /// drivers whose custom-effect magnitude does not preserve the share.
+    /// Waveforms kept by the driver still use their original magnitude.
+    #[serde(default)]
+    pub scale_samples: bool,
 }
 
 /// How strongly the click plays, each as a share of the most its waveform
@@ -1104,5 +1109,31 @@ mod tests {
         assert_eq!(service.ready_hardware_service.as_deref(), Some("android.hardware.boot@1.2::IBootControl/default"));
         assert_eq!(service.user.as_deref(), Some("root"));
         assert_eq!(service.groups, ["root"]);
+    }
+
+    #[test]
+    fn only_socrates_scales_its_made_haptic_samples() {
+        let cfg: DeviceConfig =
+            toml::from_str(include_str!("../../../devices/socrates.toml")).unwrap();
+        let motor = cfg.haptics.unwrap();
+        assert!(motor.scale_samples);
+        assert_eq!(motor.click, None);
+        assert_eq!(
+            motor.strength,
+            Strength {
+                lightest: 0.15,
+                strongest: 1.0
+            }
+        );
+        for source in [
+            include_str!("../../../devices/ishtar.toml"),
+            include_str!("../../../devices/nezha.toml"),
+        ] {
+            let cfg: DeviceConfig = toml::from_str(source).unwrap();
+            assert!(
+                !cfg.haptics.unwrap().scale_samples,
+                "existing profiles retain magnitude scaling"
+            );
+        }
     }
 }

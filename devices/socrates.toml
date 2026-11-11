@@ -207,4 +207,9 @@ recovery = "a1ed92db62fb0915b20309c5fe80b9181c6cf3ecef7d76e68503a2e1e9ff8c88"
 # at the measured resonance instead of assuming an effect number.
 [haptics]
 resonance = "/sys/class/qcom-haptics/lra_frequency_hz"
-strength = { lightest = 0.5, strongest = 1.0 }
+# The public driver quantizes custom FIFO magnitudes using integer division:
+# https://github.com/MiCode/Xiaomi_Kernel_OpenSource/blob/socrates-t-oss/drivers/input/misc/qcom-hv-haptics.c#L2455
+# This may explain the later kernel's measured plateau; scale the samples
+# instead. The maximum waveform amplitude and playback timing stay the same.
+scale_samples = true
+strength = { lightest = 0.15, strongest = 1.0 }

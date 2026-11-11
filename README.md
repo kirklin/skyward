@@ -94,9 +94,11 @@ read and set properties.
 
 ### 🚧 Under construction
 
-These images are built from each phone's stock firmware and have not been tried
-on the phone. They set up the screen, touch, Wi-Fi and vibration, and do not decrypt
-the data partition.
+These profiles are still being brought up. REDMI K60 Pro (`socrates`) has been
+RAM-boot tested for display, touch, USB ADB, Wi-Fi and read-only data decryption;
+see its [device validation record](devices/socrates-validation.json) for the exact
+build and remaining limits. The other images below are built from stock firmware,
+have not been tried on the phone, and do not decrypt the data partition.
 
 | Device | Codename | Built on |
 | --- | --- | --- |

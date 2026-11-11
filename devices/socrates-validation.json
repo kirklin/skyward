@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-11",
+  "device": "REDMI K60 Pro (socrates)",
+  "compiled_commit": "6c4c5694382fb6e96a87a1003a5f02a5b0f6f070",
+  "ci": "https://github.com/Dingtaiqi/skyward/actions/runs/43015523189",
+  "ci_result": "success",
+  "stock_recovery_version": "OS3.0.304.0.WMKCNXM",
+  "installed_vendor_api": 33,
+  "installed_framework_release": "17",
+  "artifact_zip_sha256": "5b5c45db4bf014acceab3d702eb3528f9de64f99bcddbad5d25c215a2a1fc3ce",
+  "recovery_image_sha256": "88c8a6245353edd1e3c8863357b73a79a7e9b9b53878545ba6b6946457f8de9d",
+  "test_method": {
+    "boot_slot": "a",
+    "partition_flashes": false,
+    "container": "RAM-only boot header v3 with the phone's existing boot_a kernel and the unchanged CI recovery ramdisk",
+    "hardware_arguments": "Actual qcom hardware, USB controller and boot-device arguments supplied to the temporary container",
+    "production_recovery_partition_installation_tested": false
+  },
+  "confirmed": {
+    "display": true,
+    "physical_touch": true,
+    "usb_adb": true,
+    "wifi_first_enable_after_cold_boot": true,
+    "wifi_scan": true,
+    "wifi_association_and_ipv4_dhcp": true,
+    "wifi_internet_probe": true,
+    "wifi_operates_after_readonly_data_decryption": true,
+    "keymint_sharedsecret_and_gatekeeper_respond": true,
+    "readonly_metadata_and_file_based_data_decryption": true,
+    "original_shared_storage_folders_visible_to_user": true,
+    "data_mapping_reports_readonly": true,
+    "data_mount_uses_f2fs_ro_norecovery": true,
+    "automatic_metadata_key_deletion_disabled": true,
+    "cnss_cache_is_in_a_separate_mount_namespace_with_16_mib_tmpfs": true,
+    "cnss_uses_stock_uid_groups_and_net_admin_only": true
+  },
+  "touch_restart_test": {
+    "compiled_commit": "038d336f4ec7686843b7d7d74d83c9106ca1a49b",
+    "consecutive_ui_service_restarts": 3,
+    "user_confirmed_touch_without_manual_power_cycle_after_every_restart": true,
+    "touch_code_unchanged_in_final_compiled_commit": true
+  },
+  "decryption_scope": "Read-only. The tested installation needed no lock-screen credential; PIN, password and pattern protected user unlock remain untested.",
+  "not_tested": [
+    "Writing decrypted userdata",
+    "Formatting, wiping or restoring partitions",
+    "Installing updates or switching slots",
+    "Permanent recovery partition installation",
+    "Haptics strength and waveform accuracy",
+    "MTP file transfer"
+  ],
+  "post_test_boot_partition_hashes_unchanged": true,
+  "privacy": "No raw device logs, identifiers, network credentials, file names or key material included."
+}

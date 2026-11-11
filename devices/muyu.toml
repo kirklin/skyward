@@ -29,6 +29,14 @@ swap_xy = true
 flip_y = true
 ignored_devices = ["NVTCapacitivePenM80p", "NVTCapacitivePenP81c"]
 
+# The stock host-processing binary for the Novatek touch controller.
+[[service]]
+path = "/odm/bin/touch_report_debug"
+libraries = ["/odm/lib64", "/vendor/lib64", "/system/lib64"]
+user = "root"
+groups = ["root", "input", "system"]
+capabilities = ["SYS_NICE"]
+
 [[service]]
 path = "/vendor/bin/sh"
 args = ["/vendor/bin/init.kernel.post_boot.sh"]

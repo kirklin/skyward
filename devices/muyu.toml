@@ -18,13 +18,6 @@ diagonal = 11.2
 normal_brightness = 4095
 minimum_brightness = 1
 
-[orientation]
-backend = "ssc"
-firmware = "adsps.jsn"
-calibration = { partition = "persist", path = "sensors" }
-swap_xy = true
-flip_x = true
-
 [firmware]
 partition = "modem"
 remoteproc = "adsp"
@@ -47,21 +40,6 @@ libraries = ["/odm/lib64", "/vendor/lib64", "/system/lib64"]
 user = "root"
 groups = ["root", "input", "system"]
 capabilities = ["SYS_NICE"]
-
-[[service]]
-path = "/vendor/bin/pd-mapper"
-mounts = [
-    { source = "/skyward/run/sensor-firmware", target = "/vendor/firmware_mnt" },
-    { source = "/skyward/run/sensor-firmware/image", target = "/vendor/firmware" },
-]
-libraries = ["/system/lib64", "/vendor/lib64"]
-
-[[service]]
-path = "/vendor/bin/sscrpcd"
-args = ["sensorspd"]
-mounts = [{ source = "/skyward/run/sensor-persist", target = "/mnt/vendor/persist" }]
-environment = { ADSP_LIBRARY_PATH = "/vendor/lib/rfsa/adsp;/vendor/dsp;/vendor/firmware_mnt/image" }
-libraries = ["/system/lib64", "/vendor/lib64"]
 
 [[service]]
 path = "/vendor/bin/sh"

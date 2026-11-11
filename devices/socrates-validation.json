@@ -124,5 +124,16 @@
     "Quantitative haptic waveform or voltage measurement"
   ],
   "permanent_archive": "https://github.com/Dingtaiqi/skyward/releases/tag/untagged-ce703743544a5f01d2d8",
-  "privacy": "No raw device logs, identifiers, network credentials, app UID/MCS values, encryption-policy identifiers or key material included."
+  "privacy": "No raw device logs, identifiers, network credentials, app UID/MCS values, encryption-policy identifiers or key material included.",
+  "android_version_scope": {
+    "official_ota_packaging_android": "16",
+    "official_ota_version": "OS3.0.304.0.WMKCNXM",
+    "tested_host_framework_android": [
+      "17"
+    ],
+    "tested_vendor_android": "13",
+    "tested_vendor_api": 33,
+    "tested_vndk": "33",
+    "scope": "Android 16 identifies the packaging OTA, Android 17 the tested installed framework, and Android 13/API 33 the vendor layer. No general Android 16/17 compatibility claim or Android 16 host test is made."
+  }
 }

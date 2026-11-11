@@ -105,6 +105,12 @@ was restored, the test APK uninstalled and all fixture files removed. See its
 and remaining limits. The other images below are built from stock firmware, have
 not been tried on the phone, and do not decrypt the data partition.
 
+For K60 Pro, packaging uses the official **Android 16** OTA
+`OS3.0.304.0.WMKCNXM`. Device tests used an **Android 17 framework** with that
+version's vendor/odm; vendor reports **Android 13 / API 33 (VNDK 33)**.
+These identify different layers. Other system/vendor combinations have not been
+validated; the Android major version alone is not a compatibility check.
+
 | Device | Codename | Built on |
 | --- | --- | --- |
 | 🚧 Xiaomi 13 | `fuxi` | OS3.0.309.0.WMCCNXM (Android 16) |

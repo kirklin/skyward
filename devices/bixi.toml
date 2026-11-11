@@ -176,6 +176,11 @@ capabilities = ["WAKE_ALARM"]
 # 目前的密码解锁走的是 weaver（Bound::Weaver），不经过 gatekeeper，所以不受影响；
 # 要让「图案 / 第二用户」可用，得先解决上面两条，届时再把这两段放开。
 #
+# 结论（0.44.00）：不在 recovery 里继续追这个服务。缺的两样 —— SPU 服务与 VINTF
+# 声明 —— 都是系统侧的东西，recovery 的 ld.config 只有 default 命名空间，补不出
+# 一个能用的 spu_init；「图案解锁 / 第二用户」因此是本 recovery 的已知限制，
+# 页面上的解锁仍只按密码与 weaver 走。
+#
 # [[service]]
 # path = "/vendor/bin/sh"
 # args = ["-c", "setprop vendor.gatekeeper.disable_spu true; setprop vendor.gatekeeper.is_security_level_spu 0"]

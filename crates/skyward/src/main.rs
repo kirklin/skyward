@@ -36,6 +36,8 @@ mod services;
 #[cfg(target_os = "android")]
 mod settings;
 #[cfg(target_os = "android")]
+mod systems;
+#[cfg(target_os = "android")]
 mod ui;
 #[cfg(target_os = "android")]
 mod updates;
@@ -866,6 +868,14 @@ fn identify(path: &Path) -> Result<()> {
         }
         Package::Image(kind) => println!("{kind:?}, for {}", kind.partitions().join(" or ")),
         Package::Script => println!("a zip that installs itself with a script"),
+        Package::System(c) => {
+            println!("the system {} {} ({}), to install beside the installed one", c.manifest.name, c.manifest.version, c.manifest.id);
+            println!("a boot image of {} bytes, a root image of {} bytes ({}), starting {}", c.boot, c.root, c.manifest.filesystem, c.manifest.init);
+            println!("its root takes at least {} bytes", c.least());
+            if c.init_boot {
+                println!("it brings its own init_boot image");
+            }
+        }
         Package::Unknown => println!("nothing this recovery installs"),
     }
     Ok(())

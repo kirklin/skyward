@@ -8,7 +8,7 @@ use abootimg_oxide::{Header, VendorHeader};
 use anyhow::{bail, ensure, Context, Result};
 use sha2::{Digest, Sha256};
 use skyward_vab::Slot;
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
@@ -262,23 +262,7 @@ pub fn flash<R: Read + Seek>(image: &mut R, len: u64, devices: &[PathBuf], progr
     Ok(())
 }
 
-/// Drop the device's cached pages, so reading it back reads the flash.
-#[cfg(target_os = "android")]
-pub(crate) fn drop_cache(f: &File) -> Result<()> {
-    use std::os::fd::AsRawFd;
-    let rc = unsafe { libc::posix_fadvise(f.as_raw_fd(), 0, 0, libc::POSIX_FADV_DONTNEED) };
-    if rc != 0 {
-        return Err(io::Error::from_raw_os_error(rc).into());
-    }
-    Ok(())
-}
-
-/// Hosts run the tests on plain files, whose reads come from the same
-/// cache either way.
-#[cfg(not(target_os = "android"))]
-pub(crate) fn drop_cache(_: &File) -> Result<()> {
-    Ok(())
-}
+pub(crate) use skyward_block::drop_cache;
 
 /// Images made up for the tests here and in the modules that look into
 /// partitions.
@@ -315,12 +299,7 @@ pub(crate) mod samples {
         cpio::newc::trailer(out).unwrap()
     }
 
-    pub fn lz4_legacy(data: &[u8]) -> Vec<u8> {
-        let info = lz4_flex::frame::FrameInfo::new().legacy_frame(true);
-        let mut w = lz4_flex::frame::FrameEncoder::with_frame_info(info, Vec::new());
-        w.write_all(data).unwrap();
-        w.finish().unwrap()
-    }
+    pub use skyward_bootimg::lz4_legacy;
 
     /// A recovery image, Skyward's or the stock one it is packed on.
     pub fn recovery(skyward: bool) -> Vec<u8> {
@@ -433,7 +412,7 @@ mod tests {
     fn only_partitions_the_phone_has_in_both_slots_are_offered() {
         let dir = tempfile::tempdir().unwrap();
         for name in ["boot_a", "boot_b", "recovery_a", "recovery_b", "init_boot_a", "init_boot_b", "vbmeta_a", "vbmeta_b", "vbmeta_system_a"] {
-            File::create(dir.path().join(name)).unwrap();
+            std::fs::File::create(dir.path().join(name)).unwrap();
         }
         let both = ImageKind::Boot { kernel: true, ramdisk: Ramdisk::Recovery };
         assert_eq!(partitions(both, dir.path()).unwrap(), ["recovery", "boot"]);

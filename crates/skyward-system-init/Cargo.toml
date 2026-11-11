@@ -1,0 +1,21 @@
+[package]
+name = "skyward-system-init"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# Built for the phone and linked statically: it runs before any system's
+# libraries are there to load.
+[[bin]]
+name = "system-init"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+libc = { workspace = true }
+skyward-block = { path = "../skyward-block" }
+skyward-bootimg = { path = "../skyward-bootimg" }
+skyward-modules = { path = "../skyward-modules" }
+skyward-sys = { path = "../skyward-sys" }
+skyward-systems = { path = "../skyward-systems" }

@@ -2238,7 +2238,7 @@ checksum = "33f4fe9184a62d842c9ef383018f3306d8ba224fd9d836f56d7288308847c256"
 
 [[package]]
 name = "skyward"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2258,6 +2258,7 @@ dependencies = [
  "skyward-mtp",
  "skyward-net",
  "skyward-sys",
+ "skyward-systems",
  "skyward-ui",
  "skyward-vab",
  "tempfile",
@@ -2268,7 +2269,7 @@ dependencies = [
 
 [[package]]
 name = "skyward-backup"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "libc",
@@ -2282,7 +2283,7 @@ dependencies = [
 
 [[package]]
 name = "skyward-binder"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "libc",
@@ -2291,17 +2292,30 @@ dependencies = [
 
 [[package]]
 name = "skyward-block"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "libc",
  "procfs",
+ "serde",
  "zerocopy",
 ]
 
 [[package]]
+name = "skyward-bootimg"
+version = "0.2.0"
+dependencies = [
+ "abootimg-oxide",
+ "anyhow",
+ "cpio",
+ "libc",
+ "lz4_flex",
+ "tempfile",
+]
+
+[[package]]
 name = "skyward-config"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -2310,7 +2324,7 @@ dependencies = [
 
 [[package]]
 name = "skyward-crypto"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -2325,7 +2339,7 @@ dependencies = [
 
 [[package]]
 name = "skyward-files"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "libc",
@@ -2333,7 +2347,7 @@ dependencies = [
 
 [[package]]
 name = "skyward-info"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "libc",
@@ -2347,7 +2361,7 @@ dependencies = [
 
 [[package]]
 name = "skyward-install"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "abootimg-oxide",
  "anyhow",
@@ -2362,9 +2376,11 @@ dependencies = [
  "sha1 0.10.7",
  "sha2 0.10.9",
  "skyward-block",
+ "skyward-bootimg",
  "skyward-config",
  "skyward-info",
  "skyward-sys",
+ "skyward-systems",
  "skyward-vab",
  "tempfile",
  "x509-cert",
@@ -2375,7 +2391,7 @@ dependencies = [
 
 [[package]]
 name = "skyward-lp"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "sha2 0.10.9",
@@ -2384,15 +2400,16 @@ dependencies = [
 
 [[package]]
 name = "skyward-modules"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "libc",
+ "tempfile",
 ]
 
 [[package]]
 name = "skyward-mtp"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "jiff",
@@ -2404,7 +2421,7 @@ dependencies = [
 
 [[package]]
 name = "skyward-net"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "aes",
  "anyhow",
@@ -2424,15 +2441,13 @@ dependencies = [
 
 [[package]]
 name = "skyward-pack"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
- "abootimg-oxide",
  "anyhow",
  "clap",
- "cpio",
- "lz4_flex",
  "serde_json",
  "sha2 0.10.9",
+ "skyward-bootimg",
  "skyward-config",
  "tempfile",
  "unpayload",
@@ -2440,7 +2455,7 @@ dependencies = [
 
 [[package]]
 name = "skyward-preview"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "png",
@@ -2449,6 +2464,7 @@ dependencies = [
  "skyward-info",
  "skyward-install",
  "skyward-net",
+ "skyward-systems",
  "skyward-ui",
  "skyward-vab",
  "toml",
@@ -2456,7 +2472,7 @@ dependencies = [
 
 [[package]]
 name = "skyward-sys"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "libc",
@@ -2464,8 +2480,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "skyward-system-init"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "skyward-block",
+ "skyward-bootimg",
+ "skyward-modules",
+ "skyward-sys",
+ "skyward-systems",
+]
+
+[[package]]
+name = "skyward-systems"
+version = "0.2.0"
+dependencies = [
+ "abootimg-oxide",
+ "anyhow",
+ "libc",
+ "serde",
+ "sha2 0.10.9",
+ "skyward-block",
+ "skyward-bootimg",
+ "skyward-config",
+ "skyward-vab",
+ "tempfile",
+ "toml",
+ "zip 8.6.0",
+]
+
+[[package]]
 name = "skyward-ui"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "ab_glyph",
  "ab_glyph_rasterizer",
@@ -2483,6 +2530,7 @@ dependencies = [
  "skyward-info",
  "skyward-install",
  "skyward-net",
+ "skyward-systems",
  "skyward-vab",
  "svgtypes",
  "syn 2.0.119",
@@ -2494,7 +2542,7 @@ dependencies = [
 
 [[package]]
 name = "skyward-vab"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "libc",

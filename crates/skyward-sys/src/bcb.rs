@@ -53,18 +53,26 @@ impl Bcb {
         Ok(Bcb { command, args })
     }
 
+    /// Whether the message asks the bootloader for the recovery: for work of
+    /// its own, its fastboot, or rescue.
+    pub fn asks_for_recovery(&self) -> bool {
+        matches!(self.command.as_str(), "boot-recovery" | "boot-fastboot" | "boot-rescue")
+    }
+
     /// What the message asks the recovery to do, read the way Android's
     /// own recovery reads it: of several pieces of work it does the first
-    /// in this order, fastboot, an update package, erasing data, asking
-    /// whether to erase data, erasing the cache, erasing by a wipe package,
-    /// sideload, rescue, unsharing blocks, leaving at once. A command with
-    /// no arguments can ask for fastboot or rescue by itself. An option
-    /// given twice counts as it was given last.
+    /// in this order, fastboot, switching systems and showing why the
+    /// second system's start stopped, which are Skyward's own, an update
+    /// package, erasing data, asking whether to erase data, erasing the
+    /// cache, erasing by a wipe package, sideload, rescue, unsharing
+    /// blocks, leaving at once. A command with no arguments can ask for
+    /// fastboot or rescue by itself. An option given twice counts as it
+    /// was given last.
     pub fn request(&self) -> Request {
         let mut r = Request::default();
         let (mut fastboot, mut wipe_data, mut prompt, mut wipe_cache, mut wipe_ab) = (false, false, false, false, false);
-        let (mut rescue, mut unshare, mut exit, mut security) = (false, false, false, false);
-        let mut sideload = None;
+        let (mut rescue, mut unshare, mut exit, mut security, mut stopped) = (false, false, false, false, false);
+        let (mut sideload, mut switch) = (None, None);
         let (mut update, mut reformat, mut retry, mut wipe_package) = (None, None, 0, 0);
         for arg in &self.args {
             let Some(option) = arg.strip_prefix("--") else {
@@ -112,6 +120,11 @@ impl Bcb {
                     Some(size) => wipe_package = size,
                     None => unread(),
                 },
+                "switch_system" => match value.filter(|v| !v.is_empty()) {
+                    Some(to) => switch = Some(to.to_string()),
+                    None => unread(),
+                },
+                "system_stopped" => stopped = true,
                 // How Android's own recovery reads a package, and how its
                 // text shows.
                 "install_with_fuse" | "update_wipe" | "export_validate" | "show_text" => {}
@@ -127,6 +140,10 @@ impl Bcb {
         };
         r.work = if fastboot {
             Work::Fastboot
+        } else if let Some(to) = switch {
+            Work::SwitchSystem { to }
+        } else if stopped {
+            Work::SystemStopped
         } else if let Some(package) = update {
             Work::Update(Update { package, retry, wipe_cache, security })
         } else if wipe_data {
@@ -235,6 +252,14 @@ pub enum Work {
     /// Undo the sharing of blocks in the slot's ext4 partitions that hold
     /// shared ones, so they can be written to.
     UnshareBlocks,
+    /// Have the bootloader start another system: `installed` for the one in
+    /// the phone's own partitions, or the id of the one Skyward installed
+    /// beside it, as that system asks.
+    SwitchSystem { to: String },
+    /// Say why the second system's start stopped, as Skyward's program that
+    /// starts it tells: the phone stays in the recovery, and the same
+    /// system starts next.
+    SystemStopped,
     /// Start the system at once.
     Exit,
     /// Work the recovery does not do, as it was asked.
@@ -263,7 +288,7 @@ impl Work {
     /// then stays in misc until it is done, so a restart halfway comes back
     /// to it, as Android's own recovery does.
     pub fn lasts(&self) -> bool {
-        !matches!(self, Work::Menu | Work::Fastboot | Work::Exit | Work::Unsupported(_))
+        !matches!(self, Work::Menu | Work::Fastboot | Work::Exit | Work::SystemStopped | Work::Unsupported(_))
     }
 }
 
@@ -400,6 +425,39 @@ mod tests {
     }
 
     #[test]
+    fn a_switch_of_systems_names_the_system() {
+        let r = asked("boot-recovery", &["--switch_system=installed"]);
+        assert_eq!(r.work, Work::SwitchSystem { to: "installed".into() });
+        assert!(r.work.lasts(), "a switch cut off is taken up again");
+        assert_eq!(asked("boot-recovery", &["--switch_system=ubuntu", "--wipe_data"]).work, Work::SwitchSystem { to: "ubuntu".into() });
+        assert_eq!(asked("boot-recovery", &["--switch_system="]).work, Work::Unsupported("--switch_system=".into()), "a switch to no system");
+    }
+
+    #[test]
+    fn a_stopped_start_says_why_and_is_shown_once() {
+        let r = asked("boot-recovery", &["--system_stopped", "--reason=no partition userdata showed within 15s"]);
+        assert_eq!(r.work, Work::SystemStopped);
+        assert_eq!(r.reason.as_deref(), Some("no partition userdata showed within 15s"));
+        assert!(!r.work.lasts());
+        assert_eq!(asked("boot-recovery", &["--system_stopped", "--switch_system=installed"]).work, Work::SwitchSystem { to: "installed".into() }, "a switch comes first");
+        let written = Bcb { command: "boot-recovery".into(), args: vec!["--system_stopped".into(), "--reason=x".into()] };
+        let mut raw = [0u8; SIZE];
+        written.lay_over(&mut raw).unwrap();
+        assert_eq!(Bcb::parse(&raw).unwrap(), written, "as the system's first program writes it");
+    }
+
+    #[test]
+    fn the_commands_that_ask_for_the_recovery() {
+        let command = |c: &str| Bcb { command: c.into(), args: Vec::new() };
+        for asking in ["boot-recovery", "boot-fastboot", "boot-rescue"] {
+            assert!(command(asking).asks_for_recovery(), "{asking}");
+        }
+        for not in ["", "bootonce-bootloader"] {
+            assert!(!command(not).asks_for_recovery(), "{not:?}");
+        }
+    }
+
+    #[test]
     fn the_first_work_in_order_is_the_one_done() {
         assert_eq!(asked("boot-recovery", &["--sideload", "--wipe_data"]).work, WIPE_DATA);
         assert_eq!(asked("boot-recovery", &["--wipe_data", "--fastboot"]).work, Work::Fastboot);
@@ -488,7 +546,7 @@ mod tests {
         for work in lasting {
             assert!(work.lasts(), "{work:?}");
         }
-        for work in [Work::Menu, Work::Fastboot, Work::Exit, Work::Unsupported("--wipe_efs".into())] {
+        for work in [Work::Menu, Work::Fastboot, Work::Exit, Work::SystemStopped, Work::Unsupported("--wipe_efs".into())] {
             assert!(!work.lasts(), "{work:?}");
         }
     }

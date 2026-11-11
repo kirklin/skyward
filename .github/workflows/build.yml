@@ -37,7 +37,7 @@ jobs:
       - name: Test
         run: cargo test --locked --workspace
       - name: Lint what runs on the phone
-        run: cargo ndk -t arm64-v8a --platform 30 clippy --locked -p skyward -p skyward-install -- -D warnings
+        run: cargo ndk -t arm64-v8a --platform 30 clippy --locked -p skyward -p skyward-install -p skyward-systems -p skyward-system-init -- -D warnings
 
   tools:
     name: Build the recovery service and the packer
@@ -47,12 +47,19 @@ jobs:
       - uses: ./.github/actions/setup
       - name: Build the recovery service for the phone
         run: cargo ndk -t arm64-v8a --platform 30 build --locked --release -p skyward
+      # It runs as a second system's first program, before any library is
+      # there to load.
+      - name: Build the second system's first program, static
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: cargo ndk -t arm64-v8a --platform 30 build --locked --release -p skyward-system-init --target-dir target/system-init
       - name: Build the packer
         run: cargo build --locked --release -p skyward-pack
       - name: Gather them
         run: |
           mkdir tools
           cp target/aarch64-linux-android/release/skyward target/release/skyward-pack tools/
+          cp target/system-init/aarch64-linux-android/release/system-init tools/
       - uses: actions/upload-artifact@v7
         with:
           name: tools
@@ -121,8 +128,8 @@ jobs:
           if [ "$GITHUB_REF_TYPE" = tag ]; then version="$GITHUB_REF_NAME"; else version="${GITHUB_SHA::7}"; fi
           name="skyward-$version-$DEVICE-$STOCK"
           mkdir out
-          tools/skyward-pack recovery --stock stock/recovery.img --binary tools/skyward --config "devices/$DEVICE.toml" \
-            --font resources/fonts/MiSansVF.ttf --mono resources/fonts/KirkMono-Regular.ttf \
+          tools/skyward-pack recovery --stock stock/recovery.img --binary tools/skyward --system-init tools/system-init \
+            --config "devices/$DEVICE.toml" --font resources/fonts/MiSansVF.ttf --mono resources/fonts/KirkMono-Regular.ttf \
             --mono-license resources/fonts/KirkMono-OFL.txt --out "out/$name.img"
           echo "name=$name" >> "$GITHUB_OUTPUT"
       # The image is the whole partition, flashed as it is, and most of it

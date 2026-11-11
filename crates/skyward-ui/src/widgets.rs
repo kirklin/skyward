@@ -1504,18 +1504,7 @@ fn draw_row(c: &mut Canvas, t: &Theme, f: &Fonts, r: &Row, lay: &Layout, top: f3
             c.fill_round_rect(bx, cy - bh / 2.0, bw, bh, bh / 2.0, t.pal.badge);
             c.text_center(&f.badge, s, bx + bw / 2.0, cy, m.badge_px, t.pal.accent);
         }
-        Trail::Check(on) => {
-            let d = m.dp(24.0);
-            let ccx = right - m.inner - d / 2.0;
-            if on {
-                c.fill_circle(ccx, cy, d / 2.0, t.pal.accent);
-                let s = d * 0.5;
-                c.line(ccx - s * 0.42, cy + s * 0.02, ccx - s * 0.1, cy + s * 0.32, m.stroke, Rgba::rgb(255, 255, 255));
-                c.line(ccx - s * 0.1, cy + s * 0.32, ccx + s * 0.44, cy - s * 0.3, m.stroke, Rgba::rgb(255, 255, 255));
-            } else {
-                c.stroke_circle(ccx, cy, d / 2.0 - m.dp(1.0), m.dp(2.0), t.pal.switch_off);
-            }
-        }
+        Trail::Check(on) => check_circle(c, t, right - m.inner - m.dp(12.0), cy, on),
         Trail::Network { locked } => {
             let round = round_button(t, Rect::new(card_x, top, right - card_x, lay.h));
             let (rcx, rcy, rr) = (round.x + round.w / 2.0, round.y + round.h / 2.0, round.w / 2.0);
@@ -2474,6 +2463,104 @@ pub fn theme_picker(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32) -> 
         rects.push(Rect::new(sx, top, slot_w, bottom - top));
     }
     Block { bottom, rows: rects }
+}
+
+/// What a card on the systems page shows: what the system is to the phone,
+/// in small type, its name in large, and its version or what the card
+/// offers under that.
+pub struct SystemCard<'a> {
+    pub role: &'a str,
+    pub name: &'a str,
+    pub detail: &'a str,
+    pub mark: SystemMark,
+}
+
+/// What a system card shows at its right.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SystemMark {
+    /// The check of a choice, filled on the system picked.
+    Check(bool),
+    /// The place a second system would take: the card opens a page, and
+    /// its name is in the accent colour, as an action.
+    Opens,
+}
+
+/// A system card's height, and the size of its name.
+const SYSTEM_CARD_DP: f32 = 132.0;
+const SYSTEM_NAME_DP: f32 = 30.0;
+
+/// The systems as big cards one over the other: each a choice of a list
+/// grown large, in the same type and colours, its name in the type of a
+/// page's title. The rows are the cards.
+pub fn system_cards(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, cards: &[SystemCard]) -> Block {
+    let m = &t.m;
+    let (x, w, h) = (m.margin, m.w as f32 - m.margin * 2.0, m.dp(SYSTEM_CARD_DP));
+    let mut rows = Vec::new();
+    let mut y = top;
+    for card in cards {
+        let r = Rect::new(x, y, w, h);
+        system_card(c, t, f, r, card);
+        rows.push(r);
+        y += h + m.card_gap;
+    }
+    Block { bottom: y - m.card_gap, rows }
+}
+
+/// One system's card at `r`: the role, the name and the line under it as
+/// one block in the middle of the card's height, and its mark at the right.
+fn system_card(c: &mut Canvas, t: &Theme, f: &Fonts, r: Rect, card: &SystemCard) {
+    let m = &t.m;
+    c.fill_round_rect(r.x, r.y, r.w, r.h, m.card_radius, t.pal.card);
+    let (x, cy) = (r.x + m.inner, r.y + r.h / 2.0);
+    let room = r.w - m.inner * 2.0 - m.dp(36.0);
+    let px = fitted_px(c, &f.title, card.name, m.dp(SYSTEM_NAME_DP), m.dp(20.0), room);
+    let ink = |face: &Face, px: f32| {
+        let (top, bottom) = face.ink(px);
+        bottom - top
+    };
+    let (role_h, name_h, detail_h) = (ink(&f.label, m.label_px), ink(&f.title, px), ink(&f.body, m.sub_px));
+    let (above, below) = (m.dp(12.0), m.dp(12.0));
+    let mut y = cy - (role_h + above + name_h + below + detail_h) / 2.0;
+    c.text_top(&f.label, card.role, x, y, m.label_px, t.pal.section, Some(room));
+    y += role_h + above;
+    let name_ink = if card.mark == SystemMark::Opens { t.pal.accent } else { t.pal.text };
+    // Only a name too long even at the least size is cut short; one sized
+    // to fit is drawn whole, its last pixel's rounding aside.
+    let cut = (c.text_width(&f.title, card.name, px) > room + 1.0).then_some(room);
+    c.text_top(&f.title, card.name, x, y, px, name_ink, cut);
+    y += name_h + below;
+    c.text_top(&f.body, card.detail, x, y, m.sub_px, t.pal.subtitle, Some(room));
+    let right = r.x + r.w;
+    match card.mark {
+        SystemMark::Check(on) => check_circle(c, t, right - m.inner - m.dp(12.0), cy, on),
+        SystemMark::Opens => chevron(c, t, right - m.chevron_inset, cy, t.pal.chevron),
+    }
+}
+
+/// The check of a choice centred on (`cx`, `cy`): an accent disc with a
+/// white tick on the one chosen, an empty ring on the others.
+pub fn check_circle(c: &mut Canvas, t: &Theme, cx: f32, cy: f32, on: bool) {
+    let m = &t.m;
+    let d = m.dp(24.0);
+    if on {
+        c.fill_circle(cx, cy, d / 2.0, t.pal.accent);
+        let s = d * 0.5;
+        c.line(cx - s * 0.42, cy + s * 0.02, cx - s * 0.1, cy + s * 0.32, m.stroke, Rgba::rgb(255, 255, 255));
+        c.line(cx - s * 0.1, cy + s * 0.32, cx + s * 0.44, cy - s * 0.3, m.stroke, Rgba::rgb(255, 255, 255));
+    } else {
+        c.stroke_circle(cx, cy, d / 2.0 - m.dp(1.0), m.dp(2.0), t.pal.switch_off);
+    }
+}
+
+/// The largest size, from `most` down to `least`, at which `text` fits in
+/// `room`.
+fn fitted_px(c: &Canvas, face: &Face, text: &str, most: f32, least: f32, room: f32) -> f32 {
+    let w = c.text_width(face, text, most);
+    if w <= room {
+        most
+    } else {
+        (most * room / w).max(least)
+    }
 }
 
 /// Which keys the on-screen keyboard shows.

@@ -1,7 +1,8 @@
 name: Set up the Rust and Android tools
 description: >-
   The toolchain rust-toolchain.toml names with clippy, a cache of what cargo
-  builds, the Android NDK the recovery is built with, and cargo-ndk.
+  builds, the Android NDK the recovery is built with, and cargo-ndk, built
+  from its source on crates.io.
 
 runs:
   using: composite
@@ -23,6 +24,7 @@ runs:
       env:
         NDK: ${{ steps.ndk.outputs.ndk-path }}
       run: echo "ANDROID_NDK_HOME=$NDK" >> "$GITHUB_ENV"
-    - uses: taiki-e/install-action@v2
-      with:
-        tool: cargo-ndk@4.1.2
+    # The cache above keeps what cargo installs.
+    - name: Build cargo-ndk from crates.io
+      shell: bash
+      run: cargo install cargo-ndk --version 4.1.2 --locked

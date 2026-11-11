@@ -21,12 +21,18 @@ fn section(bytes: &[u8], at: usize, len: u32, what: &str) -> Result<Vec<u8>> {
 impl BootImage {
     pub fn read(path: &Path) -> Result<Self> {
         let bytes = fs::read(path).with_context(|| format!("read {}", path.display()))?;
-        let header = match Header::parse(&mut Cursor::new(&bytes)).with_context(|| format!("{}: header", path.display()))? {
+        BootImage::parse(&bytes).with_context(|| format!("read {}", path.display()))
+    }
+
+    /// The image `bytes` hold, as a partition holds it: the image, then
+    /// whatever fills the partition after it.
+    pub fn parse(bytes: &[u8]) -> Result<Self> {
+        let header = match Header::parse(&mut Cursor::new(bytes)).context("header")? {
             Header::V3(h) => h,
-            Header::V0(h) => bail!("{}: header version {} predates the ramdisk-only layout", path.display(), h.header_version()),
+            Header::V0(h) => bail!("header version {} predates the ramdisk-only layout", h.header_version()),
         };
-        let kernel = section(&bytes, HeaderV3::kernel_position(), header.kernel_size, "kernel")?;
-        let ramdisk = section(&bytes, header.ramdisk_position(), header.ramdisk_size, "ramdisk")?;
+        let kernel = section(bytes, HeaderV3::kernel_position(), header.kernel_size, "kernel")?;
+        let ramdisk = section(bytes, header.ramdisk_position(), header.ramdisk_size, "ramdisk")?;
         Ok(BootImage { header, kernel, ramdisk })
     }
 

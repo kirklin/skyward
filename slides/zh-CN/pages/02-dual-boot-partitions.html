@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="../../readme.css">
+</head>
+<body>
+<main class="slide feature">
+  <header class="head">
+    <p class="eyebrow">双系统</p>
+    <h1 class="headline">切换系统只改写<br>两个分区。</h1>
+    <p class="body"><span translate="no">Skyward</span> 只改写下次启动槽位的 boot 和 init_boot，<br>第二系统使用主系统的 vendor_boot 和 dtbo 启动。</p>
+  </header>
+  <div class="visual">
+    <div class="disk">
+      <p class="group"><i class="hot"></i>切换时改写</p>
+      <div class="parts two">
+        <span class="part hot">boot</span>
+        <span class="part hot">init_boot</span>
+      </div>
+      <p class="group"><i></i>保持不变</p>
+      <div class="parts">
+        <span class="part">vendor_boot</span>
+        <span class="part">dtbo</span>
+        <span class="part">recovery</span>
+        <span class="part">vbmeta</span>
+        <span class="part">固件</span>
+        <span class="part">super</span>
+      </div>
+      <p class="group"><i class="own"></i>data 分区中的两个文件</p>
+      <div class="files">
+        <div class="file">
+          <svg viewBox="0 0 24 24"><g class="icon-line"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v13c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-13"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></g></svg>
+          <b>第二系统的<br>根文件系统</b>
+        </div>
+        <div class="file">
+          <svg viewBox="0 0 24 24"><g class="icon-line"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 12.5l9 5 9-5"/><path d="M3 16.5l9 5 9-5"/></g></svg>
+          <b>两个系统的<br>启动镜像</b>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+</body>
+</html>

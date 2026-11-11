@@ -199,6 +199,13 @@ impl Connection {
                 let _ = skyward_sys::kmsg(&format!("SSC event received: uid={:?} message={}", uid, message));
                 if uid == LOOKUP && message == 768 && self.sensor.is_none() {
                     let fields = fields(payload)?;
+                    let mut names = Vec::new();
+                    for &(t, w, v) in &fields {
+                        if t == 1 && w == 2 {
+                            names.push(String::from_utf8_lossy(v).to_string());
+                        }
+                    }
+                    let _ = skyward_sys::kmsg(&format!("SSC LOOKUP 768 sensors: {:?}", names));
                     if !fields.iter().any(|&(tag, wire, value)| tag == 1 && wire == 2 && value == b"accel") { continue; }
                     if let Some(uid) = fields.iter().find_map(|&(tag, wire, value)|
                         (tag == 2 && wire == 2).then(|| sensor_uid(value).ok()).flatten()) {

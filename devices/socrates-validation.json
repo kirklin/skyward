@@ -86,6 +86,6 @@
     "isolation_negative_control_refuses_host_execution": true,
     "production_source_binding": "Seven relevant production source files match exactly; the isolated Cargo.lock adds only two test-only workspace path dependencies and retains registry versions/checksums."
   },
-  "dedicated_shared_storage_fixtures_cleaned": false,
-  "post_test_cleanup": "Only two dedicated shared-storage test files remain pending removal after the owner unlocks HyperOS."
+  "dedicated_shared_storage_fixtures_cleaned": true,
+  "post_test_cleanup": "Dedicated shared-storage test files removed after content verification."
 }

@@ -11677,4 +11677,50 @@ mod tests {
         app.tick(15_000);
         assert!(!app.display_on());
     }
+
+    // The cover of a foldable: 1208 × 1392 beside a 1224 × 2912 screen, at
+    // the density both are laid out to.
+    const COVER_W: u32 = 1208;
+    const COVER_H: u32 = 1392;
+    const COVER_PPD: f32 = 2.875;
+
+    #[test]
+    fn the_page_lays_itself_out_again_for_the_cover_at_its_size() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Settings, W, H, PPD);
+        let at = app.top().1;
+        let (wide, tall) = {
+            let fr = app.frame(&f, &i);
+            (fr.canvas.w, fr.hits.len())
+        };
+        assert_eq!(wide, W, "drawn as wide as the screen to start with");
+        assert!(tall > 0, "with controls on the page");
+        app.set_screen_corners(134.0);
+        app.resize(COVER_W, COVER_H, COVER_PPD);
+        let (wide, tall) = {
+            let fr = app.frame(&f, &i);
+            (fr.canvas.w, fr.hits.len())
+        };
+        assert_eq!(app.screen(), Screen::Settings, "the page shown stays");
+        assert_eq!(app.top().1, at, "and where it stands");
+        assert_eq!(wide, COVER_W, "drawn as wide as the cover");
+        assert!(tall > 0, "still with controls on the page");
+        let t = app.theme();
+        assert_eq!((t.m.w, t.m.h), (COVER_W, COVER_H), "laid out as tall as the cover too");
+    }
+
+    #[test]
+    fn a_size_the_page_already_has_keeps_it_drawn_and_another_size_drops_it() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.frame(&f, &i);
+        assert!(app.frame.is_some(), "the page is drawn");
+        app.resize(W, H, PPD);
+        assert!(app.frame.is_some(), "the size it already has keeps what is drawn");
+        assert_eq!((app.w, app.h, app.px_per_dp), (W, H, PPD));
+        app.resize(COVER_W, COVER_H, COVER_PPD);
+        assert!(app.frame.is_none(), "another size drops what is drawn");
+        assert_eq!(app.cols, 0, "and the rows laid out to the old width with it");
+        assert_eq!((app.w, app.h, app.px_per_dp), (COVER_W, COVER_H, COVER_PPD));
+    }
 }

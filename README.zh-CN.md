@@ -87,6 +87,9 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 | --- | --- | --- |
 | 小米 17 Ultra | `nezha` | OS4.0.4.0.XPACNXM（Android 17） |
 | 小米 13 Ultra | `ishtar` | OS3.0.308.0.WMACNXM（Android 16） |
+| 小米 17 Pro Max | `popsicle` | OS4.0.6.0.XPBCNXM（Android 17；解密需本地文件） |
+
+`popsicle` 已在该机型和系统版本上测试，包括使用本地匹配 ROM 文件构建后的 data 解密。由于这些文件属于 ROM 专有内容，项目发布包不会附带。如何本地制作可解密镜像，请看[机型构建说明](tools/popsicle/README.md)。其他机型和系统版本可以尝试，但尚未验证。
 
 ### 🚧 施工中
 
@@ -104,7 +107,6 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 | 🚧 小米 15 Ultra | `xuanyuan` | OS3.0.314.0.WOACNXM（Android 16） |
 | 🚧 小米 17 | `pudding` | OS4.0.4.0.XPCCNXM（Android 17） |
 | 🚧 小米 17 Pro | `pandora` | OS4.0.4.0.XBLCNXM（Android 17） |
-| 🚧 小米 17 Pro Max | `popsicle` | OS4.0.4.0.XPBCNXM（Android 17） |
 | 🚧 小米 17 Max | `byron` | OS3.0.310.0.WAFCNXM（Android 16） |
 | 🚧 REDMI K80 | `zorn` | OS3.0.309.0.WOKCNXM（Android 16） |
 | 🚧 REDMI K80 Pro | `miro` | OS3.0.305.0.WOMCNXM（Android 16） |

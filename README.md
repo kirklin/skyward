@@ -91,6 +91,14 @@ read and set properties.
 | --- | --- | --- |
 | Xiaomi 17 Ultra | `nezha` | OS4.0.4.0.XPACNXM (Android 17) |
 | Xiaomi 13 Ultra | `ishtar` | OS3.0.308.0.WMACNXM (Android 16) |
+| Xiaomi 17 Pro Max | `popsicle` | OS4.0.6.0.XPBCNXM (Android 17; local files required to decrypt data) |
+
+Popsicle has been tested on this model and system build, including data
+decryption when built with files extracted locally from the matching ROM.
+Those proprietary files are not included in project releases. The
+[device-specific build notes](tools/popsicle/README.md) explain how to make a
+local decrypt-capable image. Other models and system builds may work, but are
+not verified.
 
 ### 🚧 Under construction
 
@@ -110,7 +118,6 @@ the data partition.
 | 🚧 Xiaomi 15 Ultra | `xuanyuan` | OS3.0.314.0.WOACNXM (Android 16) |
 | 🚧 Xiaomi 17 | `pudding` | OS4.0.4.0.XPCCNXM (Android 17) |
 | 🚧 Xiaomi 17 Pro | `pandora` | OS4.0.4.0.XBLCNXM (Android 17) |
-| 🚧 Xiaomi 17 Pro Max | `popsicle` | OS4.0.4.0.XPBCNXM (Android 17) |
 | 🚧 Xiaomi 17 Max | `byron` | OS3.0.310.0.WAFCNXM (Android 16) |
 | 🚧 REDMI K80 | `zorn` | OS3.0.309.0.WOKCNXM (Android 16) |
 | 🚧 REDMI K80 Pro | `miro` | OS3.0.305.0.WOMCNXM (Android 16) |

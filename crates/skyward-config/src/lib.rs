@@ -211,10 +211,39 @@ pub struct Haptics {
     /// driver plays the waveforms it keeps.
     #[serde(default)]
     pub click: Option<i16>,
+    /// Cirrus RAM indices belong to a particular firmware wavetable.
+    #[serde(default)]
+    pub cirrus_ram: Option<CirrusRam>,
     /// The file the driver says the motor's resonant frequency in, in
     /// tenths of a hertz whatever its label.
     pub resonance: String,
     pub strength: Strength,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct CirrusRam {
+    pub firmware: String,
+    pub click: CirrusWaveform,
+    pub key: CirrusWaveform,
+    pub back: CirrusWaveform,
+    pub screen_off: CirrusWaveform,
+    pub switch: CirrusWaveform,
+    pub slider: CirrusWaveform,
+    pub long_press: CirrusWaveform,
+}
+
+/// A finite RAM waveform's index and length from the matching wavetable.
+/// Cirrus stores its length in samples at 8 kHz, including composite waves.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+pub struct CirrusWaveform {
+    pub index: u16,
+    pub samples: u32,
+}
+
+impl CirrusRam {
+    pub fn waveforms(&self) -> [CirrusWaveform; 7] {
+        [self.click, self.key, self.back, self.screen_off, self.switch, self.slider, self.long_press]
+    }
 }
 
 /// How strongly the click plays, each as a share of the most its waveform
@@ -258,6 +287,11 @@ pub struct Names {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Device {
+    /// Whether the device exposes a force-feedback input device for haptics.
+    /// `Some(false)` skips haptics initialization when the motor is driven by
+    /// a different interface or is unavailable in recovery.
+    #[serde(default)]
+    pub supports_vibration: Option<bool>,
     pub codename: String,
     #[serde(default)]
     pub brand: String,
@@ -390,6 +424,51 @@ pub struct Service {
     /// names it: it keeps these alone, through its change of user.
     #[serde(default)]
     pub capabilities: Vec<String>,
+}
+
+/// Whether a VINTF HAL description declares the requested AIDL service.
+pub fn service_description_matches(text: &str, name: &str) -> bool {
+    let Some((interface, instance)) = name.rsplit_once('/') else { return false };
+    let Some((package, interface)) = interface.rsplit_once('.') else { return false };
+    let full_interface = format!("{package}.{interface}");
+    for hal in text.split("<hal").skip(1).filter_map(|rest| rest.split_once("</hal>").map(|(hal, _)| hal)) {
+        if !tag_values(hal, "name").into_iter().any(|value| value == package) {
+            continue;
+        }
+        let short_fqname = format!("{interface}/{instance}");
+        let full_fqname = format!("{full_interface}/{instance}");
+        if tag_values(hal, "fqname").into_iter().any(|value| value == short_fqname || value == full_fqname) {
+            return true;
+        }
+        for described in hal.split("<interface").skip(1).filter_map(|rest| rest.split_once("</interface>").map(|(interface, _)| interface)) {
+            if tag_values(described, "name").into_iter().any(|value| value == interface)
+                && tag_values(described, "instance").into_iter().any(|value| value == instance)
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn tag_values<'a>(mut text: &'a str, tag: &str) -> Vec<&'a str> {
+    let open = format!("<{tag}");
+    let close = format!("</{tag}>");
+    let mut values = Vec::new();
+    while let Some(start) = text.find(&open) {
+        let rest = &text[start + open.len()..];
+        let Some(first) = rest.chars().next() else { break };
+        if first != '>' && !first.is_whitespace() {
+            text = rest;
+            continue;
+        }
+        let Some(end_open) = rest.find('>') else { break };
+        let value = &rest[end_open + 1..];
+        let Some(end_value) = value.find(&close) else { break };
+        values.push(value[..end_value].trim());
+        text = &value[end_value + close.len()..];
+    }
+    values
 }
 
 /// The kernel's capabilities, by the names init's capabilities lines give
@@ -544,6 +623,13 @@ impl DeviceConfig {
             ensure!(plain && !folder.is_empty(), "[backup] data_skipped: {folder} is not a path from the top of {DATA}");
         }
         if let Some(haptics) = &cfg.haptics {
+            if let Some(ram) = &haptics.cirrus_ram {
+                ensure!(!ram.firmware.trim().is_empty(), "[haptics] cirrus_ram needs a firmware version");
+                for wave in ram.waveforms() {
+                    ensure!(wave.index < 128, "[haptics] cirrus_ram indices must be below 128");
+                    ensure!((1..=8000).contains(&wave.samples), "[haptics] cirrus_ram requires a finite waveform of at most one second");
+                }
+            }
             let file = &haptics.resonance;
             ensure!(Path::new(file).is_absolute(), "[haptics] resonance: {file} is not an absolute path");
             let Strength { lightest, strongest } = haptics.strength;
@@ -614,6 +700,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn service_descriptions_match_fqname_and_separate_interface_forms() {
+        let keymint = r#"<hal format="aidl"><name>android.hardware.security.keymint</name><fqname>IKeyMintDevice/default</fqname></hal>"#;
+        let weaver = r#"<hal format="aidl"><name>android.hardware.weaver</name><interface><name>IWeaver</name><instance>default</instance></interface></hal>"#;
+        assert!(service_description_matches(keymint, "android.hardware.security.keymint.IKeyMintDevice/default"));
+        assert!(service_description_matches(weaver, "android.hardware.weaver.IWeaver/default"));
+    }
+
+    #[test]
+    fn service_descriptions_do_not_join_different_hal_blocks() {
+        let manifest = r#"
+            <hal><name>android.hardware.weaver</name><interface><name>IOther</name><instance>default</instance></interface></hal>
+            <hal><name>android.hardware.other</name><interface><name>IWeaver</name><instance>default</instance></interface></hal>
+        "#;
+        assert!(!service_description_matches(manifest, "android.hardware.weaver.IWeaver/default"));
+    }
+
+    #[test]
     fn the_commands_sit_beside_the_recovery_service_binary() {
         let folder = |path: &str| Path::new(path).parent().map(Path::to_path_buf);
         for command in ramdisk::COMMANDS {
@@ -643,6 +746,67 @@ mod tests {
     }
 
     #[test]
+    fn popsicle_starts_the_hardware_keymint_chain() {
+        let cfg = DeviceConfig::parse(include_str!("../../../devices/popsicle.toml")).unwrap();
+        let paths: Vec<&str> = cfg.services.iter().map(|s| s.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            [
+                "/system/bin/secure-element-ta-setup.sh",
+                "/vendor/bin/qseecomd",
+                "/vendor/bin/hlosminkdaemon",
+                "/vendor/bin/hw/android.hardware.security.onekeymint-service-qti",
+                "/vendor/bin/hw/android.hardware.gatekeeper-rust-service-qti",
+                "/odm/bin/hw/android.hardware.nqnfc-service.nxp",
+                "/vendor/bin/hw/android.hardware.secure_element-service.qti",
+                "/skyward/omapi/start.sh",
+                "/odm/bin/hw/android.hardware.weaver-service.nxp-qti",
+                "/vendor/bin/hw/android.hardware.boot-service.qti",
+                "/vendor/bin/sh",
+            ]
+        );
+        assert_eq!(cfg.modules.load, ["synaptics_tcm2", "goodix_core", "nxp-nci", "qcom-hv-haptics", "cs40l26-i2c"]);
+        assert_eq!(cfg.device.supports_vibration, Some(true));
+        assert_eq!(cfg.haptics.as_ref().map(|h| h.resonance.as_str()), Some("/skyward/haptics-resonance"));
+        assert_eq!(cfg.owners.len(), 1);
+        assert_eq!((cfg.owners[0].user.as_str(), cfg.owners[0].group.as_str(), cfg.owners[0].mode), ("nfc", "nfc", 0o660));
+        assert_eq!(cfg.owners[0].paths, ["/dev/nq-nci"]);
+        assert!(cfg.services[0].oneshot);
+        assert_eq!(cfg.services[1].ready_property.as_deref(), Some("vendor.sys.listeners.registered"));
+        assert_eq!(cfg.services[3].ready_service.as_deref(), Some("android.hardware.security.keymint.IKeyMintDevice/default"));
+        assert!(cfg.services[3].registers.contains(&"android.hardware.security.sharedsecret.ISharedSecret/default".to_string()));
+        assert_eq!(cfg.services[4].ready_service.as_deref(), Some("android.hardware.gatekeeper.IGatekeeper/default"));
+        assert_eq!(cfg.services[5].ready_service.as_deref(), Some("android.hardware.nfc.INfc/default"));
+        assert_eq!(cfg.services[5].registers, [
+            "vendor.nxp.nxpnfc_aidl.INxpNfc/default",
+            "android.hardware.secure_element.ISecureElement/eSE1",
+        ]);
+        assert_eq!(cfg.services[5].description.as_deref(), Some("/odm/etc/vintf/manifest/nfc2-service-nxp.xml"));
+        assert_eq!(cfg.services[5].user.as_deref(), Some("nfc"));
+        assert_eq!(cfg.services[5].groups, ["nfc", "drmrpc", "system"]);
+        assert_eq!(cfg.services[6].ready_service, None, "QTI secure-element is not the OMAPI provider");
+        assert_eq!(cfg.services[6].user.as_deref(), Some("system"));
+        assert_eq!(cfg.services[6].groups, ["system", "nfc"]);
+        assert_eq!(cfg.services[7].ready_service.as_deref(), Some("android.se.omapi.ISecureElementService/default"));
+        assert_eq!(cfg.services[7].description.as_deref(), Some("/skyward/omapi/secure_element-service.xml"));
+        assert_eq!(cfg.services[7].user.as_deref(), Some("root"));
+        assert_eq!(cfg.services[7].groups, ["root"]);
+        assert_eq!(cfg.services[8].ready_service.as_deref(), Some("android.hardware.weaver.IWeaver/default"));
+        assert_eq!(cfg.services[8].user.as_deref(), Some("vendor_nxp_weaver"));
+        assert_eq!(cfg.services[8].groups, ["vendor_nxp_weaver"]);
+        assert_eq!(cfg.services[8].libraries.last().map(String::as_str), Some("/skyward/omapi"));
+        assert_eq!(cfg.services[9].ready_service.as_deref(), Some("android.hardware.boot.IBootControl/default"));
+        assert_eq!(cfg.services[9].user.as_deref(), Some("root"));
+        assert_eq!(cfg.services[9].groups, ["root"]);
+        assert_eq!(
+            cfg.services[7].libraries,
+            ["/system/lib64", "/vendor/lib64", "/vendor/lib64/hw", "/odm/lib64", "/mnt/system/system/lib64/bootstrap", "/mnt/system/system/lib64", "/sbin", "/skyward/omapi"]
+        );
+        assert_eq!(cfg.partitions.mounted, ["persist"]);
+        assert_eq!(cfg.firmware.as_ref().map(|f| f.partition.as_str()), Some("modem"));
+    }
+
+    #[test]
     fn ishtar_clicks_with_a_waveform_its_driver_keeps() {
         let cfg = DeviceConfig::parse(include_str!("../../../devices/ishtar.toml")).unwrap();
         let haptics = cfg.haptics.expect("the 13 Ultra has a motor");
@@ -662,6 +826,25 @@ mod tests {
         for (lightest, strongest) in [(0.0, 0.5), (0.5, 0.5), (0.5, 0.25), (0.25, 1.5)] {
             let s = format!("{resonance}\nstrength = {{ lightest = {lightest:?}, strongest = {strongest:?} }}");
             assert!(with(&s).is_err(), "{lightest} to {strongest} is refused");
+        }
+    }
+
+    #[test]
+    fn cirrus_ram_requires_finite_waveforms_and_a_firmware() {
+        let original = include_str!("../../../devices/popsicle.toml");
+        let ram = DeviceConfig::parse(original).unwrap().haptics.unwrap().cirrus_ram.unwrap();
+        assert_eq!(ram.firmware, "42.0.26");
+        assert_eq!(ram.waveforms().map(|w| (w.index, w.samples)),
+            [(3, 121), (7, 107), (0, 92), (37, 516), (9, 92), (5, 78), (0, 92)]);
+        for change in [
+            original.replace("firmware = \"42.0.26\"", "firmware = \" \""),
+            original.replace("index = 7", "index = 128"),
+            original.replace("index = 37", "index = -1"),
+            original.replace("samples = 107", "samples = 0"),
+            original.replace("samples = 516", "samples = 8001"),
+            original.replace("key = { index = 7, samples = 107 }", ""),
+        ] {
+            assert!(DeviceConfig::parse(&change).is_err());
         }
     }
 
@@ -833,7 +1016,7 @@ mod tests {
             (include_str!("../../../devices/ishtar.toml"), "OS3.0.308.0.WMACNXM"),
             (include_str!("../../../devices/pudding.toml"), "OS4.0.4.0.XPCCNXM"),
             (include_str!("../../../devices/pandora.toml"), "OS4.0.4.0.XBLCNXM"),
-            (include_str!("../../../devices/popsicle.toml"), "OS4.0.4.0.XPBCNXM"),
+            (include_str!("../../../devices/popsicle.toml"), "OS4.0.6.0.XPBCNXM"),
             (include_str!("../../../devices/myron.toml"), "OS4.0.4.0.XPMCNXM"),
             (include_str!("../../../devices/songyuan.toml"), "OS4.0.4.0.XGNCNXM"),
             (include_str!("../../../devices/athens.toml"), "OS4.0.4.0.XPICNXM"),

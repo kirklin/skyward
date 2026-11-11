@@ -2,6 +2,7 @@
 codename = "popsicle"
 brand = "Xiaomi"
 model = "Xiaomi 17 Pro Max"
+supports_vibration = true
 ab = true
 soc = { hans = "第五代骁龙®8至尊版移动平台", hant = "Snapdragon® 8 Elite Gen 5 行動平台", en = "Snapdragon® 8 Elite Gen 5 Mobile Platform" }
 os_version_prop = "ro.mi.os.version.incremental"
@@ -14,11 +15,15 @@ density = 480
 
 [modules]
 sources = ["vendor_boot", "vendor_dlkm", "vendor", "system_dlkm"]
-# The touchscreen comes from two makers: Synaptics TouchComm and Goodix's
-# GT9615, both over SPI behind Xiaomi's touch layer. The phone's own
-# modules.load lists both drivers, and only the one whose controller is
-# fitted finds it.
-load = ["synaptics_tcm2", "goodix_core"]
+# The touchscreen drivers are listed in the phone's modules.load. Its NXP
+# NFC controller needs its driver loaded in recovery for the eSE node.
+load = ["synaptics_tcm2", "goodix_core", "nxp-nci", "qcom-hv-haptics", "cs40l26-i2c"]
+
+[[owners]]
+user = "nfc"
+group = "nfc"
+mode = 0o660
+paths = ["/dev/nq-nci"]
 
 # As on the 17 Ultra, the controller comes back from its reset sending raw
 # frames for /odm/lib64/libtouchreport.so, which a recovery runs none of;
@@ -42,6 +47,91 @@ mounted = ["persist"]
 # recovery's own logd loads, as the 17 Ultra's does.
 [logd]
 libraries = ["/mnt/system/system/lib64/libsysutils.so", "/mnt/system/system/lib64/libcap.so"]
+
+# The secure world calls back through this listener before KeyMint can use
+# hardware-wrapped keys. Its applications are loaded by the Mink opener.
+[[service]]
+path = "/system/bin/secure-element-ta-setup.sh"
+oneshot = true
+user = "root"
+groups = ["root"]
+
+[[service]]
+path = "/vendor/bin/qseecomd"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_property = "vendor.sys.listeners.registered"
+user = "root"
+groups = ["root", "drmrpc"]
+
+[[service]]
+path = "/vendor/bin/hlosminkdaemon"
+libraries = ["/system/lib64", "/vendor/lib64"]
+user = "system"
+groups = ["system", "oem_2912", "wakelock"]
+capabilities = ["WAKE_ALARM", "BLOCK_SUSPEND"]
+
+[[service]]
+path = "/vendor/bin/hw/android.hardware.security.onekeymint-service-qti"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_service = "android.hardware.security.keymint.IKeyMintDevice/default"
+registers = [
+    "android.hardware.security.keymint.IRemotelyProvisionedComponent/default",
+    "android.hardware.security.secureclock.ISecureClock/default",
+    "android.hardware.security.sharedsecret.ISharedSecret/default",
+]
+user = "system"
+groups = ["system", "drmrpc"]
+
+# The credential service checks the screen lock through the secure world.
+[[service]]
+path = "/vendor/bin/hw/android.hardware.gatekeeper-rust-service-qti"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_service = "android.hardware.gatekeeper.IGatekeeper/default"
+user = "system"
+groups = ["system"]
+
+[[service]]
+path = "/odm/bin/hw/android.hardware.nqnfc-service.nxp"
+libraries = ["/system/lib64", "/vendor/lib64", "/vendor/lib64/hw", "/odm/lib64", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"]
+ready_service = "android.hardware.nfc.INfc/default"
+registers = [
+    "vendor.nxp.nxpnfc_aidl.INxpNfc/default",
+    "android.hardware.secure_element.ISecureElement/eSE1",
+]
+description = "/odm/etc/vintf/manifest/nfc2-service-nxp.xml"
+user = "nfc"
+groups = ["nfc", "drmrpc", "system"]
+
+[[service]]
+path = "/vendor/bin/hw/android.hardware.secure_element-service.qti"
+libraries = ["/system/lib64", "/vendor/lib64", "/vendor/lib64/hw", "/odm/lib64", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"]
+user = "system"
+groups = ["system", "nfc"]
+
+[[service]]
+path = "/skyward/omapi/start.sh"
+libraries = ["/system/lib64", "/vendor/lib64", "/vendor/lib64/hw", "/odm/lib64", "/mnt/system/system/lib64/bootstrap", "/mnt/system/system/lib64", "/sbin", "/skyward/omapi"]
+ready_service = "android.se.omapi.ISecureElementService/default"
+description = "/skyward/omapi/secure_element-service.xml"
+user = "root"
+groups = ["root"]
+
+[[service]]
+path = "/odm/bin/hw/android.hardware.weaver-service.nxp-qti"
+libraries = ["/system/lib64", "/vendor/lib64", "/odm/lib64", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap", "/skyward/omapi"]
+ready_service = "android.hardware.weaver.IWeaver/default"
+user = "vendor_nxp_weaver"
+groups = ["vendor_nxp_weaver"]
+
+# The boot control service reports and changes the slot metadata the
+# bootloader reads. Keep it available for the Slot and Systems pages; it is
+# independent of opening /data and does not change a slot by starting it.
+[[service]]
+path = "/vendor/bin/hw/android.hardware.boot-service.qti"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_service = "android.hardware.boot.IBootControl/default"
+user = "root"
+groups = ["root"]
 
 # What the phone's own init runs once the system has finished starting, as
 # kernel-post-boot in /vendor/etc/init/hw/init.qti.kernel.rc. The kernel
@@ -75,17 +165,30 @@ probe = "http://connect.rom.miui.com/generate_204"
 [update]
 server = "https://update.miui.com/updates/miotaV3.php"
 
-# The stock build the recovery is made on: the Chinese system's OS4.0.4.0,
+# The stock build the recovery is made on: the Chinese system's OS4.0.6.0,
 # whose full update package on the phone maker's own download server holds
 # the recovery partition the recovery is built on top of.
 [stock]
-version = "OS4.0.4.0.XPBCNXM"
-package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.4.0.XPBCNXM/popsicle-ota_full-OS4.0.4.0.XPBCNXM-user-17.0-7d13a10bbc.zip"
-recovery = "e66b80e5f1c0f54383d5a7f4e0da2d52f69c927dab32ae88b69e6695767a4a70"
+version = "OS4.0.6.0.XPBCNXM"
+package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.6.0.XPBCNXM/popsicle-ota_full-OS4.0.6.0.XPBCNXM-user-17.0-13c9e292db.zip"
+recovery = "cfd845ae5b18812757ba83170d0dce690bb998d1310e7bc0b186e362be7ad9e5"
 
-# qcom-hv-haptics (qcom,hv-haptics in its dtbo), with the click made from
-# samples at the motor's resonant frequency as on the 17 Ultra. The
-# strengths are the 17 Ultra's, which were felt on that phone's motor.
+# CS40L26 RAM shapes and lengths come from this ROM's matching ODM firmware.
 [haptics]
-resonance = "/sys/class/qcom-haptics/lra_frequency_hz"
-strength = { lightest = 0.25, strongest = 0.75 }
+# RAM playback does not use this frequency file or synthesize a sine wave.
+resonance = "/skyward/haptics-resonance"
+strength = { lightest = 0.10, strongest = 1.0 }
+
+[haptics.cirrus_ram]
+firmware = "42.0.26"
+# sys.haptic.tap.normal / keyboard; samples are the finite 8 kHz lengths.
+click = { index = 3, samples = 121 }
+key = { index = 7, samples = 107 }
+# MiuiHome's back-ready call uses effect 0 unchanged.
+back = { index = 0, samples = 92 }
+# SystemUI effect 209 maps to RAM 37 in waveform_conf.xml.
+screen_off = { index = 37, samples = 516 }
+# sys.haptic.switch / mesh.normal / long.press.
+switch = { index = 9, samples = 92 }
+slider = { index = 5, samples = 78 }
+long_press = { index = 0, samples = 92 }

@@ -134,6 +134,10 @@
     "tested_vendor_android": "13",
     "tested_vendor_api": 33,
     "tested_vndk": "33",
-    "scope": "Android 16 identifies the packaging OTA, Android 17 the tested installed framework, and Android 13/API 33 the vendor layer. No general Android 16/17 compatibility claim or Android 16 host test is made."
+    "scope": "The owner identifies the base firmware as OS3.0.303.0.WMKCNXM. Android 17/API 37 and vendor/odm 304 with Android 13/API 33 are observed properties; recovery packaging uses the separate official Android 16/304 OTA. These do not override the owner-reported base or establish general version compatibility.",
+    "owner_reported_base_firmware": "OS3.0.303.0.WMKCNXM",
+    "observed_host_sdk": 37,
+    "observed_host_incremental": "OS4.0.0.12.XMKCNXM",
+    "observed_vendor_odm_incremental": "OS3.0.304.0.WMKCNXM"
   }
 }

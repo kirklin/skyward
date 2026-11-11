@@ -366,7 +366,9 @@ pub fn unpack(input: impl Read, root: &Path, skipped: &Skipped, cancel: &AtomicB
     // A folder's time goes last, its contents having changed it, the
     // deepest first.
     for (rel, mtime) in folders.iter().rev() {
-        times(&root.join(rel), *mtime)?;
+        let path = inside(root, rel)?;
+        ensure!(fs::symlink_metadata(&path).with_context(|| format!("look at restored folder {}", path.display()))?.is_dir(), "restored folder {} is no longer a plain directory", path.display());
+        times(&path, *mtime)?;
     }
     Ok(unpacked)
 }
@@ -830,6 +832,32 @@ mod tests {
         assert!(fs::symlink_metadata(root.join("folder")).unwrap().is_dir());
         assert_eq!(fs::read(root.join("folder/file")).unwrap(), b"restored");
         assert_eq!(fs::read(outside.join("kept")).unwrap(), b"outside");
+        fs::remove_dir_all(&at).unwrap();
+    }
+
+    #[test]
+    fn deferred_folder_times_do_not_traverse_a_later_replacement_symlink() {
+        let at = scratch("deferred-folder-link");
+        for child in [false, true] {
+            let case = at.join(format!("child-{child}"));
+            let (root, outside) = (case.join("root"), case.join("outside"));
+            fs::create_dir_all(&root).unwrap();
+            fs::create_dir_all(outside.join("nested")).unwrap();
+            let target = if child { outside.join("nested") } else { outside.clone() };
+            times(&target, (1_600_000_000, 12345)).unwrap();
+            let before = fs::symlink_metadata(&target).unwrap();
+            let mut tar = Builder::new(Vec::new());
+            tar.append_data(&mut test_header(EntryType::Directory, 0), "alias", io::empty()).unwrap();
+            if child {
+                tar.append_data(&mut test_header(EntryType::Directory, 0), "alias/nested", io::empty()).unwrap();
+            }
+            tar.append_link(&mut test_header(EntryType::Symlink, 0), "alias", &outside).unwrap();
+            let bytes = tar.into_inner().unwrap();
+            assert!(unpack(bytes.as_slice(), &root, &Skipped::new(&[]), &AtomicBool::new(false), &mut |_| {}).is_err());
+            let after = fs::symlink_metadata(&target).unwrap();
+            assert_eq!((before.atime(), before.atime_nsec(), before.mtime(), before.mtime_nsec()),
+                       (after.atime(), after.atime_nsec(), after.mtime(), after.mtime_nsec()), "outside directory times stay unchanged");
+        }
         fs::remove_dir_all(&at).unwrap();
     }
 

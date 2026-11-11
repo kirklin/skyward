@@ -40,7 +40,7 @@ pub fn load(dirs: &[PathBuf], names: &[String]) -> Result<Vec<PathBuf>> {
         let file = format!("{name}.ko");
         let dir = dirs
             .iter()
-            .find(|d| d.join(&file).is_file())
+            .find(|d| d.join(&file).is_file() || find_file(d, &file).is_some())
             .ok_or_else(|| anyhow!("{file} is in none of {dirs:?}"))?;
         let graph = parse_dep(dir)?;
         for m in graph.load_order(std::slice::from_ref(&file)) {

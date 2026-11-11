@@ -125,6 +125,7 @@ impl Sensor {
         match result {
             Ok(direction) => direction,
             Err(error) => {
+                let _ = skyward_sys::kmsg(&format!("orientation sensor: {error:#}; retry in 5 seconds"));
                 eprintln!("orientation sensor: {error:#}; retry in 5 seconds");
                 self.connection = None;
                 self.gravity = Gravity::default();

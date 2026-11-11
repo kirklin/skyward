@@ -26,7 +26,10 @@ const READY: &str = "sys.usb.ffs.mtp.ready";
 /// How long the phone waits for the thread to give a storage back.
 const GIVE_BACK: Duration = Duration::from_secs(10);
 
-/// How long init may take to hand the port to adb alone.
+/// How long init may take to hand the port to adb alone. The descriptor is
+/// written once init says so, but the property that says adb has it comes
+/// later on a phone whose init is slow to switch, and waiting five seconds
+/// gave up on a switch that was still coming.
 const PORT_SWITCH: Duration = Duration::from_secs(15);
 
 enum Message {
@@ -310,14 +313,6 @@ fn answer(port: &mut Port, r: &mut Responder, mail: &mut Mailbox, cmd: &Command)
             reply
         }
     };
-    let args: Vec<String> = cmd.params.iter().map(|p| format!("{p:#x}")).collect();
-    kmsg(&format!("mtp: saw {:#06x} txn {} [{}] -> {:#06x}", cmd.code, cmd.transaction, args.join(" "), reply.code)).map_err(|e| Halt::Failed(io::Error::other(e)))?;
-    if cmd.code == op::GET_DEVICE_INFO || cmd.code == op::GET_STORAGE_IDS || cmd.code == op::GET_STORAGE_INFO || cmd.code == op::GET_OBJECT_HANDLES {
-        if let Some(Outgoing::Dataset(bytes)) = &reply.data {
-            let head: Vec<String> = bytes.iter().take(160).map(|b| format!("{b:02x}")).collect();
-            kmsg(&format!("mtp: data {:#06x} len {} hex {}", cmd.code, bytes.len(), head.join(""))).map_err(|e| Halt::Failed(io::Error::other(e)))?;
-        }
-    }
     if let Some(why) = &reply.why {
         kmsg(&format!("mtp: {:#06x} answered {:#06x}: {why}", cmd.code, reply.code)).map_err(|e| Halt::Failed(io::Error::other(e)))?;
     }

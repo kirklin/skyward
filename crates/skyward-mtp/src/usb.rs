@@ -945,9 +945,9 @@ impl Port {
             }
         };
         let mut cur = 0;
+        // How much of the file went out, so that a transfer that stops part
+        // way says where it stopped rather than only that it did.
         let mut sent: u64 = 0;
-        let mut mark: u64 = 0;
-        note(&format!("send {code:#06x} txn {transaction} begin length {length}"));
         loop {
             let (this, other) = match bufs.split_at_mut(1) {
                 (a, b) if cur == 0 => (&mut a[0], &mut b[0]),
@@ -967,27 +967,18 @@ impl Port {
             } else {
                 0
             };
-            let moved = match self.wait(key, stop) {
-                Ok(n) => n,
-                Err(e) => {
-                    note(&format!("send {code:#06x} txn {transaction} {sent} bytes then {e:?}"));
-                    return Err(e);
-                }
-            };
-            if sent < 8 * FILE_CHUNK as u64 {
-                note(&format!("send {code:#06x} txn {transaction} xfer asked {len} moved {moved}"));
+            if let Err(e) = self.wait(key, stop) {
+                note(&format!("send {code:#06x} txn {transaction} {sent} bytes then {e:?}"));
+                return Err(e);
             }
             sent += len as u64;
-            if sent >= mark {
-                note(&format!("send {code:#06x} txn {transaction} {sent} bytes"));
-                mark += 16 * 1024 * 1024;
-            }
             if next == 0 {
                 break;
             }
             len = next;
             cur = 1 - cur;
         }
+        note(&format!("send {code:#06x} txn {transaction} done {sent}"));
         note(&format!("send {code:#06x} txn {transaction} done {sent}"));
         if (HEADER as u64 + length).is_multiple_of(self.packet as u64) {
             self.transfer(&mut [], true, stop)?;

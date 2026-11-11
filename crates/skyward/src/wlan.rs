@@ -79,7 +79,7 @@ fn security_of(key_mgmt: &str) -> Option<Security> {
 /// The bytes the supplicant was given as hex, read back.
 fn unhex(text: &str) -> Option<Vec<u8>> {
     let text = text.trim();
-    if text.len() % 2 != 0 {
+    if !text.len().is_multiple_of(2) {
         return None;
     }
     (0..text.len() / 2).map(|i| u8::from_str_radix(text.get(2 * i..2 * i + 2)?, 16).ok()).collect()

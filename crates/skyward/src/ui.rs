@@ -2873,11 +2873,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                 // downloads — are in the partition's own encryption, and a
                 // computer reaches those without it. Only a partition that
                 // never opened is left off.
-                let storage = match &app.state.data {
-                    Data::Open => true,
-                    Data::Locked { .. } | Data::Opening => true,
-                    _ => false,
-                };
+                let storage = matches!(&app.state.data, Data::Open | Data::Locked { .. } | Data::Opening);
                 let offer = storage && eraser.is_none() && installer.is_none();
                 t.offer(offer, app.state.lang).and_then(|()| {
                     if t.zone != app.state.time_zone {

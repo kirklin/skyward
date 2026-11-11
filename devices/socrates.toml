@@ -28,7 +28,6 @@ group = "system"
 mode = 0o664
 paths = [
     "/dev/xiaomi-touch",
-    "/dev/xiaomi-touch-knock",
     "/proc/tp_hal_version",
     "/proc/tp_fw_version",
     "/proc/tp_lockdown_info",
@@ -86,12 +85,6 @@ path = "/odm/bin/touch_report"
 user = "system"
 groups = ["system", "uhid", "input"]
 capabilities = ["SYS_NICE"]
-
-[[service]]
-path = "/odm/bin/touchsensor"
-libraries = ["/odm/lib64", "/system/lib64"]
-user = "system"
-groups = ["system", "uhid", "input"]
 
 # WCN7850: the stock driver and the settings and MAC address its firmware
 # loader asks for. This does not use the mainline ath12k driver.

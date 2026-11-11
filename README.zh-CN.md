@@ -90,7 +90,7 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 
 ### 🚧 施工中
 
-这些适配仍在施工中。REDMI K60 Pro（`socrates`）已实刷 `recovery_a`，验证显示、触摸、USB ADB、PIN 只读 data 解密、MTP 读取、按键、亮度、振动强度和启动槽位查询；Wi-Fi 在 WLAN 代码相同的前一构建上通过验证。测试后已恢复原 recovery。具体构建与未验证范围见[实机验证记录](devices/socrates-validation.json)。下表其余机型的镜像按照原厂固件构建，还没有在真机上试过，不会解密 data 分区。
+这些适配仍在施工中。REDMI K60 Pro（`socrates`）已实刷 `recovery_a`，验证 PIN 可写 data 解密、Wi-Fi、Windows MTP 文件操作，以及专用共享存储和应用私有 CE 目录中的生产代码备份恢复；此前的显示、触摸、USB ADB、按键、亮度、振动和槽位查询验证也已记录。原生 ext4/F2FS 格式化、挂载和擦除在一次性 loop 镜像上通过。测试后已恢复原 recovery、卸载测试包并清理测试文件。具体构建与未验证范围见[实机验证记录](devices/socrates-validation.json)。下表其余机型的镜像按照原厂固件构建，还没有在真机上试过，不会解密 data 分区。
 
 | 机型 | 代号 | 构建所用的系统版本 |
 | --- | --- | --- |

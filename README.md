@@ -95,10 +95,12 @@ read and set properties.
 ### 🚧 Under construction
 
 These profiles are still being brought up. REDMI K60 Pro (`socrates`) has been
-tested after installation in `recovery_a`: display, touch, USB ADB, PIN-protected
-read-only data decryption, MTP reads, keys, brightness, vibration strength and
-boot-slot queries passed. Wi-Fi passed on the preceding build with unchanged WLAN
-code. The original recovery was restored after testing. See its
+tested after installation in `recovery_a`: PIN-protected writable data, Wi-Fi,
+Windows MTP file operations, and production backup/restore in dedicated shared
+and app-private CE directories passed. The earlier display, touch, USB ADB, keys,
+brightness, vibration and boot-slot checks are also recorded. Native ext4/F2FS
+format, mount and discard passed on disposable loop images. The original recovery
+was restored, the test APK uninstalled and all fixture files removed. See its
 [device validation record](devices/socrates-validation.json) for the exact builds
 and remaining limits. The other images below are built from stock firmware, have
 not been tried on the phone, and do not decrypt the data partition.

@@ -1,91 +1,128 @@
 {
-  "schema_version": 1,
-  "date": "2026-11-11",
+  "schema_version": 2,
+  "test_started": "2026-11-11",
+  "test_completed": "2026-11-12",
+  "timezone": "Asia/Shanghai",
   "device": "REDMI K60 Pro (socrates)",
-  "compiled_commit": "3cc1f6b79b40a71c0cb9bbf604d949bace6fe0e9",
-  "ci": "https://github.com/Dingtaiqi/skyward/actions/runs/43028737299",
+  "compiled_commit": "bb88bc785175590c07d57b89e1d98d573a70b8c0",
+  "ci": "https://github.com/Dingtaiqi/skyward/actions/runs/43046320050",
   "ci_result": "success",
   "stock_recovery_version": "OS3.0.304.0.WMKCNXM",
   "installed_vendor_api": 33,
   "installed_framework_release": "17",
-  "artifact_zip_sha256": "1d1730bb7572348b3674cd2d567199da46fecee404f2b57cf84e56f5bdaab311",
-  "recovery_image_sha256": "81e6472c6360afaa536f65595fd9933a4e49b2a4eae241a291bd96a88ac7b2d0",
+  "artifact_zip_sha256": "6653c8a5fe0a5ca10a6ced2056a9ac87c28068aad79f82fc2718cd77fd6348d0",
+  "recovery_image_sha256": "bd1c80633e266071f90299f61d2361185c8337e016ce787a0576cd9f6e5e5e57",
+  "native_executable_sha256": "d349e2e478d965b2aa243ba30d6444fc13c5a3f20e827362c586a4fd33129f1e",
+  "native_profile_sha256": "cbde98429f77aa1f37c27bf33f3333eb4bfdc8b5db8d477ba7c80a209b24e6f4",
+  "production_source_binding": {
+    "compared_feature_commit": "e56137f48aae64bd49f72ce23d5182b4e6a50ee0",
+    "all_crates_device_profiles_and_lockfile_match_tested_runtime_source": true,
+    "fork_only_test_workflows_are_not_part_of_upstream_feature_branch": true
+  },
   "test_method": {
     "boot_slot": "a",
-    "partition_flashes": true,
-    "container": "CI recovery image installed in recovery_a and booted through the bootloader recovery target",
-    "hardware_arguments": "Supplied by the normal installed recovery boot path",
+    "initial_test": "RAM boot with the existing boot_a kernel and unchanged CI ramdisk",
     "production_recovery_partition_installation_tested": true,
     "partitions_written": [
       "recovery_a"
     ],
-    "original_recovery_restored": true,
-    "original_recovery_readback_matches_pretest": true,
-    "native_executable_sha256": "0ddb09cf0e617f0c355f2df090549c4f4947c854c837ca241e47d5fd6725400b",
-    "native_profile_sha256": "0ee1be24bda6e4b4d45503316e11a546dee2c8ddcbcab2012ebbdf8eb9e91b08"
+    "native_partition_executable_and_profile_hashes_matched": true,
+    "original_recovery_restored": true
+  },
+  "decryption_policy": {
+    "data_access": "read-write",
+    "automatic_fsck_repairs": false,
+    "keymint_key_upgrades": false,
+    "automatic_metadata_key_deletion": false,
+    "normal_filesystem_checkpoint_journal_and_gc_writes_remain_enabled": true
   },
   "confirmed": {
-    "display": true,
-    "physical_touch": true,
-    "usb_adb": true,
-    "wifi_first_enable_after_cold_boot": true,
-    "wifi_scan": true,
-    "wifi_association_and_ipv4_dhcp": true,
-    "wifi_internet_probe": true,
-    "wifi_operates_after_readonly_data_decryption": true,
-    "keymint_sharedsecret_and_gatekeeper_respond": true,
-    "readonly_metadata_and_file_based_data_decryption": true,
-    "original_shared_storage_folders_visible_to_user": true,
-    "data_mapping_reports_readonly": true,
-    "data_mount_uses_f2fs_ro_norecovery": true,
-    "automatic_metadata_key_deletion_disabled": true,
-    "cnss_cache_is_in_a_separate_mount_namespace_with_16_mib_tmpfs": true,
-    "cnss_uses_stock_uid_groups_and_net_admin_only": true,
     "owner_pin_protected_user_unlock": true,
-    "windows_mtp_ascii_and_unicode_file_readback_sha256": true,
-    "haptics_motor": true,
-    "haptics_perceived_strength_adjustment": true,
-    "physical_volume_keys": true,
-    "power_sleep_wake_and_touch": true,
-    "brightness_slider": true,
-    "boot_control_current_and_active_slot_queries": true,
-    "boot_control_query_left_observed_misc_control_region_unchanged": true,
-    "exact_ci_executable_and_profile_hashes_match_native_runtime": true
+    "data_f2fs_mounted_rw": true,
+    "data_mapping_read_only_flag": false,
+    "ro_to_rw_mismatch_refused_without_remount_and_explicit_close_passed": true,
+    "wifi_ipv4_after_writable_unlock": true,
+    "wifi_http204_from_phone": true,
+    "windows_mtp_ascii_unicode_upload_and_readback_sha256": true,
+    "windows_mtp_mkdir_copy_rename_move_delete": true,
+    "existing_metadata_key_file_set_and_sha256_unchanged_after_recovery_and_hyperos": true
   },
-  "touch_restart_test": {
-    "compiled_commit": "038d336f4ec7686843b7d7d74d83c9106ca1a49b",
-    "consecutive_ui_service_restarts": 3,
-    "user_confirmed_touch_without_manual_power_cycle_after_every_restart": true,
-    "touch_code_unchanged_in_final_compiled_commit": true
+  "network_probe_scope": "Host resolved server address; phone performed HTTP over Wi-Fi to that numeric address.",
+  "native_directory_roundtrip": {
+    "production_code": [
+      "skyward-backup archive/store",
+      "skyward-files copy/rename/replace/delete"
+    ],
+    "shared_storage_ce": true,
+    "disposable_app_private_ce": true,
+    "sha256_and_compressed_archive_digest": true,
+    "uid_gid_mode_mtime_selinux_mcs_and_user_xattr": true,
+    "empty_capability_xattr_preserved_after_owner_change": true,
+    "hardlinks_symlink_metadata_empty_folders_exclusions_and_sweep": true,
+    "inherited_fscrypt_v2_policy_equal": true,
+    "app_private_test_alias_created_only_in_child_mount_namespace": true,
+    "parent_mount_namespace_unchanged": true,
+    "scope": "Existing inherited CE policies only. No full /data restore or encryption-policy-root reconstruction.",
+    "post_boot_app_access": true,
+    "symlink_scope": "The root-created original and restored symlinks both lack app MCS categories and are denied to the app. Positive app-created symlink access was not tested."
   },
-  "decryption_scope": "Read-only. The owner successfully entered a newly set PIN on the phone and opened original shared-storage folders. Password and pattern credentials remain untested.",
+  "native_disposable_loop_tests": [
+    {
+      "filesystem": "ext4",
+      "fresh_loop_backing_verified": true,
+      "production_native_mkfs": true,
+      "kernel_mount_write_readback": true,
+      "production_discard_and_first_mib_zero": true,
+      "bytes": 134217728
+    },
+    {
+      "filesystem": "f2fs",
+      "fresh_loop_backing_verified": true,
+      "production_native_mkfs": true,
+      "kernel_mount_write_readback": true,
+      "production_discard_and_first_mib_zero": true,
+      "bytes": 134217728
+    }
+  ],
+  "regressions": {
+    "archive_hardlink_symlink_parent_and_deferred_timestamp_escape_refused": true,
+    "mtp_symlink_escape_and_replaced_cached_objects_refused": true,
+    "root_capability_owner_change_test_executed": true,
+    "root_and_android_probe_ci": "https://github.com/Dingtaiqi/skyward/actions/runs/43048917992"
+  },
+  "probe_source": {
+    "commit": "f34b381bc47c011821e01bf3615cb67cf28d89d0",
+    "sha256": "82dc8ba14efaf8596e17f982a42467d6a0f36fe3c65f500e38e8b91c72b0b81d",
+    "only_file_different_from_runtime_source": "ci/socrates-rw-probe.rs",
+    "production_library_sources_equal_to_runtime": true
+  },
+  "previous_hardware_validation": {
+    "record": "https://github.com/Dingtaiqi/skyward/blob/76e9dc108b69224ed9dc50ee285d06dba53eaa35/devices/socrates-validation.json",
+    "display_touch_usb_adb_keys_power_wake_brightness_boot_control_and_haptic_strength_passed": true,
+    "three_ui_restarts_kept_touch_working": true,
+    "relevant_hardware_logic_unchanged": true
+  },
+  "post_test": {
+    "normal_hyperos_boot_slot_a_without_dsu": true,
+    "all_shared_and_app_fixture_file_hashes_and_file_sets_survived_reboot": true,
+    "restored_regular_and_hardlinked_files_readable_as_android_app_uid_under_enforcing_selinux": true,
+    "recovery_created_symlink_owner_label_target_and_android_access_outcome_match_source": true,
+    "symlink_scope": "The root-created original and restored symlinks both lack app MCS categories and are denied to the app. Positive app-created symlink access was not tested.",
+    "metadata_key_file_set_and_hashes_unchanged": true,
+    "owned_test_apk_uninstalled": true,
+    "shared_fixture_all_files_symlinks_directories_removed": true,
+    "no_attached_fixture_loops": true,
+    "original_recovery_restored_and_all_four_boot_partition_hashes_unchanged": true
+  },
   "not_tested": [
-    "Writable decrypted userdata (disabled for this profile)",
-    "Actual UFS secure discard or factory reset of personal userdata",
-    "SELinux/fscrypt restore on the phone",
-    "Complete OTA installation, VAB/AVB update and real slot switching",
-    "Password and pattern protected user unlock",
+    "Complete restore or factory reset of personal userdata and actual UFS secure discard",
+    "Cross-format restore or reconstruction/validation of missing or mismatched independent fscrypt policy roots",
+    "Complete OTA/VAB/AVB updates or real slot switching; slot b was never selected",
+    "Password and pattern protected unlock",
+    "Positive access to an Android-app-created symlink after restore",
+    "ACL/project-quota restoration and non-empty capability sets",
     "Quantitative haptic waveform or voltage measurement"
   ],
-  "post_test_boot_partition_hashes_unchanged": true,
-  "privacy": "No raw device logs, identifiers, network credentials, file names or key material included.",
-  "wifi_test_scope": {
-    "compiled_commit": "6c4c5694382fb6e96a87a1003a5f02a5b0f6f070",
-    "wlan_source_unchanged_in_final_compiled_commit": true
-  },
-  "isolated_component_tests": {
-    "ci": "https://github.com/Dingtaiqi/skyward/actions/runs/43023589389",
-    "proof": "https://github.com/Dingtaiqi/skyward/blob/589f1eb0e734ad6ab2d4d12d0f712bb0b803d587/ci/proofs/disposable-io-43023589389/VALIDATION.json",
-    "ordinary_tests_passed": 197,
-    "explicit_isolated_tests_passed": 2,
-    "real_ext4_f2fs_format_and_checks": true,
-    "image_write_flush_full_device_compare_and_oversize_refusal": true,
-    "compressed_backup_restore_links_permissions_and_exclusions": true,
-    "real_readonly_ext4_mtp_access_reporting_reads_and_eight_mutation_refusals": true,
-    "readonly_test_image_full_hash_unchanged": true,
-    "isolation_negative_control_refuses_host_execution": true,
-    "production_source_binding": "Seven relevant production source files match exactly; the isolated Cargo.lock adds only two test-only workspace path dependencies and retains registry versions/checksums."
-  },
-  "dedicated_shared_storage_fixtures_cleaned": true,
-  "post_test_cleanup": "Dedicated shared-storage test files removed after content verification."
+  "permanent_archive": "https://github.com/Dingtaiqi/skyward/releases/tag/untagged-ce703743544a5f01d2d8",
+  "privacy": "No raw device logs, identifiers, network credentials, app UID/MCS values, encryption-policy identifiers or key material included."
 }

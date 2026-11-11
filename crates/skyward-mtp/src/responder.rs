@@ -617,7 +617,8 @@ impl Responder {
     fn storage_info(&self, cmd: &Command) -> Reply {
         let Some([id]) = cmd.take::<1>() else { return Reply::code(response::INVALID_PARAMETER) };
         let Some(s) = self.offered.as_ref().filter(|_| id == STORAGE_ID) else { return Reply::code(response::INVALID_STORAGE_ID) };
-        let (total, free, read_only) = match space(&s.top) {
+        let top = self.store.as_ref().expect("offered storage has a store").top();
+        let (total, free, read_only) = match space(top) {
             Ok(space) => space,
             Err(e) => return Reply::failed(response::GENERAL_ERROR, format!("look at {}: {e}", s.top.display())),
         };
@@ -667,7 +668,12 @@ impl Responder {
         let (Some(path), Some(name), Some(parent)) = (store.path(h), store.name(h), store.parent(h)) else {
             return Err(Reply::code(response::INVALID_OBJECT_HANDLE));
         };
-        let meta = fs::metadata(&path).map_err(|e| Reply::failed(response::INVALID_OBJECT_HANDLE, format!("look at {}: {e}", path.display())))?;
+        match store.checked_path(h) {
+            Ok(_) => {}
+            Err(store::Error::UnsafePath) => return Err(Reply::failed(response::ACCESS_DENIED, "symbolic links are not offered over MTP")),
+            Err(_) => return Err(Reply::code(response::INVALID_OBJECT_HANDLE)),
+        }
+        let meta = fs::symlink_metadata(&path).map_err(|e| Reply::failed(response::INVALID_OBJECT_HANDLE, format!("look at {}: {e}", path.display())))?;
         let relative = store.relative(h).expect("a known entry has a path");
         Ok(Object { name: name.to_os_string(), folder: store.is_folder(h), parent, meta, relative })
     }
@@ -846,7 +852,10 @@ impl Responder {
         if info.name.is_empty() || info.name == "." || info.name == ".." || info.name.contains('/') {
             return Reply::failed(response::INVALID_PARAMETER, format!("{:?} cannot be a name", info.name));
         }
-        let into = store.path(folder).expect("a known folder has a path");
+        let into = match store.checked_path(folder) {
+            Ok(path) => path,
+            Err(e) => return store_failed(e, response::INVALID_PARENT_OBJECT),
+        };
         let path = into.join(&info.name);
         if info.size != u32::MAX {
             match space(&into) {
@@ -917,7 +926,8 @@ impl Responder {
         if !store.is_folder(folder) {
             return Err(Reply::code(response::INVALID_PARENT_OBJECT));
         }
-        Ok((folder, store.path(folder).expect("a known folder has a path")))
+        let path = store.checked_path(folder).map_err(|e| store_failed(e, response::INVALID_PARENT_OBJECT))?;
+        Ok((folder, path))
     }
 
     fn move_object(&mut self, cmd: &Command) -> Reply {
@@ -1130,6 +1140,7 @@ fn store_failed(e: store::Error, not_folder: u16) -> Reply {
     match e {
         store::Error::Unknown => Reply::code(response::INVALID_OBJECT_HANDLE),
         store::Error::NotFolder => Reply::code(not_folder),
+        store::Error::UnsafePath => Reply::failed(response::ACCESS_DENIED, "symbolic links are not offered over MTP"),
         store::Error::Io(e) => Reply::failed(response::GENERAL_ERROR, e),
     }
 }

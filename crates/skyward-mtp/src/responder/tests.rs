@@ -171,6 +171,67 @@ fn a_session_opens_once_and_the_storage_needs_one() {
 }
 
 #[test]
+fn an_offered_root_alias_works_but_its_symbolic_links_are_not_exposed() {
+    let at = scratch("offered-root-links");
+    let (root, outside) = (at.join("storage"), at.join("outside"));
+    fs::create_dir_all(root.join("folder")).unwrap();
+    fs::create_dir(&outside).unwrap();
+    fs::write(root.join("plain.txt"), b"inside").unwrap();
+    fs::write(outside.join("canary.txt"), b"outside").unwrap();
+    std::os::unix::fs::symlink(&outside, root.join("escape-dir")).unwrap();
+    std::os::unix::fs::symlink(outside.join("canary.txt"), root.join("escape-file")).unwrap();
+    std::os::unix::fs::symlink(root.join("plain.txt"), root.join("inside-link")).unwrap();
+    let alias = at.join("sdcard");
+    std::os::unix::fs::symlink(&root, &alias).unwrap();
+    let mut r = open(&alias);
+    let all = handles(&mut r, PARENT_ROOT, 0);
+    let mut names: Vec<_> = all.into_iter().map(|h| info(&mut r, h).name).collect();
+    names.sort();
+    assert_eq!(names, ["folder", "plain.txt"], "MTP does not expose POSIX symbolic links");
+    let h = find(&mut r, PARENT_ROOT, "plain.txt");
+    assert_eq!(r.answer(&cmd(op::GET_OBJECT, &[h]), None).code, response::OK);
+    fs::remove_dir_all(&at).unwrap();
+}
+
+#[test]
+fn cached_handles_cannot_read_or_mutate_through_a_replaced_parent_link() {
+    let at = scratch("cached-root-escape");
+    let (root, outside) = (at.join("storage"), at.join("outside"));
+    fs::create_dir_all(root.join("folder")).unwrap();
+    fs::create_dir(&outside).unwrap();
+    fs::write(root.join("folder/canary.txt"), b"inside").unwrap();
+    fs::write(root.join("source.txt"), b"inside source").unwrap();
+    fs::write(outside.join("canary.txt"), b"protected outside bytes").unwrap();
+    let mut r = open(&root);
+    let folder = find(&mut r, PARENT_ROOT, "folder");
+    let cached = find(&mut r, folder, "canary.txt");
+    let source = find(&mut r, PARENT_ROOT, "source.txt");
+    fs::remove_dir_all(root.join("folder")).unwrap();
+    std::os::unix::fs::symlink(&outside, root.join("folder")).unwrap();
+    for command in [cmd(op::GET_OBJECT, &[cached]), cmd(op::GET_OBJECT_INFO, &[cached]),
+                    cmd(op::GET_OBJECT_HANDLES, &[STORAGE_ID, 0, folder]), cmd(op::DELETE_OBJECT, &[cached]),
+                    cmd(op::BEGIN_EDIT_OBJECT, &[cached]), cmd(op::COPY_OBJECT, &[source, STORAGE_ID, folder]),
+                    cmd(op::MOVE_OBJECT, &[source, STORAGE_ID, folder]), cmd(op::COPY_OBJECT, &[cached, STORAGE_ID, 0]),
+                    cmd(op::MOVE_OBJECT, &[cached, STORAGE_ID, 0])] {
+        let reply = r.answer(&command, None);
+        assert_eq!(reply.code, response::ACCESS_DENIED, "{:#06x}: {:?}", command.code, reply.why);
+        assert!(reply.data.is_none(), "no outside data is sent");
+    }
+    for (format, size, name) in [(format::TEXT, 3, "new.txt"), (format::ASSOCIATION, 0, "new-folder")] {
+        let reply = r.answer(&cmd(op::SEND_OBJECT_INFO, &[STORAGE_ID, folder]), Some(&object_info(format, size, name, "")));
+        assert_eq!(reply.code, response::ACCESS_DENIED, "{name}: {:?}", reply.why);
+    }
+    let mut rename = Writer::new();
+    rename.string("renamed.txt");
+    assert_eq!(r.answer(&cmd(op::SET_OBJECT_PROP_VALUE, &[cached, u32::from(prop::OBJECT_FILE_NAME)]), Some(&rename.into_bytes())).code, response::ACCESS_DENIED);
+    assert_eq!(fs::read(outside.join("canary.txt")).unwrap(), b"protected outside bytes");
+    assert_eq!(fs::read_dir(&outside).unwrap().count(), 1, "nothing is created, removed or moved outside");
+    assert_eq!(fs::read(root.join("source.txt")).unwrap(), b"inside source");
+    assert!(!root.join("canary.txt").exists(), "the outside object is not copied into the offered storage either");
+    fs::remove_dir_all(&at).unwrap();
+}
+
+#[test]
 fn read_only_io_keeps_its_reason_through_wrappers_and_transfer_responses() {
     let direct = io::Error::from_raw_os_error(libc::EROFS);
     assert_eq!(access_failed(&direct), response::STORE_READ_ONLY);

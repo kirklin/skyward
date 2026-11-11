@@ -19,6 +19,8 @@ pub enum Error {
     Unknown,
     /// The entry is no folder.
     NotFolder,
+    /// An object or one of its parents is a link or leaves the offered root.
+    UnsafePath,
     Io(io::Error),
 }
 
@@ -62,6 +64,7 @@ pub struct Store {
 
 impl Store {
     pub fn new(top: PathBuf) -> io::Result<Store> {
+        let top = fs::canonicalize(top)?;
         Ok(Store { top, entries: HashMap::new(), root: Folder::default(), next: 1, watch: Watch::new()?, found: Vec::new() })
     }
 
@@ -90,6 +93,18 @@ impl Store {
         let mut path = self.top.clone();
         path.extend(names.iter().rev());
         Some(path)
+    }
+
+    /// The offered root may itself be an alias such as /sdcard, resolved
+    /// once when offered. Its entries are never followed through links,
+    /// including handles cached before another program replaced a folder.
+    pub fn checked_path(&self, h: u32) -> Result<PathBuf, Error> {
+        let path = self.path(h).ok_or(Error::Unknown)?;
+        let real = fs::canonicalize(&path).map_err(Error::Io)?;
+        if real != path || !real.starts_with(&self.top) {
+            return Err(Error::UnsafePath);
+        }
+        Ok(path)
     }
 
     /// The path from the top of the storage, as the persistent ID takes it.
@@ -132,6 +147,7 @@ impl Store {
 
     /// The handles of a folder's entries.
     pub fn children(&mut self, folder: u32) -> Result<Vec<u32>, Error> {
+        self.checked_path(folder)?;
         let f = self.folder(folder)?;
         if !f.read || f.watch.is_none() {
             self.read(folder, false)?;
@@ -159,7 +175,7 @@ impl Store {
     /// handle, is told; one new there is told only with `tell_added`, as
     /// whoever asked for the folder learns of it with its handle.
     fn read(&mut self, folder: u32, tell_added: bool) -> Result<(), Error> {
-        let path = self.path(folder).ok_or(Error::Unknown)?;
+        let path = self.checked_path(folder)?;
         if self.folder(folder)?.watch.is_none() {
             let watch = self.watch.add(&path, folder);
             self.folder_mut(folder)?.watch = watch;
@@ -167,7 +183,10 @@ impl Store {
         let mut on_disk = BTreeMap::new();
         for entry in fs::read_dir(&path).map_err(Error::Io)? {
             let entry = entry.map_err(Error::Io)?;
-            on_disk.insert(entry.file_name(), is_dir(&entry.path()));
+            let kind = entry.file_type().map_err(Error::Io)?;
+            if !kind.is_symlink() {
+                on_disk.insert(entry.file_name(), kind.is_dir());
+            }
         }
         let known: Vec<(OsString, u32)> = self.folder(folder)?.entries.iter().map(|(n, &h)| (n.clone(), h)).collect();
         for (name, h) in known {
@@ -279,17 +298,18 @@ impl Store {
                 if self.child(folder, &name).is_some() {
                     return;
                 }
-                let Some(path) = self.path(folder) else { return };
+                let Ok(path) = self.checked_path(folder) else { return };
                 let path = path.join(&name);
-                if fs::symlink_metadata(&path).is_ok() {
-                    let h = self.add(folder, name, is_dir(&path));
+                if let Some(meta) = fs::symlink_metadata(&path).ok().filter(|m| !m.file_type().is_symlink()) {
+                    let h = self.add(folder, name, meta.is_dir());
                     self.found.push(Change::Added(h));
                 }
             }
             Raw::Vanished(wd, name) => {
                 let Some(folder) = self.watch.folder(wd) else { return };
                 let Some(h) = self.child(folder, &name) else { return };
-                let path = self.path(h).expect("a known entry has a path");
+                let Ok(parent) = self.checked_path(folder) else { return };
+                let path = parent.join(&name);
                 if fs::symlink_metadata(&path).is_err() {
                     self.remove(h);
                     self.found.push(Change::Removed(h));
@@ -302,11 +322,6 @@ impl Store {
             }
         }
     }
-}
-
-/// Whether `path` is a folder, through any link to one.
-fn is_dir(path: &Path) -> bool {
-    fs::metadata(path).is_ok_and(|m| m.is_dir())
 }
 
 /// What the system said happened in a folder followed. A system with no

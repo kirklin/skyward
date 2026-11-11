@@ -288,6 +288,10 @@ pub struct Display {
     pub height: u32,
     #[serde(default)]
     pub density: u32,
+    /// Power the display off before the first UI frame. Some host touch
+    /// processors need a new panel resume after their service restarts.
+    #[serde(default)]
+    pub reset_on_start: bool,
     /// Marketed screen diagonal in inches.
     #[serde(default)]
     pub diagonal: Option<f32>,
@@ -1082,5 +1086,14 @@ mod tests {
         assert_eq!(wlan.writes, [Write { path: "/sys/kernel/cnss/fs_ready".into(), value: "1".into() }], "calibration begins when the WLAN is turned on");
         assert!(!wlan.firmware[0].optional, "the WLAN settings are required");
         assert!(wlan.firmware[1].optional, "the separate persist MAC file is absent on the tested phone");
+    }
+
+    #[test]
+    fn only_socrates_requests_a_panel_resume_when_the_ui_starts() {
+        let cfg: DeviceConfig = toml::from_str(include_str!("../../../devices/socrates.toml")).unwrap();
+        assert!(cfg.display.reset_on_start);
+        let legacy: DeviceConfig = toml::from_str(include_str!("../../../devices/ishtar.toml")).unwrap();
+        assert!(!legacy.display.reset_on_start, "existing devices keep their startup sequence");
+        assert!(!Display::default().reset_on_start);
     }
 }

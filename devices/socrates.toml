@@ -12,6 +12,8 @@ width = 1440
 height = 3200
 # The same logical DPI as the other 1440-wide SM8550 profiles.
 density = 560
+# touch_report restarted under a lit panel needs a fresh panel resume.
+reset_on_start = true
 
 # Bring up existing encrypted data without repairs, journal replay or
 # KeyMint blob upgrades. PIN verification is performed on the phone.

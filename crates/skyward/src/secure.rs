@@ -133,7 +133,6 @@ pub fn prepare_hardware_directory(wanted: &[String]) -> Result<()> {
     skyward_sys::set_prop(DIRECTORY_OFF, "false")?;
     Ok(())
 }
-
 /// The description a recovery offers of the hardware services that will be
 /// asked for, and of the directory they are asked of. Each is named as the
 /// package it is in and the rest of its name, which is how a description
@@ -153,7 +152,6 @@ fn describe_hardware(wanted: &[String]) -> Result<String> {
     out.push_str("</manifest>\n");
     Ok(out)
 }
-
 /// Open the bundle of libraries the phone's own partitions were built
 /// against and give the directory they are in. A phone whose partitions
 /// need no bundle has none to open.
@@ -161,7 +159,6 @@ pub fn libraries() -> Result<Option<PathBuf>> {
     let Some(version) = skyward_sys::prop(VENDOR_INTERFACE) else { return Ok(None) };
     Ok(bundle(&format!("com.android.vndk.v{version}"))?.map(|at| at.join(BUNDLE_LIBS)))
 }
-
 /// Open the bundle of this name where it lies, and give where it is. A
 /// bundle the phone does not carry gives nothing; one already open is left
 /// as it is.
@@ -231,7 +228,7 @@ pub fn publish_descriptions(wanted: &[String], files: &[String]) -> Result<usize
                 continue;
             }
             let text = fs::read_to_string(&from).with_context(|| format!("read {}", from.display()))?;
-            if wanted.iter().any(|w| describes(&text, w)) {
+            if wanted.iter().any(|w| skyward_config::service_description_matches(&text, w)) {
                 take(&from, &text)?;
             }
         }
@@ -329,15 +326,6 @@ fn say_framework(dir: &Path) -> Result<usize> {
         }
     }
     Ok(rewritten)
-}
-
-/// Whether a description is of the service registered under `name`, which
-/// reads as the interface and then the instance: the description names the
-/// two separately.
-fn describes(text: &str, name: &str) -> bool {
-    let Some((interface, instance)) = name.rsplit_once('/') else { return false };
-    let Some((package, interface)) = interface.rsplit_once('.') else { return false };
-    text.contains(package) && text.contains(&format!("{interface}/{instance}"))
 }
 
 /// Wait until the service directory is a new process and takes calls

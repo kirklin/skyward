@@ -1043,6 +1043,24 @@ fn wait(fds: &[i32], timeout_ms: i32) -> Result<()> {
     Ok(())
 }
 
+/// Feedback is optional: a driver or upload failure must not end recovery.
+fn feedback(haptics: &mut Option<Haptics>, position: f32, effect: Effect) {
+    let result = match haptics.as_mut() {
+        Some(h) if matches!(effect, Effect::Ticks) => h.ticks(position),
+        Some(h) if matches!(effect, Effect::BriefHaptic) => h.brief(position),
+        Some(h) if matches!(effect, Effect::KeyHaptic) => h.key(position),
+        Some(h) if matches!(effect, Effect::SwitchHaptic) => h.switch(position),
+        Some(h) if matches!(effect, Effect::SliderHaptic) => h.slider(position),
+        Some(h) if matches!(effect, Effect::LongPressHaptic) => h.long_press(position),
+        Some(h) => h.click(position),
+        None => return,
+    };
+    if let Err(e) = result {
+        eprintln!("haptics disabled after playback failure: {e:#}");
+        *haptics = None;
+    }
+}
+
 /// Run the pages. What `request`, read from misc, asks for decides the
 /// first of them; asking for nothing, they start at `start`.
 pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, start: Screen, dump: Option<&Path>) -> Result<()> {
@@ -1059,7 +1077,17 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     let mut touch_known = false;
     // adbd and fastbootd ask over it to go over to fastboot and back.
     let control = Control::open()?;
-    let mut haptics = cfg.haptics.as_ref().map(Haptics::open).transpose()?;
+    let mut haptics = cfg
+        .haptics
+        .as_ref()
+        .filter(|_| cfg.device.supports_vibration != Some(false))
+        .and_then(|h| match Haptics::open(h) {
+            Ok(h) => Some(h),
+            Err(e) => {
+                eprintln!("haptics disabled: {e:#}");
+                None
+            }
+        });
     let mut backlight = Backlight::open()?;
     let first = match &request.work {
         Work::Fastboot => Screen::Fastboot,
@@ -1387,17 +1415,14 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
         }
         for fx in app.tick(now) {
             match fx {
-                Effect::Haptic => {
-                    if let Some(h) = &mut haptics {
-                        h.click(app.state.vibration)?;
-                    }
+                Effect::Haptic | Effect::BriefHaptic | Effect::KeyHaptic
+                | Effect::SwitchHaptic | Effect::SliderHaptic | Effect::LongPressHaptic => {
+                    feedback(&mut haptics, app.state.vibration, fx);
                 }
                 // The power key held past its wait for volume down turns
                 // the screen off.
                 Effect::Ticks => {
-                    if let Some(h) = &mut haptics {
-                        h.ticks()?;
-                    }
+                    feedback(&mut haptics, app.state.vibration, Effect::Ticks);
                 }
                 other => unreachable!("time passing asks for nothing but the motor, not {other:?}"),
             }
@@ -2208,15 +2233,12 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                             app.report(&format!("{e:#}"), now);
                         }
                     }
-                    Effect::Haptic => {
-                        if let Some(h) = &mut haptics {
-                            h.click(app.state.vibration)?;
-                        }
+                    effect @ (Effect::Haptic | Effect::BriefHaptic | Effect::KeyHaptic
+                    | Effect::SwitchHaptic | Effect::SliderHaptic | Effect::LongPressHaptic) => {
+                        feedback(&mut haptics, app.state.vibration, effect);
                     }
                     Effect::Ticks => {
-                        if let Some(h) = &mut haptics {
-                            h.ticks()?;
-                        }
+                        feedback(&mut haptics, app.state.vibration, Effect::Ticks);
                     }
                     // The panel shows the last frame drawn, which is what is
                     // saved; one that cannot be is the page's to report.

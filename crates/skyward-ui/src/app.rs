@@ -1953,9 +1953,15 @@ pub enum Effect {
     Reboot(Target),
     /// A short tap of the vibration motor.
     Haptic,
-    /// The motor's two quick ticks as the power key turns the screen off,
-    /// as strong as the phone's own system plays them whatever the
-    /// vibration settings say.
+    /// A brief tick for the back gesture threshold.
+    BriefHaptic,
+    /// The keyboard's feedback waveform.
+    KeyHaptic,
+    SwitchHaptic,
+    SliderHaptic,
+    LongPressHaptic,
+    /// The motor's feedback as the power key turns the screen off,
+    /// following the vibration strength preference.
     Ticks,
     /// Save what the panel shows as a picture: into the gallery's
     /// screenshots in the owner's shared storage where `storage` says it is
@@ -2644,6 +2650,9 @@ pub struct App {
     dither: Option<glow::Dither>,
     toast: Option<(String, u64)>,
     drag: Drag,
+    /// Last preview detent and time: continuous motion must not restart
+    /// a motor pulse on every touchscreen sample.
+    slider_feedback: Option<(u8, u64)>,
     tracker: Tracker,
     /// The page gliding on after a flick.
     fling: Option<Fling>,
@@ -2757,6 +2766,7 @@ impl App {
             dither: None,
             toast: None,
             drag: Drag::Idle,
+            slider_feedback: None,
             tracker: Tracker::default(),
             fling: None,
             glide: None,
@@ -2895,7 +2905,7 @@ impl App {
         self.state.asking_delete = false;
         self.open(Screen::FileInfo);
         if self.state.vibrate {
-            vec![Effect::Haptic]
+            vec![Effect::LongPressHaptic]
         } else {
             Vec::new()
         }
@@ -5120,6 +5130,25 @@ impl App {
 
     /// Carry out a tapped control.
     fn act(&mut self, action: Action, now: u64) -> Vec<Effect> {
+        let key = matches!(action, Action::Type(_) | Action::TermKey(_));
+        let switch = matches!(action, Action::Toggle(_));
+        let selection = matches!(action,
+            Action::Toggle(_) | Action::Theme { .. } | Action::RebootTarget(_)
+            | Action::WipeItem(_) | Action::FlashPartition(_) | Action::FlashSlots(_)
+            | Action::ScreenOff(_) | Action::TimeZone(_) | Action::Language(_)
+            | Action::BackupPart(_) | Action::BackupTo(_) | Action::RestorePart(_)
+            | Action::LogPart(_) | Action::LogsTo(_) | Action::PickSlot(_)
+            | Action::PickSystem(_) | Action::SystemSize(_));
+        let mut effects = self.perform_action(action, now);
+        if selection && self.state.vibrate {
+            effects.insert(0, if switch { Effect::SwitchHaptic } else { Effect::Haptic });
+        } else if key && self.state.vibrate {
+            effects.insert(0, Effect::KeyHaptic);
+        }
+        effects
+    }
+
+    fn perform_action(&mut self, action: Action, now: u64) -> Vec<Effect> {
         let l = self.state.lang;
         match action {
             Action::Open(s) => {
@@ -6068,7 +6097,11 @@ impl App {
                     .map(|(_, r)| r);
                 self.drag = match hit {
                     Some((Action::Slider(which), track)) => {
+                        self.slider_feedback = None;
                         self.set_slider(&t, which, track, x);
+                        if which == Slider::Vibration && self.preview_slider(which, now, true) {
+                            fx.push(Effect::SliderHaptic);
+                        }
                         Drag::Slider(which, track)
                     }
                     Some((Action::Confirm(which), track)) if self.on_knob(track, x) => {
@@ -6129,13 +6162,16 @@ impl App {
                     // A tap of the motor as the `<` appears, as the system
                     // gives.
                     if ready && !armed && self.state.vibrate {
-                        fx.push(Effect::Haptic);
+                        fx.push(Effect::BriefHaptic);
                     }
                     self.drag = Drag::Edge { start, from_left, armed: ready, x, cy };
                     self.dirty = true;
                 }
                 Drag::Slider(which, track) => {
                     self.set_slider(&t, which, track, x);
+                    if self.preview_slider(which, now, false) {
+                        fx.push(Effect::SliderHaptic);
+                    }
                     self.drag = Drag::Slider(which, track);
                 }
                 Drag::Confirm { which, track, grab } => {
@@ -6215,7 +6251,7 @@ impl App {
                 Drag::Pattern => fx.extend(self.drawn(now)),
                 // Let go, the strength slider taps the motor as strongly as
                 // it was left at.
-                Drag::Slider(Slider::Vibration, _) if self.state.vibrate => fx.push(Effect::Haptic),
+                Drag::Slider(Slider::Vibration, _) if self.preview_slider(Slider::Vibration, now, true) => fx.push(Effect::SliderHaptic),
                 _ => {}
             },
         }
@@ -6379,7 +6415,7 @@ impl App {
                     None => {
                         self.button = Some((key, Press::Spent));
                         self.sleep(now);
-                        return vec![Effect::Ticks];
+                        return if self.state.vibrate { vec![Effect::Ticks] } else { Vec::new() };
                     }
                 }
                 Vec::new()
@@ -6634,7 +6670,7 @@ impl App {
                 let level = self.level(which) + if down { -SLIDER_STEP } else { SLIDER_STEP };
                 self.set_level(&self.theme(), which, rect, level);
                 if which == Slider::Vibration && self.state.vibrate {
-                    return vec![Effect::Haptic];
+                    return vec![Effect::SliderHaptic];
                 }
             }
             return Vec::new();
@@ -6942,6 +6978,19 @@ impl App {
     fn on_knob(&self, track: Rect, x: f32) -> bool {
         let knob_x = track.x + (track.w - track.h) * self.state.confirm;
         x >= knob_x && x <= knob_x + track.h
+    }
+
+    fn preview_slider(&mut self, which: Slider, now: u64, released: bool) -> bool {
+        let detent = (self.level(which) * 10.0).round() as u8;
+        let changed = self.slider_feedback.is_none_or(|(last, at)| {
+            last != detent && (released || now.saturating_sub(at) >= 110)
+        });
+        if self.state.vibrate && changed {
+            self.slider_feedback = Some((detent, now));
+            true
+        } else {
+            false
+        }
     }
 
     fn set_slider(&mut self, t: &Theme, which: Slider, track: Rect, x: f32) {
@@ -7991,7 +8040,7 @@ mod tests {
         let ready = app.theme().m.dp(BACK_SWIPE_DP);
         app.touch(Touch::Down(10.0, 1600.0), &f, 0);
         assert!(app.touch(Touch::Move(80.0, 1600.0), &f, 8).is_empty());
-        assert_eq!(app.touch(Touch::Move(20.0 + ready, 1600.0), &f, 16), vec![Effect::Haptic]);
+        assert_eq!(app.touch(Touch::Move(20.0 + ready, 1600.0), &f, 16), vec![Effect::BriefHaptic]);
         assert!(app.touch(Touch::Move(60.0 + ready, 1600.0), &f, 24).is_empty(), "one tap while armed");
         app.touch(Touch::Move(40.0, 1600.0), &f, 32);
         app.touch(Touch::Up, &f, 40);
@@ -8103,9 +8152,9 @@ mod tests {
         if y > H as f32 * 0.9 {
             scroll_to(&mut app, &f, y - H as f32 * 0.8, 0);
         }
-        assert_eq!(tap_at(&mut app, &f, &i, Action::Toggle(Switch::FileTransfer), 2000), [Effect::FileTransfer(false)]);
+        assert_eq!(tap_at(&mut app, &f, &i, Action::Toggle(Switch::FileTransfer), 2000), [Effect::SwitchHaptic, Effect::FileTransfer(false)]);
         assert!(!app.state.file_transfer);
-        assert_eq!(tap_at(&mut app, &f, &i, Action::Toggle(Switch::FileTransfer), 3000), [Effect::FileTransfer(true)]);
+        assert_eq!(tap_at(&mut app, &f, &i, Action::Toggle(Switch::FileTransfer), 3000), [Effect::SwitchHaptic, Effect::FileTransfer(true)]);
         app.file_transfer_failed(false, "无法开启文件传输", 4000);
         assert!(!app.state.file_transfer, "the switch shows how it stands");
     }
@@ -8374,28 +8423,48 @@ mod tests {
         let y = track.centre().1 - app.top().1;
         assert!(app.touch(Touch::Down(track.x + track.w * 0.25, y), &f, 0).is_empty());
         assert_eq!(app.panel(0), Some(0.25));
-        assert!(app.touch(Touch::Move(track.x + track.w * 0.75, y + 40.0), &f, 0).is_empty());
+        assert_eq!(app.touch(Touch::Move(track.x + track.w * 0.75, y + 40.0), &f, 0), vec![Effect::SliderHaptic]);
         assert_eq!(app.panel(0), Some(0.75));
         assert!(app.touch(Touch::Up, &f, 0).is_empty(), "the panel shows the brightness");
         assert_eq!(app.state.brightness, 0.75);
     }
 
     #[test]
-    fn the_strength_slider_taps_the_motor_as_strongly_as_it_is_let_go() {
+    fn the_strength_slider_previews_detents_without_restarting_each_sample() {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Settings, W, H, PPD);
         let track = app.frame(&f, &i).hits.iter().find(|h| h.action == Action::Slider(Slider::Vibration)).unwrap().rect;
         let y = track.centre().1 - app.top().1;
-        assert!(app.touch(Touch::Down(track.x + track.w * 0.25, y), &f, 0).is_empty());
-        assert!(app.touch(Touch::Move(track.x + track.w * 0.8, y + 40.0), &f, 0).is_empty(), "nothing taps while the finger moves");
-        assert_eq!(app.touch(Touch::Up, &f, 0), vec![Effect::Haptic], "let go, the motor taps");
-        assert!((app.state.vibration - 0.8).abs() < 1e-5);
+        assert_eq!(app.touch(Touch::Down(track.x + track.w * 0.25, y), &f, 0), vec![Effect::SliderHaptic]);
+        assert!(app.touch(Touch::Move(track.x + track.w * 0.4, y), &f, 20).is_empty(), "a pulse gets time to finish");
+        assert_eq!(app.touch(Touch::Move(track.x + track.w * 0.8, y + 40.0), &f, 120), vec![Effect::SliderHaptic]);
+        assert!(app.touch(Touch::Move(track.x + track.w * 0.81, y), &f, 190).is_empty(), "the same detent does not repeat");
+        assert!(app.touch(Touch::Move(track.x + track.w * 0.95, y), &f, 200).is_empty());
+        assert_eq!(app.touch(Touch::Up, &f, 210), vec![Effect::SliderHaptic], "release previews a final detent skipped by the rate limit");
+        assert!((app.state.vibration - 0.95).abs() < 1e-5);
+        app.touch(Touch::Down(track.x + track.w * 0.5, y), &f, 400);
+        assert!(app.touch(Touch::Up, &f, 410).is_empty(), "release does not duplicate the preview");
         assert!(app.touch(Touch::Down(track.x - 50.0, y), &f, 0).is_empty());
         assert!(app.touch(Touch::Up, &f, 0).is_empty(), "touched beside the track, the slider stays");
         app.state.vibrate = false;
-        app.touch(Touch::Down(track.x, y), &f, 0);
+        assert!(app.touch(Touch::Down(track.x, y), &f, 500).is_empty());
+        assert!(app.touch(Touch::Move(track.x + track.w * 0.5, y), &f, 700).is_empty());
+        app.touch(Touch::Move(track.x, y), &f, 800);
         assert!(app.touch(Touch::Up, &f, 0).is_empty(), "with touch vibration off, the motor stays still");
         assert_eq!(app.state.vibration, 0.0, "the strength still moves, down to the slider's left end");
+    }
+
+    #[test]
+    fn settings_selections_respect_vibration_and_preserve_runtime_effects() {
+        let mut app = App::new(Screen::Settings, W, H, PPD);
+        assert_eq!(app.act(Action::Toggle(Switch::Vibrate), 0), vec![]);
+        assert!(!app.state.vibrate);
+        assert_eq!(app.act(Action::Theme { dark: true }, 100), vec![]);
+        assert_eq!(app.act(Action::Toggle(Switch::FileTransfer), 200), vec![Effect::FileTransfer(false)]);
+        assert_eq!(app.act(Action::Toggle(Switch::Vibrate), 300), vec![Effect::SwitchHaptic]);
+        assert_eq!(app.act(Action::Theme { dark: false }, 400), vec![Effect::Haptic]);
+        assert_eq!(app.act(Action::Toggle(Switch::FileTransfer), 500), vec![Effect::SwitchHaptic, Effect::FileTransfer(true)]);
+        assert_eq!(app.act(Action::ScreenOff(1), 600), vec![Effect::Haptic]);
     }
 
     #[test]
@@ -8860,7 +8929,7 @@ mod tests {
         light_on(&mut app, &f, &i, Stop::Hit(Action::Slider(Slider::Vibration)));
         press(&mut app, Key::Power, 0);
         assert_eq!(app.toast.as_ref().map(|t| t.0.as_str()), Some("按音量键调节振动强度，按电源键完成"));
-        assert_eq!(press(&mut app, Key::VolumeDown, 0), vec![Effect::Haptic], "each step taps at the strength reached");
+        assert_eq!(press(&mut app, Key::VolumeDown, 0), vec![Effect::SliderHaptic], "each step taps at the strength reached");
         assert_eq!(app.state.vibration, 0.0, "it starts a step from its left end, the lightest");
         for _ in 0..20 {
             press(&mut app, Key::VolumeUp, 0);
@@ -8919,7 +8988,7 @@ mod tests {
         }
         assert_eq!(app.state.code, "2580");
         light_on(&mut app, &f, &i, Stop::Hit(Action::Type(Cap::Enter)));
-        assert_eq!(press(&mut app, Key::Power, 0), vec![Effect::Unlock { user: 0, code: "2580".into() }]);
+        assert_eq!(press(&mut app, Key::Power, 0), vec![Effect::KeyHaptic, Effect::Unlock { user: 0, code: "2580".into() }]);
     }
 
     #[test]
@@ -8936,7 +9005,7 @@ mod tests {
         assert!(app.tick(1000 + CHORD_MS).is_empty());
         assert_eq!(app.deadline(1000 + CHORD_MS), Some(1000 + LONG_PRESS_MS), "the press is timed from when it went down");
         assert!(app.tick(1000 + LONG_PRESS_MS - 1).is_empty());
-        assert_eq!(app.tick(1000 + LONG_PRESS_MS), vec![Effect::Haptic], "held long enough, the folder's page opens");
+        assert_eq!(app.tick(1000 + LONG_PRESS_MS), vec![Effect::LongPressHaptic], "held long enough, the folder's page opens");
         assert_eq!(app.screen(), Screen::FileInfo);
         assert_eq!(app.state.file.as_ref().map(|e| e.name.as_str()), Some("vendor"));
         assert!(app.key_up(Key::Power, 1000 + LONG_PRESS_MS + 100).is_empty(), "and the key comes up to nothing");
@@ -9792,7 +9861,7 @@ mod tests {
         tap(&mut app, &f, &i, Action::Type(Cap::Backspace));
         assert_eq!(app.state.code, "123");
         let fx = tap(&mut app, &f, &i, Action::Type(Cap::Enter));
-        assert_eq!(fx, vec![Effect::Unlock { user: 0, code: "123".into() }]);
+        assert_eq!(fx, vec![Effect::KeyHaptic, Effect::Unlock { user: 0, code: "123".into() }]);
         assert_eq!(app.state.code, "", "what was typed is gone once it is sent");
         assert_eq!(app.state.data, Data::Locked { user: 0, keys: Keys::Digits, checking: true });
         assert!(!keys_shown(&mut app, &f, &i), "nothing more is taken while it is checked");
@@ -9808,8 +9877,26 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Decrypt, W, H, PPD);
         app.data_waiting(Some((0, Keys::Digits)));
-        assert!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)).is_empty());
+        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)), vec![Effect::KeyHaptic]);
         assert_eq!(app.deadline(0), Some(TOAST_MS), "the page says to type one first");
+    }
+
+    #[test]
+    fn letters_digits_and_edit_keys_give_one_brief_tick_and_obey_the_switch() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Search, W, H, PPD);
+        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Char('q'))), vec![Effect::KeyHaptic]);
+        assert_eq!(app.state.search, "q");
+        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Backspace)), vec![Effect::KeyHaptic]);
+        assert_eq!(app.state.search, "");
+        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Show(Layer::Digits))), vec![Effect::KeyHaptic]);
+        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Char('5'))), vec![Effect::KeyHaptic]);
+        assert_eq!(app.state.search, "5");
+        app.state.vibrate = false;
+        assert!(tap(&mut app, &f, &i, Action::Type(Cap::Char('6'))).is_empty());
+        assert_eq!(app.state.search, "56");
+        assert!(tap(&mut app, &f, &i, Action::Type(Cap::Backspace)).is_empty());
+        assert_eq!(app.state.search, "5");
     }
 
     #[test]
@@ -9919,17 +10006,17 @@ mod tests {
         let (rows, cols) = app.term_size(&f);
         assert!(rows >= 20 && cols >= 40, "a screen of {rows} rows by {cols}");
         app.term_started(rows, cols);
-        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Char('l'))), vec![Effect::TermInput(b"l".to_vec())]);
-        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)), vec![Effect::TermInput(b"\r".to_vec())]);
-        assert!(tap(&mut app, &f, &i, Action::TermKey(TermKey::Ctrl)).is_empty());
-        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Char('c'))), vec![Effect::TermInput(vec![0x03])]);
-        assert_eq!(tap(&mut app, &f, &i, Action::TermKey(TermKey::Up)), vec![Effect::TermInput(b"\x1b[A".to_vec())]);
+        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Char('l'))), vec![Effect::KeyHaptic, Effect::TermInput(b"l".to_vec())]);
+        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)), vec![Effect::KeyHaptic, Effect::TermInput(b"\r".to_vec())]);
+        assert_eq!(tap(&mut app, &f, &i, Action::TermKey(TermKey::Ctrl)), vec![Effect::KeyHaptic]);
+        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Char('c'))), vec![Effect::KeyHaptic, Effect::TermInput(vec![0x03])]);
+        assert_eq!(tap(&mut app, &f, &i, Action::TermKey(TermKey::Up)), vec![Effect::KeyHaptic, Effect::TermInput(b"\x1b[A".to_vec())]);
         app.term_output(b"ishtar:/ # ");
         tap_back(&mut app, &f, &i, 0);
         assert!(tap(&mut app, &f, &i, Action::Open(Screen::Terminal)).is_empty(), "the same shell goes on");
         app.term_ended(TermEnd::Exited(0));
-        assert!(tap(&mut app, &f, &i, Action::Type(Cap::Char('l'))).is_empty(), "nothing runs to take the keys");
-        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)), vec![Effect::StartShell("/".into())]);
+        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Char('l'))), vec![Effect::KeyHaptic], "nothing runs to take the keys");
+        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)), vec![Effect::KeyHaptic, Effect::StartShell("/".into())]);
     }
 
     #[test]
@@ -9943,7 +10030,7 @@ mod tests {
         let (rows, cols) = app.term_size(&f);
         app.term_started(rows, cols);
         app.term_ended(TermEnd::Exited(0));
-        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)), vec![Effect::StartShell("/sdcard/Download".into())], "Enter starts it again there");
+        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)), vec![Effect::KeyHaptic, Effect::StartShell("/sdcard/Download".into())], "Enter starts it again there");
         app.term_started(rows, cols);
         tap_back(&mut app, &f, &i, 0);
         app.set_files("/data/adb".into(), Ok(Vec::new()), 0);
@@ -10142,7 +10229,7 @@ mod tests {
         app.touch(Touch::Down(x, y), &f, 1000);
         assert_eq!(app.deadline(1000), Some(1000 + LONG_PRESS_MS), "the press is timed");
         assert!(app.tick(1000 + LONG_PRESS_MS - 1).is_empty());
-        assert_eq!(app.tick(1000 + LONG_PRESS_MS), vec![Effect::Haptic], "held long enough, it opens with a tap of the motor");
+        assert_eq!(app.tick(1000 + LONG_PRESS_MS), vec![Effect::LongPressHaptic], "held long enough, it opens with a tap of the motor");
         assert_eq!(app.screen(), Screen::FileInfo);
         assert_eq!(app.state.file.as_ref().map(|e| e.name.as_str()), Some("DCIM"));
         assert!(app.touch(Touch::Up, &f, 1500).is_empty(), "lifting does not open the folder as well");
@@ -10225,7 +10312,7 @@ mod tests {
         }
         type_text(&mut app, &f, &i, "b");
         let rename = Effect::Rename { path: "/sdcard/a.zip".into(), name: "ab".into() };
-        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)), vec![rename]);
+        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)), vec![Effect::KeyHaptic, rename]);
         app.renamed(Err(RenameRefused::Failed("rename /sdcard/a.zip to ab: No space left on device (os error 28)".into())), 0);
         assert_eq!(app.screen(), Screen::Rename, "a name refused can be typed again");
         app.toast = None;
@@ -10628,7 +10715,7 @@ mod tests {
         app.refresh();
         assert!(entry(&mut app));
         assert!(app.act(Action::Open(Screen::Wlan), 0).is_empty(), "a WLAN that is off is not scanned");
-        assert_eq!(tap(&mut app, &f, &i, Action::Toggle(Switch::Wlan)), vec![Effect::Wlan(true)]);
+        assert_eq!(tap(&mut app, &f, &i, Action::Toggle(Switch::Wlan)), vec![Effect::SwitchHaptic, Effect::Wlan(true)]);
         assert_eq!(app.state.wlan.as_ref().unwrap().power, Power::Starting, "the switch moves at once");
         let nearby = vec![network("Skyward", -34, Security::Psk), network("Skyward-Open", -72, Security::Open), network("Skyward-WEP", -60, Security::Wep)];
         app.set_wlan(Wlan { power: Power::On, networks: nearby, joined: None });
@@ -10644,14 +10731,14 @@ mod tests {
             }
         };
         type_in(&mut app, "secret");
-        assert!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)).is_empty());
+        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)), vec![Effect::KeyHaptic]);
         assert_eq!(toast(&app), Some("请输入 8 到 63 位密码"));
         tap(&mut app, &f, &i, Action::Type(Cap::Show(Layer::Digits)));
         type_in(&mut app, "12");
         let fx = tap(&mut app, &f, &i, Action::Type(Cap::Enter));
         let join = Effect::JoinWlan { ssid: b"Skyward".to_vec(), name: "Skyward".into(), security: Security::Psk, password: Secret("secret12".into()) };
         assert_eq!(format!("{join:?}"), r#"JoinWlan { ssid: [83, 107, 121, 119, 97, 114, 100], name: "Skyward", security: Psk, password: Secret(8 characters) }"#, "what is printed leaves the password out");
-        assert_eq!(fx, vec![join]);
+        assert_eq!(fx, vec![Effect::KeyHaptic, join]);
         assert_eq!(app.screen(), Screen::Wlan, "the WLAN page shows how joining goes");
         assert_eq!((app.state.password.as_str(), app.state.joining.as_ref()), ("", None), "the password is not kept");
         app.set_wlan(connected("Skyward"));
@@ -10660,7 +10747,7 @@ mod tests {
         assert_eq!(app.screen(), Screen::WlanNetwork);
         assert_eq!(tap(&mut app, &f, &i, Action::LeaveNetwork), vec![Effect::LeaveWlan]);
         assert_eq!(app.screen(), Screen::Wlan);
-        assert_eq!(tap(&mut app, &f, &i, Action::Toggle(Switch::Wlan)), vec![Effect::Wlan(false)]);
+        assert_eq!(tap(&mut app, &f, &i, Action::Toggle(Switch::Wlan)), vec![Effect::SwitchHaptic, Effect::Wlan(false)]);
         assert_eq!(app.state.wlan, Some(Wlan::default()));
     }
 
@@ -10714,7 +10801,7 @@ mod tests {
                 tap(app, &f, &i, Action::Type(Cap::Char(ch)));
             }
         };
-        assert!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)).is_empty());
+        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)), vec![Effect::KeyHaptic]);
         assert_eq!(toast(&app), Some("请输入网络名称"));
         type_in(&mut app, "skyward");
         let frame = app.frame(&f, &i);
@@ -10742,14 +10829,14 @@ mod tests {
         type_in(&mut app, "secret");
         tap(&mut app, &f, &i, Action::TypeInto(Field::Name));
         assert_eq!((app.state.adding.as_ref().unwrap().name.as_str(), app.state.password.as_str()), ("skyward", "secret"));
-        assert!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)).is_empty());
+        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)), vec![Effect::KeyHaptic]);
         assert_eq!(toast(&app), Some("请输入 8 到 63 位密码"));
         assert_eq!(app.state.adding.as_ref().unwrap().field, Field::Password, "the keyboard types into the field turned down");
         tap(&mut app, &f, &i, Action::Type(Cap::Show(Layer::Digits)));
         type_in(&mut app, "12");
         let fx = tap(&mut app, &f, &i, Action::Type(Cap::Enter));
         let join = Effect::JoinWlan { ssid: b"skyward".to_vec(), name: "skyward".into(), security: Security::Psk, password: Secret("secret12".into()) };
-        assert_eq!(fx, vec![join]);
+        assert_eq!(fx, vec![Effect::KeyHaptic, join]);
         assert_eq!(app.screen(), Screen::Wlan, "the WLAN page shows how joining goes");
         assert_eq!((app.state.adding.as_ref(), app.state.password.as_str()), (None, ""), "nothing typed is kept");
     }
@@ -10771,12 +10858,12 @@ mod tests {
         for _ in 0..33 {
             tap(&mut app, &f, &i, Action::Type(Cap::Char('a')));
         }
-        assert!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)).is_empty());
+        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)), vec![Effect::KeyHaptic]);
         assert_eq!(toast(&app), Some("网络名称不能超过 32 个字符"));
         tap(&mut app, &f, &i, Action::Type(Cap::Backspace));
         let fx = tap(&mut app, &f, &i, Action::Type(Cap::Enter));
         let name = "a".repeat(32);
-        assert_eq!(fx, vec![Effect::JoinWlan { ssid: name.clone().into_bytes(), name, security: Security::Open, password: Secret::default() }]);
+        assert_eq!(fx, vec![Effect::KeyHaptic, Effect::JoinWlan { ssid: name.clone().into_bytes(), name, security: Security::Open, password: Secret::default() }]);
     }
 
     #[test]
@@ -11043,12 +11130,12 @@ mod tests {
         for (name, said) in refused {
             app.state.new_name = name.into();
             app.toast = None;
-            assert!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)).is_empty(), "{name:?} is not renamed to");
+            assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)), vec![Effect::KeyHaptic], "{name:?} is not renamed to");
             assert_eq!(app.toast.as_ref().map(|t| t.0.as_str()), Some(said));
             assert_eq!(app.screen(), Screen::Rename);
         }
         app.state.new_name = "a.zip".into();
-        assert!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)).is_empty());
+        assert_eq!(tap(&mut app, &f, &i, Action::Type(Cap::Enter)), vec![Effect::KeyHaptic]);
         assert_eq!(app.screen(), Screen::FileInfo, "the name left as it was, the page goes");
     }
 
@@ -11217,14 +11304,14 @@ mod tests {
     }
 
     #[test]
-    fn the_power_key_turning_the_screen_off_ticks_the_motor_whatever_the_settings() {
+    fn the_power_key_turning_the_screen_off_respects_the_vibration_switch() {
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.tick(0);
         assert_eq!(press(&mut app, Key::Power, 1000), vec![Effect::Ticks]);
         assert!(app.tick(1400).is_empty(), "once");
         app.state.vibrate = false;
         press(&mut app, Key::Power, 2000);
-        assert_eq!(press(&mut app, Key::Power, 3000), vec![Effect::Ticks], "with vibration off too");
+        assert!(press(&mut app, Key::Power, 3000).is_empty(), "with vibration off the motor stays still");
         let mut app = App::new(Screen::Home, W, H, PPD);
         app.tick(0);
         assert!(app.tick(OFF).is_empty(), "but not the screen going off by itself");

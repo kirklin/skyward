@@ -4,6 +4,7 @@ use sha2::{Digest, Sha256};
 use skyward_config::ramdisk as paths;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 mod avb;
@@ -67,6 +68,9 @@ enum Cmd {
         /// The monospaced typeface's licence, which goes with it.
         #[arg(long)]
         mono_license: PathBuf,
+        /// An optional tree of additional files to place in the recovery ramdisk.
+        #[arg(long)]
+        overlay: Option<PathBuf>,
         #[arg(long)]
         out: PathBuf,
     },
@@ -80,6 +84,9 @@ enum Cmd {
         /// The device configuration, devices/<codename>.toml.
         #[arg(long)]
         config: PathBuf,
+        /// A local full update package, instead of the package named in the configuration.
+        #[arg(long)]
+        package_file: Option<PathBuf>,
         /// Where to write the stock recovery image.
         #[arg(long)]
         out: Option<PathBuf>,
@@ -105,7 +112,7 @@ fn main() -> Result<()> {
             img.kernel = BootImage::read(&kernel)?.kernel;
             write(&out, &img, &img.to_bytes()?)
         }
-        Cmd::Recovery { stock, binary, system_init, config, font, mono, mono_license, out } => {
+        Cmd::Recovery { stock, binary, system_init, config, font, mono, mono_license, overlay, out } => {
             let size = partition_size(&stock)?;
             let mut img = BootImage::read(&stock)?;
             let mut rd = Ramdisk::decode(&img.ramdisk)?;
@@ -129,6 +136,9 @@ fn main() -> Result<()> {
             rd.add(paths::FONT, 0o644, read(&font)?)?;
             rd.add(paths::MONO, 0o644, read(&mono)?)?;
             rd.add(paths::MONO_LICENSE, 0o644, read(&mono_license)?)?;
+            if let Some(overlay) = overlay {
+                add_overlay(&mut rd, &overlay)?;
+            }
             // A stock ramdisk may run logd without any scheduling profiles,
             // and logd stops as soon as it cannot find the one it asks for.
             if rd.find(paths::TASK_PROFILES).is_none() {
@@ -152,15 +162,52 @@ fn main() -> Result<()> {
             let bytes = img.to_bytes()?;
             write(&out, &img, &avb::footed(&bytes, "recovery", size, &Sha256::digest(&bytes))?)
         }
-        Cmd::Stock { config, out } => {
+        Cmd::Stock { config, package_file, out } => {
             let stock = skyward_config::DeviceConfig::load(&config)?.stock.with_context(|| format!("{} names no stock build", config.display()))?;
             println!("version={}\npackage={}\nrecovery={}", stock.version, stock.package, stock.recovery);
             match out {
-                Some(out) => take_stock_recovery(&stock, &out),
+                Some(out) => take_stock_recovery(&stock, package_file.as_deref(), &out),
                 None => Ok(()),
             }
         }
     }
+}
+
+/// Add a tree of regular files and symbolic links to a recovery ramdisk.
+/// Paths are relative to the overlay root; collisions fail rather than
+/// silently replacing a stock recovery file.
+fn add_overlay(rd: &mut Ramdisk, root: &Path) -> Result<()> {
+    fn visit(rd: &mut Ramdisk, root: &Path, dir: &Path) -> Result<()> {
+        for entry in std::fs::read_dir(dir).with_context(|| format!("read overlay folder {}", dir.display()))? {
+            let entry = entry?;
+            let path = entry.path();
+            let relative = path.strip_prefix(root).context("overlay entry escaped its root")?;
+            let name = relative
+                .components()
+                .map(|part| match part {
+                    std::path::Component::Normal(part) => part.to_str().context("overlay path is not UTF-8"),
+                    _ => anyhow::bail!("{} is not a plain overlay path", relative.display()),
+                })
+                .collect::<Result<Vec<_>>>()?
+                .join("/");
+            let metadata = std::fs::symlink_metadata(&path).with_context(|| format!("stat overlay entry {}", path.display()))?;
+            if metadata.is_dir() {
+                visit(rd, root, &path)?;
+            } else if metadata.file_type().is_symlink() {
+                let target = std::fs::read_link(&path).with_context(|| format!("read overlay link {}", path.display()))?;
+                rd.link(&name, target.to_str().context("overlay link target is not UTF-8")?)?;
+            } else if metadata.is_file() {
+                let mode = metadata.permissions().mode() & 0o7777;
+                rd.add(&name, mode, std::fs::read(&path).with_context(|| format!("read overlay file {}", path.display()))?)?;
+            } else {
+                anyhow::bail!("{} is not a regular file, folder, or symbolic link", path.display());
+            }
+        }
+        Ok(())
+    }
+
+    ensure!(root.is_dir(), "overlay {} is not a folder", root.display());
+    visit(rd, root, root)
 }
 
 /// The partition a recovery is made on, as a full update package names it.
@@ -169,12 +216,15 @@ const RECOVERY: &str = "recovery";
 /// Take the recovery partition out of the stock build's full update package
 /// on its server, reading only what that partition takes of it, and write it
 /// to `out` once its SHA-256 is the one the configuration names.
-fn take_stock_recovery(stock: &skyward_config::Stock, out: &Path) -> Result<()> {
+fn take_stock_recovery(stock: &skyward_config::Stock, package_file: Option<&Path>, out: &Path) -> Result<()> {
     let parent = out.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
     std::fs::create_dir_all(parent).with_context(|| format!("make {}", parent.display()))?;
     // Taken out beside where it goes, so it is moved there whole.
     let work = tempfile::Builder::new().prefix(".stock").tempdir_in(parent).with_context(|| format!("make a folder in {}", parent.display()))?;
-    let payload = unpayload::Payload::open_url(&stock.package).with_context(|| format!("open {}", stock.package))?;
+    let payload = match package_file {
+        Some(path) => unpayload::Payload::open(path).with_context(|| format!("open {}", path.display()))?,
+        None => unpayload::Payload::open_url(&stock.package).with_context(|| format!("open {}", stock.package))?,
+    };
     let options = unpayload::ExtractOptions { output_dir: work.path().to_path_buf(), partitions: vec![RECOVERY.into()], ..Default::default() };
     let report = |event: unpayload::Event<'_>| match event {
         unpayload::Event::Started { partitions } => {
@@ -350,5 +400,18 @@ ro.vendor.build.security_patch=2026-10-01\nro.vendor.build.security_patch_level=
         assert_eq!(out, b"a=1\n");
         let kept = without(b"a=1\nb=2", &BUILD_VERSION);
         assert_eq!(kept, b"a=1\nb=2");
+    }
+
+    #[test]
+    fn an_overlay_adds_files_with_modes_and_links() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("bin")).unwrap();
+        std::fs::write(root.path().join("bin/tool"), b"tool").unwrap();
+        std::os::unix::fs::symlink("tool", root.path().join("bin/alias")).unwrap();
+        let mut rd = Ramdisk { entries: Vec::new() };
+        add_overlay(&mut rd, root.path()).unwrap();
+        assert_eq!(rd.find("bin/tool").unwrap().data, b"tool");
+        assert_eq!(rd.find("bin/alias").unwrap().data, b"tool");
+        assert_eq!(rd.find("bin/tool").unwrap().mode & 0o7777, 0o644);
     }
 }

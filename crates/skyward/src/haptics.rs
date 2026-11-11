@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 const EV_FF: u16 = 0x15;
 const FF_PERIODIC: u16 = 0x51;
 const FF_CUSTOM: u16 = 0x5d;
+const FF_SINE: u16 = 0x5a;
 
 /// The rate a made click's samples are played at, the lowest the driver
 /// takes: some fifty samples to each swing of the motor.
@@ -62,6 +63,11 @@ pub struct Haptics {
     dev: File,
     click: Click,
     ticks: Click,
+    key: Option<Click>,
+    brief: Option<Click>,
+    switch: Option<Click>,
+    slider: Option<Click>,
+    long_press: Option<Click>,
     strength: Strength,
     /// The click playing, by its slot and its count, until it is taken
     /// away; a click taken away early by the next is not taken away again.
@@ -71,6 +77,11 @@ pub struct Haptics {
 
 /// What a click is.
 enum Click {
+    /// A finite waveform from Cirrus's firmware, including its own shape.
+    CirrusRam(skyward_config::CirrusWaveform),
+    /// CS40L26's native buzz generator uses milliseconds and a 0..255 level,
+    /// rather than Qualcomm's pointer-bearing custom FIFO structure.
+    Sine { period_ms: u16, length_ms: u16 },
     /// A waveform the driver keeps, by its number. The driver says how long
     /// it plays as it loads it.
     Kept(i16),
@@ -79,14 +90,53 @@ enum Click {
     Samples { data: Vec<i8>, rate: u32 },
 }
 
+#[derive(Clone, Copy, clap::ValueEnum)]
+pub enum Feedback {
+    Click,
+    #[value(name = "back")]
+    Brief,
+    Key,
+    #[value(name = "screen-off")]
+    Ticks,
+    Switch,
+    Slider,
+    LongPress,
+}
+
+impl Click {
+    fn cirrus(&self) -> bool {
+        matches!(self, Click::Sine { .. } | Click::CirrusRam(_))
+    }
+}
+
 impl Haptics {
     /// The force-feedback device and the configured click. Loading a click
     /// fills the driver's queue with what it plays, so the click is loaded
     /// only as it is played.
     pub fn open(cfg: &skyward_config::Haptics) -> Result<Haptics> {
-        let (path, dev) = motor()?;
+        let (path, dev, cirrus) = motor()?;
+        ensure!(cfg.cirrus_ram.is_none() || cirrus, "the configured Cirrus RAM profile requires cs40l26_input");
+        if let (true, Some(ram)) = (cirrus, &cfg.cirrus_ram) {
+            let name = path.file_name().and_then(|n| n.to_str()).context("input device name")?;
+            let version = fs::read_to_string(format!("/sys/class/input/{name}/device/default/fw_rev"))?;
+            ensure!(version.trim() == ram.firmware, "Cirrus RAM firmware mismatch: {:?}, expected {}", version.trim(), ram.firmware);
+            eprintln!("haptics: Cirrus firmware {} stock RAM click={}, key={}, back={}, screen-off={}, switch={}, slider={}, long-press={}",
+                ram.firmware, ram.click.index, ram.key.index, ram.back.index, ram.screen_off.index,
+                ram.switch.index, ram.slider.index, ram.long_press.index);
+            return Ok(Haptics {
+                dev, click: Click::CirrusRam(ram.click), ticks: Click::CirrusRam(ram.screen_off),
+                key: Some(Click::CirrusRam(ram.key)), brief: Some(Click::CirrusRam(ram.back)),
+                switch: Some(Click::CirrusRam(ram.switch)), slider: Some(Click::CirrusRam(ram.slider)),
+                long_press: Some(Click::CirrusRam(ram.long_press)), strength: cfg.strength,
+                playing: Arc::new(Mutex::new(None)), clicks: 0,
+            });
+        }
         let hz = resonance(&cfg.resonance)?;
-        let click = match cfg.click {
+        let click = if cirrus {
+            let period_ms = (1000.0 / hz).round().clamp(4.0, 10.0) as u16;
+            eprintln!("haptics {}: CS40L26 native sine, period {period_ms} ms, configured resonance {hz} Hz", path.display());
+            Click::Sine { period_ms, length_ms: 28 }
+        } else { match cfg.click {
             Some(id) => {
                 eprintln!("haptics {}: clicks with waveform {id}, ticks made for a motor swinging at {hz} Hz", path.display());
                 Click::Kept(id)
@@ -95,39 +145,100 @@ impl Haptics {
                 eprintln!("haptics {}: clicks and ticks made for a motor swinging at {hz} Hz", path.display());
                 Click::Samples { data: made(hz), rate: RATE }
             }
+        }};
+        let ticks = if let Click::Sine { period_ms, .. } = &click {
+            Click::Sine { period_ms: *period_ms, length_ms: 24 }
+        } else {
+            Click::Samples { data: ticks(hz), rate: TICKS_RATE }
         };
-        let ticks = Click::Samples { data: ticks(hz), rate: TICKS_RATE };
-        Ok(Haptics { dev, click, ticks, strength: cfg.strength, playing: Arc::new(Mutex::new(None)), clicks: 0 })
+        let (key, brief) = if let Click::Sine { period_ms, .. } = &click {
+            (Some(Click::Sine { period_ms: *period_ms, length_ms: 16 }), Some(Click::Sine { period_ms: *period_ms, length_ms: 24 }))
+        } else { (None, None) };
+        Ok(Haptics { dev, click, ticks, key, brief, switch: None, slider: None, long_press: None,
+            strength: cfg.strength, playing: Arc::new(Mutex::new(None)), clicks: 0 })
     }
 
     /// One short click at the strength the slider's `position` gives, after
     /// taking away one still playing. Gives how long it plays.
     pub fn click(&mut self, position: f32) -> Result<Duration> {
-        self.start(false, share(&self.strength, position))
+        self.start(Feedback::Click, share(&self.strength, position))
     }
 
-    /// The ticks of the screen going off, as strong as the phone's own
-    /// system plays them whatever the slider says. Gives how long they play.
-    pub fn ticks(&mut self) -> Result<Duration> {
-        self.start(true, TICKS_STRENGTH)
+    pub fn brief(&mut self, position: f32) -> Result<Duration> {
+        self.start(Feedback::Brief, share(&self.strength, position))
+    }
+
+    pub fn key(&mut self, position: f32) -> Result<Duration> {
+        self.start(Feedback::Key, share(&self.strength, position))
+    }
+
+    pub fn switch(&mut self, position: f32) -> Result<Duration> {
+        self.start(Feedback::Switch, share(&self.strength, position))
+    }
+
+    pub fn slider(&mut self, position: f32) -> Result<Duration> {
+        self.start(Feedback::Slider, share(&self.strength, position))
+    }
+
+    pub fn long_press(&mut self, position: f32) -> Result<Duration> {
+        self.start(Feedback::LongPress, share(&self.strength, position))
+    }
+
+    /// Cirrus feedback follows the strength preference, including the
+    /// short screen-off click. Other motors retain their sampled effect.
+    pub fn ticks(&mut self, position: f32) -> Result<Duration> {
+        let strength = if self.ticks.cirrus() { share(&self.strength, position) } else { TICKS_STRENGTH };
+        self.start(Feedback::Ticks, strength)
     }
 
     /// Play the ticks, or else the click, at `share` of its full strength,
     /// after taking away what still plays.
-    fn start(&mut self, ticks: bool, share: f32) -> Result<Duration> {
+    fn start(&mut self, kind: Feedback, share: f32) -> Result<Duration> {
+        let dev = self.dev.try_clone().context("share the motor")?;
         let mut playing = self.playing.lock().expect("no thread panics while it holds the click playing");
         if let Some((slot, _)) = playing.take() {
             erase(&self.dev, slot).context("take away the click still playing")?;
         }
-        let effect = if ticks { &self.ticks } else { &self.click };
-        let loaded = upload(&self.dev, effect, share).context("load the click")?;
-        play(&mut self.dev, loaded.slot).context("play the click")?;
+        let ticks = matches!(kind, Feedback::Ticks);
+        let effect = match kind {
+            Feedback::Ticks => &self.ticks,
+            Feedback::Key => self.key.as_ref().unwrap_or(&self.click),
+            Feedback::Brief => self.brief.as_ref().unwrap_or(&self.click),
+            Feedback::Switch => self.switch.as_ref().unwrap_or(&self.click),
+            Feedback::Slider => self.slider.as_ref().unwrap_or(&self.click),
+            Feedback::LongPress => self.long_press.as_ref().unwrap_or(&self.click),
+            Feedback::Click => &self.click,
+        };
+        // RAM keeps its original amplitude envelope. Only master gain
+        // follows Skyward's strength preference; sine magnitude is separate.
+        let magnitude = if effect.cirrus() {
+            event(&mut self.dev, 0x60, (share.clamp(0.0, 1.0) * 100.0).round() as i32).context("set CS40L26 strength")?;
+            if matches!(effect, Click::CirrusRam(_)) { 0.0 } else { 191.0 / 255.0 }
+        } else { share };
+        let loaded = upload(&self.dev, effect, magnitude).context("load the click")?;
+        if let Err(e) = play(&mut self.dev, loaded.slot) {
+            let _ = erase(&self.dev, loaded.slot);
+            return Err(e).context("play the click");
+        }
         self.clicks += 1;
         let this = (loaded.slot, self.clicks);
         *playing = Some(this);
         drop(playing);
-        let dev = self.dev.try_clone().context("share the motor")?;
-        let length = loaded.length + if ticks { TICKS_REST } else { Duration::ZERO };
+        // CS40L26 starts playback on its workqueue. Let that queued start
+        // complete before erasing the slot. RAM timing includes the finite
+        // wave's encoded duration, its 20 ms braking time and queue margin.
+        let settle = match effect {
+            Click::CirrusRam(_) => Duration::from_millis(40),
+            Click::Sine { .. } => Duration::from_millis(20),
+            _ => Duration::ZERO,
+        };
+        let length = loaded.length + settle + if ticks && !effect.cirrus() { TICKS_REST } else { Duration::ZERO };
+        // Keeping a finished finite RAM effect loaded does not extend it.
+        // Retain the queue margin used by the native RAM path, and allow
+        // longer composite effects to finish rather than clipping at 80 ms.
+        let length = if matches!(effect, Click::CirrusRam(_)) {
+            length.max(Duration::from_millis(100))
+        } else { length };
         // Timed from now: a thread may wait a while before it first runs.
         let until = Instant::now() + length;
         let playing = self.playing.clone();
@@ -145,30 +256,51 @@ impl Haptics {
     }
 }
 
+impl Drop for Haptics {
+    fn drop(&mut self) {
+        if let Ok(mut playing) = self.playing.lock() {
+            if let Some((slot, _)) = playing.take() {
+                if let Err(e) = erase(&self.dev, slot) {
+                    eprintln!("take away the last click: {e}");
+                }
+            }
+        }
+    }
+}
+
 /// Play the configured click once at the slider's `position`, or else the
 /// ticks of the screen going off, saying how strongly and for how long, for
 /// trying out a motor.
-pub fn probe(cfg: &skyward_config::Haptics, position: f32, ticks: bool) -> Result<()> {
+pub fn probe(cfg: &skyward_config::Haptics, position: f32, kind: Feedback) -> Result<()> {
     let mut haptics = Haptics::open(cfg)?;
-    let (what, strength, length) = if ticks {
-        ("ticks", TICKS_STRENGTH, haptics.ticks()?)
-    } else {
-        ("click", share(&cfg.strength, position), haptics.click(position)?)
+    let strength = if matches!(kind, Feedback::Ticks) && !haptics.ticks.cirrus() {
+        TICKS_STRENGTH
+    } else { share(&cfg.strength, position) };
+    let (what, length) = match kind {
+        Feedback::Click => ("click", haptics.click(position)?),
+        Feedback::Brief => ("back", haptics.brief(position)?),
+        Feedback::Key => ("keyboard", haptics.key(position)?),
+        Feedback::Ticks => ("screen-off", haptics.ticks(position)?),
+        Feedback::Switch => ("switch", haptics.switch(position)?),
+        Feedback::Slider => ("slider", haptics.slider(position)?),
+        Feedback::LongPress => ("long-press", haptics.long_press(position)?),
     };
     // Once it has played out, what played goes with the device as the
     // command ends.
     std::thread::sleep(length);
-    println!("played the {what} at {strength:.3} of the full strength, {} ms long", length.as_millis());
+    println!("played the {what} at {strength:.3} of the full strength; slot lifetime {} us including cleanup margin", length.as_micros());
     Ok(())
 }
 
 /// The first input device under /dev/input that takes periodic
 /// force-feedback effects, opened for writing.
-fn motor() -> Result<(PathBuf, File)> {
+fn motor() -> Result<(PathBuf, File, bool)> {
     for (path, dev) in evdev::raw_stream::enumerate() {
         if takes_periodic(&dev) {
             let file = OpenOptions::new().read(true).write(true).open(&path).with_context(|| format!("open {}", path.display()))?;
-            return Ok((path, file));
+            let cirrus = dev.name() == Some("cs40l26_input");
+            ensure!(!cirrus || dev.supported_ff().is_some_and(|ff| ff.contains(evdev::FFEffectCode::FF_SINE)), "CS40L26 does not advertise FF_SINE");
+            return Ok((path, file, cirrus));
         }
     }
     Err(anyhow!("no input device takes force-feedback effects"))
@@ -254,8 +386,16 @@ fn upload(dev: &File, click: &Click, share: f32) -> Result<Loaded> {
     // waveform's number from the first of three values and writes how long
     // it plays into the other two, in whole seconds and then milliseconds.
     let mut kept: [i16; 3] = [0; 3];
+    let mut cirrus_ram: [i16; 2] = [0; 2];
     let mut samples = Samples { index: 0, length: 0, rate: RATE, data: std::ptr::null() };
     let (len, data) = match click {
+        Click::CirrusRam(wave) => {
+            cirrus_ram[1] = i16::try_from(wave.index)?;
+            // Cirrus counts i16 elements; Qualcomm counts bytes. A length
+            // of four would enter Cirrus's OWT parser instead of RAM lookup.
+            (cirrus_ram.len(), cirrus_ram.as_mut_ptr())
+        }
+        Click::Sine { .. } => (0, std::ptr::null_mut()),
         Click::Kept(id) => {
             kept[0] = *id;
             (std::mem::size_of_val(&kept), kept.as_mut_ptr())
@@ -268,9 +408,9 @@ fn upload(dev: &File, click: &Click, share: f32) -> Result<Loaded> {
         }
     };
     let periodic = libc::ff_periodic_effect {
-        waveform: FF_CUSTOM,
-        period: 0,
-        magnitude: (share.clamp(0.0, 1.0) * f32::from(i16::MAX)).round() as i16,
+        waveform: if matches!(click, Click::Sine { .. }) { FF_SINE } else { FF_CUSTOM },
+        period: if let Click::Sine { period_ms, .. } = click { *period_ms } else { 0 },
+        magnitude: (share.clamp(0.0, 1.0) * if matches!(click, Click::Sine { .. }) { 255.0 } else { f32::from(i16::MAX) }).round() as i16,
         offset: 0,
         phase: 0,
         envelope: libc::ff_envelope { attack_length: 0, attack_level: 0, fade_length: 0, fade_level: 0 },
@@ -282,7 +422,12 @@ fn upload(dev: &File, click: &Click, share: f32) -> Result<Loaded> {
         id: -1,
         direction: 0,
         trigger: libc::ff_trigger { button: 0, interval: 0 },
-        replay: libc::ff_replay { length: 0, delay: 0 },
+        replay: libc::ff_replay { length: match click {
+            Click::Sine { length_ms, .. } => *length_ms,
+            // A finite RAM wave finishes naturally; leave time for braking.
+            Click::CirrusRam(wave) => u16::try_from(wave.samples.div_ceil(8) + 20)?,
+            _ => 0,
+        }, delay: 0 },
         u: [0; 4],
     };
     // The union holds the periodic effect; it is exactly as large.
@@ -295,6 +440,8 @@ fn upload(dev: &File, click: &Click, share: f32) -> Result<Loaded> {
         return Err(io::Error::last_os_error().into());
     }
     let length = match click {
+        Click::CirrusRam(wave) => Duration::from_micros(u64::from(wave.samples) * 125),
+        Click::Sine { length_ms, .. } => Duration::from_millis(u64::from(*length_ms)),
         Click::Kept(id) => {
             let [_, seconds, millis] = kept;
             let length = Duration::from_secs(u64::try_from(seconds)?) + Duration::from_millis(u64::try_from(millis)?);
@@ -309,7 +456,11 @@ fn upload(dev: &File, click: &Click, share: f32) -> Result<Loaded> {
 
 /// Start the loaded effect in slot `id`.
 fn play(dev: &mut File, id: i16) -> io::Result<()> {
-    let event = libc::input_event { time: libc::timeval { tv_sec: 0, tv_usec: 0 }, type_: EV_FF, code: id as u16, value: 1 };
+    event(dev, id as u16, 1)
+}
+
+fn event(dev: &mut File, code: u16, value: i32) -> io::Result<()> {
+    let event = libc::input_event { time: libc::timeval { tv_sec: 0, tv_usec: 0 }, type_: EV_FF, code, value };
     let bytes = unsafe { std::slice::from_raw_parts((&event as *const libc::input_event).cast::<u8>(), std::mem::size_of::<libc::input_event>()) };
     dev.write_all(bytes)
 }

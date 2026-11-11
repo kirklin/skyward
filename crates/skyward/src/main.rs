@@ -136,6 +136,15 @@ enum Cmd {
         /// Play the ticks of the screen going off instead of the click.
         #[arg(long)]
         ticks: bool,
+        /// Play the brief keyboard / gesture click instead.
+        #[arg(long, conflicts_with = "ticks")]
+        brief: bool,
+        /// Play the keyboard waveform.
+        #[arg(long, conflicts_with_all = ["ticks", "brief"])]
+        key: bool,
+        /// Select a feedback scene, using the device's stock RAM mapping.
+        #[arg(long, value_enum, conflicts_with_all = ["ticks", "brief", "key"])]
+        scene: Option<haptics::Feedback>,
     },
     /// Save what the panel shows, as raw RGBA files cap-000.rgba onwards.
     #[cfg(target_os = "android")]
@@ -215,11 +224,11 @@ fn main() -> Result<()> {
     // init starts the recovery service by path with no arguments.
     let started_as = std::env::args_os().next().unwrap_or_default();
     let name = Path::new(&started_as).file_name().unwrap_or_default();
-    if name == "recovery" {
+    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    if name == "recovery" && args.is_empty() {
         return recovery();
     }
     // Install scripts run the commands linked to this binary by their names.
-    let args: Vec<_> = std::env::args_os().skip(1).collect();
     if let Some(code) = skyward_install::commands::run(name, &args) {
         std::process::exit(code);
     }
@@ -289,9 +298,12 @@ fn main() -> Result<()> {
             Ok(())
         }
         #[cfg(target_os = "android")]
-        Cmd::Haptic { config, position, ticks } => {
+        Cmd::Haptic { config, position, ticks, brief, key, scene } => {
             let haptics = DeviceConfig::load(&config)?.haptics.context("the configuration describes no vibration motor")?;
-            haptics::probe(&haptics, position, ticks)
+            let kind = scene.unwrap_or(if ticks { haptics::Feedback::Ticks }
+                else if brief { haptics::Feedback::Brief }
+                else if key { haptics::Feedback::Key } else { haptics::Feedback::Click });
+            haptics::probe(&haptics, position, kind)
         }
         #[cfg(target_os = "android")]
         Cmd::Capture { out, count, interval, card } => {

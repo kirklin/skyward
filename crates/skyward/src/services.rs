@@ -224,10 +224,45 @@ fn command(s: &Service, who: &Credentials) -> Command {
         cmd.env("LD_LIBRARY_PATH", s.libraries.join(":"));
     }
     let who = who.clone();
+    let memory_data = s.memory_data;
     // Only system calls run between the fork and the exec, on what was
     // worked out before it.
-    unsafe { cmd.pre_exec(move || who.take_on()) };
+    unsafe {
+        cmd.pre_exec(move || {
+            if memory_data {
+                private_memory_data(who.uid, who.gid)?;
+            }
+            who.take_on()
+        })
+    };
     cmd
+}
+
+/// A calibration daemon uses fixed paths below /data while that partition
+/// is still closed. Give only the child a bounded RAM data tree. Private
+/// mount propagation keeps a later data mount in the recovery from
+/// covering this tree. Only system calls and fixed strings run between
+/// fork and exec, before the child takes on its configured account.
+fn private_memory_data(uid: libc::uid_t, gid: libc::gid_t) -> io::Result<()> {
+    let done = |result| if result == 0 { Ok(()) } else { Err(io::Error::last_os_error()) };
+    let c = |bytes: &'static [u8]| bytes.as_ptr().cast::<libc::c_char>();
+    done(unsafe { libc::unshare(libc::CLONE_NEWNS) })?;
+    done(unsafe { libc::mount(std::ptr::null(), c(b"/\0"), std::ptr::null(), libc::MS_REC | libc::MS_PRIVATE, std::ptr::null()) })?;
+    done(unsafe {
+        libc::mount(
+            c(b"skyward-service-data\0"),
+            c(b"/data\0"),
+            c(b"tmpfs\0"),
+            libc::MS_NODEV | libc::MS_NOSUID | libc::MS_NOEXEC,
+            c(b"size=16m,nr_inodes=512,mode=0755\0").cast(),
+        )
+    })?;
+    done(unsafe { libc::mkdir(c(b"/data/vendor\0"), 0o755) })?;
+    for path in [b"/data/vendor/wifi\0".as_slice(), b"/data/vendor/wifi/sockets\0", b"/data/vendor/wlan_logs\0"] {
+        done(unsafe { libc::mkdir(c(path), 0o770) })?;
+        done(unsafe { libc::chown(c(path), uid, gid) })?;
+    }
+    Ok(())
 }
 
 /// Lock in memory every file the running programs have mapped or open on

@@ -163,6 +163,11 @@ pub struct Firmware {
     /// read-only while the file is read.
     #[serde(default)]
     pub partition: Option<String>,
+    /// Some builds leave a separate MAC file absent. Only an absent
+    /// file may be skipped;
+    /// mount failures and other read errors still stop WLAN startup.
+    #[serde(default)]
+    pub optional: bool,
 }
 
 /// The phone maker's update server, which the stock updater asks about the
@@ -400,6 +405,11 @@ pub struct Service {
     /// names it: it keeps these alone, through its change of user.
     #[serde(default)]
     pub capabilities: Vec<String>,
+    /// Give this program a private mount namespace with a bounded tmpfs
+    /// at /data for its calibration cache. Mounting real userdata later
+    /// in the recovery does not change what this program sees there.
+    #[serde(default)]
+    pub memory_data: bool,
 }
 
 /// The kernel's capabilities, by the names init's capabilities lines give
@@ -810,6 +820,7 @@ mod tests {
         let root = DeviceConfig::parse(base).unwrap();
         let s = &root.services[0];
         assert_eq!((s.user.as_ref(), s.groups.len(), s.capabilities.len()), (None, 0, 0), "root, as init runs one that names no user");
+        assert!(!s.memory_data, "services use the recovery's mounts unless they request private RAM data");
         let named = DeviceConfig::parse(&format!("{base}user = \"system\"\ngroups = [\"system\", \"drmrpc\"]\ncapabilities = [\"WAKE_ALARM\"]\n")).unwrap();
         let s = &named.services[0];
         assert_eq!((s.user.as_deref(), &s.groups[..], &s.capabilities[..]), (Some("system"), &["system".to_string(), "drmrpc".to_string()][..], &["WAKE_ALARM".to_string()][..]));
@@ -1033,6 +1044,14 @@ mod tests {
     }
 
     #[test]
+    fn a_firmware_file_is_required_unless_it_explicitly_allows_absence() {
+        let required: Firmware = toml::from_str("name = 'wlan/a.ini'\npath = '/vendor/etc/a.ini'\n").unwrap();
+        assert!(!required.optional);
+        let optional: Firmware = toml::from_str("name = 'wlan/mac.bin'\npath = 'kiwi_v2/wlan_mac.bin'\npartition = 'persist'\noptional = true\n").unwrap();
+        assert!(optional.optional);
+    }
+
+    #[test]
     fn services_use_the_partitions_they_run_from() {
         let cfg = DeviceConfig::parse(include_str!("../../../devices/ishtar.toml")).unwrap();
         let [report, sensor, listeners, ..] = &cfg.services[..] else { panic!("ishtar keeps several programs running") };
@@ -1042,5 +1061,26 @@ mod tests {
         assert!(!sensor.uses(Path::new("/mnt/system")), "its /system/lib64 is the recovery's own");
         assert!(!report.uses(Path::new("/vendor")));
         assert!(listeners.uses(Path::new("/vendor")));
+    }
+
+    #[test]
+    fn socrates_calibration_runs_before_the_wlan_is_enabled_with_private_ram_data() {
+        let cfg = DeviceConfig::parse(include_str!("../../../devices/socrates.toml")).unwrap();
+        assert!(cfg.modules.load.iter().any(|n| n == "qca_cld3_kiwi_v2"), "CNSS's device exists when its daemon starts");
+        let paths: Vec<_> = cfg.services.iter().map(|s| s.path.as_str()).collect();
+        let qrtr = paths.iter().position(|p| *p == "/vendor/bin/qrtr-ns").unwrap();
+        let cnss = paths.iter().position(|p| *p == "/vendor/bin/cnss-daemon").unwrap();
+        assert!(qrtr < cnss);
+        assert_eq!(cfg.services[qrtr].args, ["-f"], "supervise the foreground name service");
+        let calibration = &cfg.services[cnss];
+        assert_eq!(calibration.args, ["-n"]);
+        assert_eq!(calibration.user.as_deref(), Some("system"));
+        assert_eq!(calibration.capabilities, ["NET_ADMIN"]);
+        assert!(calibration.memory_data, "calibration never writes the installed userdata");
+        assert!(cfg.services.iter().enumerate().all(|(i, s)| !s.memory_data || i == cnss), "only CNSS gets its own data tree");
+        let wlan = cfg.wlan.unwrap();
+        assert_eq!(wlan.writes, [Write { path: "/sys/kernel/cnss/fs_ready".into(), value: "1".into() }], "calibration begins when the WLAN is turned on");
+        assert!(!wlan.firmware[0].optional, "the WLAN settings are required");
+        assert!(wlan.firmware[1].optional, "the separate persist MAC file is absent on the tested phone");
     }
 }

@@ -694,17 +694,28 @@ fn place(file: &Firmware) -> Result<()> {
     let dir = to.parent().expect("a firmware file is in a folder");
     fs::create_dir_all(dir).with_context(|| format!("make {}", dir.display()))?;
     let bytes = match &file.partition {
-        None => fs::read(&file.path).with_context(|| format!("read {}", file.path))?,
+        None => read_firmware(Path::new(&file.path), file.optional).with_context(|| format!("read {}", file.path))?,
         Some(partition) => {
             let at = Path::new(PARTITIONS).join(partition);
             fs::create_dir_all(&at).with_context(|| format!("make {}", at.display()))?;
             skyward_block::mount::mount_ro(&Path::new(skyward_block::BY_NAME).join(partition), &at)?;
-            let read = fs::read(at.join(&file.path)).with_context(|| format!("read {} on {partition}", file.path));
+            let read = read_firmware(&at.join(&file.path), file.optional).with_context(|| format!("read {} on {partition}", file.path));
             skyward_block::mount::umount(&at)?;
             read?
         }
     };
-    fs::write(&to, bytes).with_context(|| format!("write {}", to.display()))
+    match bytes {
+        Some(bytes) => fs::write(&to, bytes).with_context(|| format!("write {}", to.display())),
+        None => skyward_sys::kmsg(&format!("optional firmware {} is absent", file.name)),
+    }
+}
+
+fn read_firmware(path: &Path, optional: bool) -> std::io::Result<Option<Vec<u8>>> {
+    match fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if optional && error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 /// Start the supplicant on the interface, and wait for its control socket.

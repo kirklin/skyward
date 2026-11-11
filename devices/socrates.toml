@@ -22,7 +22,17 @@ read_only = true
 sources = ["vendor_boot", "vendor_dlkm", "vendor"]
 # The phone's modules.load names Goodix, not the FTS driver of fuxi/nuwa.
 # touch_report processes the GT9916S controller's raw frames.
-load = ["xiaomi_touch", "goodix_core"]
+# CNSS's device and QMI service must exist before cnss-daemon connects.
+# fs_ready is still deferred until the WLAN is turned on below.
+load = ["xiaomi_touch", "goodix_core", "qca_cld3_kiwi_v2"]
+
+# The module creates this after the initial vendor ueventd rules are
+# applied. Its owner and mode are from /vendor/etc/ueventd.rc.
+[[owners]]
+user = "wifi"
+group = "wifi"
+mode = 0o660
+paths = ["/dev/wlan"]
 
 # The stock touchfeature init rules hand these files to the system user.
 # The touch_dev entries below were also seen on the running phone; the
@@ -133,14 +143,36 @@ ready_hardware_service = "android.hardware.gatekeeper@1.0::IGatekeeper/default"
 user = "system"
 groups = ["system"]
 
-# WCN7850: the stock driver and the settings and MAC address its firmware
-# loader asks for. This does not use the mainline ath12k driver.
+# The working stock-kernel DSU path needs both the QRTR name service and
+# the CNSS userspace calibration service before fs_ready. Loading only
+# qca_cld3_kiwi_v2 does not supply either. Keep them in the foreground so
+# the recovery supervises the actual processes.
+[[service]]
+path = "/vendor/bin/qrtr-ns"
+args = ["-f"]
+libraries = ["/system/lib64", "/vendor/lib64"]
+user = "root"
+groups = ["root"]
+
+[[service]]
+path = "/vendor/bin/cnss-daemon"
+args = ["-n"]
+libraries = ["/system/lib64", "/vendor/lib64"]
+user = "system"
+groups = ["system", "inet", "net_admin", "wifi"]
+capabilities = ["NET_ADMIN"]
+# Keep its fixed cache paths in RAM when the recovery opens real userdata.
+memory_data = true
+
+# WCN7850 uses the stock driver. Its ini is required, while the separate
+# persist MAC file is absent on the tested phone. Let the driver continue
+# without it instead of making this optional file a startup requirement.
 [wlan]
 modules = ["qca_cld3_kiwi_v2"]
 writes = [{ path = "/sys/kernel/cnss/fs_ready", value = "1" }]
 firmware = [
     { name = "wlan/qca_cld/kiwi_v2/WCNSS_qcom_cfg.ini", path = "/vendor/etc/wifi/kiwi_v2/WCNSS_qcom_cfg.ini" },
-    { name = "wlan/qca_cld/kiwi_v2/wlan_mac.bin", partition = "persist", path = "kiwi_v2/wlan_mac.bin" },
+    { name = "wlan/qca_cld/kiwi_v2/wlan_mac.bin", partition = "persist", path = "kiwi_v2/wlan_mac.bin", optional = true },
 ]
 interface = "wlan0"
 supplicant = "/vendor/bin/hw/wpa_supplicant"

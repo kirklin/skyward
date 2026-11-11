@@ -249,6 +249,7 @@ struct Records {
 /// not hold, but for what is `skipped` and the folders a key of their own
 /// begins in. Tells how many bytes of file contents are written so far.
 pub fn unpack(input: impl Read, root: &Path, skipped: &Skipped, cancel: &AtomicBool, progress: &mut dyn FnMut(u64)) -> Result<Unpacked> {
+    ensure!(fs::symlink_metadata(root).with_context(|| format!("look at {}", root.display()))?.is_dir(), "the restore root is not a directory");
     let mut archive = Archive::new(input);
     let mut held: HashSet<PathBuf> = HashSet::new();
     let mut folders: Vec<(PathBuf, (i64, u32))> = Vec::new();
@@ -260,13 +261,13 @@ pub fn unpack(input: impl Read, root: &Path, skipped: &Skipped, cancel: &AtomicB
         }
         let mut entry = entry.context("read the archive")?;
         let rel = entry.path().context("read the archive")?.into_owned();
-        ensure!(rel.components().all(|c| matches!(c, Component::Normal(_))), "the archive names {} outside its folder", rel.display());
+        ensure!(!rel.as_os_str().is_empty() && rel.components().all(|c| matches!(c, Component::Normal(_))), "the archive names {} outside its folder", rel.display());
         if skipped.covers(&rel) || unpacked.unmade.iter().any(|u| rel.starts_with(u)) {
             continue;
         }
         let records = records(&mut entry).with_context(|| format!("read what the archive holds of {}", rel.display()))?;
         let header = entry.header().clone();
-        let path = root.join(&rel);
+        let path = inside(root, &rel)?;
         let mtime = records.mtime.unwrap_or((header.mtime()? as i64, 0));
         let made = (|| -> Result<bool> {
             match header.entry_type() {
@@ -325,8 +326,11 @@ pub fn unpack(input: impl Read, root: &Path, skipped: &Skipped, cancel: &AtomicB
                 }
                 EntryType::Link => {
                     let first = entry.link_name().context("read what it is another name of")?.context("it names no file")?.into_owned();
+                    let source = inside(root, &first)?;
+                    ensure!(source != path, "a hard link cannot name itself");
+                    ensure!(fs::symlink_metadata(&source).context("look at its original file")?.is_file(), "a hard link must name a regular file inside the restore root");
                     remove_any(&path)?;
-                    fs::hard_link(root.join(first), &path).context("make it")?;
+                    fs::hard_link(&source, &path).context("make it")?;
                 }
                 EntryType::Char | EntryType::Block | EntryType::Fifo => {
                     remove_any(&path)?;
@@ -365,6 +369,20 @@ pub fn unpack(input: impl Read, root: &Path, skipped: &Skipped, cancel: &AtomicB
         times(&root.join(rel), *mtime)?;
     }
     Ok(unpacked)
+}
+
+/// Archive entries may restore symbolic links, but may never traverse one
+/// as a parent. A lexical relative path alone does not keep a write below
+/// root when an earlier entry or the existing tree supplies a symlink.
+fn inside(root: &Path, relative: &Path) -> Result<PathBuf> {
+    ensure!(!relative.as_os_str().is_empty() && relative.components().all(|c| matches!(c, Component::Normal(_))), "the archive names {} outside its folder", relative.display());
+    let mut parent = root.to_path_buf();
+    for component in relative.parent().expect("a relative entry has a parent").components() {
+        parent.push(component);
+        let meta = fs::symlink_metadata(&parent).with_context(|| format!("look at restore parent {}", parent.display()))?;
+        ensure!(meta.is_dir(), "restore parent {} is not a plain directory", parent.display());
+    }
+    Ok(root.join(relative))
 }
 
 /// Take away what the folder at `rel` in `root` holds that `held` does
@@ -731,6 +749,87 @@ mod tests {
             assert_eq!(held(&was), held(&now), "{rel} keeps its label and all else beyond its contents");
             assert!(held(&now).iter().any(|(k, _)| k == "SCHILY.xattr.security.selinux"), "{rel} has a label");
         }
+        fs::remove_dir_all(&at).unwrap();
+    }
+
+    fn test_header(kind: EntryType, bytes: usize) -> Header {
+        let mut header = Header::new_gnu();
+        header.set_entry_type(kind);
+        header.set_mode(0o700);
+        header.set_uid(u64::from(unsafe { libc::geteuid() }));
+        header.set_gid(u64::from(unsafe { libc::getegid() }));
+        header.set_size(bytes as u64);
+        header
+    }
+
+    #[test]
+    fn hard_link_sources_stay_inside_the_restore_root_and_are_regular_files() {
+        let at = scratch("hard-link-boundary");
+        let (root, outside) = (at.join("root"), at.join("outside"));
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir(&outside).unwrap();
+        let protected = outside.join("protected");
+        fs::write(&protected, b"outside stays unchanged").unwrap();
+        fs::write(root.join("destination"), b"keep the previous destination").unwrap();
+        symlink(&outside, root.join("parent-link")).unwrap();
+        symlink(&protected, root.join("leaf-link")).unwrap();
+        for target in [protected.clone(), PathBuf::from("../outside/protected"), PathBuf::from("parent-link/protected"),
+                       PathBuf::from("leaf-link"), PathBuf::from("destination")] {
+            let mut tar = Builder::new(Vec::new());
+            tar.append_link(&mut test_header(EntryType::Link, 0), "destination", &target).unwrap();
+            let bytes = tar.into_inner().unwrap();
+            assert!(unpack(bytes.as_slice(), &root, &Skipped::new(&[]), &AtomicBool::new(false), &mut |_| {}).is_err(), "accepted {target:?}");
+            assert_eq!(fs::read(root.join("destination")).unwrap(), b"keep the previous destination", "refuse before deleting the old destination");
+            assert_eq!(fs::read(&protected).unwrap(), b"outside stays unchanged");
+            assert_eq!(fs::metadata(&protected).unwrap().nlink(), 1, "never add a link to the outside file");
+        }
+        fs::remove_dir_all(&at).unwrap();
+    }
+
+    #[test]
+    fn restoring_entries_never_traverses_existing_or_archived_symlink_parents() {
+        let at = scratch("symlink-parents");
+        for existing in [false, true] {
+            for directory in [false, true] {
+                let case = at.join(format!("{existing}-{directory}"));
+                let (root, outside) = (case.join("root"), case.join("outside"));
+                fs::create_dir_all(&root).unwrap();
+                fs::create_dir(&outside).unwrap();
+                fs::write(outside.join("changed"), b"protected outside data").unwrap();
+                let mut tar = Builder::new(Vec::new());
+                if existing {
+                    symlink(&outside, root.join("alias")).unwrap();
+                } else {
+                    tar.append_link(&mut test_header(EntryType::Symlink, 0), "alias", &outside).unwrap();
+                }
+                let (kind, contents) = if directory { (EntryType::Directory, b"".as_slice()) } else { (EntryType::Regular, b"bad".as_slice()) };
+                tar.append_data(&mut test_header(kind, contents.len()), "alias/changed", contents).unwrap();
+                let bytes = tar.into_inner().unwrap();
+                assert!(unpack(bytes.as_slice(), &root, &Skipped::new(&[]), &AtomicBool::new(false), &mut |_| {}).is_err());
+                assert_eq!(fs::read(outside.join("changed")).unwrap(), b"protected outside data");
+                assert!(!outside.join(".changed.skyward-restore").exists(), "no temporary file outside the restore root");
+            }
+        }
+        fs::remove_dir_all(&at).unwrap();
+    }
+
+    #[test]
+    fn an_entry_can_replace_a_leaf_symlink_without_following_it() {
+        let at = scratch("replace-leaf-link");
+        let (root, outside) = (at.join("root"), at.join("outside"));
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("kept"), b"outside").unwrap();
+        symlink(&outside, root.join("folder")).unwrap();
+        let mut tar = Builder::new(Vec::new());
+        tar.append_data(&mut test_header(EntryType::Directory, 0), "folder", io::empty()).unwrap();
+        tar.append_data(&mut test_header(EntryType::Regular, 8), "folder/file", b"restored".as_slice()).unwrap();
+        let bytes = tar.into_inner().unwrap();
+        let result = unpack(bytes.as_slice(), &root, &Skipped::new(&[]), &AtomicBool::new(false), &mut |_| {}).unwrap();
+        assert!(result.unmade.is_empty());
+        assert!(fs::symlink_metadata(root.join("folder")).unwrap().is_dir());
+        assert_eq!(fs::read(root.join("folder/file")).unwrap(), b"restored");
+        assert_eq!(fs::read(outside.join("kept")).unwrap(), b"outside");
         fs::remove_dir_all(&at).unwrap();
     }
 

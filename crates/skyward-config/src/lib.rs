@@ -1096,4 +1096,13 @@ mod tests {
         assert!(!legacy.display.reset_on_start, "existing devices keep their startup sequence");
         assert!(!Display::default().reset_on_start);
     }
+
+    #[test]
+    fn socrates_starts_its_installed_hidl_boot_control() {
+        let cfg: DeviceConfig = toml::from_str(include_str!("../../../devices/socrates.toml")).unwrap();
+        let service = cfg.services.iter().find(|s| s.path == "/vendor/bin/hw/android.hardware.boot@1.2-service").unwrap();
+        assert_eq!(service.ready_hardware_service.as_deref(), Some("android.hardware.boot@1.2::IBootControl/default"));
+        assert_eq!(service.user.as_deref(), Some("root"));
+        assert_eq!(service.groups, ["root"]);
+    }
 }

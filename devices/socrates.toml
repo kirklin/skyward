@@ -166,6 +166,15 @@ capabilities = ["NET_ADMIN"]
 # Keep its fixed cache paths in RAM when the recovery opens real userdata.
 memory_data = true
 
+# The installed vendor exposes boot control through HIDL 1.2. Describing
+# it here also puts the interface in the recovery's hardware manifest.
+[[service]]
+path = "/vendor/bin/hw/android.hardware.boot@1.2-service"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_hardware_service = "android.hardware.boot@1.2::IBootControl/default"
+user = "root"
+groups = ["root"]
+
 # WCN7850 uses the stock driver. Its ini is required, while the separate
 # persist MAC file is absent on the tested phone. Let the driver continue
 # without it instead of making this optional file a startup requirement.

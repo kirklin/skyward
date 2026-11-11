@@ -811,6 +811,15 @@ fn part_stop(stop: partwork::Stop) -> PartStop {
 /// it, and where the table lists one, it is that. /metadata keeps the key
 /// the data partition opens with, which making it afresh would lose, so it
 /// is offered no other.
+/// The vbmeta blocks the slot the phone runs from keeps, for the AVB page:
+/// each one's name, the flags saying which checks are on, and the algorithm
+/// it is signed with. A phone that names no slot keeps a single vbmeta
+/// block, which is read as slot A's, where its partition is named so.
+fn read_avb() -> Result<Vec<skyward_vab::avb::Reading>> {
+    let slot = skyward_vab::current_slot()?.unwrap_or(skyward_vab::Slot::A);
+    skyward_vab::avb::read(slot)
+}
+
 fn read_filesystems() -> Result<Vec<FsRow>> {
     let mut rows = Vec::new();
     for (name, point) in [(DATA_PARTITION, "/data"), ("metadata", "/metadata"), ("cache", "/cache")] {
@@ -2607,6 +2616,10 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     Effect::StopRelabel => relabeler.as_ref().context("there is no relabeling to stop")?.stop(),
                     // Partitions that cannot be read are the page's to say.
                     Effect::ReadFilesystems => app.set_filesystems(read_filesystems().map_err(|e| format!("{e:#}"))),
+                    // The vbmeta blocks read are what the page shows; a
+                    // slot that keeps none, or a block that is not a vbmeta
+                    // block, is for the page to say too.
+                    Effect::ReadAvb => app.set_avb(read_avb().map_err(|e| format!("{e:#}"))),
                     // The data partition made afresh as another filesystem
                     // is a factory reset, as the system asks for one; the
                     // rest is work on one partition. Opening the data

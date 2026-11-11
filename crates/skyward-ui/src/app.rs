@@ -77,6 +77,9 @@ pub enum Screen {
     /// The partitions whose filesystems can be repaired or made afresh as
     /// another.
     Filesystems,
+    /// What the blocks that say whether the bootloader and the kernel check
+    /// what they start say now.
+    Avb,
     /// One of them: what it holds, and what to do to it, with a swipe to
     /// do it.
     Filesystem,
@@ -1714,6 +1717,9 @@ pub struct State {
     /// The filesystem page's partitions, as the runtime last read them, or
     /// why it could not; none until it has.
     pub filesystems: Option<Result<Vec<FsRow>, String>>,
+    /// The vbmeta blocks the slot keeps, as the runtime last read them, or
+    /// why it could not; none until it has.
+    pub avb: Option<Result<Vec<skyward_vab::avb::Reading>, String>>,
     /// Which of them the page for one shows, and what it is to do to it:
     /// a repair, which leaves what it holds as it is, until another is
     /// chosen.
@@ -1818,6 +1824,7 @@ impl Default for State {
             job: None,
             relabel: None,
             filesystems: None,
+            avb: None,
             fs_chosen: 0,
             fs_action: FsAction::Repair,
             part_work: None,
@@ -2072,6 +2079,9 @@ pub enum Effect {
     /// Read the partitions for the filesystem page, which has just opened,
     /// telling them with [`App::set_filesystems`].
     ReadFilesystems,
+    /// Read the vbmeta blocks the slot keeps for the AVB page, which has just
+    /// opened, telling them with [`App::set_avb`].
+    ReadAvb,
     /// Do `action` to the filesystem page's partition by its name, telling
     /// how it goes with [`App::part_work_started`], [`App::part_listed`],
     /// [`App::part_at`], [`App::part_ended`] and [`App::part_work_ended`];
@@ -3492,6 +3502,13 @@ impl App {
     /// or why it could not.
     pub fn set_filesystems(&mut self, rows: Result<Vec<FsRow>, String>) {
         self.state.filesystems = Some(rows);
+        self.refresh();
+    }
+
+    /// The vbmeta blocks the slot keeps for the AVB page, as the runtime read
+    /// them, or why it could not.
+    pub fn set_avb(&mut self, rows: Result<Vec<skyward_vab::avb::Reading>, String>) {
+        self.state.avb = Some(rows);
         self.refresh();
     }
 
@@ -5094,6 +5111,10 @@ impl App {
         match s {
             Screen::Mount => vec![Effect::ReadMounts],
             Screen::Filesystems => vec![Effect::ReadFilesystems],
+            Screen::Avb => {
+                self.state.avb = None;
+                vec![Effect::ReadAvb]
+            }
             Screen::Slot | Screen::Reboot => vec![Effect::ReadSlots],
             Screen::Systems => vec![Effect::ReadSystems],
             Screen::Restore => vec![self.find_backups()],
@@ -11676,6 +11697,23 @@ mod tests {
         assert_eq!(app.deadline(1000), Some(12_000));
         app.tick(15_000);
         assert!(!app.display_on());
+    }
+
+    #[test]
+    fn the_avb_page_asks_for_the_blocks_as_it_opens_and_shows_what_it_was_told() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Advanced, W, H, PPD);
+        assert_eq!(tap(&mut app, &f, &i, Action::Open(Screen::Avb)), vec![Effect::ReadAvb]);
+        assert_eq!(app.screen(), Screen::Avb);
+        assert!(app.state.avb.is_none(), "nothing is said before the blocks are read");
+        assert!(app.frame(&f, &i).canvas.h > 0, "and the page says it is reading");
+        app.set_avb(Ok(vec![
+            skyward_vab::avb::Reading { name: "vbmeta_a".into(), flags: 0, algorithm: 2 },
+            skyward_vab::avb::Reading { name: "vbmeta_system_a".into(), flags: 1, algorithm: 2 },
+        ]));
+        assert!(app.frame(&f, &i).canvas.h > 0, "the blocks read are drawn");
+        app.set_avb(Err("no vbmeta partition for slot A".into()));
+        assert!(app.frame(&f, &i).canvas.h > 0, "and so is a slot whose blocks could not be read");
     }
 
     // The cover of a foldable: 1208 × 1392 beside a 1224 × 2912 screen, at

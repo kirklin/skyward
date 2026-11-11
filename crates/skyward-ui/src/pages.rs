@@ -87,6 +87,7 @@ pub fn render(screen: Screen, cx: &Ctx) -> Frame {
         Screen::Terminal => terminal(cx),
         Screen::Relabel => relabel(cx),
         Screen::Filesystems => filesystems(cx),
+        Screen::Avb => avb(cx),
         Screen::Filesystem => filesystem(cx),
         Screen::PartWork => part_work(cx),
         Screen::Language => language(cx),
@@ -2205,6 +2206,7 @@ pub fn advanced(cx: &Ctx) -> Frame {
         Row::new(l.pick(TERMINAL)).icon(SLATE, Icon::Terminal),
         Row::new(l.pick(RELABEL)).icon(PURPLE, Icon::Shield),
         Row::new(l.pick(FILESYSTEMS)).icon(RED, Icon::Mount),
+        Row::new(l.pick(AVB)).icon(SLATE, Icon::Lock).trail(Trail::Value(avb_value(cx))),
         Row::new(l.pick(LOGS)).icon(ORANGE, Icon::Log),
         Row::new(l.pick(UPDATE)).icon(GREEN, Icon::Layers).trail(Trail::Value(update_value(cx))),
     ]);
@@ -2213,6 +2215,7 @@ pub fn advanced(cx: &Ctx) -> Frame {
         Action::Open(Screen::Terminal),
         Action::Open(Screen::Relabel),
         Action::Open(Screen::Filesystems),
+        Action::Open(Screen::Avb),
         Action::Open(Screen::Logs),
         Action::Open(Screen::Update),
     ]);
@@ -2221,6 +2224,81 @@ pub fn advanced(cx: &Ctx) -> Frame {
 
 const RELABEL: Text = ["修复 SELinux 上下文", "修復 SELinux 上下文", "Fix SELinux contexts"];
 const FILESYSTEMS: Text = ["文件系统", "檔案系統", "Filesystems"];
+
+const AVB: Text = ["AVB 校验", "AVB 校驗", "AVB checks"];
+const AVB_ON: Text = ["开启", "開啟", "On"];
+const AVB_OFF: Text = ["关闭", "關閉", "Off"];
+const AVB_PARTLY: Text = ["部分关闭", "部分關閉", "Partly off"];
+const AVB_UNKNOWN: Text = ["未知", "未知", "Unknown"];
+const AVB_READING: Text = ["正在读取 vbmeta", "正在讀取 vbmeta", "Reading the vbmeta blocks"];
+const AVB_NONE: Text = ["这个槽位没有 vbmeta 分区", "這個槽位沒有 vbmeta 分割區", "This slot keeps no vbmeta partition"];
+const AVB_UNREADABLE: Text = ["无法读取 vbmeta", "無法讀取 vbmeta", "Couldn't read the vbmeta blocks"];
+
+/// The AVB row's trailing word: whether the checks the slot's vbmeta blocks
+/// name are on.
+fn avb_value(cx: &Ctx) -> &'static str {
+    let l = cx.state.lang;
+    match &cx.state.avb {
+        Some(Ok(rows)) if !rows.is_empty() && rows.iter().all(|r| r.whole()) => l.pick(AVB_ON),
+        Some(Ok(rows)) if !rows.is_empty() && rows.iter().all(|r| !r.whole()) => l.pick(AVB_OFF),
+        Some(Ok(rows)) if !rows.is_empty() => l.pick(AVB_PARTLY),
+        _ => l.pick(AVB_UNKNOWN),
+    }
+}
+
+/// What the blocks that say whether the bootloader and the kernel check what
+/// they start say now: each one's flags, the algorithm it is signed with, and
+/// what turning those checks off would mean.
+///
+/// It only reads. The flags sit under a signature, and a header changed here
+/// no longer matches it: an unlocked bootloader does not look at that, a
+/// locked one does. So this page says what stands, and leaves writing to
+/// install scripts and to the tools made for it.
+pub fn avb(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = long_page(cx);
+    let top = t.m.content_top;
+    let title = l.pick(AVB);
+    let mut y = top;
+    match &s.avb {
+        None => y = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(AVB_READING)).trail(Trail::None)]).bottom,
+        Some(Err(why)) => {
+            y = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(AVB_UNREADABLE)).trail(Trail::None)]).bottom;
+            y = widgets::footnote(&mut c, t, f, y, why);
+        }
+        Some(Ok(rows)) if rows.is_empty() => {
+            y = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(AVB_NONE)).trail(Trail::None)]).bottom;
+        }
+        Some(Ok(rows)) => {
+            let states: Vec<&'static str> = rows
+                .iter()
+                .map(|r| match (r.verity(), r.verification()) {
+                    (true, true) => l.pick(AVB_ON),
+                    (false, false) => l.pick(AVB_OFF),
+                    _ => l.pick(AVB_PARTLY),
+                })
+                .collect();
+            let subs: Vec<String> = rows
+                .iter()
+                .map(|r| format!("flags {:#010x} · {}", r.flags, skyward_vab::avb::algorithm_name(r.algorithm)))
+                .collect();
+            let list: Vec<Row> = rows
+                .iter()
+                .zip(&states)
+                .zip(&subs)
+                .map(|((r, state), sub)| Row::new(&r.name).subtitle(sub).trail(Trail::Text(state)))
+                .collect();
+            y = widgets::list(&mut c, t, f, y, &list).bottom;
+        }
+    }
+    let what = l.pick([
+        "AVB 让 bootloader 校验启动分区的签名，让内核逐块校验 system、vendor 的内容。这里只读取每个 vbmeta 区块的 flags 与签名算法，不改动它们。\n\n关掉这两项之后，官方系统会无法启动，官方 OTA 也会失败，部分应用与售后工具会读到这个状态。",
+        "AVB 讓 bootloader 校驗啟動分割區的簽章，讓核心逐塊校驗 system、vendor 的內容。這裡只讀取每個 vbmeta 區塊的 flags 與簽章演算法，不改動它們。\n\n關掉這兩項之後，官方系統會無法啟動，官方 OTA 也會失敗，部分應用程式與售後工具會讀到這個狀態。",
+        "AVB has the bootloader check the signature of what it starts, and the kernel check the blocks of system and vendor. This page only reads each vbmeta block's flags and the algorithm it is signed with, and changes none of them.\n\nWith both checks off, the phone's own system will not start, official updates fail, and some apps and service tools read the state.",
+    ]);
+    y = widgets::paragraph(&mut c, t, f, y + t.m.card_gap, what);
+    Frame::new(t, fit(c, t, y), Vec::new(), title, top)
+}
 const STOPPED: Text = ["已停止", "已停止", "Stopped"];
 const STOPPING: Text = ["正在停止", "正在停止", "Stopping"];
 

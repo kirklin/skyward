@@ -6,6 +6,7 @@ use std::path::Path;
 
 #[cfg(target_os = "android")]
 pub mod boot;
+pub mod avb;
 mod partitions;
 pub mod snapshots;
 

@@ -1,3 +1,7 @@
+# Initial profile from read-only stock inspection on 2026-11-12:
+# OS4.0.6.0.XPMCNXM, framework 17/API37, vendor 16/API36.
+# Recovery boot, touch, decryption and WLAN are not yet tested on myron.
+# See myron.md for evidence and the older pinned recovery's limitation.
 [device]
 codename = "myron"
 brand = "Redmi"
@@ -12,19 +16,23 @@ width = 1200
 height = 2608
 density = 480
 
+# First bring-up must not repair the filesystem, upgrade KeyMint blobs or
+# let stock metadata initialization delete existing keys automatically.
+[decrypt]
+read_only = true
+auto_repair = false
+key_upgrades = false
+
 [modules]
 sources = ["vendor_boot", "vendor_dlkm", "vendor", "system_dlkm"]
 # The touchscreen: FocalTech's, over SPI behind Xiaomi's touch layer, the
 # one touch driver the phone's own modules.load lists.
 load = ["focaltech_touch_3683"]
 
-# As on the 17 Ultra, the controller comes back from its reset sending raw
-# frames for /odm/lib64/libtouchreport.so, which a recovery runs none of;
-# told through Xiaomi's touch layer, the driver has it report positions.
-# That is known of the 17 Ultra's Synaptics controller; whether FocalTech's
-# answers the same switch is not yet tried.
-[touch]
-writes = [{ path = "/sys/class/touch/touch_dev/enable_touch_raw", value = "0" }]
+# Stock has focaltech_ts, enable_touch_raw=1 and libtouchreport_alg_fts.so.
+# There is no evidence yet that FocalTech supports the Synaptics raw=0
+# workaround. Leave that write out until its position-reporting path is
+# checked; loading the module alone does not prove recovery touch works.
 
 # The firmware of the WLAN chip is on the modem partition, which the phone
 # mounts at /vendor/firmware_mnt and its own recovery leaves unmounted.
@@ -57,9 +65,64 @@ oneshot = true
 user = "root"
 groups = ["root", "system", "wakelock", "graphics"]
 
-# WLAN: Qualcomm's Peach on PCIe (qcom,cnss-peach in its dtbo), as on the
-# 17 Ultra, whose vendor partition this phone shares file for file but for
-# its build properties, a power hint and two radio libraries.
+# The paths, accounts and capabilities below are from this phone's
+# OS4.0.6.0 vendor/odm init files, not the 17 Ultra's service list.
+# Start the observed AIDL boot control before the untested security chain
+# so its readiness is not gated on a later KeyMint/Weaver failure.
+[[service]]
+path = "/vendor/bin/hw/android.hardware.boot-service.qti"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_service = "android.hardware.boot.IBootControl/default"
+user = "root"
+groups = ["root"]
+
+[[service]]
+path = "/vendor/bin/qseecomd"
+libraries = ["/system/lib64", "/vendor/lib64"]
+user = "root"
+groups = ["root", "drmrpc"]
+
+[[service]]
+path = "/vendor/bin/hlosminkdaemon"
+libraries = ["/system/lib64", "/vendor/lib64"]
+user = "system"
+groups = ["system", "oem_2912", "wakelock"]
+capabilities = ["WAKE_ALARM", "BLOCK_SUSPEND"]
+
+# The actual VINTF fragments declare KeyMint4/default, remote provisioning
+# and secure clock. The sharedsecret-service-qti fragment is also present;
+# its standard default interface below still needs runtime confirmation.
+[[service]]
+path = "/vendor/bin/hw/android.hardware.security.onekeymint-service-qti"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_service = "android.hardware.security.keymint.IKeyMintDevice/default"
+registers = [
+    "android.hardware.security.keymint.IRemotelyProvisionedComponent/default",
+    "android.hardware.security.secureclock.ISecureClock/default",
+    "android.hardware.security.sharedsecret.ISharedSecret/default",
+]
+user = "system"
+groups = ["system", "drmrpc"]
+
+[[service]]
+path = "/vendor/bin/hw/android.hardware.gatekeeper-rust-service-qti"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_service = "android.hardware.gatekeeper.IGatekeeper/default"
+user = "system"
+groups = ["system"]
+
+# This is NXP Weaver2, not the conditional Goodix service on nezha.
+# Its account is 2911 in the installed vendor passwd/group files.
+[[service]]
+path = "/odm/bin/hw/android.hardware.weaver-service.nxp-qti"
+libraries = ["/system/lib64", "/vendor/lib64", "/odm/lib64"]
+ready_service = "android.hardware.weaver.IWeaver/default"
+user = "vendor_nxp_weaver"
+groups = ["vendor_nxp_weaver"]
+
+# Stock actually loads qca_cld3_peach_v2, has a qcom,cnss-peach sysfs
+# device, and carries /vendor/etc/wifi/peach_v2. Recovery bring-up and any
+# userspace calibration requirements have not yet been checked.
 [wlan]
 modules = ["rfkill", "qca_cld3_peach_v2"]
 writes = [{ path = "/sys/kernel/cnss/fs_ready", value = "1" }]
@@ -73,9 +136,9 @@ probe = "http://connect.rom.miui.com/generate_204"
 [update]
 server = "https://update.miui.com/updates/miotaV3.php"
 
-# The stock build the recovery is made on: the Chinese system's OS4.0.4.0,
-# whose full update package on the phone maker's own download server holds
-# the recovery partition the recovery is built on top of.
+# This existing OTA pin is still OS4.0.4.0; the inspected phone runs
+# OS4.0.6.0. Do not treat its kernel/recovery as a verified match until the
+# actual build's recovery and hash have been obtained and checked.
 [stock]
 version = "OS4.0.4.0.XPMCNXM"
 package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.4.0.XPMCNXM/myron-ota_full-OS4.0.4.0.XPMCNXM-user-17.0-70d1c400a4.zip"

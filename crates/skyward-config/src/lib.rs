@@ -777,6 +777,45 @@ mod tests {
     }
 
     #[test]
+    fn myron_bringup_preserves_data_and_uses_its_observed_aidl_services() {
+        let text = include_str!("../../../devices/myron.toml");
+        let cfg: DeviceConfig = toml::from_str(text).unwrap();
+        // Unix path validation is also exercised in Linux/Android CI;
+        // Windows does not consider these Android paths absolute.
+        #[cfg(unix)]
+        DeviceConfig::parse(text).unwrap();
+        assert_eq!(cfg.device.codename, "myron");
+        assert!(cfg.device.ab);
+        assert_eq!(cfg.decrypt, Decrypt { read_only: true, auto_repair: false, key_upgrades: false });
+        assert!(!cfg.decrypt.checks_filesystem() && !cfg.decrypt.upgrades_keys());
+        assert!(cfg.decrypt.preserves_keys(), "the packer must disable automatic metadata key deletion");
+        assert!(cfg.touch.writes.is_empty(), "FocalTech's raw=0 workaround is unverified");
+        assert_eq!(cfg.modules.load, ["focaltech_touch_3683"]);
+        assert_eq!(cfg.wlan.as_ref().unwrap().modules, ["rfkill", "qca_cld3_peach_v2"]);
+        let [post_boot, boot, listeners, opener, keymint, gatekeeper, weaver] = &cfg.services[..] else {
+            panic!("only the seven observed stock programs are configured")
+        };
+        assert!(post_boot.oneshot);
+        assert_eq!(boot.path, "/vendor/bin/hw/android.hardware.boot-service.qti");
+        assert_eq!(boot.ready_service.as_deref(), Some("android.hardware.boot.IBootControl/default"));
+        assert_eq!((boot.user.as_deref(), &boot.groups[..]), (Some("root"), &["root".to_string()][..]));
+        assert_eq!(listeners.path, "/vendor/bin/qseecomd");
+        assert_eq!(listeners.groups, ["root", "drmrpc"]);
+        assert_eq!(opener.path, "/vendor/bin/hlosminkdaemon");
+        assert_eq!(opener.groups, ["system", "oem_2912", "wakelock"]);
+        assert_eq!(opener.capabilities, ["WAKE_ALARM", "BLOCK_SUSPEND"]);
+        assert_eq!(keymint.path, "/vendor/bin/hw/android.hardware.security.onekeymint-service-qti");
+        assert_eq!(keymint.ready_service.as_deref(), Some("android.hardware.security.keymint.IKeyMintDevice/default"));
+        assert_eq!(gatekeeper.path, "/vendor/bin/hw/android.hardware.gatekeeper-rust-service-qti");
+        assert_eq!(gatekeeper.ready_service.as_deref(), Some("android.hardware.gatekeeper.IGatekeeper/default"));
+        assert_eq!(weaver.path, "/odm/bin/hw/android.hardware.weaver-service.nxp-qti");
+        assert_eq!(weaver.ready_service.as_deref(), Some("android.hardware.weaver.IWeaver/default"));
+        assert_eq!((weaver.user.as_deref(), &weaver.groups[..]), (Some("vendor_nxp_weaver"), &["vendor_nxp_weaver".to_string()][..]));
+        assert!(cfg.services.iter().all(|s| s.ready_hardware_service.is_none()), "these stock HALs use AIDL");
+        assert!(!cfg.services.iter().any(|s| s.path.contains("goodix") || s.path.contains("strongbox")), "no other phone's SE services are assumed");
+    }
+
+    #[test]
     fn parses_nezha() {
         let cfg = DeviceConfig::parse(include_str!("../../../devices/nezha.toml")).unwrap();
         assert_eq!(cfg.device.codename, "nezha");

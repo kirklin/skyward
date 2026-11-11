@@ -8,6 +8,19 @@ use std::path::{Path, PathBuf};
 /// partitions where they are mounted, and the kernel's own modules in
 /// system_dlkm, which it also keeps in one folder.
 pub fn source_dir(source: &str) -> Result<PathBuf> {
+    if source == "system_dlkm" {
+        let release = std::fs::read_to_string("/proc/sys/kernel/osrelease")
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
+        let release_dir = PathBuf::from(format!("/system_dlkm/lib/modules/{release}"));
+        if release_dir.is_dir() {
+            return Ok(release_dir);
+        }
+        let flatten = PathBuf::from("/system_dlkm/flatten/lib/modules");
+        if flatten.is_dir() {
+            return Ok(flatten);
+        }
+    }
     Ok(PathBuf::from(match source {
         "vendor_boot" => "/lib/modules",
         "vendor_dlkm" => "/vendor_dlkm/lib/modules",

@@ -764,12 +764,15 @@ pub mod kms {
                 order,
                 summary,
             };
-            s.to_fastest()?;
             if video {
-                // Once the splash is handed over, stay at the fastest rate on
-                // every wake. Switching rate and ACTIVE together is invalid.
+                // Video panels on Qualcomm bootloaders start with partial/broken
+                // splash timings. A power cycle cleanly restores the full display pipeline.
+                let _ = s.power(Power::Off);
+                let _ = s.power(Power::On);
                 s.preferred = blob;
                 s.fastest = None;
+            } else {
+                s.to_fastest()?;
             }
             Ok(s)
         }

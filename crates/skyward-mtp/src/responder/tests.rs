@@ -1,5 +1,5 @@
 use super::*;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::fs::FileExt;
 
 /// A folder of its own for a test, empty, under `TMPDIR`.
@@ -168,6 +168,77 @@ fn a_session_opens_once_and_the_storage_needs_one() {
     assert_eq!(r.answer(&cmd(op::CLOSE_SESSION, &[]), None).code, response::OK);
     assert_eq!(r.answer(&cmd(op::CLOSE_SESSION, &[]), None).code, response::SESSION_NOT_OPEN);
     fs::remove_dir_all(&at).unwrap();
+}
+
+#[test]
+fn read_only_io_keeps_its_reason_through_wrappers_and_transfer_responses() {
+    let direct = io::Error::from_raw_os_error(libc::EROFS);
+    assert_eq!(access_failed(&direct), response::STORE_READ_ONLY);
+    let wrapped = anyhow::Error::from(direct).context("write an MTP object");
+    assert_eq!(write_failed(&wrapped, response::PARTIAL_DELETION), response::STORE_READ_ONLY);
+    assert_eq!(access_failed(&io::Error::from_raw_os_error(libc::EACCES)), response::ACCESS_DENIED);
+    assert_eq!(write_failed(&anyhow::anyhow!("not an I/O failure"), response::PARTIAL_DELETION), response::PARTIAL_DELETION);
+
+    let at = scratch("read-only-response");
+    let mut r = open(&at);
+    let info_cmd = cmd(op::SEND_OBJECT_INFO, &[STORAGE_ID, PARENT_ROOT]);
+    assert_eq!(r.answer(&info_cmd, Some(&object_info(format::TEXT, 1, "partial.txt", ""))).code, response::OK);
+    let reply = r.received(&cmd(op::SEND_OBJECT, &[]), Received::Failed(io::Error::from_raw_os_error(libc::EROFS))).unwrap();
+    assert_eq!(reply.code, response::STORE_READ_ONLY);
+    assert!(!at.join("partial.txt").exists(), "the incomplete upload is cleaned up");
+    let partial = cmd(op::SEND_PARTIAL_OBJECT, &[1, 0, 0, 1]);
+    let reply = r.received(&partial, Received::Failed(io::Error::from_raw_os_error(libc::EROFS))).unwrap();
+    assert_eq!((reply.code, reply.params), (response::STORE_READ_ONLY, vec![0]));
+    fs::remove_dir_all(&at).unwrap();
+}
+
+/// Run explicitly inside an isolated real read-only mount, seeded with
+/// plain.txt, 中文文件.txt and an empty destination/ directory. Neither
+/// chmod nor a fake stat result is accepted as a read-only filesystem.
+#[test]
+#[ignore = "requires SKYWARD_MTP_RO_ROOT on an isolated read-only mount"]
+fn a_read_only_mount_is_reported_and_writes_are_refused_without_changing_files() {
+    let top = PathBuf::from(std::env::var_os("SKYWARD_MTP_RO_ROOT").expect("isolated fixture mount path"));
+    assert!(space(&top).unwrap().2, "the fixture must really be mounted read-only");
+    assert_eq!(fs::write(top.join("must-not-be-created"), b"x").unwrap_err().raw_os_error(), Some(libc::EROFS));
+    let plain = b"immutable MTP fixture\n";
+    let chinese = "只读传输测试\n".as_bytes();
+    assert_eq!(fs::read(top.join("plain.txt")).unwrap(), plain);
+    assert_eq!(fs::read(top.join("中文文件.txt")).unwrap(), chinese);
+    let mut r = open(&top);
+    let bytes = dataset(r.answer(&cmd(op::GET_STORAGE_INFO, &[STORAGE_ID]), None));
+    let mut rd = Reader::new(&bytes);
+    assert_eq!((rd.u16(), rd.u16(), rd.u16()), (Some(storage::FIXED_RAM), Some(storage::HIERARCHICAL), Some(storage::READ_ONLY_WITHOUT_DELETE)));
+    for (name, expected) in [("plain.txt", plain.as_slice()), ("中文文件.txt", chinese)] {
+        let handle = find(&mut r, PARENT_ROOT, name);
+        let reply = r.answer(&cmd(op::GET_OBJECT, &[handle]), None);
+        assert_eq!(reply.code, response::OK);
+        let Some(Outgoing::File { mut file, offset, length }) = reply.data else { panic!("download is a file") };
+        assert_eq!((offset, length), (0, expected.len() as u64));
+        let mut got = Vec::new();
+        file.read_to_end(&mut got).unwrap();
+        assert_eq!(got, expected);
+    }
+    for (format, size, name) in [(format::TEXT, 3, "new.txt"), (format::TEXT, u32::MAX, "large.txt"), (format::ASSOCIATION, 0, "new-folder")] {
+        let reply = r.answer(&cmd(op::SEND_OBJECT_INFO, &[STORAGE_ID, PARENT_ROOT]), Some(&object_info(format, size, name, "")));
+        assert_eq!(reply.code, response::STORE_READ_ONLY, "upload {name}: {:?}", reply.why);
+        assert!(!top.join(name).exists());
+    }
+    let file = find(&mut r, PARENT_ROOT, "plain.txt");
+    let folder = find(&mut r, PARENT_ROOT, "destination");
+    let mut rename = Writer::new();
+    rename.string("renamed.txt");
+    let reply = r.answer(&cmd(op::SET_OBJECT_PROP_VALUE, &[file, u32::from(prop::OBJECT_FILE_NAME)]), Some(&rename.into_bytes()));
+    assert_eq!(reply.code, response::STORE_READ_ONLY, "rename: {:?}", reply.why);
+    for command in [cmd(op::DELETE_OBJECT, &[file]), cmd(op::MOVE_OBJECT, &[file, STORAGE_ID, folder]),
+                    cmd(op::COPY_OBJECT, &[file, STORAGE_ID, folder]), cmd(op::BEGIN_EDIT_OBJECT, &[file])] {
+        let reply = r.answer(&command, None);
+        assert_eq!(reply.code, response::STORE_READ_ONLY, "{:#06x}: {:?}", command.code, reply.why);
+    }
+    assert_eq!(fs::read(top.join("plain.txt")).unwrap(), plain);
+    assert_eq!(fs::read(top.join("中文文件.txt")).unwrap(), chinese);
+    assert!(!top.join("renamed.txt").exists());
+    assert_eq!(fs::read_dir(top.join("destination")).unwrap().count(), 0);
 }
 
 #[test]

@@ -679,13 +679,25 @@ fn bring_up(cfg: &Config, modules: &[PathBuf]) -> Result<()> {
         for w in &cfg.writes {
             fs::write(&w.path, &w.value).with_context(|| format!("write {} to {}", w.value, w.path))?;
         }
-        let until = Instant::now() + INTERFACE_WAIT;
-        while !net.exists() {
-            ensure!(Instant::now() < until, "the driver made no {} in {} seconds", cfg.interface, INTERFACE_WAIT.as_secs());
-            thread::sleep(Duration::from_millis(100));
-        }
     }
-    iface::set_up(&cfg.interface, true)
+    let until = Instant::now() + INTERFACE_WAIT;
+    loop {
+        if net.exists() {
+            match iface::set_up(&cfg.interface, true) {
+                Ok(()) => return Ok(()),
+                // Qualcomm publishes wlan0 before its probe releases the
+                // initialization lock. Retry that temporary refusal within
+                // the same deadline used to wait for the interface.
+                Err(error)
+                    if error.downcast_ref::<std::io::Error>().and_then(std::io::Error::raw_os_error) == Some(libc::EBUSY)
+                        && Instant::now() < until => {}
+                Err(error) => return Err(error),
+            }
+        } else {
+            ensure!(Instant::now() < until, "the driver made no {} in {} seconds", cfg.interface, INTERFACE_WAIT.as_secs());
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
 }
 
 /// Put a file the driver asks for where the firmware loader looks.

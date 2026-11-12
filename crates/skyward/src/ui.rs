@@ -2914,26 +2914,23 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     // put to sleep; one tap alone does nothing.
                     let mut woke = false;
                     if app.state.wake_by_tap && app.panel(now).is_none() {
-                        match t {
-                            // Only the second landing counts: the finger
-                            // coming off between the two taps is not a gap.
-                            // Where the taps land does not matter: on a dark
-                            // screen there is nothing to aim at.
-                            Touch::Down(x, y) => {
-                                let again = last_tap.is_some_and(|(before, _, _)| at.saturating_sub(before) <= TAP_MS);
-                                last_tap = if again { None } else { Some((at, x, y)) };
-                                if again {
-                                    app.woken_by_tap(now);
-                                    skyward_sys::kmsg("two taps on the dark screen brought it back")?;
-                                    woke = true;
-                                } else {
-                                    // The first tap, so a screen that stays dark
-                                    // says whether its touches come through at
-                                    // all.
-                                    skyward_sys::kmsg(&format!("a tap on the dark screen at {x}, {y}"))?;
-                                }
+                        // Only the second landing counts: the finger coming off
+                        // between the two taps is not a gap. Where the taps land
+                        // does not matter: on a dark screen there is nothing to
+                        // aim at.
+                        if let Touch::Down(x, y) = t {
+                            let again = last_tap.is_some_and(|(before, _, _)| at.saturating_sub(before) <= TAP_MS);
+                            last_tap = if again { None } else { Some((at, x, y)) };
+                            if again {
+                                app.woken_by_tap(now);
+                                skyward_sys::kmsg("two taps on the dark screen brought it back")?;
+                                woke = true;
+                            } else {
+                                // The first tap, so a screen that stays dark
+                                // says whether its touches come through at
+                                // all.
+                                skyward_sys::kmsg(&format!("a tap on the dark screen at {x}, {y}"))?;
                             }
-                            _ => {}
                         }
                     }
                     if woke {

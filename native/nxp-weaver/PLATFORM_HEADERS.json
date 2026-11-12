@@ -1,5 +1,5 @@
 {
-  "method": "clang -nostdinc++ -M across 12 production sources plus ABI probe; only actual platform dependencies retained; CRT source dependencies added",
+  "method": "clang -nostdinc++ -M across 12 production sources plus ABI probe; only actual platform dependencies retained; CRT source dependencies added; stable AIDL BINDER_STABILITY_SUPPORT dependency closure checked across the same 12 sources and ABI probe",
   "files": [
     {
       "path": "platform/bionic/libc/arch-common/bionic/__dso_handle_so.h",
@@ -909,6 +909,15 @@
       "git_blob_sha1": "07d89e67fcef4aeb9c12d7155491ae40da9330f9",
       "sha256": "9ad33163a5849625869264748224c425980b96581346de55602f8b89733d8821",
       "bytes": 1895
+    },
+    {
+      "path": "platform/frameworks/native/libs/binder/ndk/include_platform/android/binder_stability.h",
+      "repository": "https://github.com/Evolution-X/frameworks_native",
+      "commit": "cb8303a432fc2eb4ea3bf57ec450501e18f2cced",
+      "repository_path": "libs/binder/ndk/include_platform/android/binder_stability.h",
+      "git_blob_sha1": "1b71c6c8e986fb83fb2a474cbda90dc1d28f0716",
+      "sha256": "032326bb327d9f9370b377c5dac584590846591bf045446fad1ac8a92266f38e",
+      "bytes": 5200
     },
     {
       "path": "platform/prebuilts/clang/host/linux-x86/clang-r596125/android_libc++/platform/aarch64/include/c++/v1/__config_site",

@@ -1,9 +1,12 @@
 # Native NXP Weaver recovery component for myron
 
 This source kit builds an `ese_weaver.so` prototype for the stock myron
-OS4.0.6.0.XPMCNXM recovery userspace. The d923 myron test verified its actual child-view hash/inode mappings and
-entered GetSlots/Send. One getConfig failed with backend chip-detection
-evidence; successful hardware configuration and PIN use are not established.
+OS4.0.6.0.XPMCNXM recovery userspace. The 4ab myron test verified its actual
+child-view hash/inode mappings and eSE startup. Its single getConfig failed
+before SELECT because QTI rejected a callback with system Binder stability.
+This revision enables the standard stable-AIDL build option; the revised
+library has not been device-tested. Successful slot configuration and PIN
+use are not established.
 
 It compiles Weaver and a private copy of the direct NXP HAL transport together.
 The Binder boundary uses stable AIDL V1 through `libbinder_ndk` C functions.
@@ -50,7 +53,7 @@ The OTA URL is recorded in `STOCK_RECOVERY.json`.
 ## Source and ABI records
 
 `SOURCES.json` pins the original NXP sources. `PLATFORM_HEADERS.json` records
-737 platform header/CRT source files, upstream repositories, commits, Git
+738 platform header/CRT source files, upstream repositories, commits, Git
 blob IDs and SHA256 hashes. All matched their pinned Git objects. The initial
 closure was collected with `clang -M` over 12 production C++ files and a
 layout probe, then extended for the CRT sources. The CRT is rebuilt from
@@ -71,8 +74,18 @@ first five entries in the live wrapper's order: Init, GetSlots, Read, Write,
 DeInit. Only WeaverImpl methods and its vtable are exported. Every import,
 including its GNU symbol version, must be supplied by the exact recovery
 libraries. The transport and generated Binder classes remain hidden.
+The build also requires the generated callback factory's object code to call
+`AIBinder_markVintfStability`, and a strong final import of that C API at
+`LIBBINDER_NDK30`, supplied by the exact recovery's `libbinder_ndk.so`.
 
 ## Recovery-specific changes
+
+The compile option `BINDER_STABILITY_SUPPORT` enables the generated stable
+AIDL callback's VINTF marking and vendor-local transaction flags. Without
+it, the recovery's system `libbinder_ndk` creates a system-stability callback
+that QTI cannot call from its vendor context. `BINDER_STABILITY.json` records
+the added pinned header, dependency closure and static gates. Generated code
+and its interface definitions remain unchanged; no stability downgrade is used.
 
 `weaver-direct-hal.patch` records all changes against the pinned NXP files:
 
@@ -120,8 +133,10 @@ system StrongBox and Weaver both have file capabilities and AT_SECURE=1;
 they keep CAP_SYS_ADMIN, CAP_SYS_NICE and CAP_WAKE_ALARM. An environment-only
 LD_LIBRARY_PATH override is insufficient. A bind keeps the source inode's
 label; verify that the actual service can read and executable-map it without
-changing enforcing policy. The private-bind mapping gate passed in d923; the single read-only getConfig
-failed and successful backend operation remains pending. An unconfirmed override must never proceed to a PIN/key attempt.
+changing enforcing policy. The private-bind mapping gate passed in 4ab; its
+single read-only getConfig failed before applet selection. The callback
+stability correction still requires runtime validation. An unconfirmed
+override must never proceed to a PIN/key attempt.
 Do not add a security bypass to force loading. Stop
 if service discovery or applet selection fails. Do not probe credentials,
 try dummy/wrong PINs or keys, write/erase slots, or loop authentication

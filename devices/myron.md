@@ -275,11 +275,39 @@ smcinvoke_dlkm. This read-only collection did not load a module, change
 permissions, restart a daemon or touch credentials.
 
 The profile now also requests that exact stock driver and observed node
-ownership before eSE startup. This follow-up has not been boot-tested;
-module insertion, node creation and successful chip detection still need
-runtime acceptance. Do not change daemon identity, guess a backend property,
+ownership before eSE startup. The 4ab round below verified module insertion, node ownership and working
+shared-secret agreement. Weaver callback initialization remained a separate
+failure. Do not change daemon identity, guess a backend property,
 retry authentication or enable key upgrades to bypass the present error.
 See myron-nfc-evidence.json for the source metadata without driver bytes.
+
+## 4ab native backend acceptance and callback stability failure
+
+The 4ab image passed CI run 43188698396 and a separately authorized native
+test. The exact stock nxp-nci module loaded and /dev/nq-nci appeared as
+1027:1027/0660. The private Weaver mapping gate passed again. Startup now
+completed shared-secret agreement between both peers, resolving the prior
+-49 for this configuration. Weaver and eSE1 were declared and registered.
+
+One actual getConfig still failed. Full private logs identify the leaf:
+QTI rejected ISecureElementCallback as a system-stability binder used in a
+vendor-stability context, and AppletConnection initialization failed. No
+Weaver SELECT/GETSLOTS APDU was sent. GetSlots Exit106 is a common return
+path; its adjacent generic parse-error text does not prove ParseSlotInfo
+was called. No PIN or slot operation was attempted and no query was retried.
+
+The generated callback already contains the standard VINTF mark under
+BINDER_STABILITY_SUPPORT, but the original recipe omitted that macro. The
+next source change enables the generator's normal path with the matching
+pinned binder_stability.h and verifies its C-ABI import from exact REC
+libbinder_ndk. It does not alter generated method definitions, daemon
+identity or Binder enforcement. The component must pass strict ABI/source
+checks and independent-output reproducibility before another device test.
+
+The original recovery was restored again, normal HyperOS verified, and
+full recovery_a/b and boot_b hashes matched pre-test. Storage-key -62 and
+the no-upgrade policy remain unchanged. The callback fix is not yet an
+accepted device result; see the structured validation record.
 
 ## Diagnostic executable name
 

@@ -2,7 +2,7 @@
 from pathlib import Path
 import argparse, hashlib, json, subprocess, sys
 sys.dont_write_bytecode=True
-from verify_elf import verify
+from verify_elf import verify, verify_callback_stability
 
 parser=argparse.ArgumentParser()
 parser.add_argument('--toolchain',type=Path,required=True)
@@ -43,7 +43,7 @@ common=['-target','aarch64-linux-android36','-fPIC','-O2','-g','-nostdlibinc',
         '-resource-dir='+str(prebuilt/'lib/clang/22'),'-DANDROID','-DNDEBUG','-D__ANDROID_VENDOR__',
         '-D__ANDROID_VNDK__','-D__ANDROID_VENDOR_API__=202604','-D__BIONIC_DEPRECATED_PAGE_SIZE_MACRO']
 flags=common+['-std=gnu++23','-nostdinc++','-fno-exceptions','-fno-rtti','-fno-strict-aliasing',
-              '-fno-short-enums','-DNXP_EXTNS','-DINTERVAL_TIMER','-D_FILE_OFFSET_BITS=64',
+              '-fno-short-enums','-DNXP_EXTNS','-DINTERVAL_TIMER','-DBINDER_STABILITY_SUPPORT','-D_FILE_OFFSET_BITS=64',
               '-Wall','-Wextra','-Wno-sign-compare','-Wno-unused-parameter','-include','cstdint']
 flags+=['-I'+str(h) for h in headers]
 commands=[]
@@ -67,6 +67,7 @@ for source in sources:
     obj=out/(source.stem+'.o')
     run([clang,*flags,'-MD','-MF',str(out/(source.stem+'.d')),'-c',str(source),'-o',str(obj)],source.stem)
     objects.append(obj)
+callback_stability=verify_callback_stability(out/'ISecureElementCallback.o')
 probe=kit/'abi-probe.cpp'
 run([clang,*flags,'-c',str(probe),'-o',str(out/'abi-probe.o')],'ABI-layout-probe')
 crt=platform/'bionic/libc/arch-common/bionic'
@@ -92,6 +93,7 @@ for dep in out.glob('*.d'):
 assert all(p.is_relative_to(kit) or p.is_relative_to(out) for p in dependencies), sorted(dependencies)
 proof=verify(library,libraries)
 proof.update({'source_compiled':True,'strict_link':True,'platform_tree_required':False,
+              'callback_create_binder_marks_vintf':callback_stability,
               'platform_header_dependencies':len(dependencies),
               'compiler_version':subprocess.check_output([clang,'--version'],text=True).replace(str(tool),'<TOOLCHAIN>'),
               'crt_objects_built_from_bundled_pinned_source':True})

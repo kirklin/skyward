@@ -144,7 +144,9 @@ jobs:
           python3 native/nxp-weaver/extract_recovery_libraries.py stock/recovery.img --out "$RUNNER_TEMP/myron-rec-libs"
           python3 native/nxp-weaver/test_transport.py --out "$RUNNER_TEMP/myron-transport-test"
           python3 native/nxp-weaver/build.py --toolchain "$RUNNER_TEMP/myron-clang" --libraries "$RUNNER_TEMP/myron-rec-libs" --out "$RUNNER_TEMP/myron-native"
-          echo "09a4095831aae55a4589606da194c0bd7f1369a3195316af643810b4136fc5a2  $RUNNER_TEMP/myron-native/ese_weaver.so" | sha256sum --check
+          python3 native/nxp-weaver/build.py --toolchain "$RUNNER_TEMP/myron-clang" --libraries "$RUNNER_TEMP/myron-rec-libs" --out "$RUNNER_TEMP/myron-native-repro"
+          cmp "$RUNNER_TEMP/myron-native/ese_weaver.so" "$RUNNER_TEMP/myron-native-repro/ese_weaver.so"
+          python3 -c 'import hashlib,json,os; from pathlib import Path; root=Path(os.environ["RUNNER_TEMP"]); first=root/"myron-native"; second=root/"myron-native-repro"; a=hashlib.sha256((first/"ese_weaver.so").read_bytes()).hexdigest(); b=hashlib.sha256((second/"ese_weaver.so").read_bytes()).hexdigest(); (first/"REPRODUCIBILITY.json").write_text(json.dumps({"first_sha256":a,"second_sha256":b,"byte_identical":a==b},indent=2)+"\n"); print("native Weaver reproducible SHA256:",a)'
       - name: Keep the native component and its build proof
         if: matrix.device == 'myron'
         uses: actions/upload-artifact@v7
@@ -154,6 +156,7 @@ jobs:
             ${{ runner.temp }}/myron-native/ese_weaver.so
             ${{ runner.temp }}/myron-native/BUILD_PROOF.json
             ${{ runner.temp }}/myron-native/COMMANDS.json
+            ${{ runner.temp }}/myron-native/REPRODUCIBILITY.json
             ${{ runner.temp }}/myron-transport-test/*.json
           if-no-files-found: error
       - name: Pack the recovery

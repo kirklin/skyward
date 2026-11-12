@@ -11,6 +11,11 @@
       "sha256": "8462237dd252fbe4dfdefc480fd1e474df58faae4684ca062eaa090d9a129b5e"
     },
     {
+      "path": "BINDER_STABILITY.json",
+      "bytes": 1563,
+      "sha256": "d9ae0d6d658dc8d0a803fe10437cfd813a08199c2a413b96988e24f550426607"
+    },
+    {
       "path": "LICENSE",
       "bytes": 11357,
       "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
@@ -27,13 +32,13 @@
     },
     {
       "path": "PLATFORM_HEADERS.json",
-      "bytes": 382891,
-      "sha256": "bea15670b9110db9fb8df0575f307b5b2b1afc2ffb4a51927d801f1b0021a47f"
+      "bytes": 383506,
+      "sha256": "a9052571699bbecfb9c16b7745d3b57e95268154781d9e441a8bce5a584b49ed"
     },
     {
       "path": "README.md",
-      "bytes": 7442,
-      "sha256": "e685af7cd5b3f0da189fae0c858afec27ad6ce65233866192dfa7e864e1c92ba"
+      "bytes": 8310,
+      "sha256": "d50709e21cdd49d2adff21310597e6f6fbd9a106363f50d30134df7bfc250fc0"
     },
     {
       "path": "RECOVERY_LIBRARY_INPUTS.json",
@@ -82,8 +87,8 @@
     },
     {
       "path": "build.py",
-      "bytes": 6262,
-      "sha256": "a0490688c86dd7f8a469b12468749383b861a5077d252111085fc38bd9335a84"
+      "bytes": 6466,
+      "sha256": "d7b2f14288f3c538e6251592c4048f39289b03c77fc61dde3cb5b29fc6eee189"
     },
     {
       "path": "extract_recovery_libraries.py",
@@ -789,6 +794,11 @@
       "path": "platform/frameworks/native/libs/binder/ndk/include_platform/android/binder_shell.h",
       "bytes": 1895,
       "sha256": "9ad33163a5849625869264748224c425980b96581346de55602f8b89733d8821"
+    },
+    {
+      "path": "platform/frameworks/native/libs/binder/ndk/include_platform/android/binder_stability.h",
+      "bytes": 5200,
+      "sha256": "032326bb327d9f9370b377c5dac584590846591bf045446fad1ac8a92266f38e"
     },
     {
       "path": "platform/prebuilts/clang/host/linux-x86/clang-r596125/android_libc++/platform/aarch64/include/c++/v1/__config_site",
@@ -4042,8 +4052,8 @@
     },
     {
       "path": "verify_elf.py",
-      "bytes": 6950,
-      "sha256": "5b8fc5eeb3b0969ae21aabbc65250e04bb4682935ad827d58af2128689302589"
+      "bytes": 8931,
+      "sha256": "9c68b754176a935b4410444243f941c2bfacab8e0cb2eb903ee9e8ea4ea3509e"
     },
     {
       "path": "weaver-direct-hal.patch",

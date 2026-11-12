@@ -30,7 +30,9 @@
     "load_by_filename": "nxp-nci",
     "node_owner": "nfc:nfc",
     "node_mode": "0660",
-    "device_boot_tested": false
+    "device_boot_tested": true,
+    "node_created_with_expected_owner_mode": true,
+    "sharedsecret_two_peers_agreed": true
   },
   "limits": "Static module/read-only normal-system evidence; no module loaded or node changed during collection. Generic nfc protocol module is distinct from nxp_nci driver. No driver ELF bytes are included in Git."
 }

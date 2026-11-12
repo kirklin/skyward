@@ -80,6 +80,30 @@ class Elf:
             methods.append([s['name'] for s in symbols if s['defined'] and s['address']==value])
         return methods
 
+def verify_callback_stability(path):
+    """Require a direct markVintfStability call inside the generated callback factory."""
+    elf = Elf(path)
+    assert struct.unpack_from('<H', elf.data, 16)[0] == 1, 'Expected an ELF relocatable object'
+    table = elf.named['.symtab']
+    names = elf.section_data(elf.sections[table[6]])
+    symbols = list(struct.iter_unpack('<IBBHQQ', elf.section_data(table)))
+    method = '_ZN4aidl7android8hardware14secure_element23BnSecureElementCallback12createBinderEv'
+    factories = [s for s in symbols if elf.string(names, s[0]) == method]
+    assert len(factories) == 1, 'Generated callback createBinder is missing or ambiguous'
+    _, info, _, section_index, start, size = factories[0]
+    assert info & 15 == 2 and size > 0, 'Expected a callback factory function'
+    for section in elf.sections:
+        if section[1] != 4 or section[7] != section_index or elf.sections[section[6]] != table:
+            continue
+        for offset, info, addend in struct.iter_unpack('<QQq', elf.section_data(section)):
+            # R_AARCH64_CALL26 is a BL relocation, not a data/address reference.
+            if info & 0xffffffff == 283 and start <= offset < start + size and addend == 0:
+                target = elf.string(names, symbols[info >> 32][0])
+                if target == 'AIBinder_markVintfStability':
+                    return {'symbol':method, 'calls':target, 'relocation':'R_AARCH64_CALL26',
+                            'call_offset_in_function':offset - start}
+    raise AssertionError('Generated callback createBinder does not call AIBinder_markVintfStability')
+
 def verify(library, library_dir):
     elf = Elf(library)
     providers = {}
@@ -105,6 +129,10 @@ def verify(library, library_dir):
     expected = {'libc++.so','libbase.so','liblog.so','libbinder_ndk.so','libc.so','libm.so','libdl.so'}
     assert set(elf.needed()) == expected, elf.needed()
     assert not unresolved, unresolved
+    stability = [s for s in imports if s['name'] == 'AIBinder_markVintfStability']
+    assert len(stability) == 1, 'Missing VINTF stability import'
+    assert stability[0]['binding'] == 1 and stability[0]['version'] == 'LIBBINDER_NDK30', stability
+    assert 'libbinder_ndk.so' in stability[0]['providers'], stability
     assert all(s['name'].startswith(('_ZN10WeaverImpl','_ZTV10WeaverImpl')) for s in exports), exports
     assert any(s['name'] == '_ZN10WeaverImpl11getInstanceEv' for s in exports)
     assert any(s['name'] == '_ZTV10WeaverImpl' and s['size'] == 72 for s in exports)
@@ -120,6 +148,7 @@ def verify(library, library_dir):
     return {'bytes':len(elf.data),'sha256':hashlib.sha256(elf.data).hexdigest(), 'needed':elf.needed(),
             'all_strong_import_names_and_versions_provided':True, 'unresolved_strong_imports':unresolved,
             'weak_unresolved_imports':[s for s in imports if not s['providers']],
+            'vintf_stability_import_verified':True,
             'exports':exports,'imports':imports,'library_inputs':inputs,'device_executed':False,
             'public_vtable_bytes':72,'public_vtable_first_five_methods':expected_methods}
 

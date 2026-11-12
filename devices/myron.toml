@@ -1,7 +1,8 @@
 # Initial profile from read-only stock inspection on 2026-11-12:
 # OS4.0.6.0.XPMCNXM, framework 17/API37, vendor 16/API36.
 # Native recovery boot/touch and StrongBox startup were tested on myron.
-# USB reliability, Weaver getConfig, decryption and writable data are pending.
+# Native Weaver getConfig passed (64 slots, 16-byte keys/values).
+# Data decryption and writable-data acceptance remain pending.
 # See myron.md, including the Java OMAPI dependency of stock Weaver.
 [device]
 codename = "myron"

@@ -165,20 +165,20 @@ impl<'a> KeyMint<'a> {
     /// secure world: what comes back is wrapped again, for the hardware to
     /// unwrap as it reads and writes.
     pub fn ephemeral_storage_key(&self, key: &[u8]) -> Result<Vec<u8>> {
-        match self.convert(key) {
-            Err(e) if status::refused_with(&e) == Some(KEY_REQUIRES_UPGRADE) && !self.allow_upgrade => {
-                Err(e.context("the existing storage key requires an upgrade; the decryption policy forbids it"))
-            }
-            Err(e) if status::refused_with(&e) == Some(KEY_REQUIRES_UPGRADE) && self.allow_upgrade => {
-                // As with a key that decrypts, the key is renewed for the
-                // firmware running now, as Android's keystore2 renews one
-                // for vold, and the one on disk is left as it is. A storage
-                // key is bound to nothing that has to be given again.
-                let renewed = self.upgrade(key, |call| call.i32(0)).context("renew the storage key for the firmware running now")?;
-                self.convert(&renewed)
-            }
-            converted => converted,
-        }
+        let (key, _) = crate::storage_conversion::convert(key, self.allow_upgrade,
+            |key| self.convert(key), |key| self.upgrade(key, |call| call.i32(0)))?;
+        Ok(key)
+    }
+
+    /// Explicit diagnostic opt-in for the inner wrapped storage blob only.
+    /// General/credential key upgrades must remain disabled. Like Android's
+    /// keystore2/vold path, a -62 permits one upgradeKey with empty parameters,
+    /// followed by one conversion of the result; no blob is saved or deleted.
+    /// Calling upgradeKey is not a read-only secure-world operation.
+    pub fn ephemeral_storage_key_with_renewal(&self, key: &[u8]) -> Result<(Vec<u8>, bool)> {
+        anyhow::ensure!(self.upgrades_disabled(), "general key upgrades must stay disabled for this diagnostic");
+        crate::storage_conversion::convert(key, true,
+            |key| self.convert(key), |key| self.upgrade_blob(key, |call| call.i32(0)))
     }
 
     fn convert(&self, key: &[u8]) -> Result<Vec<u8>> {
@@ -308,6 +308,10 @@ impl<'a> KeyMint<'a> {
     /// it, or the service cannot tell it is the right key.
     fn upgrade(&self, key_blob: &[u8], params: impl FnOnce(&mut Parcel)) -> Result<Vec<u8>> {
         anyhow::ensure!(self.allow_upgrade, "key upgrades are disabled by the decryption policy");
+        self.upgrade_blob(key_blob, params)
+    }
+
+    fn upgrade_blob(&self, key_blob: &[u8], params: impl FnOnce(&mut Parcel)) -> Result<Vec<u8>> {
         let mut call = Parcel::call(DEVICE);
         call.blob(key_blob);
         params(&mut call);

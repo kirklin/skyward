@@ -342,6 +342,50 @@ b, DSU off. Full recovery_a/b and boot_b hashes match the pre-test values.
 No persistent trace directory was found. The one-round authorization ended;
 further boot, credential or data-write tests need their own agreed scope.
 
+## Wrapped storage-key conversion follow-up
+
+The f32 failure occurs after StoredKey.unwrap has already decrypted the
+on-disk envelope. The failing input is its inner hardware-wrapped storage
+blob, not the outer keymaster_key_blob or a PIN operation. The existing
+transaction code 13 and single byte-array argument match IKeyMintDevice.
+
+Android keystore2 handles a conversion's KEY_REQUIRES_UPGRADE with one
+upgradeKey using empty parameters, then one conversion of the result.
+Vold explicitly ignores the returned upgraded inner blob and keeps the
+original; repeated temporary renewal is expected for implementations that
+require it. A normal Android data mount therefore does not prove that
+direct conversion with upgrades forbidden should succeed.
+
+Pinned upstream references:
+
+- [keystore2 conversion fallback](https://android.googlesource.com/platform/system/security/+/d43c1b9db3510dd5c25d35a34b926389bfeb2d33/keystore2/src/security_level.rs)
+- [vold retains the inner storage blob](https://android.googlesource.com/platform/system/vold.git/+/03a059177ec42321e2c54f9fbe2b5c6706752217/Keystore.cpp)
+- [IKeyMintDevice contract](https://android.googlesource.com/platform/hardware/interfaces/+/a742007dfaf46b6e23022ff1ff92c0983b2c2b98/security/keymint/aidl/android/hardware/security/keymint/IKeyMintDevice.aidl)
+
+The manual `skyward-cli storage-key` diagnostic requires the installed
+fstab's wrapped-storage flag, unwraps only that metadata key directory
+with general upgrades disabled, and attempts conversion. Only an explicit
+`--renew-inner` permits the single -62 -> upgradeKey -> convert fallback.
+It reports length and whether renewal occurred, never the blob contents.
+There is no mount, device-mapper creation, credential input, blob file
+write or deleteKey call. Empty results and further errors stop the path;
+an error on the second conversion is not retried.
+
+The automatic UI/data path and myron's read-only, no-general-upgrade policy
+remain unchanged. This new command has not been hardware-accepted. An
+upgradeKey call is a secure-world key operation, **not read-only evidence**.
+The general AIDL version-binding contract includes old-version invalidation;
+keeping a copy in RAM does not guarantee a vendor implementation has no
+secure-world side effects. Any test needs separate authorization covering
+that operation, exact candidate/identity gates and subsequent original
+recovery/HyperOS restoration. Do not represent a partition restore as a
+rollback of secure-world state.
+
+A fresh normal-HyperOS read-only inspection confirmed OS/vendor properties
+2026-10-05, whereas the actual f32 startup log used 2026-10-01 for both.
+This difference remains evidence to investigate; no patch date was changed,
+and matching those strings is not established as a fix for the inner blob.
+
 ## Diagnostic executable name
 
 After verifying product, slot and payload, create a RAM symlink to the

@@ -172,6 +172,16 @@ enum Cmd {
         #[arg(long)]
         alias: Option<String>,
     },
+    /// Test wrapped metadata-key conversion without mounting data, asking
+    /// for a credential, writing blobs or printing any key material.
+    #[cfg(target_os = "android")]
+    StorageKey {
+        /// Permit one secure-world upgradeKey of the inner storage blob
+        /// only if conversion returns -62. Requires separate authorization;
+        /// this is not a read-only operation inside the secure world.
+        #[arg(long)]
+        renew_inner: bool,
+    },
     /// Say what the phone's credential service answers, which takes no
     /// credential and changes nothing.
     #[cfg(target_os = "android")]
@@ -356,6 +366,24 @@ fn main() -> Result<()> {
             }
             let raw = stored.unwrap(skyward_crypto::keystore::Unwrap::Hardware(&service))?;
             println!("{} holds a key of {} bytes", key.display(), raw.len());
+            Ok(())
+        }
+        #[cfg(target_os = "android")]
+        Cmd::StorageKey { renew_inner } => {
+            use skyward_crypto::{data, keystore};
+            let entries = skyward_block::fstab::read(data::MOUNT)?;
+            let entry = entries.first().context("the phone's table has no data partition")?;
+            anyhow::ensure!(data::Encryption::of(entry)?.wrapped, "this diagnostic requires a hardware-wrapped storage key");
+            let binder = skyward_binder::driver::Binder::open()?;
+            let service = skyward_crypto::keymint::KeyMint::open(&binder)?.without_upgrades();
+            let stored = keystore::StoredKey::load(&data::key_dir(entry)?)?;
+            let inner = stored.unwrap(keystore::Unwrap::Hardware(&service))?;
+            let (ephemeral, renewed) = if renew_inner {
+                service.ephemeral_storage_key_with_renewal(&inner)?
+            } else {
+                (service.ephemeral_storage_key(&inner)?, false)
+            };
+            println!("wrapped storage key converted: {} bytes, inner_renewal_performed={renewed}; no data mount or disk-blob update", ephemeral.len());
             Ok(())
         }
         #[cfg(target_os = "android")]

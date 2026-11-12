@@ -1,6 +1,6 @@
 {
   "device": "myron",
-  "status": "experimental; PIN/CE and RW mounts confirmed; brightness/Wi-Fi scan owner-reported; all three logical mount switches passed aa35835 native test; native WPD identity bound, MTP payload test not performed",
+  "status": "experimental; PIN/CE, RW mounts, logical switches, physical keys/wake/touch/haptics and BootControl reads accepted; native MTP upload/readback/file-delete passed, empty-directory cleanup stage timed out; restored HyperOS and original files confirmed",
   "date": "2026-11-12",
   "stock_version": "OS4.0.6.0.XPMCNXM",
   "framework_api": 37,
@@ -630,6 +630,90 @@
         "persistent_trace_directory_found": false
       },
       "limits": "Only logical mount switches and native WPD identity were accepted in this round. Data/PIN and MTP payload operations were not performed; power/wake and enforcing-mode acceptance remain pending."
+    },
+    "native_aa35835_rw_mtp": {
+      "source_commit": "aa35835b0b7288e735805fffa9d3ed0f8ce935eb",
+      "ci_run": 43228377535,
+      "image_sha256": "d55edb08fdf954721e353426455d25e5e633f882897bae75b324b98216b43e3f",
+      "separate_native_boot_from_mount_switch_test": true,
+      "data": {
+        "startup_service_and_payload_gates_passed": true,
+        "one_correct_pin_entered_only_on_phone": true,
+        "owner_reported_original_folders_visible": true,
+        "data_and_sdcard_rw_verified": true,
+        "latest_closed_users_empty": true,
+        "host_credential_or_decrypt_retry": false,
+        "general_key_upgrades_and_auto_repair_disabled": true
+      },
+      "native_wpd": {
+        "unique_physical_usb_parent": true,
+        "unique_wpd_node": true,
+        "native_endpoints": 2,
+        "uniquely_bound_endpoint": true,
+        "bin_type_unspecified_was_host_expectation_mismatch": true
+      },
+      "mtp_limited_acceptance": {
+        "candidate": "aa35835b0b7288e735805fffa9d3ed0f8ce935eb",
+        "one_native_mtp_upload_committed": true,
+        "native_mtp_readback_full_sha_and_marker_verified": true,
+        "mtp_file_delete_reached_filesystem": true,
+        "native_cleanup_journal_stages": [
+          "before-delete-owned-file",
+          "deleted-owned-file",
+          "before-delete-empty-owned-directory"
+        ],
+        "no_second_upload": true,
+        "remaining_empty_own_directory_removed_by_guarded_adb_rmdir": true,
+        "original_gate_directory_inode_matched_before_rmdir": true,
+        "own_alias_raw_directory_and_file_absent": true,
+        "mtp_complete_pass_claimed": false,
+        "credential_or_decrypt_retry": false,
+        "native_file_delete_acknowledged": true,
+        "native_empty_directory_cleanup_stage_entered": true,
+        "native_empty_directory_cleanup_stage_timed_out": true,
+        "exact_blocked_com_call_identified": false,
+        "device_protocol_defect_or_event_race_proven": false
+      },
+      "owner_physical_reports": {
+        "candidate": "aa35835b0b7288e735805fffa9d3ed0f8ce935eb",
+        "volume_keys_move_menu_focus": true,
+        "power_short_press_screen_off_and_wake": true,
+        "touch_after_wake": true,
+        "vibration_present": true,
+        "vibration_strength_change_clearly_felt": true,
+        "source": "Owner confirmed both physical acceptance questions on this recovery boot"
+      },
+      "bootcontrol": {
+        "query_only": true,
+        "current_and_active_slot": "b",
+        "slot_changed": false
+      },
+      "trace": {
+        "samples": 6,
+        "sample_bytes": 764553,
+        "persistent_directory_found": false
+      },
+      "restoration": {
+        "time_utc": "2026-11-12T15:00:34.621519+00:00",
+        "device": "myron",
+        "source_commit": "aa35835b0b7288e735805fffa9d3ed0f8ce935eb",
+        "os": "OS4.0.6.0.XPMCNXM",
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false,
+        "partition_hashes": {
+          "recovery_b": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+          "recovery_a": "586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660",
+          "boot_b": "11a20858d4e68869152baf70db0edb3d279516f9d430154cc6c96ba427940748"
+        },
+        "original_recovery_b_restored": true,
+        "boot_b_and_recovery_a_unchanged": true,
+        "metadata_ciphertext_hashes_unchanged": true,
+        "hyperos_data_mounted": true,
+        "persistent_trace_directory_found": false,
+        "normal_os_unlock_and_original_files_user_confirmed": true
+      },
+      "limits": "Native upload/readback/file deletion accepted. Empty-directory cleanup stage timed out; exact COM call and device/host cause are not established. Remaining empty own folder was removed with canonical/inode-guarded nonrecursive rmdir. Full WPD cleanup, enforcing mode and destructive operations are not accepted."
     }
   },
   "scope": {
@@ -640,18 +724,18 @@
     "slot_switch_commands": false,
     "pin_or_weaver_slot_attempts": true,
     "app_data_inspected": false,
-    "writable_data_tested": false,
+    "writable_data_tested": true,
     "pin_decryption_pass_claimed": true,
     "device_wide_no_writes_claimed": false,
     "credential_or_guess_supplied_from_host": false,
     "weaver_slot_write_commands": false,
     "writable_mount_accepted": true,
-    "writable_file_payload_tested": false,
-    "mtp_payload_mutations_tested": false
+    "writable_file_payload_tested": true,
+    "mtp_payload_mutations_tested": true,
+    "mtp_complete_workflow_accepted": false
   },
   "remaining": [
-    "Complete the bounded own-payload native WPD MTP upload/readback/hash/cleanup test after fresh authorization; native endpoint identity binding passed but no payload was created or transferred",
-    "Verify volume/power/wake and touch after wake separately from the explicitly requested restoration reboot; no confirmed key fault was reported",
+    "Locate and resolve the Windows WPD empty-directory cleanup-stage timeout with bounded protocol/SDK phase evidence, then validate the complete upload/readback/file+empty-directory cleanup flow; exact blocked COM call and device/host cause are not established",
     "Enforcing mode and untested destructive recovery operations are not accepted"
   ],
   "temporary_test_candidate": {

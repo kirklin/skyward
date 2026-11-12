@@ -9,8 +9,10 @@ complete CI and one gated native getConfig: 64 slots, 16-byte keys and
 16-byte values. Later authorized myron rounds passed correct-PIN/CE access
 and read-only mounting (34fe498), then writable data/sdcard mounting
 (2a586d1). The aa35835 round also passed logical mount switches while
-preserving Weaver's private mount. MTP payload transfer and enforcing-mode
-operation remain unverified; see `devices/myron-validation.json` in the
+preserving Weaver's private mount. A later aa35835 round passed MTP upload,
+native readback and file deletion; complete empty-directory cleanup through
+Windows WPD and enforcing-mode operation remain unverified. See
+`devices/myron-validation.json` in the
 complete repository for the separate rounds and their restoration proofs.
 
 It compiles Weaver and a private copy of the direct NXP HAL transport together.

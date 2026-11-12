@@ -9,7 +9,10 @@ hashes were unchanged, and normal HyperOS unlock/files were confirmed after
 restoration. Integrated read-only mounting and correct-PIN/CE access passed
 in 34fe498, with original folders visible. The 2a586d1 round verified writable
 data/sdcard mounts, and aa35835 passed all three available logical mount
-switches. MTP payload transfer and enforcing-mode acceptance remain incomplete.
+switches. A later aa35835 round passed native MTP upload/readback/file deletion,
+volume/power/wake/touch, vibration-strength changes and BootControl reads.
+Empty-directory cleanup through Windows WPD and enforcing-mode acceptance
+remain incomplete.
 The original recovery was restored and verified. No myron PR is submitted.
 
 Read-only inspection on 2026-11-12 identified REDMI K90 Pro Max
@@ -475,6 +478,44 @@ only. Six RAM diagnostic samples totalled 761812 bytes, within 768 KiB,
 with no persistent diagnostic directory found. Original recovery_b and
 normal HyperOS were restored, still on b with DSU off. Full recovery_a,
 recovery_b and boot_b hashes matched, as did the metadata ciphertext hashes.
+
+## Writable MTP follow-up on the same aa35835 image
+
+A new, separately authorized native boot again passed startup service and
+payload checks, one correct PIN entered only on the phone, writable data
+and sdcard mounts, and the latest all-users-unlocked log state. The owner
+confirmed volume-key focus, short-power screen off/wake, touch after wake,
+and a clearly stronger vibration at the high slider setting. A read-only
+BootControl query returned current and active slot b; no slot was changed.
+
+One self-generated 65536-byte file was created in an exclusive Download
+directory through the uniquely bound native Windows WPD endpoint. Upload,
+Commit and GetObjectID completed. The first host checker stopped because
+Windows mapped this binary file to WPD_CONTENT_TYPE_UNSPECIFIED rather
+than GENERIC_FILE. This was an overly narrow host-tool expectation, not
+evidence of a recovery defect. A separate read-only SDK helper verified
+the same created object and parent chain, read back exactly 65536 bytes,
+and matched the complete SHA256 and marker. Independent phone-side reads
+also matched canonical paths, both views' inode, size and hashes. No second
+file was uploaded and no PIN or credential retry occurred.
+
+A cleanup-only SDK helper then deleted the verified file successfully and
+confirmed the folder was empty. It entered the empty-directory cleanup
+stage and timed out before completion. Its journal does not distinguish
+the exact blocked COM call or prove whether a bulk response reached USB;
+neither a recovery protocol defect nor an event race is established.
+After confirming the remaining directory's original canonical path and
+inode, a single nonrecursive rmdir removed that empty directory. Both
+alias/raw paths were absent before restoration. The complete WPD cleanup
+workflow is therefore not accepted, despite successful upload, native
+readback and file deletion.
+
+Six RAM diagnostic samples totalled 764553 bytes; no persistent diagnostic
+directory was found. Original recovery_b and normal HyperOS were restored,
+recovery_a/b and boot_b hashes matched, and metadata ciphertext hashes were
+unchanged. The owner confirmed normal unlock, desktop and original files.
+The phone remains in HyperOS while the directory-cleanup timeout is
+investigated offline.
 
 ## Diagnostic executable name
 

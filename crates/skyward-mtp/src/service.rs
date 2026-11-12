@@ -264,6 +264,16 @@ fn session(port: &mut Port, r: &mut Responder, mail: &mut Mailbox) -> Result<End
 /// One transaction: the data that comes with the command, the answer and
 /// its data, and the response.
 fn answer(port: &mut Port, r: &mut Responder, mail: &mut Mailbox, cmd: &Command) -> Result<(), Halt> {
+    // Only the optional myron diagnostic image enables this property.
+    // Never log object handles, paths, datasets or error text here.
+    let trace_delete = cmd.code == op::DELETE_OBJECT && skyward_sys::prop("debug.skyward.mtp_delete_trace").as_deref() == Some("1");
+    let trace = |stage: &str, code: Option<u16>| {
+        if trace_delete {
+            let code = code.map(|c| format!(" response={c:#06x}")).unwrap_or_default();
+            let _ = kmsg(&format!("mtp: delete op={:#06x} tid={} stage={stage}{code}", cmd.code, cmd.transaction));
+        }
+    };
+    trace("command-received", None);
     let mut stop = || {
         mail.collect();
         mail.urgent()
@@ -310,6 +320,7 @@ fn answer(port: &mut Port, r: &mut Responder, mail: &mut Mailbox, cmd: &Command)
             reply
         }
     };
+    trace("reply-ready", Some(reply.code));
     if let Some(why) = &reply.why {
         kmsg(&format!("mtp: {:#06x} answered {:#06x}: {why}", cmd.code, reply.code)).map_err(|e| Halt::Failed(io::Error::other(e)))?;
     }
@@ -321,5 +332,16 @@ fn answer(port: &mut Port, r: &mut Responder, mail: &mut Mailbox, cmd: &Command)
         Some(Outgoing::File { file, offset, length }) => port.send_file(cmd.code, cmd.transaction, &file, offset, length, &mut stop)?,
         None => {}
     }
-    port.send_response(reply.code, cmd.transaction, &reply.params, &mut stop)
+    trace("response-start", Some(reply.code));
+    let sent = port.send_response(reply.code, cmd.transaction, &reply.params, &mut stop);
+    let stage = match &sent {
+        Ok(()) => "response-complete",
+        Err(Halt::Cancelled) => "response-cancelled",
+        Err(Halt::Stopped) => "response-stopped",
+        Err(Halt::Aborted(_)) => "response-aborted",
+        Err(Halt::Disconnected) => "response-disconnected",
+        Err(Halt::Failed(_)) => "response-failed",
+    };
+    trace(stage, Some(reply.code));
+    sent
 }

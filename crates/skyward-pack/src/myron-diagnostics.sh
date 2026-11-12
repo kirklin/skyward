@@ -4,6 +4,9 @@
 [ "$(getprop ro.product.device)" = myron ] || exit 0
 [ "$(getprop ro.boot.slot_suffix)" = _b ] || exit 0
 [ -f /skyward/device.toml ] || exit 0
+# Log only DeleteObject transaction stages, with no object IDs or paths.
+# Normal images omit this script and leave the trace disabled.
+setprop debug.skyward.mtp_delete_trace 1
 umask 077
 mkdir /skyward/myron-trace || exit 0
 destination=/skyward/myron-trace

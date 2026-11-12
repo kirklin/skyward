@@ -592,6 +592,76 @@ fn objects_are_renamed_moved_copied_and_deleted() {
 }
 
 #[test]
+fn deleting_a_file_then_its_empty_folder_leaves_the_next_transaction_usable() {
+    let at = scratch("delete-sequence");
+    fs::create_dir(at.join("Download")).unwrap();
+    let mut r = open(&at);
+    let download = find(&mut r, PARENT_ROOT, "Download");
+    let made = r.answer(
+        &cmd(op::SEND_OBJECT_INFO, &[STORAGE_ID, download]),
+        Some(&object_info(format::ASSOCIATION, 0, "fixture", "")),
+    );
+    assert_eq!(made.code, response::OK);
+    let folder = made.params[2];
+    assert_eq!(r.answer(&cmd(op::SEND_OBJECT, &[]), Some(&[])).code, response::OK);
+    let (file, sent) = send(&mut r, folder, "fixture.bin", &[42; 65536], 65536);
+    assert_eq!(sent.code, response::OK);
+    assert_eq!(handles(&mut r, folder, 0), [file]);
+
+    for (transaction, handle) in [(41, file), (43, folder)] {
+        let delete = Command { code: op::DELETE_OBJECT, transaction, params: vec![handle, 0] };
+        assert!(matches!(r.incoming(&delete), Incoming::None));
+        let reply = r.answer(&delete, None);
+        assert_eq!(reply.code, response::OK, "{:?}", reply.why);
+        assert!(reply.data.is_none() && reply.params.is_empty(), "DeleteObject has no data phase or response parameters");
+        let wire = crate::dataset::short(crate::codes::container::RESPONSE, reply.code, delete.transaction, &reply.params);
+        assert_eq!(wire.len(), 12);
+        let header = crate::dataset::Header::read(&wire).unwrap();
+        assert_eq!((header.kind, header.code, header.transaction), (crate::codes::container::RESPONSE, response::OK, transaction));
+        let parent = if handle == file { folder } else { download };
+        let enumerate = Command { code: op::GET_OBJECT_HANDLES, transaction: transaction + 1, params: vec![STORAGE_ID, 0, parent] };
+        assert_eq!(dataset(r.answer(&enumerate, None)), 0u32.to_le_bytes());
+    }
+    assert!(!at.join("Download/fixture").exists());
+    let next = Command { code: op::GET_STORAGE_IDS, transaction: 45, params: vec![] };
+    let bytes = dataset(r.answer(&next, None));
+    let mut reader = Reader::new(&bytes);
+    assert_eq!((reader.u32(), reader.u32()), (Some(1), Some(STORAGE_ID)));
+    assert!(reader.rest().is_empty());
+    assert_eq!(r.answer(&cmd(op::GET_OBJECT_INFO, &[file]), None).code, response::INVALID_OBJECT_HANDLE);
+    assert_eq!(r.answer(&cmd(op::GET_OBJECT_INFO, &[folder]), None).code, response::INVALID_OBJECT_HANDLE);
+    fs::remove_dir_all(at).unwrap();
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+#[test]
+fn deleting_watched_objects_does_not_repeat_removed_events_for_the_same_session() {
+    let at = scratch("delete-events");
+    fs::create_dir(at.join("fixture")).unwrap();
+    fs::write(at.join("fixture/own.bin"), b"own").unwrap();
+    let mut r = open(&at);
+    let folder = find(&mut r, PARENT_ROOT, "fixture");
+    let file = find(&mut r, folder, "own.bin");
+    assert!(r.fd().is_some(), "exercise the real inotify backend");
+    assert!(r.changes().is_empty());
+    // An external change proves the watches really deliver removals.
+    fs::write(at.join("fixture/external.bin"), b"external").unwrap();
+    let added = r.changes();
+    let external = added.iter().find(|e| e.code == event::OBJECT_ADDED).expect("the external file was noticed").param;
+    fs::remove_file(at.join("fixture/external.bin")).unwrap();
+    assert_eq!(r.changes(), [Event { code: event::OBJECT_REMOVED, param: external }]);
+
+    assert_eq!(r.answer(&cmd(op::DELETE_OBJECT, &[file, 0]), None).code, response::OK);
+    assert!(r.changes().is_empty(), "the command already removed this file's handle");
+    assert!(handles(&mut r, folder, 0).is_empty());
+    assert_eq!(r.answer(&cmd(op::DELETE_OBJECT, &[folder, 0]), None).code, response::OK);
+    assert!(r.changes().is_empty(), "IN_DELETE and IN_IGNORED must not repeat the session's removal");
+    assert!(r.changes().is_empty(), "draining again must not replay removals");
+    assert!(handles(&mut r, PARENT_ROOT, 0).is_empty());
+    fs::remove_dir_all(at).unwrap();
+}
+
+#[test]
 fn files_are_edited_in_place() {
     let at = scratch("edit");
     fs::write(at.join("doc.txt"), b"abcdef").unwrap();

@@ -517,6 +517,14 @@ unchanged. The owner confirmed normal unlock, desktop and original files.
 The phone remains in HyperOS while the directory-cleanup timeout is
 investigated offline.
 
+The follow-up diagnostic image enables DeleteObject phase logging only
+through the optional myron diagnostic script. Normal images leave it off.
+The log contains the operation, transaction ID, response code and send
+stage, with no object handles, paths or datasets. Responder sequence and
+inotify regression tests check file deletion, empty enumeration, folder
+deletion and the next transaction; they do not establish USB delivery on
+this phone. Finer host SDK stages are also needed before assigning a cause.
+
 ## Diagnostic executable name
 
 After verifying product, slot and payload, create a RAM symlink to the

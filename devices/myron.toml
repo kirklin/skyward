@@ -1,7 +1,7 @@
 # Initial profile from read-only stock inspection on 2026-11-12:
 # OS4.0.6.0.XPMCNXM, framework 17/API37, vendor 16/API36.
 # Recovery boot, touch, decryption and WLAN are not yet tested on myron.
-# See myron.md for evidence and the older pinned recovery's limitation.
+# See myron.md, including the Java OMAPI dependency of stock Weaver.
 [device]
 codename = "myron"
 brand = "Redmi"
@@ -11,7 +11,7 @@ soc = { hans = "第五代骁龙®8至尊版移动平台", hant = "Snapdragon® 8
 os_version_prop = "ro.mi.os.version.incremental"
 
 [display]
-# persist.sys.miui_resolution in the odm partition's build.prop.
+# Live DRM modes and persist.sys.miui_resolution agree on this size/DPI.
 width = 1200
 height = 2608
 density = 480
@@ -32,7 +32,34 @@ load = ["focaltech_touch_3683"]
 # Stock has focaltech_ts, enable_touch_raw=1 and libtouchreport_alg_fts.so.
 # There is no evidence yet that FocalTech supports the Synaptics raw=0
 # workaround. Leave that write out until its position-reporting path is
-# checked; loading the module alone does not prove recovery touch works.
+# checked. Stock's touchfeature service below loads libtouchreport.so,
+# libtouchreport_alg.so and libtouchreport_hal.so to process raw frames.
+
+# These files exist on this phone and its touchfeature rc assigns them to
+# system. Keep the observed device mode separate from the sysfs modes.
+[[owners]]
+user = "system"
+group = "system"
+mode = 0o666
+paths = ["/dev/xiaomi-touch"]
+
+[[owners]]
+user = "system"
+group = "system"
+mode = 0o664
+paths = [
+    "/sys/class/touch/touch_dev/enable_touch_raw",
+    "/sys/class/touch/touch_dev/resolution_factor",
+    "/sys/class/touch/touch_dev/touch_thp_ic_cmd",
+    "/sys/class/touch/touch_dev/touch_thp_ic_cmd_data",
+    "/sys/class/touch/touch_dev/touch_finger_status",
+    "/sys/class/touch/touch_dev/abnormal_event",
+    "/sys/class/touch/touch_dev/palm_sensor",
+    "/sys/class/touch/touch_dev/palm_sensor_1",
+    "/sys/class/touch/touch_dev/touch_ic_buffer",
+    "/sys/class/touch/touch_dev/fod_press_status",
+    "/sys/class/touch/touch_dev/weak_doubletap_sensor",
+]
 
 # The firmware of the WLAN chip is on the modem partition, which the phone
 # mounts at /vendor/firmware_mnt and its own recovery leaves unmounted.
@@ -77,8 +104,17 @@ user = "root"
 groups = ["root"]
 
 [[service]]
+path = "/odm/bin/hw/vendor.xiaomi.hw.touchfeature-service"
+libraries = ["/system/lib64", "/vendor/lib64", "/odm/lib64", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"]
+ready_service = "vendor.xiaomi.hw.touchfeature.ITouchFeature/default"
+user = "system"
+groups = ["system", "input"]
+capabilities = ["SYS_NICE"]
+
+[[service]]
 path = "/vendor/bin/qseecomd"
 libraries = ["/system/lib64", "/vendor/lib64"]
+ready_property = "vendor.sys.listeners.registered"
 user = "root"
 groups = ["root", "drmrpc"]
 
@@ -89,9 +125,18 @@ user = "system"
 groups = ["system", "oem_2912", "wakelock"]
 capabilities = ["WAKE_ALARM", "BLOCK_SUSPEND"]
 
-# The actual VINTF fragments declare KeyMint4/default, remote provisioning
-# and secure clock. The sharedsecret-service-qti fragment is also present;
-# its standard default interface below still needs runtime confirmation.
+# The QTI native process, not the NXP NFC process, owns eSE1 on this phone.
+# libEseUtils is in vendor/lib64/hw. libhardware needs libvndksupport and
+# its bootstrap libdl_android dependency, absent from the stock ramdisk.
+[[service]]
+path = "/vendor/bin/hw/android.hardware.secure_element-service.qti"
+libraries = ["/system/lib64", "/vendor/lib64", "/vendor/lib64/hw", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"]
+ready_service = "android.hardware.secure_element.ISecureElement/eSE1"
+registers = ["android.hardware.secure_element.ISecureElement/SIM1", "android.hardware.secure_element.ISecureElement/SIM2"]
+user = "system"
+groups = ["nfc", "system"]
+
+# All four QTI interfaces were confirmed in VINTF and stock service list.
 [[service]]
 path = "/vendor/bin/hw/android.hardware.security.onekeymint-service-qti"
 libraries = ["/system/lib64", "/vendor/lib64"]
@@ -111,11 +156,24 @@ ready_service = "android.hardware.gatekeeper.IGatekeeper/default"
 user = "system"
 groups = ["system"]
 
+# NXP StrongBox uses HalToHalTransport to native eSE1. Its separate shared
+# secret participates in the notes-key agreement alongside QTI's default.
+# Stock's rc sets only the UID; /proc confirms primary GID 0.
+[[service]]
+path = "/odm/bin/hw/android.hardware.security.keymint3-service.strongbox.nxp"
+libraries = ["/system/lib64", "/vendor/lib64", "/odm/lib64", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"]
+ready_service = "android.hardware.security.keymint.IKeyMintDevice/strongbox"
+registers = ["android.hardware.security.keymint.IRemotelyProvisionedComponent/strongbox", "android.hardware.security.sharedsecret.ISharedSecret/strongbox"]
+user = "vendor_nxp_strongbox"
+groups = ["root"]
+
 # This is NXP Weaver2, not the conditional Goodix service on nezha.
 # Its account is 2911 in the installed vendor passwd/group files.
+# Its stock ese_weaver.so still uses Java OMAPI: this service can register
+# without proving PIN operations work. See myron.md for the blocker.
 [[service]]
 path = "/odm/bin/hw/android.hardware.weaver-service.nxp-qti"
-libraries = ["/system/lib64", "/vendor/lib64", "/odm/lib64"]
+libraries = ["/system/lib64", "/vendor/lib64", "/odm/lib64", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"]
 ready_service = "android.hardware.weaver.IWeaver/default"
 user = "vendor_nxp_weaver"
 groups = ["vendor_nxp_weaver"]
@@ -136,13 +194,12 @@ probe = "http://connect.rom.miui.com/generate_204"
 [update]
 server = "https://update.miui.com/updates/miotaV3.php"
 
-# This existing OTA pin is still OS4.0.4.0; the inspected phone runs
-# OS4.0.6.0. Do not treat its kernel/recovery as a verified match until the
-# actual build's recovery and hash have been obtained and checked.
+# Official OTA payload manifest and the active stock recovery_b independently
+# agree on the complete 100 MiB image hash. CI also extracts and hashes it.
 [stock]
-version = "OS4.0.4.0.XPMCNXM"
-package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.4.0.XPMCNXM/myron-ota_full-OS4.0.4.0.XPMCNXM-user-17.0-70d1c400a4.zip"
-recovery = "6e4170a336ffb5a6291bb422c660efb5d61f45a4315524848848cb650e0d4832"
+version = "OS4.0.6.0.XPMCNXM"
+package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.6.0.XPMCNXM/myron-ota_full-OS4.0.6.0.XPMCNXM-user-17.0-66564d402b.zip"
+recovery = "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc"
 
 # qcom-hv-haptics (qcom,hv-haptics in its dtbo), with the click made from
 # samples at the motor's resonant frequency as on the 17 Ultra. The

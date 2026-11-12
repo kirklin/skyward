@@ -792,9 +792,14 @@ mod tests {
         assert!(cfg.touch.writes.is_empty(), "FocalTech's raw=0 workaround is unverified");
         assert_eq!(cfg.modules.load, ["focaltech_touch_3683"]);
         assert_eq!(cfg.wlan.as_ref().unwrap().modules, ["rfkill", "qca_cld3_peach_v2"]);
-        let [post_boot, boot, listeners, opener, keymint, gatekeeper, weaver] = &cfg.services[..] else {
-            panic!("only the seven observed stock programs are configured")
-        };
+        let service = |path: &str| cfg.services.iter().find(|s| s.path == path).expect("an observed stock service");
+        let post_boot = service("/vendor/bin/sh");
+        let boot = service("/vendor/bin/hw/android.hardware.boot-service.qti");
+        let listeners = service("/vendor/bin/qseecomd");
+        let opener = service("/vendor/bin/hlosminkdaemon");
+        let keymint = service("/vendor/bin/hw/android.hardware.security.onekeymint-service-qti");
+        let gatekeeper = service("/vendor/bin/hw/android.hardware.gatekeeper-rust-service-qti");
+        let weaver = service("/odm/bin/hw/android.hardware.weaver-service.nxp-qti");
         assert!(post_boot.oneshot);
         assert_eq!(boot.path, "/vendor/bin/hw/android.hardware.boot-service.qti");
         assert_eq!(boot.ready_service.as_deref(), Some("android.hardware.boot.IBootControl/default"));
@@ -812,7 +817,16 @@ mod tests {
         assert_eq!(weaver.ready_service.as_deref(), Some("android.hardware.weaver.IWeaver/default"));
         assert_eq!((weaver.user.as_deref(), &weaver.groups[..]), (Some("vendor_nxp_weaver"), &["vendor_nxp_weaver".to_string()][..]));
         assert!(cfg.services.iter().all(|s| s.ready_hardware_service.is_none()), "these stock HALs use AIDL");
-        assert!(!cfg.services.iter().any(|s| s.path.contains("goodix") || s.path.contains("strongbox")), "no other phone's SE services are assumed");
+        assert!(!cfg.services.iter().any(|s| s.path.contains("goodix")), "this phone has NXP, not Goodix");
+        let strongbox = service("/odm/bin/hw/android.hardware.security.keymint3-service.strongbox.nxp");
+        assert_eq!(strongbox.user.as_deref(), Some("vendor_nxp_strongbox"));
+        assert_eq!(strongbox.groups, ["root"], "stock process has GID 0");
+        assert!(strongbox.registers.iter().any(|s| s == "android.hardware.security.sharedsecret.ISharedSecret/strongbox"), "include the stock peer in notes-key agreement");
+        assert_eq!(listeners.ready_property.as_deref(), Some("vendor.sys.listeners.registered"));
+        let touch = service("/odm/bin/hw/vendor.xiaomi.hw.touchfeature-service");
+        assert_eq!(touch.user.as_deref(), Some("system"));
+        assert_eq!(touch.capabilities, ["SYS_NICE"]);
+        assert!(cfg.owners.iter().any(|o| o.user == "system" && o.group == "system" && o.mode == 0o666 && o.paths.iter().any(|p| p == "/dev/xiaomi-touch")));
     }
 
     #[test]
@@ -962,7 +976,7 @@ mod tests {
             (include_str!("../../../devices/pudding.toml"), "OS4.0.4.0.XPCCNXM"),
             (include_str!("../../../devices/pandora.toml"), "OS4.0.4.0.XBLCNXM"),
             (include_str!("../../../devices/popsicle.toml"), "OS4.0.4.0.XPBCNXM"),
-            (include_str!("../../../devices/myron.toml"), "OS4.0.4.0.XPMCNXM"),
+            (include_str!("../../../devices/myron.toml"), "OS4.0.6.0.XPMCNXM"),
             (include_str!("../../../devices/songyuan.toml"), "OS4.0.4.0.XGNCNXM"),
             (include_str!("../../../devices/athens.toml"), "OS4.0.4.0.XPICNXM"),
             (include_str!("../../../devices/fuxi.toml"), "OS3.0.309.0.WMCCNXM"),

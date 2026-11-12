@@ -1,0 +1,23 @@
+{
+  "package": "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.6.0.XPMCNXM/myron-ota_full-OS4.0.6.0.XPMCNXM-user-17.0-66564d402b.zip",
+  "package_bytes": 10247941315,
+  "payload_offset": 5131,
+  "manifest_bytes": 369070,
+  "manifest_sha256": "0ffcdf43439e4d8d6bbe66f9eed082a7a4aaf374ef09e9a4d15432b1858c39b8",
+  "recovery": {
+    "name": "recovery",
+    "bytes": 104857600,
+    "sha256": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc"
+  },
+  "bytes_read": 435331,
+  "verification": "Partition hash read from official payload manifest; full extraction pending CI.",
+  "device": "myron",
+  "version": "OS4.0.6.0.XPMCNXM",
+  "active_stock_recovery_b_full_size_and_sha256_match": true,
+  "whole_ota_downloaded_or_md5_verified": false,
+  "stock_header": {
+    "version": 4,
+    "kernel_bytes": 0,
+    "avb_footer": true
+  }
+}

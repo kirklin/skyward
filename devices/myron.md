@@ -1,63 +1,103 @@
-# myron: initial stock evidence
+# myron: stock evidence and recovery bring-up
 
-This is an offline bring-up candidate, not a tested recovery release.
+This is an unbooted recovery candidate, not a tested release. No myron PR
+has been submitted. Build success does not establish display, touch,
+Wi-Fi, PIN decryption or writable-data support.
+
 Read-only inspection on 2026-11-12 identified REDMI K90 Pro Max
 `25102RKBEC`, SM8850/canoe, OS4.0.6.0.XPMCNXM, framework Android 17/API 37
-and vendor Android 16/API 36. The connected phone was using slot b; no
-slot was changed. Restrictions learned from another device's faulty slot
-do not establish anything about this phone's slots.
+and vendor Android 16/API 36. The phone was normally running HyperOS on
+slot b, with DSU off. No slot was changed. This phone has its own slot
+history; another device's faulty slot does not establish anything about it.
 
-Only selected system/vendor/odm files, kernel interface descriptions and
-properties were read. There was no reboot, flash, mount, daemon start,
-credential/key read or application-data inspection. Raw logs and the
-device identifier remain outside Git in local private evidence.
+## Matching stock recovery and rollback copies
 
-| Area | Observed stock evidence | Candidate status |
+The profile now pins the exact OS4.0.6.0 OTA, replacing the older 4.0.4.0
+input. Reading only 435,331 bytes of the official 10,247,941,315-byte ZIP
+provided its payload manifest and recovery partition hash. A complete
+read-only copy of the phone's recovery_b independently matches that hash:
+
+| Original partition | Bytes | SHA256 |
+| --- | ---: | --- |
+| recovery_b, active stock 4.0.6.0 | 104857600 | `49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc` |
+| recovery_a, different original contents | 104857600 | `586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660` |
+
+Both complete original partitions are saved locally with verified hashes,
+outside Git. The a copy is not substituted for b or identified as the
+4.0.6.0 recovery. Both have boot header v4, no kernel and an AVB footer.
+They are not standalone `fastboot boot` images. CI must still extract the
+official partition and check its complete hash before building a candidate.
+
+Public source metadata is recorded in `myron-stock.json`. This is not a
+claim that the whole 10 GB OTA ZIP was downloaded or its full-file MD5
+checked during manifest inspection.
+
+## Services and hardware
+
+| Area | Observed evidence | Candidate status |
 | --- | --- | --- |
-| Default KeyMint | `vendor/etc/init/android.hardware.security.onekeymint-service-qti.rc`; matching VINTF fragment declares KeyMint v4 and remote provisioning v3/default | QTI process, stock system:drmrpc identity; runtime/library closure untested |
-| Secure clock/shared secret | Secure-clock/default VINTF contents read; `android.hardware.security.sharedsecret-service-qti.xml` filename observed | Shared-secret default interface still requires fragment-content and runtime confirmation |
-| Gatekeeper | `android.hardware.gatekeeper-service-qti.rc` starts `android.hardware.gatekeeper-rust-service-qti`; matching AIDL VINTF/default | Stock system:system identity; PIN verification untested |
-| Weaver | ODM `android.hardware.weaver-service.nxp.rc` and VINTF v2/default | NXP binary and vendor_nxp_weaver user/group (2911), not nezha's Goodix path |
-| StrongBox | ODM NXP StrongBox v3/strongbox manifest and executable present | Not started by this minimal candidate; dependencies and shared-secret participation remain to be checked |
-| TEE helpers | This phone's qseecomd and hlosminkdaemon rc files | Paths, users/groups and Mink capabilities copied from those files; TEE readiness untested |
-| Touch | Loaded focaltech_touch_3683/xiaomi_touch; input focaltech_ts; raw flag read as 1; libtouchreport_alg_fts.so present | Removed inherited, unverified raw=0 write; no claim that module loading supplies recovery touch |
-| Wi-Fi | Loaded qca_cld3_peach_v2/rfkill/cfg80211; cnss symlink targets qcom,cnss-peach; peach_v2 config directory | Existing module/supplicant scaffold retained; no scan/association test or speculative daemon additions |
-| Data | Stock fstab: F2FS, fscrypt v2, inlinecrypt_optimized and wrappedkey_v0 metadata/content keys | read_only=true, auto_repair=false, key_upgrades=false |
-| Boot control | Stock AIDL boot-service.qti rc/manifest; separate recovery_a/recovery_b links | Configured root:root before the security services; query and write operations remain untested |
+| Display | Live DRM lists 1200x2608 at 120/90/60 Hz; resolution property reports 1200,2608,480 | Size/DPI confirmed; recovery display not tested |
+| Touch | FocalTech 3683, focaltech_ts on event6, raw flag 1, resolution factor 100; absolute maxima 119999x260799 | Stock touchfeature process configured; no speculative raw=0 write |
+| Touch processing | Actual process maps include libtouchreport.so, libtouchreport_alg.so, libtouchreport_hal.so, libtouchreport_sensor.so and TensorFlow models | Use stock system:system/input, SYS_NICE, AIDL/default; processing in recovery untested |
+| TEE helpers | Stock qseecomd and hlosminkdaemon rc files; live listeners-ready property true | Preserve identities/capabilities and wait for listeners |
+| Default KeyMint | QTI KeyMint4/default, remote provisioning, secure clock, shared secret/default confirmed in VINTF and live service list | Configured; recovery key operations untested |
+| Gatekeeper | QTI Rust AIDL/default, system:system | Configured; recovery credential verification untested |
+| Native eSE | eSE1 belongs to the QTI secure-element process, not the NXP NFC process | Start stock QTI service as system:nfc/system before StrongBox |
+| StrongBox | NXP StrongBox3 and sharedsecret/strongbox; live UID 2910, primary GID 0; native HalToHalTransport | Configured with its real shared-secret peer; recovery negotiation untested |
+| Weaver | NXP Weaver2/default, UID/GID 2911; stock ese_weaver.so uses OmapiTransport | Java dependency remains a PIN blocker, described below |
+| Wi-Fi | qca_cld3_peach_v2/rfkill/cfg80211, cnss-peach, peach_v2 configuration | Existing module/supplicant scaffold; no recovery scan/association test |
+| Boot control | Stock QTI AIDL BootControl and separate recovery_a/b | Configured early; recovery query/write operations untested |
 
-The captured `vendor.xiaomi.hw.touchfeature-service.rc` starts
-`/odm/bin/hw/vendor.xiaomi.hw.touchfeature-service` as system with system
-and input groups, SYS_NICE, and the AIDL interface
-`vendor.xiaomi.hw.touchfeature.ITouchFeature/default`. The ODM library
-directory contains libtouchreport.so, libtouchreport_alg.so,
-libtouchreport_alg_fts.so, libtouchreport_hal.so and libtouchreport_sensor.so.
-No process maps/ELF dependency inspection or complete live sysfs inventory
-was captured, so the actual algorithm-loading path and required ownership
-changes remain unproven. This candidate does not start that HAL yet.
+The touch device is handed to system with its observed mode 0666. Only
+sysfs nodes that both exist on this phone and match its stock init rules
+are included in the system:system/0664 ownership list. Merely seeing
+libtouchreport_alg_fts.so on disk is not used as evidence that it is the
+algorithm loaded by the running process.
 
-The read-only decrypt policy governs Skyward's data mount and automatic
-fsck/key-upgrade paths; it also makes the packer disable automatic metadata
-key deletion. It is not a device-wide write blocker. Explicit wipe/repair,
-partition operations, vendor HAL state and the inherited persist mount
-remain separate concerns requiring their own authorization and validation.
+The QTI eSE program needs libEseUtils from vendor/lib64/hw. Its and NXP's
+libhardware dependency needs libvndksupport, which is absent from the
+stock recovery ramdisk; the installed system and bootstrap library paths
+are explicit fallbacks. This was established from ELF dependencies and
+the stock ramdisk inventory, not a successful recovery launch.
 
-Before boot testing, obtain and verify the OS4.0.6.0 stock recovery/header
-and rollback material. The profile still pins the upstream OS4.0.4.0 OTA
-and SHA because no exact OS4.0.6.0 recovery hash was captured. Display
-dimensions/density and haptics strengths remain inherited, not newly
-measured. The connected device was removed before the next identity-guarded
-batch, so no partition headers were downloaded.
+## Remaining Weaver transport dependency
 
-Next checks are the exact shared-secret fragments and NXP dependencies,
-touch processing/native position mode, display/USB behavior, metadata-only
-read-only opening, then user-authorized PIN/CE testing. Successful profile
-parsing or CI must not be reported as any of those device tests passing.
+The stock NXP ese_weaver.so constructs OmapiTransport. Its initialization
+looks up `android.se.omapi.ISecureElementService/default`. Stock process
+identity confirms this service and `secure_element` both belong to
+`com.android.se`, loaded by app_process64. Recovery has no Java framework
+to supply that process. A registered Weaver binder alone therefore does
+not establish that Weaver reads or PIN decryption can work.
 
-Local validation: the targeted
-`myron_bringup_preserves_data_and_uses_its_observed_aidl_services` contract
-test passed (one test actually executed), and skyward-config all-target
-clippy passed with warnings denied. Its Unix build also calls the normal
-DeviceConfig parser. The full configuration suite is not Windows portable:
-Android absolute paths are rejected by Windows Path validation. Full
-Linux/ARM64 CI remains required; no recovery image was built or booted in
-this inspection task.
+The stock NXP StrongBox uses the separate native AppletConnection /
+HalToHalTransport path to QTI's eSE1. AOSP's NXP Weaver source also has a
+HAL-to-HAL selection when OMAPI_TRANSPORT is not defined. That source
+route is under investigation. Any replacement must match the installed
+transport C++ ABI, exported Weaver entry points, applet selection and
+error behavior before it is used. No vendor binary was patched, replaced
+or executed as part of this read-only inspection.
+
+## Data policy and validation limits
+
+The first candidate retains read_only=true, auto_repair=false and
+key_upgrades=false. The stock fstab uses F2FS, fscrypt v2,
+inlinecrypt_optimized and wrappedkey_v0. The policy also disables the
+packer's automatic metadata-key deletion. It is not a device-wide write
+blocker: explicit wipe/repair, vendor HAL state and the inherited persist
+mount are separate concerns. No keys, credentials or application data were
+read, and no phone mount, daemon start, sysfs write, reboot or flash was
+performed during collection. The already-root shell was used as found.
+
+Before temporary boot testing, prepare a matching kernel-bearing test
+container and verify a return path to normal HyperOS. Start with display,
+USB, touch and service diagnostics; PIN/CE and writable-data acceptance
+remain separate real-device tests. Haptics strengths remain inherited and
+unmeasured.
+
+The initial profile's Linux/ARM64 CI passed at a188aa5
+([run 43063699023](https://github.com/Dingtaiqi/skyward/actions/runs/43063699023)).
+For this continuation, the targeted myron data-policy/service contract ran
+one test and passed, and config all-target Clippy passed with warnings
+denied. Updated Linux/ARM64 CI is still required for the changed profile.
+The full path-validation suite is not Windows portable; Linux CI executes
+the complete suite. None of these checks is a recovery boot test.

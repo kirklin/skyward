@@ -6,8 +6,9 @@ StrongBox startup, both shared-secret peers and Weaver getConfig (64/16/16).
 A separately authorized 759d4d2 test also converted an inner wrapped storage
 blob after one temporary renewal, yielding 100 bytes. Original disk-blob
 hashes were unchanged, and normal HyperOS unlock/files were confirmed after
-restoration. Integrated recovery data mounting, PIN/CE, enforcing mode and
-writable-data acceptance remain incomplete.
+restoration. Integrated read-only mounting and correct-PIN/CE access passed
+in 34fe498, with original folders visible. Writable-data/MTP and
+enforcing-mode acceptance remain incomplete.
 The original recovery was restored and verified. No myron PR is submitted.
 
 Read-only inspection on 2026-11-12 identified REDMI K90 Pro Max
@@ -101,11 +102,11 @@ enabling general/credential key upgrades.
 | Touch | FocalTech 3683, focaltech_ts on event6, raw flag 1, resolution factor 100; absolute maxima 119999x260799 | Native recovery touch confirmed by owner; no speculative raw=0 write |
 | Touch processing | Actual process maps include libtouchreport.so, libtouchreport_alg.so, libtouchreport_hal.so, libtouchreport_sensor.so and TensorFlow models | Stock service ran as configured; owner confirmed responsive touch |
 | TEE helpers | Stock qseecomd and hlosminkdaemon rc files; live listeners-ready property true | Preserve identities/capabilities and wait for listeners |
-| Default KeyMint | QTI/default, remote provisioning, secure clock and shared secret/default confirmed; hardware info says OneKeymint version 1, TEE, Qualcomm | Single inner storage renewal/conversion passed; general upgrades remain disabled; integrated mount/PIN pending |
+| Default KeyMint | QTI/default, remote provisioning, secure clock and shared secret/default confirmed; hardware info says OneKeymint version 1, TEE, Qualcomm | Inner conversion and read-only PIN/CE passed; general upgrades remain disabled; writable follow-up pending |
 | Gatekeeper | QTI Rust AIDL/default, system:system | Configured; recovery credential verification untested |
 | Native eSE | eSE1 belongs to the QTI secure-element process, not the NXP NFC process | Stock driver/node and QTI callback delivery passed |
 | StrongBox | NXP StrongBox3 and sharedsecret/strongbox; live UID 2910, primary GID 0; native HalToHalTransport | 9f RAM dependencies fixed loading and passed startup ready; UID/GID/caps/AT_SECURE confirmed |
-| Weaver | NXP Weaver2/default, UID/GID 2911; original executable uses private native library bind | f32 actual mapping and getConfig passed (64 slots, 16-byte keys/values); PIN/slot access untested |
+| Weaver | NXP Weaver2/default, UID/GID 2911; original executable uses private native library bind | f32 actual mapping/getConfig passed; 34fe498 correct-PIN recovery unlock and original-file access passed |
 | Wi-Fi | qca_cld3_peach_v2/rfkill/cfg80211, cnss-peach, peach_v2 configuration | Recovery log records DHCP lease and external reachability; repeatability untested |
 | Boot control | Stock QTI AIDL BootControl and separate recovery_a/b | Configured early; recovery query/write operations untested |
 
@@ -400,6 +401,23 @@ secure-world side effects. Any test needs separate authorization covering
 that operation, exact candidate/identity gates and subsequent original
 recovery/HyperOS restoration. Do not represent a partition restore as a
 rollback of secure-world state.
+
+The integrated 34fe498 image subsequently passed native read-only mounting
+and one owner-entered correct PIN. Both data and sdcard were verified F2FS
+read-only/norecovery; the recovery log's closed-user list became empty and
+the owner saw original folders. The first evidence probe had run while the
+UI was still idle; the owner then pressed Decrypt once. No decrypt CLI retry
+or host-supplied credential was used. The metadata ciphertext hashes stayed
+unchanged, six RAM samples totalled 764469 bytes, and the original recovery
+and three full partition hashes were restored and verified. Normal HyperOS
+mounted data, and the owner confirmed normal unlock/files again.
+
+The next profile permits writable access while retaining auto_repair=false,
+key_upgrades=false and storage_key_renewal=true. Automatic metadata-key
+deletion remains disabled. This writable configuration is not yet hardware
+accepted; its next test must restrict writes to an explicitly owned small
+payload and verify cleanup. MTP payload transfer and other untested recovery
+operations must not be inferred from PIN success.
 
 A fresh normal-HyperOS read-only inspection confirmed OS/vendor properties
 2026-10-05, whereas the actual f32 startup log used 2026-10-01 for both.

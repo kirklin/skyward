@@ -1,6 +1,6 @@
 {
   "device": "myron",
-  "status": "experimental; Weaver getConfig and single inner storage renewal/conversion accepted; restricted read-only data integration prepared; recovery data mount/PIN/CE not accepted",
+  "status": "experimental; native read-only data/PIN/CE and original-file access accepted; writable-data/MTP follow-up prepared; release acceptance incomplete",
   "date": "2026-11-12",
   "stock_version": "OS4.0.6.0.XPMCNXM",
   "framework_api": 37,
@@ -417,6 +417,66 @@
         "hyperos_unlock_and_original_files_user_confirmed": true
       },
       "limits": "This validates one inner storage conversion and successful subsequent HyperOS use, not recovery data mounting, PIN decryption or enforcing-mode operation."
+    },
+    "native_34fe498": {
+      "source_commit": "34fe498bd5304da020752dc4a1c6780bb8d4d065",
+      "ci_run": 43215964584,
+      "image_sha256": "e9430d23020dec053d003535a058a425726dd8c2f20886de45bafc24622f8313",
+      "payloads_and_partition_match": true,
+      "readonly_ui": {
+        "candidate": "34fe498bd5304da020752dc4a1c6780bb8d4d065",
+        "readonly_ui_probe_completed": true,
+        "data_mounted_read_only": true,
+        "metadata_ciphertext_hashes_match_preflight": true,
+        "general_upgrades_enabled": false,
+        "inner_renewal_scope": "at most one renewal per conversion; automatic UI metadata/DE/shared opening",
+        "manual_conversion_or_data_cli_invoked": false,
+        "credential_or_weaver_operation_issued_by_probe": false,
+        "hardware_info_only": true,
+        "spblob_header_count": 3,
+        "pin_authorized_by_probe": false
+      },
+      "pin_acceptance": {
+        "pin_entry_requested_once": true,
+        "owner_reported_pin_success_and_original_folders_visible": true,
+        "recovery_reports_no_users_remaining_closed": true,
+        "data_and_sdcard_verified_read_only": true,
+        "metadata_blob_hashes_unchanged": true,
+        "probe_or_controller_supplied_credentials": false,
+        "diagnostic_samples": 6,
+        "diagnostic_sample_bytes": 764469
+      },
+      "supported_spblob_format": {
+        "version": 3,
+        "kind": 0
+      },
+      "runtime_evidence": "UI Open left owner/profile closed; one owner-entered correct PIN later left closed=[]; /data and /sdcard both f2fs ro,norecovery; metadata ciphertext hashes unchanged",
+      "initial_probe": "Stopped while home UI had not opened data. Owner then pressed Decrypt once; evidence collection repeated without issuing a decryption command.",
+      "host_credential_argument_or_guess": false,
+      "restoration": {
+        "time_utc": "2026-11-12T12:38:51.922716+00:00",
+        "device": "myron",
+        "os": "OS4.0.6.0.XPMCNXM",
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false,
+        "partition_hashes": {
+          "recovery_b": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+          "recovery_a": "586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660",
+          "boot_b": "11a20858d4e68869152baf70db0edb3d279516f9d430154cc6c96ba427940748"
+        },
+        "original_recovery_b_restored": true,
+        "boot_b_and_recovery_a_unchanged": true,
+        "metadata_blob_hashes_unchanged_through_postrestore": true,
+        "hyperos_data_mounted": true,
+        "no_persistent_trace_directory_found_in_recovery": true,
+        "readonly_recovery_pin_unlock_user_confirmed": true,
+        "readonly_data_and_sdcard_verified": true,
+        "owner_files_visible_in_recovery_user_confirmed": true,
+        "credential_or_slot_commands_issued_by_probe_or_controller": false,
+        "hyperos_unlock_and_original_files_user_confirmed": true
+      },
+      "limits": "Read-only data and PIN/CE accepted. Writable data, MTP payload mutations, enforcing mode and other untested recovery functions are not established."
     }
   },
   "scope": {
@@ -425,17 +485,18 @@
       "recovery_b original restoration"
     ],
     "slot_switch_commands": false,
-    "pin_or_weaver_slot_attempts": false,
+    "pin_or_weaver_slot_attempts": true,
     "app_data_inspected": false,
     "writable_data_tested": false,
-    "pin_decryption_pass_claimed": false,
-    "device_wide_no_writes_claimed": false
+    "pin_decryption_pass_claimed": true,
+    "device_wide_no_writes_claimed": false,
+    "credential_or_guess_supplied_from_host": false,
+    "weaver_slot_write_commands": false
   },
   "remaining": [
-    "Verify the newly opt-in storage_key_renewal policy in an authorized read-only data-mount test; general/credential key upgrades stay forbidden",
-    "After a successful read-only mount, separately validate correct-PIN/CE access without retrying wrong credentials",
-    "Keep patch-property discrepancy as evidence; do not guess dates or infer it caused the proven inner conversion requirement",
-    "Enforcing mode and remaining recovery functions still require acceptance before PR"
+    "Validate writable data with no automatic fsck or general key upgrades; limit changes to a uniquely owned small test payload and verify cleanup",
+    "Validate MTP read/write/hash and cleanup on that payload without accessing user file contents",
+    "Enforcing mode and remaining recovery functions require separate evidence before release/PR"
   ],
   "temporary_test_candidate": {
     "source_commit": "79dec9edc91ce3f47b0fabe615a1d89b36ab996e",
@@ -675,5 +736,47 @@
     "diagnostic_max_log_bytes": 786432,
     "device_boot_tested": true,
     "pin_authorized": false
+  },
+  "readonly_pin_candidate": {
+    "source_commit": "34fe498bd5304da020752dc4a1c6780bb8d4d065",
+    "ci_run": 43215964584,
+    "ci_conclusion": "success",
+    "image_file": "skyward-34fe498-myron-OS4.0.6.0.XPMCNXM-diagnostic.img",
+    "image_bytes": 104857600,
+    "image_sha256": "e9430d23020dec053d003535a058a425726dd8c2f20886de45bafc24622f8313",
+    "zip_sha256": "1c04559790ab24ab9d982730732ca4c4399ff95934ea2a37d8d71ecd8f2935d0",
+    "header_version": 4,
+    "kernel_bytes": 0,
+    "payloads": {
+      "init.skyward-myron-diagnostics.rc": {
+        "bytes": 229,
+        "sha256": "5504cc2a70fc894207ca7514873af34c1ad265b26630344c919ba4ed0c197a3a"
+      },
+      "skyward/device.toml": {
+        "bytes": 10761,
+        "sha256": "559aa4273a21d1e94b730f9a8092b8a21bfd7a0267415e7e2f7de4efd2260c3f"
+      },
+      "skyward/lib64/ese_weaver.so": {
+        "bytes": 113512,
+        "sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e"
+      },
+      "skyward/myron-diagnostics.sh": {
+        "bytes": 4120,
+        "sha256": "042a5b49fad6a3fda417319cb62e632855fabc2a1145e33e948de3c3fa9dd2ac"
+      },
+      "system/bin/recovery": {
+        "bytes": 8645080,
+        "sha256": "d5803eedbc9982a7537d72ffaef992335dd58f391fbafa417d319bdc383d4c22"
+      }
+    },
+    "program_matches_same_run_tools": true,
+    "config_and_scripts_match_source": true,
+    "native_library_matches_same_run_artifact_and_reproducible_builds": true,
+    "native_library_sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e",
+    "callback_vintf_mark_strong_import_verified": true,
+    "callback_create_binder_actual_call_verified": true,
+    "diagnostic_max_log_bytes": 786432,
+    "device_boot_tested": true,
+    "pin_authorized": true
   }
 }

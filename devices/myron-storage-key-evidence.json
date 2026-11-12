@@ -59,6 +59,18 @@
     "read_only": true,
     "auto_repair": false,
     "metadata_auto_delete_keys": false,
+    "hardware_accepted": true,
+    "acceptance_source_commit": "34fe498bd5304da020752dc4a1c6780bb8d4d065",
+    "readonly_data_and_sdcard_verified": true,
+    "correct_pin_ce_user_and_log_confirmed": true,
+    "metadata_ciphertext_unchanged": true,
+    "hyperos_unlock_after_restore_user_confirmed": true
+  },
+  "writable_followup": {
+    "general_key_upgrades": false,
+    "auto_repair": false,
+    "storage_key_renewal": true,
+    "read_only": false,
     "hardware_accepted": false
   }
 }

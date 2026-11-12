@@ -849,7 +849,7 @@ mod tests {
         DeviceConfig::parse(text).unwrap();
         assert_eq!(cfg.device.codename, "myron");
         assert!(cfg.device.ab);
-        assert_eq!(cfg.decrypt, Decrypt { read_only: true, auto_repair: false, key_upgrades: false, storage_key_renewal: true });
+        assert_eq!(cfg.decrypt, Decrypt { read_only: false, auto_repair: false, key_upgrades: false, storage_key_renewal: true });
         assert!(!cfg.decrypt.checks_filesystem() && !cfg.decrypt.upgrades_keys());
         assert!(cfg.decrypt.preserves_keys(), "the packer must disable automatic metadata key deletion");
         assert!(cfg.touch.writes.is_empty(), "FocalTech's raw=0 workaround is unverified");

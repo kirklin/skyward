@@ -2,7 +2,7 @@
 # OS4.0.6.0.XPMCNXM, framework 17/API37, vendor 16/API36.
 # Native recovery boot/touch and StrongBox startup were tested on myron.
 # Native Weaver getConfig passed (64 slots, 16-byte keys/values).
-# Data decryption and writable-data acceptance remain pending.
+# Read-only PIN/CE decryption passed in 34fe498; writable-data acceptance pending.
 # See myron.md, including the Java OMAPI dependency of stock Weaver.
 [device]
 codename = "myron"
@@ -18,10 +18,10 @@ width = 1200
 height = 2608
 density = 480
 
-# Keep filesystem access read-only, general KeyMint upgrades forbidden and
-# existing metadata keys protected from stock initialization deletion.
+# Read-only PIN/CE passed. Enable ordinary filesystem access for the next
+# bounded test, keeping fsck, general upgrades and automatic key deletion off.
 [decrypt]
-read_only = true
+read_only = false
 auto_repair = false
 key_upgrades = false
 # 759d4d2's single native test converted the inner storage blob successfully.

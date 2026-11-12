@@ -1362,5 +1362,60 @@
     "device_tested": true,
     "new_phone_authorization_recorded": true,
     "limits": "Instrumentation and regression coverage only. No protocol-semantic fix or hardware pass claimed."
+  },
+  "mtp_scope_count_candidate": {
+    "source_commit": "aa0d84e55ccaff9a7c7f6047aac706c41da39c47",
+    "ci_run": 43258199965,
+    "ci_conclusion": "success",
+    "image_file": "skyward-aa0d84e-myron-OS4.0.6.0.XPMCNXM-diagnostic.img",
+    "image_bytes": 104857600,
+    "image_sha256": "0eb24beb709d6bd2c523460a5a115e54d9d4d3f46a25f24826cf53fd176a4901",
+    "zip_sha256": "dece0a22d4c7decdaa2d3cb19f193c3fd587f93dae05108f1f2af20ab6ab1af6",
+    "header_version": 4,
+    "kernel_bytes": 0,
+    "payloads": {
+      "init.skyward-myron-diagnostics.rc": {
+        "bytes": 229,
+        "sha256": "5504cc2a70fc894207ca7514873af34c1ad265b26630344c919ba4ed0c197a3a"
+      },
+      "skyward/device.toml": {
+        "bytes": 10789,
+        "sha256": "aff151c4234fdfa864ef21d875f6b98c2401d3e09c1d46ce08556b89c6f5d3f6"
+      },
+      "skyward/lib64/ese_weaver.so": {
+        "bytes": 113512,
+        "sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e"
+      },
+      "skyward/myron-diagnostics.sh": {
+        "bytes": 4297,
+        "sha256": "50533210ae05cb1f2a68488aabcd48f7f0bb63420aadeaa0adf055685bf05a09"
+      },
+      "system/bin/recovery": {
+        "bytes": 8648664,
+        "sha256": "5c861144478fed8f2dd3c8839c536b0ac898142bf81fde584153c439a97dc0af"
+      }
+    },
+    "program_matches_same_run_tools": true,
+    "config_and_scripts_match_source": true,
+    "native_library_matches_same_run_artifact_and_reproducible_builds": true,
+    "native_library_sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e",
+    "callback_vintf_mark_strong_import_verified": true,
+    "callback_create_binder_actual_call_verified": true,
+    "diagnostic_max_log_bytes": 786432,
+    "device_boot_tested": false,
+    "pin_authorized": false
+  },
+  "mtp_scope_count_preparation": {
+    "ci_run": 43258199965,
+    "ci_conclusion": "success",
+    "previous_failed_run": 43257192342,
+    "previous_failure": "Android diagnostic counter used Rust2024 let-chain syntax in an edition2021 workspace; fixed with match/if let without protocol-semantic change",
+    "unknown_and_deleted_single_property_query_contract_tests_passed": true,
+    "diagnostic_scope": "Existing bounded window plus zero/all-ones/known/unknown selectors, protocol depth/format/property/group and dataset first-count only; no handles/paths/property values/file contents",
+    "host_v4_native_binary_byte_identical_to_v3": true,
+    "host_v4_local_binding_and_guard_checks_passed": true,
+    "device_tested": false,
+    "new_phone_authorization_recorded": false,
+    "limits": "Still diagnostic only; no host/device cause or MTP complete pass established."
   }
 }

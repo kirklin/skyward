@@ -57,7 +57,7 @@ checked during manifest inspection.
 | Gatekeeper | QTI Rust AIDL/default, system:system | Configured; recovery credential verification untested |
 | Native eSE | eSE1 belongs to the QTI secure-element process, not the NXP NFC process | Start stock QTI service as system:nfc/system before StrongBox |
 | StrongBox | NXP StrongBox3 and sharedsecret/strongbox; live UID 2910, primary GID 0; native HalToHalTransport | Configured with its real shared-secret peer; recovery negotiation untested |
-| Weaver | NXP Weaver2/default, UID/GID 2911; stock ese_weaver.so uses OmapiTransport | Java dependency remains a PIN blocker, described below |
+| Weaver | NXP Weaver2/default, UID/GID 2911; stock ese_weaver.so uses OmapiTransport | Native source component now bundled; override, applet and PIN operations remain untested |
 | Wi-Fi | qca_cld3_peach_v2/rfkill/cfg80211, cnss-peach, peach_v2 configuration | Existing module/supplicant scaffold; no recovery scan/association test |
 | Boot control | Stock QTI AIDL BootControl and separate recovery_a/b | Configured early; recovery query/write operations untested |
 
@@ -73,7 +73,7 @@ stock recovery ramdisk; the installed system and bootstrap library paths
 are explicit fallbacks. This was established from ELF dependencies and
 the stock ramdisk inventory, not a successful recovery launch.
 
-## Remaining Weaver transport dependency
+## Source-built Weaver transport; runtime still unverified
 
 The stock NXP ese_weaver.so constructs OmapiTransport. Its initialization
 looks up `android.se.omapi.ISecureElementService/default`. Stock process
@@ -83,12 +83,34 @@ to supply that process. A registered Weaver binder alone therefore does
 not establish that Weaver reads or PIN decryption can work.
 
 The stock NXP StrongBox uses the separate native AppletConnection /
-HalToHalTransport path to QTI's eSE1. AOSP's NXP Weaver source also has a
-HAL-to-HAL selection when OMAPI_TRANSPORT is not defined. That source
-route is under investigation. Any replacement must match the installed
-transport C++ ABI, exported Weaver entry points, applet selection and
-error behavior before it is used. No vendor binary was patched, replaced
-or executed as part of this read-only inspection.
+HalToHalTransport path to QTI's eSE1. `native/nxp-weaver/` now contains a
+source-only build kit for the Weaver alternative. It compiles the direct
+transport and Stable AIDL V1 clients into the replacement library and
+hides their C++ interfaces; it does not reuse the incompatible private
+layout of the vendor transport class. StrongBox keeps its original library.
+
+The kit uses pinned public NXP/AOSP source, platform headers and six public
+Clang files. It rebuilds its CRT, extracts seven hash-verified libraries
+from the official recovery for linking, and needs no full Android tree or
+private vendor input. The regular myron workflow builds it from source and
+passes `--library .../ese_weaver.so` to the packer. Omitting that library
+with the new profile is an error, not an image silently using the old path.
+Only Weaver searches `/skyward/lib64` first; vendor partitions are unchanged.
+
+The standalone offline build produced 113360 bytes with SHA256
+`09a4095831aae55a4589606da194c0bd7f1369a3195316af643810b4136fc5a2`.
+One hundred imports and their GNU versions are supplied by the exact REC
+libraries. The public 72-byte vtable order and SlotInfo/ReadResp/WeaverImpl
+sizes 12/32/24 match the observed client interface. Thirteen fake-transport
+and parser scenarios passed ASan/UBSan. The source removes automatic
+operation replay: only a fresh, explicit SELECT-not-found response permits
+switching to another of the three exact stock AIDs; an ambiguous transport
+failure stops. None of those tests contacts hardware or authenticates a user.
+
+Runtime validation remains mandatory. Check the mapped library path and
+hash, process auxv/AT_SECURE and capabilities before the read-only getConfig
+query; do not proceed to any PIN/key operation if the override or native
+service access is unconfirmed. See the kit README for build and test records.
 
 ## Data policy and validation limits
 
@@ -127,8 +149,9 @@ myron/b, with the actual metadata partition already mounted F2FS/rw and
 at least 4 MiB free, it creates a new root-only directory named
 `/metadata/skyward-myron-trace-<boot UUID>`. Otherwise output stays in RAM.
 It does not mount/remount, repair, format, read keys, write /data or reboot.
-The six samples include whitelisted USB properties, process/device lists
-and bounded recovery/kernel/logd output. Raw traces are private diagnostic
+The six samples include whitelisted USB properties, process/device lists,
+Weaver library identities/maps, capability and AT_SECURE metadata, and
+bounded recovery/kernel/logd output. Raw traces are private diagnostic
 material and must not be published unreviewed.
 
 Booting this variant requires separate authorization for those metadata

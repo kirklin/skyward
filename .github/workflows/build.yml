@@ -126,6 +126,31 @@ jobs:
         env:
           RECOVERY: ${{ steps.stock.outputs.recovery }}
         run: echo "$RECOVERY  stock/recovery.img" | sha256sum --check
+      - name: Cache the pinned myron compiler
+        if: matrix.device == 'myron'
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/myron-clang
+          key: myron-clang-${{ hashFiles('native/nxp-weaver/TOOLCHAIN.json') }}
+      - name: Build the native myron Weaver component from source
+        if: matrix.device == 'myron'
+        run: |
+          python3 native/nxp-weaver/fetch_toolchain.py --out "$RUNNER_TEMP/myron-clang"
+          python3 native/nxp-weaver/extract_recovery_libraries.py stock/recovery.img --out "$RUNNER_TEMP/myron-rec-libs"
+          python3 native/nxp-weaver/test_transport.py --out "$RUNNER_TEMP/myron-transport-test"
+          python3 native/nxp-weaver/build.py --toolchain "$RUNNER_TEMP/myron-clang" --libraries "$RUNNER_TEMP/myron-rec-libs" --out "$RUNNER_TEMP/myron-native"
+          echo "09a4095831aae55a4589606da194c0bd7f1369a3195316af643810b4136fc5a2  $RUNNER_TEMP/myron-native/ese_weaver.so" | sha256sum --check
+      - name: Keep the native component and its build proof
+        if: matrix.device == 'myron'
+        uses: actions/upload-artifact@v7
+        with:
+          name: myron-native-weaver-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/myron-native/ese_weaver.so
+            ${{ runner.temp }}/myron-native/BUILD_PROOF.json
+            ${{ runner.temp }}/myron-native/COMMANDS.json
+            ${{ runner.temp }}/myron-transport-test/*.json
+          if-no-files-found: error
       - name: Pack the recovery
         id: pack
         env:
@@ -136,6 +161,9 @@ jobs:
           if [ "$GITHUB_REF_TYPE" = tag ]; then version="$GITHUB_REF_NAME"; else version="${GITHUB_SHA::7}"; fi
           name="skyward-$version-$DEVICE-$STOCK"
           extra=()
+          if [ "$DEVICE" = myron ]; then
+            extra+=(--library "$RUNNER_TEMP/myron-native/ese_weaver.so")
+          fi
           if [ "$DEVICE" = myron ] && [ "$MYRON_DIAGNOSTICS" = true ]; then
             name="$name-diagnostic"
             extra+=(--myron-diagnostics)

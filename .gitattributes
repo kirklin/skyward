@@ -1,0 +1,4 @@
+/crates/skyward-pack/src/myron-diagnostics.sh text eol=lf
+/crates/skyward-pack/src/myron-diagnostics.rc text eol=lf
+# The kit verifies upstream Git blobs and generated source byte hashes.
+/native/nxp-weaver/** -text

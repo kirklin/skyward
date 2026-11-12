@@ -1,0 +1,107 @@
+{
+  "vtable_order_and_size_matches": true,
+  "expected_first_five_methods": [
+    "_ZN10WeaverImpl4InitEv",
+    "_ZN10WeaverImpl8GetSlotsER8SlotInfo",
+    "_ZN10WeaverImpl4ReadEjRKNSt3__16vectorIhNS0_9allocatorIhEEEER12ReadRespInfo",
+    "_ZN10WeaverImpl5WriteEjRKNSt3__16vectorIhNS0_9allocatorIhEEEES6_",
+    "_ZN10WeaverImpl6DeInitEv"
+  ],
+  "live": {
+    "bytes": 72,
+    "methods": [
+      {
+        "address": "0x4684",
+        "names": [
+          "_ZN10WeaverImpl4InitEv"
+        ]
+      },
+      {
+        "address": "0x4a40",
+        "names": [
+          "_ZN10WeaverImpl8GetSlotsER8SlotInfo"
+        ]
+      },
+      {
+        "address": "0x4e9c",
+        "names": [
+          "_ZN10WeaverImpl4ReadEjRKNSt3__16vectorIhNS0_9allocatorIhEEEER12ReadRespInfo"
+        ]
+      },
+      {
+        "address": "0x5498",
+        "names": [
+          "_ZN10WeaverImpl5WriteEjRKNSt3__16vectorIhNS0_9allocatorIhEEEES6_"
+        ]
+      },
+      {
+        "address": "0x585c",
+        "names": [
+          "_ZN10WeaverImpl6DeInitEv"
+        ]
+      },
+      {
+        "address": "0x5988",
+        "names": []
+      },
+      {
+        "address": "0x5990",
+        "names": []
+      }
+    ]
+  },
+  "candidate": {
+    "bytes": 72,
+    "methods": [
+      {
+        "address": "0xa760",
+        "names": [
+          "_ZN10WeaverImpl4InitEv"
+        ]
+      },
+      {
+        "address": "0xa9ac",
+        "names": [
+          "_ZN10WeaverImpl8GetSlotsER8SlotInfo"
+        ]
+      },
+      {
+        "address": "0xace8",
+        "names": [
+          "_ZN10WeaverImpl4ReadEjRKNSt3__16vectorIhNS0_9allocatorIhEEEER12ReadRespInfo"
+        ]
+      },
+      {
+        "address": "0xb0b8",
+        "names": [
+          "_ZN10WeaverImpl5WriteEjRKNSt3__16vectorIhNS0_9allocatorIhEEEES6_"
+        ]
+      },
+      {
+        "address": "0xb30c",
+        "names": [
+          "_ZN10WeaverImpl6DeInitEv"
+        ]
+      },
+      {
+        "address": "0xb398",
+        "names": []
+      },
+      {
+        "address": "0xb39c",
+        "names": [
+          "_ZN10WeaverImplD0Ev"
+        ]
+      }
+    ]
+  },
+  "stock_sha256": "556b6eb12522f6e9c306846ab6b8fa65f24be5f9c23e8e5ef19a54b45fcb8e4e",
+  "candidate_sha256": "09a4095831aae55a4589606da194c0bd7f1369a3195316af643810b4136fc5a2",
+  "compiled_public_sizes": {
+    "SlotInfo": 12,
+    "ReadRespInfo": 32,
+    "WeaverImpl": 24
+  },
+  "candidate_uses_private_fresh_transport": true,
+  "device_executed": false
+}

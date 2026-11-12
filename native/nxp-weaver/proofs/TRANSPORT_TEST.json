@@ -1,0 +1,24 @@
+{
+  "command": [
+    "c++",
+    "-std=c++17",
+    "-O1",
+    "-g",
+    "-include",
+    "cstdint",
+    "-fsanitize=address,undefined",
+    "-fno-omit-frame-pointer",
+    "-I<KIT>/tests/fakes",
+    "-I<KIT>/weaver/libese_weaver/inc",
+    "<KIT>/tests/transport_replay_test.cpp",
+    "<KIT>/recovery-patch/src/weaver-transport-impl.cpp",
+    "<KIT>/recovery-patch/src/weaver-parser-impl.cpp",
+    "-o",
+    "<TEST_OUT>/transport-replay-test"
+  ],
+  "returncode": 0,
+  "stdout": "success PASS sends=1\nwrong-key-status PASS sends=1\nthrottle-response PASS sends=1\nambiguous-failure PASS sends=1\nfailure-without-response PASS sends=1\nshort-failure-response PASS sends=1\nnon-select-failure PASS sends=1\nthree-AID-fallback PASS sends=3\nall-AIDs-missing PASS sends=3\nstop-after-ambiguous-alternate PASS sends=2\nalternate-stale-selection-error PASS sends=2\nalternate-wrong-key-status PASS sends=2\nparser-statuses-and-exact-live-AIDs PASS\n",
+  "stderr": "",
+  "real_device_or_APDU_used": false,
+  "aidl_regeneration_verified": true
+}

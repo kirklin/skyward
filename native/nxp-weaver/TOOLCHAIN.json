@@ -1,0 +1,48 @@
+{
+  "repository": "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86",
+  "commit": "29182889399818f97baa65ea238c80e8117981eb",
+  "files": [
+    {
+      "path": "bin/clang-22",
+      "source_path": "clang-r596125/bin/clang-22",
+      "git_blob_sha1": "2229bf19967f636a422e959c7d7b989edda748bf",
+      "sha256": "28774967e08984bbe8a54a07a4b40af0160881a2f777fa780fe3afa33c0775c8",
+      "bytes": 159453112
+    },
+    {
+      "path": "bin/lld",
+      "source_path": "clang-r596125/bin/lld",
+      "git_blob_sha1": "7dd03780ff8e2e068f2913fec29c712654ec2593",
+      "sha256": "36eb18dc6acdd4eca1f63e9ac73708cfef84cdd1c1db47b3ca686a5d1fcdcd81",
+      "bytes": 78382472
+    },
+    {
+      "path": "bin/llvm-objcopy",
+      "source_path": "clang-r596125/bin/llvm-objcopy",
+      "git_blob_sha1": "dad3d83ed21077602212c1b201fde49c81e3e81f",
+      "sha256": "6e4db490930a65bf95b677527f15aaec1eb89f3ff826b86ca5ab42c4af43bc4d",
+      "bytes": 5468544
+    },
+    {
+      "path": "bin/llvm-readobj",
+      "source_path": "clang-r596125/bin/llvm-readobj",
+      "git_blob_sha1": "c184d99f844fa519acf6518e391046079a64a2e9",
+      "sha256": "99ffe78c4493f848f656e8c3b12691384c7cbd6ac0cbaf02056c79bc853d9c03",
+      "bytes": 6981464
+    },
+    {
+      "path": "lib/libxml2.so.16",
+      "source_path": "clang-r596125/lib/libxml2.so.16",
+      "git_blob_sha1": "b1cf3beb2dc0e098a4291ff3aac1005fc932f35f",
+      "sha256": "a889cb9f430614678c9c02e68248e00317b7b75be3646bd099ed7e209e291c87",
+      "bytes": 1478400
+    },
+    {
+      "path": "lib/clang/22/lib/linux/libclang_rt.builtins-aarch64-android.a",
+      "source_path": "clang-r596125/lib/clang/22/lib/linux/libclang_rt.builtins-aarch64-android.a",
+      "git_blob_sha1": "e887603222fedcc361e4261df44ca562cdab549a",
+      "sha256": "4023fd367bc053e2cd5a7b0603220bcf5071e3aad0dacebd83b8f6ff57b7a0f6",
+      "bytes": 519210
+    }
+  ]
+}

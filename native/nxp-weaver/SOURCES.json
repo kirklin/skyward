@@ -1,0 +1,401 @@
+{
+  "note": "Downloaded from AOSP NXP primary sources; no device operations",
+  "refs": {
+    "weaver": "011152eda4dea5cb8b5277e45a2849cf8fdd660c",
+    "keymint": "20462cc54c637b95ece8ccd3cc307c629a5b2890"
+  },
+  "files": [
+    {
+      "path": "weaver/aidl_impl/service.cpp",
+      "bytes": 1620,
+      "sha256": "3eb999504bab9cd13f38059341aa4cd6ab5f53bb3091720a11fcb58c9a2c7af0",
+      "upstream_commit": "011152eda4dea5cb8b5277e45a2849cf8fdd660c",
+      "git_blob_sha1": "570f42737e653af4920407618d7b5cddad857d11",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/weaver",
+      "repository_path": "aidl_impl/service.cpp"
+    },
+    {
+      "path": "weaver/aidl_impl/Weaver.cpp",
+      "bytes": 4910,
+      "sha256": "f1e9cea12990b2d45b1259c2d13da166614ca85933b2aba9eebe5899bf8fc0a8",
+      "upstream_commit": "011152eda4dea5cb8b5277e45a2849cf8fdd660c",
+      "git_blob_sha1": "66f13130c7af5cd0ad65f7da7eedd63c20f41037",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/weaver",
+      "repository_path": "aidl_impl/Weaver.cpp"
+    },
+    {
+      "path": "weaver/aidl_impl/Weaver.h",
+      "bytes": 1714,
+      "sha256": "abded001392bbf1cead87a7961eb52ca94039eb054e4158a68322765aa57abb0",
+      "upstream_commit": "011152eda4dea5cb8b5277e45a2849cf8fdd660c",
+      "git_blob_sha1": "1eaa5cc679536ea34ba1ab9d6f7180c3d79d4950",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/weaver",
+      "repository_path": "aidl_impl/Weaver.h"
+    },
+    {
+      "path": "weaver/Android.bp",
+      "bytes": 2490,
+      "sha256": "4bda95f2d0cedb793833392c7caa661f1d5bb337bc43ec5421f0d17bb87d0779",
+      "upstream_commit": "011152eda4dea5cb8b5277e45a2849cf8fdd660c",
+      "git_blob_sha1": "bb9b9987a920363c73f01690176296484efd35d4",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/weaver",
+      "repository_path": "Android.bp"
+    },
+    {
+      "path": "weaver/libese_weaver/Android.bp",
+      "bytes": 1715,
+      "sha256": "9b8f1237b6cb51f9d0b78d1ed45735ad27f3ad5e6f6a4a1021be3aaceeed8252",
+      "upstream_commit": "011152eda4dea5cb8b5277e45a2849cf8fdd660c",
+      "git_blob_sha1": "a7018b0d6bdbda1c1b2e934480a8450be304e129",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/weaver",
+      "repository_path": "libese_weaver/Android.bp"
+    },
+    {
+      "path": "weaver/libese_weaver/inc/TransportFactory.h",
+      "bytes": 3799,
+      "sha256": "48f5950a8e6947fb177b13ab57ee0b2aed6a93c36b9878d508caad8645a268f5",
+      "upstream_commit": "011152eda4dea5cb8b5277e45a2849cf8fdd660c",
+      "git_blob_sha1": "97735384341d63dd0aaf9640f9e96bf9c3edf769",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/weaver",
+      "repository_path": "libese_weaver/inc/TransportFactory.h"
+    },
+    {
+      "path": "weaver/libese_weaver/inc/weaver-impl.h",
+      "bytes": 4227,
+      "sha256": "2e3e7791c43dc7d8b51939efd8e0c0d788a9c5d40a02dbe31745507a97937907",
+      "upstream_commit": "011152eda4dea5cb8b5277e45a2849cf8fdd660c",
+      "git_blob_sha1": "986cc1cd4db04ca2a49d9d7d3f73685c00f3690b",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/weaver",
+      "repository_path": "libese_weaver/inc/weaver-impl.h"
+    },
+    {
+      "path": "weaver/libese_weaver/inc/weaver_common.h",
+      "bytes": 1825,
+      "sha256": "e2083a065f8a21d0f12f895543900d73cb1ab6fd09cfa6ed4f457e5f468536c0",
+      "upstream_commit": "011152eda4dea5cb8b5277e45a2849cf8fdd660c",
+      "git_blob_sha1": "c14dd7c36c106009bbc301b80e1896b8f2bfdf95",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/weaver",
+      "repository_path": "libese_weaver/inc/weaver_common.h"
+    },
+    {
+      "path": "weaver/libese_weaver/inc/weaver_interface.h",
+      "bytes": 3026,
+      "sha256": "35e6ed03ae08b56c308fe77e495bfddf0cba0b8670278d4d546cb9b00e9505ff",
+      "upstream_commit": "011152eda4dea5cb8b5277e45a2849cf8fdd660c",
+      "git_blob_sha1": "8491c72651fb7e1b32db378e9f5a9778ab172822",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/weaver",
+      "repository_path": "libese_weaver/inc/weaver_interface.h"
+    },
+    {
+      "path": "weaver/libese_weaver/inc/weaver_parser-impl.h",
+      "bytes": 6826,
+      "sha256": "2c0e612fed971260c09095320427f1885e017850619fdf508f0552eef11c42a2",
+      "upstream_commit": "011152eda4dea5cb8b5277e45a2849cf8fdd660c",
+      "git_blob_sha1": "14c7ef8c1a1632c532f63b100ca2ed4b166cc9df",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/weaver",
+      "repository_path": "libese_weaver/inc/weaver_parser-impl.h"
+    },
+    {
+      "path": "weaver/libese_weaver/inc/weaver_parser.h",
+      "bytes": 5463,
+      "sha256": "5facb40aa39d938568d4633a7bc93a93bf8b2884c0644a759e06e789f304078f",
+      "upstream_commit": "011152eda4dea5cb8b5277e45a2849cf8fdd660c",
+      "git_blob_sha1": "71c1dce84d8b02d97d30ca8ac392963cf42c9422",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/weaver",
+      "repository_path": "libese_weaver/inc/weaver_parser.h"
+    },
+    {
+      "path": "weaver/libese_weaver/inc/weaver_transport-impl.h",
+      "bytes": 3803,
+      "sha256": "f0aad41c7574d3cab3ef0ce2f117c0ae28f7eb2d67413c79c160d26390606e2a",
+      "upstream_commit": "011152eda4dea5cb8b5277e45a2849cf8fdd660c",
+      "git_blob_sha1": "2867002f525c384042fdbe3a3237109fee6c1065",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/weaver",
+      "repository_path": "libese_weaver/inc/weaver_transport-impl.h"
+    },
+    {
+      "path": "weaver/libese_weaver/inc/weaver_transport.h",
+      "bytes": 2574,
+      "sha256": "bd3404352b4d2b8882c040be3007c68c315e24534a96ee043c951232812a0d46",
+      "upstream_commit": "011152eda4dea5cb8b5277e45a2849cf8fdd660c",
+      "git_blob_sha1": "f8a76b601f424d2de70da3094dcc5e3acc1363aa",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/weaver",
+      "repository_path": "libese_weaver/inc/weaver_transport.h"
+    },
+    {
+      "path": "weaver/libese_weaver/inc/weaver_utils.h",
+      "bytes": 2051,
+      "sha256": "f5b21e0d288896abc0ffeb5a7393c317028606e05c51b790be35382ef9dcfec1",
+      "upstream_commit": "011152eda4dea5cb8b5277e45a2849cf8fdd660c",
+      "git_blob_sha1": "27b5d860fc6929560cafbc1c30ef2a4e2b84d9df",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/weaver",
+      "repository_path": "libese_weaver/inc/weaver_utils.h"
+    },
+    {
+      "path": "weaver/libese_weaver/src/weaver-impl.cpp",
+      "bytes": 7875,
+      "sha256": "5960593d2a6c96f69132f3ade580778a78ec329fec84b4f81b1600ebb6499353",
+      "upstream_commit": "011152eda4dea5cb8b5277e45a2849cf8fdd660c",
+      "git_blob_sha1": "a253545d7fec4271981146a81c7f83790d8a9304",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/weaver",
+      "repository_path": "libese_weaver/src/weaver-impl.cpp"
+    },
+    {
+      "path": "weaver/libese_weaver/src/weaver-parser-impl.cpp",
+      "bytes": 14785,
+      "sha256": "98cb6a0a35ab3ffbc60680f9cb807dabb323a3fbee33325709447b804d1e6667",
+      "upstream_commit": "011152eda4dea5cb8b5277e45a2849cf8fdd660c",
+      "git_blob_sha1": "c5e865d47d61116d96577386748debc061d9c9fa",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/weaver",
+      "repository_path": "libese_weaver/src/weaver-parser-impl.cpp"
+    },
+    {
+      "path": "weaver/libese_weaver/src/weaver-transport-impl.cpp",
+      "bytes": 6473,
+      "sha256": "9d41340f595541ad10b6958cb1616e4f1c2939313513d6ea83a74a2bbf338a4c",
+      "upstream_commit": "011152eda4dea5cb8b5277e45a2849cf8fdd660c",
+      "git_blob_sha1": "37da4064ca9b035c1137a161a748ce24caa151c0",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/weaver",
+      "repository_path": "libese_weaver/src/weaver-transport-impl.cpp"
+    },
+    {
+      "path": "weaver/LICENSE",
+      "bytes": 11357,
+      "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1",
+      "upstream_commit": "011152eda4dea5cb8b5277e45a2849cf8fdd660c",
+      "git_blob_sha1": "8dada3edaf50dbc082c9a125058f25def75e625a",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/weaver",
+      "repository_path": "LICENSE"
+    },
+    {
+      "path": "weaver/METADATA",
+      "bytes": 39,
+      "sha256": "0c5e478ce932b46a4caf164ecfa3e099f2508acc701e1b567a1436f8e3c01c95",
+      "upstream_commit": "011152eda4dea5cb8b5277e45a2849cf8fdd660c",
+      "git_blob_sha1": "d97975ca3b99b2c09e1d43944d83625c0aee561e",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/weaver",
+      "repository_path": "METADATA"
+    },
+    {
+      "path": "weaver/NOTICE",
+      "bytes": 578,
+      "sha256": "6045749cc721cda6d52e13c8a020483510cba5e4e92d237957947c36adcd0909",
+      "upstream_commit": "011152eda4dea5cb8b5277e45a2849cf8fdd660c",
+      "git_blob_sha1": "e14ff164c43930a2ce18bb5c1ceff448128bb931",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/weaver",
+      "repository_path": "NOTICE"
+    },
+    {
+      "path": "keymint/Android.bp",
+      "bytes": 1609,
+      "sha256": "a3ba646f7aaa44c8ff0ad238c8c3c1da69558d917106d8c331bc62bd99402b2e",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "47ed3351a9d6cb141a40c0f9edb92e9978ab8f0b",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "Android.bp"
+    },
+    {
+      "path": "keymint/LICENSE",
+      "bytes": 11357,
+      "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "8dada3edaf50dbc082c9a125058f25def75e625a",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "LICENSE"
+    },
+    {
+      "path": "keymint/METADATA",
+      "bytes": 39,
+      "sha256": "0c5e478ce932b46a4caf164ecfa3e099f2508acc701e1b567a1436f8e3c01c95",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "d97975ca3b99b2c09e1d43944d83625c0aee561e",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "METADATA"
+    },
+    {
+      "path": "keymint/NOTICE",
+      "bytes": 11357,
+      "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "8dada3edaf50dbc082c9a125058f25def75e625a",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "NOTICE"
+    },
+    {
+      "path": "keymint/transport/Android.bp",
+      "bytes": 1932,
+      "sha256": "1d6db3ed46cdd4132d8072e35f39be8b7949d22bb66b37f10f42aa44086dc9a3",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "58ce80a57cc5a0c014626d9ee3fffb9408932b42",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "transport/Android.bp"
+    },
+    {
+      "path": "keymint/transport/AppletConnection.cpp",
+      "bytes": 9190,
+      "sha256": "bdffefb5ab95e4e5a58c361adaa3911c017a3a4138c793a073bd962cdaff4b10",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "97eee5747c4958c778a9b1c75974ecc51571f0a6",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "transport/AppletConnection.cpp"
+    },
+    {
+      "path": "keymint/transport/EseTransportUtils.cpp",
+      "bytes": 1068,
+      "sha256": "83b643df20ca2a5b50561772f859f0194b262ff0e87550d2891ee7371890055a",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "ef8102437a3554d56403ca48030e588f53904c00",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "transport/EseTransportUtils.cpp"
+    },
+    {
+      "path": "keymint/transport/HalToHalTransport.cpp",
+      "bytes": 3635,
+      "sha256": "38a7cf80a2206ed9e9e5828ca8382569913d35a523bbfdc5c3bb230c535b6a71",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "33f1c3986dd45a0b5565083619d1380e1c2217dc",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "transport/HalToHalTransport.cpp"
+    },
+    {
+      "path": "keymint/transport/include/AppletConnection.h",
+      "bytes": 3470,
+      "sha256": "b7d542faa731caeec09164de2fcdd0a3a4e7e2f4ec5336c7a4a7a34b0950ae8a",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "ef79c99208c9227a0fc3b7066aacd2899a749a77",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "transport/include/AppletConnection.h"
+    },
+    {
+      "path": "keymint/transport/include/EseTransportUtils.h",
+      "bytes": 1516,
+      "sha256": "5867ed5e049a1383b1b12e29c27d6f99340e85f72dfd030b269388641b996c43",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "362afd3dbbd56b3e1670017636fb5f79915b2b24",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "transport/include/EseTransportUtils.h"
+    },
+    {
+      "path": "keymint/transport/include/HalToHalTransport.h",
+      "bytes": 2830,
+      "sha256": "64f95f2d298f933af463b80a12476c65facdb6ecdb141b8492d1795590637888",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "2117fa3ccdb499fdae5d376fc8f9aa9aa1c8e9d3",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "transport/include/HalToHalTransport.h"
+    },
+    {
+      "path": "keymint/transport/include/IntervalTimer.h",
+      "bytes": 1031,
+      "sha256": "070e7c6e5c98800bd4947b1f49a7080765913845d0a31d35ac7c28c17c677e45",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "38a5e3be8bc241643d7919207618416e4123f81c",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "transport/include/IntervalTimer.h"
+    },
+    {
+      "path": "keymint/transport/include/ITransport.h",
+      "bytes": 2826,
+      "sha256": "a90404d185956dde4473114e5a3b1caca25996b2eb7389f548bc16692e0a507d",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "59fa9156e3dd9a55423f7f93ba9c859766798296",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "transport/include/ITransport.h"
+    },
+    {
+      "path": "keymint/transport/include/OmapiTransport.h",
+      "bytes": 6241,
+      "sha256": "f1059712229656da9c0d3eaa4e6ec0faca8a5a0a32a76b2987d7f0e7eaedf9cf",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "c8615c4148f8f05b5021dfc87b314c1ba8750b5e",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "transport/include/OmapiTransport.h"
+    },
+    {
+      "path": "keymint/transport/include/SBAccessController.h",
+      "bytes": 4181,
+      "sha256": "729dd3914e281129f2c6f7f8c437888fffaa053d54b69c12dedeb356660c13e3",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "9067c7b4f5381535f984013944cf1cd2536a7260",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "transport/include/SBAccessController.h"
+    },
+    {
+      "path": "keymint/transport/include/SignalHandler.h",
+      "bytes": 1616,
+      "sha256": "ccb5083a80a483753f83baa9ebbf46f4e2c3cb5491a959de47703c483c16acce",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "bd201a2d56982a0cd2973390b7edacefd8281662",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "transport/include/SignalHandler.h"
+    },
+    {
+      "path": "keymint/transport/include/SocketTransport.h",
+      "bytes": 2475,
+      "sha256": "856834550bfbb3fb142b3fb2a6d992491d96087db52bdb710aa3d5b00ef380ea",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "3cf65b3ade6ac11ec50536f301ea12cdec01741b",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "transport/include/SocketTransport.h"
+    },
+    {
+      "path": "keymint/transport/include/Transport.h",
+      "bytes": 3294,
+      "sha256": "e89efd84b8c4b0a47a380a37afc34d577c512ba31326abbf09dac4a38b3090b9",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "b238f79c44c1e03ccb11d006687bc05f0623e1a1",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "transport/include/Transport.h"
+    },
+    {
+      "path": "keymint/transport/IntervalTimer.cpp",
+      "bytes": 3013,
+      "sha256": "8ad8879df4bc43b01c68aafa34d172a89e3d16b10d259f33b923f617908a83ea",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "478072c0c84aa072d9e27b836b370ff6897eb44b",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "transport/IntervalTimer.cpp"
+    },
+    {
+      "path": "keymint/transport/OmapiTransport.cpp",
+      "bytes": 17324,
+      "sha256": "968c51fe67daf20860d048b904f20fca50fe4eab7cad507b13ea5b92ba6a9ce1",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "530cfc231b200b5e1a66dcecf2818ec95d1213fd",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "transport/OmapiTransport.cpp"
+    },
+    {
+      "path": "keymint/transport/SBAccessController.cpp",
+      "bytes": 5706,
+      "sha256": "35be8659b311259ffee14714f3851f6a9b0b2507d39c4b72fec06fa9d7a1041e",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "7ccefe8100e38561b7b6b876fb2e385157eefe2b",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "transport/SBAccessController.cpp"
+    },
+    {
+      "path": "keymint/transport/SignalHandler.cpp",
+      "bytes": 4011,
+      "sha256": "bbeabf474138a2b767c5e186b40716721179283c2c859c11318e541eb0ca965d",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "a0323efd19819e67229cd8ba2e5758ec746e0eb5",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "transport/SignalHandler.cpp"
+    },
+    {
+      "path": "keymint/transport/SocketTransport.cpp",
+      "bytes": 4418,
+      "sha256": "cb3323e166d175faa22ee3fd4630b3c62d968f15536e32063f0ced84a6e197ec",
+      "upstream_commit": "20462cc54c637b95ece8ccd3cc307c629a5b2890",
+      "git_blob_sha1": "ae14848e09307d1d6d94c35f741fab3f5d72eeb0",
+      "repository": "https://android.googlesource.com/platform/hardware/nxp/keymint",
+      "repository_path": "transport/SocketTransport.cpp"
+    }
+  ],
+  "all_source_bytes_matched_pinned_git_blobs": true,
+  "repositories": {
+    "weaver": "https://android.googlesource.com/platform/hardware/nxp/weaver",
+    "keymint": "https://android.googlesource.com/platform/hardware/nxp/keymint"
+  }
+}

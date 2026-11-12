@@ -1,20 +1,12 @@
 {
   "device": "myron",
-  "status": "experimental; custom recovery execution and functions not yet verified",
+  "status": "experimental; native recovery display, touch and ADB verified; StrongBox and Weaver bring-up incomplete",
   "date": "2026-11-12",
   "stock_version": "OS4.0.6.0.XPMCNXM",
   "framework_api": 37,
   "vendor_api": 36,
   "hardware_slot": "b",
   "bootloader_unlocked_confirmed_by_fastboot": true,
-  "candidate": {
-    "source_commit": "79dec9edc91ce3f47b0fabe615a1d89b36ab996e",
-    "ci_run": 43151155964,
-    "ci_conclusion": "success",
-    "image_sha256": "958f955ea248d696cdb4fd4333ec819108e7f358aa9f4567a618c9e9aba7db83",
-    "program_sha256": "d349e2e478d965b2aa243ba30d6444fc13c5a3f20e827362c586a4fd33129f1e",
-    "config_sha256": "88f37d1434f162c6028044777a1c37c19ec860cda35ec87d99a5c3724397c130"
-  },
   "tests": {
     "temporary_v4": {
       "sha256": "ccf04b6afb14b69ca8ad78642d8bd3aba73bdb47bd9de36c5aa11f77e3bdade9",
@@ -36,19 +28,112 @@
       "boot_b_full_sha256_unchanged": true,
       "recovery_a_full_sha256_unchanged": true,
       "recovery_b_full_sha256_unchanged": true
+    },
+    "native_component_offline": {
+      "ci_run": 43161796967,
+      "public_pinned_sources_and_toolchain": true,
+      "byte_identical_to_offline_build": true,
+      "fake_transport_and_parser_scenarios": 13,
+      "asan_and_ubsan_passed": true,
+      "elf_imports_and_versions_checked": 100,
+      "public_abi_layout_checked": true,
+      "replacement_library_device_execution": false
+    },
+    "native_recovery": {
+      "source_commit": "de63f37ddf98a94206fb240d20899a72218faa47",
+      "only_flashed_partition": "recovery_b",
+      "slot_switch": false,
+      "native_boot_confirmed": true,
+      "program_config_library_files_and_partition_sha256_match": true,
+      "owner_confirmed_skyward_home": true,
+      "adb_shell_available": true,
+      "adb_state": "recovery",
+      "usb_config": "mtp,adb",
+      "mtp_function_configured_and_host_session_opened": true,
+      "mtp_file_transfer_tested": false,
+      "wifi_evidence": "Recovery log records association/DHCP lease and successful external reachability probe; no SSID or password published",
+      "strongbox": "Repeated linker exit: libvndksupport.so needed by vendor libhardware.so not found",
+      "weaver": "Not started after StrongBox readiness timeout; no getConfig or slot operation issued",
+      "later_usb_disconnect": "No USB device remained detected; trace pull could not complete; owner entered bootloader using UI",
+      "data": "Stayed closed; attempted metadata storage-key setup refused error -62 because key upgrades were forbidden",
+      "pin_attempts_issued": false,
+      "trace": "Six bounded diagnostic samples stayed in RAM; no persistent trace directory found in recovery or after restoration; full trace pull failed after USB disconnect",
+      "restoration": {
+        "original_recovery_b_full_sha256_restored": true,
+        "boot_b_full_sha256_unchanged": true,
+        "recovery_a_full_sha256_unchanged": true,
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false
+      },
+      "owner_confirmed_touch_responsive": true
+    },
+    "stock_followup_readonly": {
+      "strongbox_and_weaver_file_capability_present": true,
+      "strongbox_AT_SECURE": 1,
+      "weaver_AT_SECURE": 1,
+      "normal_system_security_patch": "2026-10-05",
+      "recovery_installed_build_prop_security_patch": "2026-10-01",
+      "normal_vendor_security_patch": "2026-10-05",
+      "recovery_installed_vendor_build_prop_security_patch": "2026-10-01",
+      "implication": "Environment-only LD_LIBRARY_PATH cannot provide the service-specific override under secure execution; actual replacement mapping remains unverified"
     }
   },
   "scope": {
-    "partition_flash_or_format_commands": false,
+    "partition_flash_commands": [
+      "recovery_b candidate",
+      "recovery_b original restoration"
+    ],
     "slot_switch_commands": false,
     "pin_or_weaver_slot_attempts": false,
     "app_data_inspected": false,
-    "display_touch_wifi_decryption_pass_claimed": false
+    "writable_data_tested": false,
+    "pin_decryption_pass_claimed": false,
+    "device_wide_no_writes_claimed": false
   },
   "remaining": [
-    "Obtain a controllable recovery boot and execution logs",
-    "Resolve recovery USB/temporary-ramdisk path",
-    "Build and verify a source-based native NXP Weaver transport without the Java OMAPI dependency",
-    "Perform separately authorized PIN/CE and writable-data validation before PR"
-  ]
+    "Fix capability-aware StrongBox/Weaver library loading without modifying vendor/odm",
+    "Verify mapped replacement library path/hash and AT_SECURE/capabilities before read-only Weaver getConfig",
+    "Resolve security-patch mismatch and storage-key upgrade refusal without allowing key upgrades in this diagnostic profile",
+    "Complete repeatable USB, hardware and independently authorized PIN/CE/writable-data tests before PR"
+  ],
+  "temporary_test_candidate": {
+    "source_commit": "79dec9edc91ce3f47b0fabe615a1d89b36ab996e",
+    "ci_run": 43151155964,
+    "ci_conclusion": "success",
+    "image_sha256": "958f955ea248d696cdb4fd4333ec819108e7f358aa9f4567a618c9e9aba7db83",
+    "program_sha256": "d349e2e478d965b2aa243ba30d6444fc13c5a3f20e827362c586a4fd33129f1e",
+    "config_sha256": "88f37d1434f162c6028044777a1c37c19ec860cda35ec87d99a5c3724397c130"
+  },
+  "candidate": {
+    "source_commit": "de63f37ddf98a94206fb240d20899a72218faa47",
+    "ci_run": 43161796967,
+    "ci_conclusion": "success",
+    "image_sha256": "37eb708f04eaab1ad76e31d23cac22345a64199e0c747deedc2e88d3564a88c0",
+    "image_bytes": 104857600,
+    "header_version": 4,
+    "kernel_bytes": 0,
+    "payloads": {
+      "system/bin/recovery": {
+        "bytes": 8601840,
+        "sha256": "d349e2e478d965b2aa243ba30d6444fc13c5a3f20e827362c586a4fd33129f1e"
+      },
+      "skyward/device.toml": {
+        "bytes": 9151,
+        "sha256": "d2a107132f40d1358822e88018ae5dcfe4fa99bd20a0fba518eb22001a6f31ab"
+      },
+      "skyward/lib64/ese_weaver.so": {
+        "bytes": 113360,
+        "sha256": "09a4095831aae55a4589606da194c0bd7f1369a3195316af643810b4136fc5a2"
+      },
+      "skyward/myron-diagnostics.sh": {
+        "bytes": 3067,
+        "sha256": "d171f21d97b057fecac2d2e57932b7f27c47336ec45d47405f80ae4ce0ca3aeb"
+      },
+      "init.skyward-myron-diagnostics.rc": {
+        "bytes": 229,
+        "sha256": "5504cc2a70fc894207ca7514873af34c1ad265b26630344c919ba4ed0c197a3a"
+      }
+    }
+  }
 }

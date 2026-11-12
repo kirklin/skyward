@@ -1,9 +1,11 @@
 # myron: stock evidence and recovery bring-up
 
-This is an experimental recovery candidate, not a tested release. Two
-temporary-boot attempts have no confirmed Skyward execution. No myron PR
-has been submitted. Build success does not establish display, touch,
-Wi-Fi, PIN decryption or writable-data support.
+This is an experimental recovery candidate, not a tested release. After two
+inconclusive temporary-boot attempts, a separately authorized native
+recovery_b boot reached Skyward. The owner confirmed display and touch;
+ADB and exact running payload hashes were verified. StrongBox/Weaver
+bring-up, PIN decryption and writable-data acceptance remain incomplete.
+The original recovery was restored and verified. No myron PR is submitted.
 
 Read-only inspection on 2026-11-12 identified REDMI K90 Pro Max
 `25102RKBEC`, SM8850/canoe, OS4.0.6.0.XPMCNXM, framework Android 17/API 37
@@ -45,20 +47,62 @@ Public source metadata is recorded in `myron-stock.json`. This is not a
 claim that the whole 10 GB OTA ZIP was downloaded or its full-file MD5
 checked during manifest inspection.
 
+## Native recovery test on 2026-11-12
+
+The diagnostic candidate at `de63f37` passed the complete public-source CI
+([run 43161796967](https://github.com/Dingtaiqi/skyward/actions/runs/43161796967)).
+Its 104857600-byte native image SHA256 is
+`37eb708f04eaab1ad76e31d23cac22345a64199e0c747deedc2e88d3564a88c0`.
+It has header v4 and no kernel; it is not a standalone fastboot-boot image.
+
+The owner separately authorized writing only recovery_b, bounded metadata
+trace logs and restoration. Product, b slot, no pending snapshot merge,
+BCB, candidate and rollback hashes were checked first. The running recovery,
+profile, library file and flashed partition hashes matched the CI artifact.
+The owner confirmed the Skyward home and responsive touch. ADB was available
+with state `recovery`, and mtp,adb configured with an opened host MTP session.
+No file-transfer acceptance test was performed. The recovery log also recorded
+a Wi-Fi lease and successful external reachability probe.
+
+StrongBox repeatedly exited because vendor libhardware could not load
+libvndksupport.so. Its readiness timeout prevented the later Weaver service
+from starting; the bundled replacement file has not been proven mapped or
+executed. No Weaver getConfig, slot access or PIN command was issued. The
+data partition stayed closed: the attempted storage-key setup returned -62
+and the diagnostic policy refused the requested key upgrade. This is not
+PIN decryption success and not a device-wide write blockade.
+
+A later USB disconnect left no device visible to the host. The owner used
+the working UI to enter bootloader, then the exact original recovery_b was
+flashed back. HyperOS boot_completed, b slot and DSU off were verified;
+full hashes of restored recovery_b, unchanged recovery_a and boot_b matched
+the pre-test values. Six bounded diagnostic samples had stayed in RAM; no
+persistent trace directory was found. The full RAM trace pull failed after
+the disconnect. Reviewed log excerpts were collected before restoration.
+
+Read-only follow-up on normal HyperOS found security.capability attributes
+on both stock StrongBox and Weaver executables and AT_SECURE=1 for each.
+Thus an environment-only LD_LIBRARY_PATH override is insufficient; do not
+claim that the replacement works merely because its file exists. Normal
+system/vendor patch properties were 2026-10-05, while recovery's installed
+build.prop selection had set both to 2026-10-01. Record and resolve this
+mismatch before another storage-key attempt; do not enable key upgrades
+merely to move past the refusal.
+
 ## Services and hardware
 
 | Area | Observed evidence | Candidate status |
 | --- | --- | --- |
-| Display | Live DRM lists 1200x2608 at 120/90/60 Hz; resolution property reports 1200,2608,480 | Size/DPI confirmed; recovery display not tested |
-| Touch | FocalTech 3683, focaltech_ts on event6, raw flag 1, resolution factor 100; absolute maxima 119999x260799 | Stock touchfeature process configured; no speculative raw=0 write |
-| Touch processing | Actual process maps include libtouchreport.so, libtouchreport_alg.so, libtouchreport_hal.so, libtouchreport_sensor.so and TensorFlow models | Use stock system:system/input, SYS_NICE, AIDL/default; processing in recovery untested |
+| Display | Live DRM lists 1200x2608 at 120/90/60 Hz; resolution property reports 1200,2608,480 | Size/DPI and native recovery display confirmed by owner |
+| Touch | FocalTech 3683, focaltech_ts on event6, raw flag 1, resolution factor 100; absolute maxima 119999x260799 | Native recovery touch confirmed by owner; no speculative raw=0 write |
+| Touch processing | Actual process maps include libtouchreport.so, libtouchreport_alg.so, libtouchreport_hal.so, libtouchreport_sensor.so and TensorFlow models | Stock service ran as configured; owner confirmed responsive touch |
 | TEE helpers | Stock qseecomd and hlosminkdaemon rc files; live listeners-ready property true | Preserve identities/capabilities and wait for listeners |
-| Default KeyMint | QTI KeyMint4/default, remote provisioning, secure clock, shared secret/default confirmed in VINTF and live service list | Configured; recovery key operations untested |
+| Default KeyMint | QTI KeyMint4/default, remote provisioning, secure clock, shared secret/default confirmed in VINTF and live service list | Service ran; storage-key setup refused -62; key upgrades remain disabled |
 | Gatekeeper | QTI Rust AIDL/default, system:system | Configured; recovery credential verification untested |
 | Native eSE | eSE1 belongs to the QTI secure-element process, not the NXP NFC process | Start stock QTI service as system:nfc/system before StrongBox |
-| StrongBox | NXP StrongBox3 and sharedsecret/strongbox; live UID 2910, primary GID 0; native HalToHalTransport | Configured with its real shared-secret peer; recovery negotiation untested |
-| Weaver | NXP Weaver2/default, UID/GID 2911; stock ese_weaver.so uses OmapiTransport | Native source component now bundled; override, applet and PIN operations remain untested |
-| Wi-Fi | qca_cld3_peach_v2/rfkill/cfg80211, cnss-peach, peach_v2 configuration | Existing module/supplicant scaffold; no recovery scan/association test |
+| StrongBox | NXP StrongBox3 and sharedsecret/strongbox; live UID 2910, primary GID 0; native HalToHalTransport | Fails to load libvndksupport under secure execution; negotiation untested |
+| Weaver | NXP Weaver2/default, UID/GID 2911; stock ese_weaver.so uses OmapiTransport | File bundled; service not reached after StrongBox timeout; override/applet/PIN untested |
+| Wi-Fi | qca_cld3_peach_v2/rfkill/cfg80211, cnss-peach, peach_v2 configuration | Recovery log records DHCP lease and external reachability; repeatability untested |
 | Boot control | Stock QTI AIDL BootControl and separate recovery_a/b | Configured early; recovery query/write operations untested |
 
 The touch device is handed to system with its observed mode 0666. Only
@@ -156,6 +200,6 @@ material and must not be published unreviewed.
 Each sample file is capped at 128 KiB; all six logs total at most 768 KiB.
 
 Booting this variant requires separate authorization for those metadata
-log writes and the chosen boot/installation method. It has not been run
-on the phone. Existing authorization for the completed RAM-only test does
-not authorize flashing it or starting another phone test.
+log writes and the chosen boot/installation method. The separately authorized native test above ran this variant. That test
+has ended and the original recovery is restored; further reboot/flash or
+credential tests require their own agreed scope.

@@ -6,6 +6,56 @@
       "sha256": "2463cdfaff3acc7be30c9eb25c5597e4534c43ebfe50040b05ae7ae61eccccf4"
     },
     {
+      "path": "AIDL_GENERATION.json",
+      "bytes": 5002,
+      "sha256": "8462237dd252fbe4dfdefc480fd1e474df58faae4684ca062eaa090d9a129b5e"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 11357,
+      "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
+    },
+    {
+      "path": "LICENSES.md",
+      "bytes": 961,
+      "sha256": "cce521597c5461d2a4879bc8c16c472a24e2995e0c3bc6fcc6c91eb4a45d338d"
+    },
+    {
+      "path": "LOCAL_PATCHES.json",
+      "bytes": 1468,
+      "sha256": "6cd72533a3cc6e0d7e4f7740a440a1a80653dbaca33d11140507e0ad35697c85"
+    },
+    {
+      "path": "PLATFORM_HEADERS.json",
+      "bytes": 382891,
+      "sha256": "bea15670b9110db9fb8df0575f307b5b2b1afc2ffb4a51927d801f1b0021a47f"
+    },
+    {
+      "path": "README.md",
+      "bytes": 6676,
+      "sha256": "3957e952f24d05da60038993e934766abc4ad132cc0a14f8de886576866135be"
+    },
+    {
+      "path": "RECOVERY_LIBRARY_INPUTS.json",
+      "bytes": 1190,
+      "sha256": "dd57991c99daa34d613542a7b2700b8cf5ddc29c80be98b5c50c5b58ca25df3b"
+    },
+    {
+      "path": "SOURCES.json",
+      "bytes": 20117,
+      "sha256": "68d09cf163776f1a13f98634e3afbaf8d04b153d462b7fc430c60100bcefe0ae"
+    },
+    {
+      "path": "STOCK_RECOVERY.json",
+      "bytes": 528,
+      "sha256": "11dbdbebd57f4dec05ee0a124baecefe671ed3a8a2fbe71d7ae7b0ce468811f3"
+    },
+    {
+      "path": "TOOLCHAIN.json",
+      "bytes": 1891,
+      "sha256": "820c7aa0b3f90576b2bd415fe95ee8572261565482ef4adb27f1269a70125ec0"
+    },
+    {
       "path": "abi-probe.cpp",
       "bytes": 476,
       "sha256": "ebf8344930fb260530c70195d269d2f04ed6ea1b84a515d836106cc082aa5365"
@@ -29,11 +79,6 @@
       "path": "aidl-api-v1/android/hardware/secure_element/LogicalChannelResponse.aidl",
       "bytes": 1848,
       "sha256": "6718aa3b2bb1b12edba47096eb8d909e60cdbdb99c90b110c491b1fd022a2c94"
-    },
-    {
-      "path": "AIDL_GENERATION.json",
-      "bytes": 5002,
-      "sha256": "8462237dd252fbe4dfdefc480fd1e474df58faae4684ca062eaa090d9a129b5e"
     },
     {
       "path": "build.py",
@@ -151,6 +196,31 @@
       "sha256": "38a7cf80a2206ed9e9e5828ca8382569913d35a523bbfdc5c3bb230c535b6a71"
     },
     {
+      "path": "keymint/transport/IntervalTimer.cpp",
+      "bytes": 3013,
+      "sha256": "8ad8879df4bc43b01c68aafa34d172a89e3d16b10d259f33b923f617908a83ea"
+    },
+    {
+      "path": "keymint/transport/OmapiTransport.cpp",
+      "bytes": 17324,
+      "sha256": "968c51fe67daf20860d048b904f20fca50fe4eab7cad507b13ea5b92ba6a9ce1"
+    },
+    {
+      "path": "keymint/transport/SBAccessController.cpp",
+      "bytes": 5706,
+      "sha256": "35be8659b311259ffee14714f3851f6a9b0b2507d39c4b72fec06fa9d7a1041e"
+    },
+    {
+      "path": "keymint/transport/SignalHandler.cpp",
+      "bytes": 4011,
+      "sha256": "bbeabf474138a2b767c5e186b40716721179283c2c859c11318e541eb0ca965d"
+    },
+    {
+      "path": "keymint/transport/SocketTransport.cpp",
+      "bytes": 4418,
+      "sha256": "cb3323e166d175faa22ee3fd4630b3c62d968f15536e32063f0ced84a6e197ec"
+    },
+    {
       "path": "keymint/transport/include/AppletConnection.h",
       "bytes": 3470,
       "sha256": "b7d542faa731caeec09164de2fcdd0a3a4e7e2f4ec5336c7a4a7a34b0950ae8a"
@@ -166,14 +236,14 @@
       "sha256": "64f95f2d298f933af463b80a12476c65facdb6ecdb141b8492d1795590637888"
     },
     {
-      "path": "keymint/transport/include/IntervalTimer.h",
-      "bytes": 1031,
-      "sha256": "070e7c6e5c98800bd4947b1f49a7080765913845d0a31d35ac7c28c17c677e45"
-    },
-    {
       "path": "keymint/transport/include/ITransport.h",
       "bytes": 2826,
       "sha256": "a90404d185956dde4473114e5a3b1caca25996b2eb7389f548bc16692e0a507d"
+    },
+    {
+      "path": "keymint/transport/include/IntervalTimer.h",
+      "bytes": 1031,
+      "sha256": "070e7c6e5c98800bd4947b1f49a7080765913845d0a31d35ac7c28c17c677e45"
     },
     {
       "path": "keymint/transport/include/OmapiTransport.h",
@@ -201,36 +271,6 @@
       "sha256": "e89efd84b8c4b0a47a380a37afc34d577c512ba31326abbf09dac4a38b3090b9"
     },
     {
-      "path": "keymint/transport/IntervalTimer.cpp",
-      "bytes": 3013,
-      "sha256": "8ad8879df4bc43b01c68aafa34d172a89e3d16b10d259f33b923f617908a83ea"
-    },
-    {
-      "path": "keymint/transport/OmapiTransport.cpp",
-      "bytes": 17324,
-      "sha256": "968c51fe67daf20860d048b904f20fca50fe4eab7cad507b13ea5b92ba6a9ce1"
-    },
-    {
-      "path": "keymint/transport/SBAccessController.cpp",
-      "bytes": 5706,
-      "sha256": "35be8659b311259ffee14714f3851f6a9b0b2507d39c4b72fec06fa9d7a1041e"
-    },
-    {
-      "path": "keymint/transport/SignalHandler.cpp",
-      "bytes": 4011,
-      "sha256": "bbeabf474138a2b767c5e186b40716721179283c2c859c11318e541eb0ca965d"
-    },
-    {
-      "path": "keymint/transport/SocketTransport.cpp",
-      "bytes": 4418,
-      "sha256": "cb3323e166d175faa22ee3fd4630b3c62d968f15536e32063f0ced84a6e197ec"
-    },
-    {
-      "path": "LICENSE",
-      "bytes": 11357,
-      "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
-    },
-    {
       "path": "licenses/clang-r596125-NOTICE",
       "bytes": 130424,
       "sha256": "f96f763beb66a7ba7a667647fc64c0226ace875e590c831fdd9579ec1c1d91e1"
@@ -244,16 +284,6 @@
       "path": "licenses/system/libbase/NOTICE",
       "bytes": 12840,
       "sha256": "e0afbb47be661ce2076d21a1d4dc02caa58b7c215ab7ff9d151b6724be341f77"
-    },
-    {
-      "path": "LICENSES.md",
-      "bytes": 961,
-      "sha256": "cce521597c5461d2a4879bc8c16c472a24e2995e0c3bc6fcc6c91eb4a45d338d"
-    },
-    {
-      "path": "LOCAL_PATCHES.json",
-      "bytes": 1468,
-      "sha256": "6cd72533a3cc6e0d7e4f7740a440a1a80653dbaca33d11140507e0ad35697c85"
     },
     {
       "path": "platform/bionic/libc/arch-common/bionic/__dso_handle_so.h",
@@ -581,6 +611,16 @@
       "sha256": "4b8d02254d1d5ee1b7eb6ee962a63a935330799c14eaf07f93698c2cf8e59e2a"
     },
     {
+      "path": "platform/bionic/libc/kernel/uapi/asm-arm64/asm/unistd.h",
+      "bytes": 200,
+      "sha256": "4da7ddf17f9f2c986e2aeffba0c3247ac7984dd96ef1120996db176b78f88d23"
+    },
+    {
+      "path": "platform/bionic/libc/kernel/uapi/asm-arm64/asm/unistd_64.h",
+      "bytes": 9086,
+      "sha256": "7e830959a08125428f0b1b870dc9bb39a04f74ef7c2ef89c55dfb8c0e4857b37"
+    },
+    {
       "path": "platform/bionic/libc/kernel/uapi/asm-generic/bitsperlong.h",
       "bytes": 512,
       "sha256": "363e0abd35c267c94d736d8bb04af196fa4f8e5959d26fe1be9b041adb3f154b"
@@ -641,14 +681,14 @@
       "sha256": "b4dfa3505ea263b2867e7305c6ca1274415cde7236496cf524556ce0ce59099d"
     },
     {
-      "path": "platform/bionic/libc/kernel/uapi/linux/sched/types.h",
-      "bytes": 578,
-      "sha256": "0c993eb7a61baec833147ceddb1142c2506968fed4677bbeb37717441ba4582d"
-    },
-    {
       "path": "platform/bionic/libc/kernel/uapi/linux/sched.h",
       "bytes": 2366,
       "sha256": "e899d47d4e7adc9e14706691554c992beae313b277be56c16c555344a67a0932"
+    },
+    {
+      "path": "platform/bionic/libc/kernel/uapi/linux/sched/types.h",
+      "bytes": 578,
+      "sha256": "0c993eb7a61baec833147ceddb1142c2506968fed4677bbeb37717441ba4582d"
     },
     {
       "path": "platform/bionic/libc/kernel/uapi/linux/signal.h",
@@ -1081,14 +1121,14 @@
       "sha256": "d0afae09cd0a72d4cfcfdb765c34982999771bee019d35936a1a010859e55a92"
     },
     {
-      "path": "platform/prebuilts/clang/host/linux-x86/clang-r596125/include/c++/v1/__atomic/support/c11.h",
-      "bytes": 10994,
-      "sha256": "2c42185cca12a8e85e96e1c6044e1c95c1ae790f896d424980a02a0e7a7652b6"
-    },
-    {
       "path": "platform/prebuilts/clang/host/linux-x86/clang-r596125/include/c++/v1/__atomic/support.h",
       "bytes": 5166,
       "sha256": "f60f22684672d0fa1b9b533fcc5904292b8164deb624bc6ceff8dece4f05e2db"
+    },
+    {
+      "path": "platform/prebuilts/clang/host/linux-x86/clang-r596125/include/c++/v1/__atomic/support/c11.h",
+      "bytes": 10994,
+      "sha256": "2c42185cca12a8e85e96e1c6044e1c95c1ae790f896d424980a02a0e7a7652b6"
     },
     {
       "path": "platform/prebuilts/clang/host/linux-x86/clang-r596125/include/c++/v1/__atomic/to_gcc_order.h",
@@ -2606,14 +2646,14 @@
       "sha256": "700b4d5c8f5e5237730a5e2fad3edbf4134b82974e5d51efde4cc6ac17fb2f22"
     },
     {
-      "path": "platform/prebuilts/clang/host/linux-x86/clang-r596125/include/c++/v1/__thread/support/pthread.h",
-      "bytes": 7044,
-      "sha256": "e0c5d97745451cf19dcd329e1b88fbf611f47ab701e5f5d7f673ccacdbdaac60"
-    },
-    {
       "path": "platform/prebuilts/clang/host/linux-x86/clang-r596125/include/c++/v1/__thread/support.h",
       "bytes": 3780,
       "sha256": "5c8574d2cb73f85c05d849fde0322e19aa2c097d5215b3a1984d897f914d55bc"
+    },
+    {
+      "path": "platform/prebuilts/clang/host/linux-x86/clang-r596125/include/c++/v1/__thread/support/pthread.h",
+      "bytes": 7044,
+      "sha256": "e0c5d97745451cf19dcd329e1b88fbf611f47ab701e5f5d7f673ccacdbdaac60"
     },
     {
       "path": "platform/prebuilts/clang/host/linux-x86/clang-r596125/include/c++/v1/__tree",
@@ -3931,11 +3971,6 @@
       "sha256": "ba916f8fa49be1db30aeb6cbff4f7323164e0e327cfdecf7e1dc95b7f9491d9c"
     },
     {
-      "path": "PLATFORM_HEADERS.json",
-      "bytes": 382891,
-      "sha256": "bea15670b9110db9fb8df0575f307b5b2b1afc2ffb4a51927d801f1b0021a47f"
-    },
-    {
       "path": "proofs/EXTRACTION_AND_TOOLCHAIN_DOWNLOAD.json",
       "bytes": 409,
       "sha256": "f7ade1d42d596d0c229f7dce9a6ec89ca13cc3c30d0abfbb109d4be1580c7ddb"
@@ -3961,11 +3996,6 @@
       "sha256": "cc454cdc48bac6de767bc8b08425591f2d8e67731b40d9317d73eb28da6af71d"
     },
     {
-      "path": "README.md",
-      "bytes": 6676,
-      "sha256": "3957e952f24d05da60038993e934766abc4ad132cc0a14f8de886576866135be"
-    },
-    {
       "path": "recovery-patch/inc/TransportFactory.h",
       "bytes": 4134,
       "sha256": "405f4c4f25d2eb7de1725b9c2c1b699fecd035a89ebf1c177eb83edea1670845"
@@ -3986,24 +4016,9 @@
       "sha256": "0532af7935ad3c3422e9d95079ae68620606b972c447d11bf55b5ef731c86735"
     },
     {
-      "path": "RECOVERY_LIBRARY_INPUTS.json",
-      "bytes": 1190,
-      "sha256": "dd57991c99daa34d613542a7b2700b8cf5ddc29c80be98b5c50c5b58ca25df3b"
-    },
-    {
       "path": "regenerate_aidl.py",
       "bytes": 1714,
       "sha256": "c7d144747702c38ac57e956a2b6e29c8184f46957589c0774d6e1098e2af79ee"
-    },
-    {
-      "path": "SOURCES.json",
-      "bytes": 20117,
-      "sha256": "68d09cf163776f1a13f98634e3afbaf8d04b153d462b7fc430c60100bcefe0ae"
-    },
-    {
-      "path": "STOCK_RECOVERY.json",
-      "bytes": 528,
-      "sha256": "11dbdbebd57f4dec05ee0a124baecefe671ed3a8a2fbe71d7ae7b0ce468811f3"
     },
     {
       "path": "test_transport.py",
@@ -4026,19 +4041,34 @@
       "sha256": "3b0cc2bccad042390aa574773b522ded035986fa1cebc76f3a5b2fa2d92f3d2d"
     },
     {
-      "path": "TOOLCHAIN.json",
-      "bytes": 1891,
-      "sha256": "820c7aa0b3f90576b2bd415fe95ee8572261565482ef4adb27f1269a70125ec0"
-    },
-    {
       "path": "verify_elf.py",
       "bytes": 6950,
       "sha256": "5b8fc5eeb3b0969ae21aabbc65250e04bb4682935ad827d58af2128689302589"
     },
     {
-      "path": "weaver/aidl_impl/service.cpp",
-      "bytes": 1620,
-      "sha256": "3eb999504bab9cd13f38059341aa4cd6ab5f53bb3091720a11fcb58c9a2c7af0"
+      "path": "weaver-direct-hal.patch",
+      "bytes": 4070,
+      "sha256": "2c332e672f9ae7bd5f986af0fbce025be61e3f822437fb20b8f87e90b5d50b43"
+    },
+    {
+      "path": "weaver/Android.bp",
+      "bytes": 2490,
+      "sha256": "4bda95f2d0cedb793833392c7caa661f1d5bb337bc43ec5421f0d17bb87d0779"
+    },
+    {
+      "path": "weaver/LICENSE",
+      "bytes": 11357,
+      "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
+    },
+    {
+      "path": "weaver/METADATA",
+      "bytes": 39,
+      "sha256": "0c5e478ce932b46a4caf164ecfa3e099f2508acc701e1b567a1436f8e3c01c95"
+    },
+    {
+      "path": "weaver/NOTICE",
+      "bytes": 578,
+      "sha256": "6045749cc721cda6d52e13c8a020483510cba5e4e92d237957947c36adcd0909"
     },
     {
       "path": "weaver/aidl_impl/Weaver.cpp",
@@ -4051,9 +4081,9 @@
       "sha256": "abded001392bbf1cead87a7961eb52ca94039eb054e4158a68322765aa57abb0"
     },
     {
-      "path": "weaver/Android.bp",
-      "bytes": 2490,
-      "sha256": "4bda95f2d0cedb793833392c7caa661f1d5bb337bc43ec5421f0d17bb87d0779"
+      "path": "weaver/aidl_impl/service.cpp",
+      "bytes": 1620,
+      "sha256": "3eb999504bab9cd13f38059341aa4cd6ab5f53bb3091720a11fcb58c9a2c7af0"
     },
     {
       "path": "weaver/libese_weaver/Android.bp",
@@ -4119,26 +4149,6 @@
       "path": "weaver/libese_weaver/src/weaver-transport-impl.cpp",
       "bytes": 6473,
       "sha256": "9d41340f595541ad10b6958cb1616e4f1c2939313513d6ea83a74a2bbf338a4c"
-    },
-    {
-      "path": "weaver/LICENSE",
-      "bytes": 11357,
-      "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
-    },
-    {
-      "path": "weaver/METADATA",
-      "bytes": 39,
-      "sha256": "0c5e478ce932b46a4caf164ecfa3e099f2508acc701e1b567a1436f8e3c01c95"
-    },
-    {
-      "path": "weaver/NOTICE",
-      "bytes": 578,
-      "sha256": "6045749cc721cda6d52e13c8a020483510cba5e4e92d237957947c36adcd0909"
-    },
-    {
-      "path": "weaver-direct-hal.patch",
-      "bytes": 4070,
-      "sha256": "2c332e672f9ae7bd5f986af0fbce025be61e3f822437fb20b8f87e90b5d50b43"
     }
   ]
 }

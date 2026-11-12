@@ -28,7 +28,17 @@ key_upgrades = false
 sources = ["vendor_boot", "vendor_dlkm", "vendor", "system_dlkm"]
 # The touchscreen: FocalTech's, over SPI behind Xiaomi's touch layer, the
 # one touch driver the phone's own modules.load lists.
-load = ["focaltech_touch_3683"]
+# QTI eSE registered without its chip when /dev/nq-nci was absent. The
+# normal system's loaded nxp_nci build-id matches this stock module file.
+load = ["focaltech_touch_3683", "nxp-nci"]
+
+# Stock /vendor/etc/ueventd.rc gives this node to NFC. A newly loaded
+# recovery module must get those permissions before the eSE HAL opens it.
+[[owners]]
+user = "nfc"
+group = "nfc"
+mode = 0o660
+paths = ["/dev/nq-nci"]
 
 # Stock has focaltech_ts, enable_touch_raw=1 and libtouchreport_alg_fts.so.
 # There is no evidence yet that FocalTech supports the Synaptics raw=0

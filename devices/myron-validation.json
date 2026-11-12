@@ -1,6 +1,6 @@
 {
   "device": "myron",
-  "status": "experimental; native display/touch/ADB and StrongBox startup verified; USB reliability, Weaver acceptance and decryption incomplete",
+  "status": "experimental; native Weaver mapping and service declaration verified; one getConfig failed with missing NFC/eSE backend evidence; decryption incomplete",
   "date": "2026-11-12",
   "stock_version": "OS4.0.6.0.XPMCNXM",
   "framework_api": 37,
@@ -155,6 +155,60 @@
       "rec_import_runtime_model": "unknown",
       "properties_changed": false,
       "key_operations_issued_by_collector": false
+    },
+    "native_d923c4a": {
+      "source_commit": "d923c4a8a652d6db33676a1da4868771b3df6287",
+      "image_sha256": "ce4874e5234155303f1fb66c86c131621fa805dd2512724fd91b12228188686d",
+      "program_config_scripts_and_partition_hashes_match": true,
+      "cold_start_weaver_ese1_strongbox_described_and_registered": true,
+      "weaver_mapping_gate": {
+        "executable_original": true,
+        "uid": 2911,
+        "gid": 2911,
+        "cap_eff": "0000000800a00000",
+        "AT_SECURE": 1,
+        "private_namespace": true,
+        "child_view_sha256": "09a4095831aae55a4589606da194c0bd7f1369a3195316af643810b4136fc5a2",
+        "host_original_sha256": "556b6eb12522f6e9c306846ab6b8fa65f24be5f9c23e8e5ef19a54b45fcb8e4e",
+        "mapped_inode_matches_child_view_and_bundled_source": true,
+        "all_mapping_lines_verified": 4,
+        "selinux_enforce_as_found": "0",
+        "process_context": "u:r:recovery:s0",
+        "gate_passed_for_readonly_getConfig": true,
+        "pin_authorized": false
+      },
+      "original_library_preserved_in_strongbox_and_native_se_views": true,
+      "readonly_getconfig": {
+        "attempts": 1,
+        "exit_code": 1,
+        "error": "service error 1: Failed to retrieve slots info",
+        "success": false,
+        "slot_or_pin_operation": false
+      },
+      "correct_diagnostic_basename": "RAM skyward-cli alias; --help verified; no recovery UI reentry",
+      "usb": "MTP+ADB and bound a600000.dwc3 remained accessible at uptime 210 seconds without a File Transfer toggle; broader long-term acceptance not claimed",
+      "startup_sharedsecret": "Parameter collection returned -49; error context did not identify default versus strongbox peer",
+      "backend_evidence": "Saved trace sample-1 shows QTI chip detection missing /dev/nq-nci and /dev/st54spi_gpio with retries; registered binder did not establish chip availability",
+      "data": "No /data mount in snapshot; UI storage-key setup remained refused -62 and upgrades disabled",
+      "selinux": "Permissive as found; no policy change issued; enforcing operation untested",
+      "restoration": {
+        "device": "myron",
+        "os": "OS4.0.6.0.XPMCNXM",
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false,
+        "partition_hashes": {
+          "recovery_b": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+          "recovery_a": "586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660",
+          "boot_b": "11a20858d4e68869152baf70db0edb3d279516f9d430154cc6c96ba427940748"
+        },
+        "original_recovery_b_restored": true,
+        "boot_b_and_recovery_a_unchanged": true,
+        "no_trace_directory_found": true,
+        "getconfig_attempts": 1,
+        "getconfig_result": "service error1: Failed to retrieve slots info",
+        "pin_or_slot_operations_issued": false
+      }
     }
   },
   "scope": {
@@ -170,10 +224,10 @@
     "device_wide_no_writes_claimed": false
   },
   "remaining": [
-    "Validate the explicit stock Weaver description in a freshly built image, then child-view mapping/auxv and read-only getConfig",
-    "Recheck USB with corrected CLI entrypoint; do not classify probe-triggered gadget resets as independent hardware/USB failure",
-    "Investigate live versus raw property patch-level difference and storage-key upgrade refusal without guessing dates or enabling upgrades",
-    "Complete separately authorized PIN/CE and writable-data tests before PR"
+    "Boot-test the stock nxp-nci driver/node ownership follow-up and confirm actual eSE chip detection before any new getConfig",
+    "A new hardware round must repeat mapped-inode/hash/identity gates; no automatic retry or PIN/slot attempts",
+    "Investigate shared-secret -49 and storage-key upgrade refusal after backend readiness, without guessing dates or enabling upgrades",
+    "Complete separately authorized PIN/CE/writable-data and remaining recovery-function tests before PR"
   ],
   "temporary_test_candidate": {
     "source_commit": "79dec9edc91ce3f47b0fabe615a1d89b36ab996e",
@@ -253,5 +307,43 @@
     "device_boot_tested": true,
     "pin_tests_authorized": false,
     "original_recovery_b_backup_sha256": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc"
+  },
+  "manifest_fixed_candidate": {
+    "source_commit": "d923c4a8a652d6db33676a1da4868771b3df6287",
+    "ci_run": 43183345626,
+    "ci_conclusion": "success",
+    "image_file": "skyward-d923c4a-myron-OS4.0.6.0.XPMCNXM-diagnostic.img",
+    "image_bytes": 104857600,
+    "image_sha256": "ce4874e5234155303f1fb66c86c131621fa805dd2512724fd91b12228188686d",
+    "zip_sha256": "f493f38cde868b260eaf528f45b56db258f9dce374f70e1ec8119b2228358ac0",
+    "header_version": 4,
+    "kernel_bytes": 0,
+    "payloads": {
+      "init.skyward-myron-diagnostics.rc": {
+        "bytes": 229,
+        "sha256": "5504cc2a70fc894207ca7514873af34c1ad265b26630344c919ba4ed0c197a3a"
+      },
+      "skyward/device.toml": {
+        "bytes": 10152,
+        "sha256": "decb532d0a32698521bc6990a7190c601c27246cb9eebd1f9b5af589b7d8e587"
+      },
+      "skyward/lib64/ese_weaver.so": {
+        "bytes": 113360,
+        "sha256": "09a4095831aae55a4589606da194c0bd7f1369a3195316af643810b4136fc5a2"
+      },
+      "skyward/myron-diagnostics.sh": {
+        "bytes": 4120,
+        "sha256": "042a5b49fad6a3fda417319cb62e632855fabc2a1145e33e948de3c3fa9dd2ac"
+      },
+      "system/bin/recovery": {
+        "bytes": 8642120,
+        "sha256": "7b63b6006d26f7d4cce1d746077383c834f6b67267f94c3c82ef60c83f1e7d48"
+      }
+    },
+    "program_matches_same_run_tools": true,
+    "config_and_scripts_match_source": true,
+    "diagnostic_max_log_bytes": 786432,
+    "device_boot_tested": true,
+    "pin_authorized": false
   }
 }

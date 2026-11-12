@@ -836,7 +836,7 @@ mod tests {
         assert!(!cfg.decrypt.checks_filesystem() && !cfg.decrypt.upgrades_keys());
         assert!(cfg.decrypt.preserves_keys(), "the packer must disable automatic metadata key deletion");
         assert!(cfg.touch.writes.is_empty(), "FocalTech's raw=0 workaround is unverified");
-        assert_eq!(cfg.modules.load, ["focaltech_touch_3683"]);
+        assert_eq!(cfg.modules.load, ["focaltech_touch_3683", "nxp-nci"]);
         assert_eq!(cfg.wlan.as_ref().unwrap().modules, ["rfkill", "qca_cld3_peach_v2"]);
         let service = |path: &str| cfg.services.iter().find(|s| s.path == path).expect("an observed stock service");
         let post_boot = service("/vendor/bin/sh");
@@ -880,6 +880,7 @@ mod tests {
         assert_eq!(touch.user.as_deref(), Some("system"));
         assert_eq!(touch.capabilities, ["SYS_NICE"]);
         assert!(cfg.owners.iter().any(|o| o.user == "system" && o.group == "system" && o.mode == 0o666 && o.paths.iter().any(|p| p == "/dev/xiaomi-touch")));
+        assert!(cfg.owners.iter().any(|o| o.user == "nfc" && o.group == "nfc" && o.mode == 0o660 && o.paths == ["/dev/nq-nci"]));
     }
 
     #[test]

@@ -102,7 +102,7 @@ merely to move past the refusal.
 | Gatekeeper | QTI Rust AIDL/default, system:system | Configured; recovery credential verification untested |
 | Native eSE | eSE1 belongs to the QTI secure-element process, not the NXP NFC process | Start stock QTI service as system:nfc/system before StrongBox |
 | StrongBox | NXP StrongBox3 and sharedsecret/strongbox; live UID 2910, primary GID 0; native HalToHalTransport | 9f RAM dependencies fixed loading and passed startup ready; UID/GID/caps/AT_SECURE confirmed |
-| Weaver | NXP Weaver2/default, UID/GID 2911; stock ese_weaver.so uses OmapiTransport | 9f reached service but missed VINTF fragment; RAM correction reached thread loop; mapping/getConfig/PIN still pending |
+| Weaver | NXP Weaver2/default, UID/GID 2911; stock ese_weaver.so uses OmapiTransport | d923 mapping/declaration passed; single getConfig failed with missing NFC-node evidence; driver follow-up and PIN pending |
 | Wi-Fi | qca_cld3_peach_v2/rfkill/cfg80211, cnss-peach, peach_v2 configuration | Recovery log records DHCP lease and external reachability; repeatability untested |
 | Boot control | Stock QTI AIDL BootControl and separate recovery_a/b | Configured early; recovery query/write operations untested |
 
@@ -240,6 +240,46 @@ The raw replay and last writers still gave 2026-10-01, unlike the live
 attribute the discrepancy to imports without evidence. No property date
 was changed and key upgrades remain disabled. UI-triggered storage-key
 setup again stopped at -62 with data closed.
+
+## d923 native mapping acceptance and next NFC dependency
+
+The d923 image passed full CI (run 43183345626) and a fresh native test.
+Program, config, scripts and partition hashes matched. The proper RAM CLI
+alias was verified with --help. Weaver, native eSE1 and StrongBox were each
+described and registered from cold startup, without a RAM manifest edit.
+
+The Weaver mapping gate passed: original executable, UID/GID 2911/2911,
+capabilities 0000000800a00000 and AT_SECURE=1 were preserved. The private
+child view's SO hash was 09a409..., and all four mappings matched its
+actual device/inode and the bundled RAM file. Host, StrongBox and eSE
+continued to see original 556b6e... . SELinux was permissive as found;
+enforcing operation was not tested. With the corrected CLI invocation,
+USB remained available at uptime 210 seconds without an operator toggle.
+
+One actual read-only getConfig call reached GetSlots and transport Send,
+then returned service error 1, Failed to retrieve slots info. It was not
+retried. No slot read/write, PIN or credential command was issued. Startup
+shared-secret parameter collection separately returned -49 without naming
+the peer. A trace shows QTI repeatedly missing /dev/nq-nci and the STM node;
+service registration is not chip readiness. The exact original recovery
+was restored, HyperOS boot completed, and recovery_a/b plus boot_b full
+hashes matched again. No persistent trace directory was found.
+
+Subsequent normal-system reads confirmed /dev/nq-nci is 0660 nfc:nfc by
+/vendor/etc/ueventd.rc:411. The stock 85288-byte nxp-nci.ko has SHA256
+`ae9a9fcf262e29ca5be19c5db733174baec47d5978acb2d864bbf05dc2de6735`.
+Its build-id matches the loaded nxp_nci module. It is the NXP I2C driver;
+the separately loaded nfc protocol module is not the same file. The module
+loader resolves nxp-nci by filename through modules.dep, which lists
+smcinvoke_dlkm. This read-only collection did not load a module, change
+permissions, restart a daemon or touch credentials.
+
+The profile now also requests that exact stock driver and observed node
+ownership before eSE startup. This follow-up has not been boot-tested;
+module insertion, node creation and successful chip detection still need
+runtime acceptance. Do not change daemon identity, guess a backend property,
+retry authentication or enable key upgrades to bypass the present error.
+See myron-nfc-evidence.json for the source metadata without driver bytes.
 
 ## Diagnostic executable name
 

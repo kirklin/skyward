@@ -338,8 +338,12 @@ mod tests {
         let stock = format!("{DELETE_METADATA_KEYS}=true\nro.vndk.version=33\n");
         let disabled = format!("{DELETE_METADATA_KEYS}=false");
         let enabled = format!("{DELETE_METADATA_KEYS}=true");
-        let policy = skyward_config::Decrypt { read_only: false, auto_repair: false, key_upgrades: false };
+        let policy = skyward_config::Decrypt { read_only: false, auto_repair: false, key_upgrades: false, storage_key_renewal: false };
         let props = String::from_utf8(recovery_properties(stock.as_bytes(), policy.preserves_keys())).unwrap();
+        assert!(props.lines().any(|line| line == disabled));
+        assert!(!props.lines().any(|line| line == enabled));
+        let storage = skyward_config::Decrypt { read_only: true, storage_key_renewal: true, ..policy };
+        let props = String::from_utf8(recovery_properties(stock.as_bytes(), storage.preserves_keys())).unwrap();
         assert!(props.lines().any(|line| line == disabled));
         assert!(!props.lines().any(|line| line == enabled));
         let legacy = String::from_utf8(recovery_properties(stock.as_bytes(), skyward_config::Decrypt::default().preserves_keys())).unwrap();

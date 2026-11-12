@@ -43,7 +43,22 @@
     "mounts_data_or_creates_dm": false,
     "writes_or_deletes_blob_files": false,
     "prints_key_material": false,
-    "hardware_accepted": false,
-    "runtime_limits": "upgradeKey is not read-only secure-world evidence; separate explicit authorization is required. RAM-only handling does not guarantee a vendor has no key-version state changes."
+    "hardware_accepted": true,
+    "runtime_limits": "upgradeKey is not read-only secure-world evidence; separate explicit authorization is required. RAM-only handling does not guarantee a vendor has no key-version state changes.",
+    "acceptance_source_commit": "759d4d2960077ab3c035a9fff2f47d540b6685cc",
+    "inner_renewal_performed": true,
+    "ephemeral_result_bytes": 100,
+    "metadata_blob_hashes_unchanged_through_hyperos_restore": true,
+    "hyperos_user_unlock_and_files_confirmed": true
+  },
+  "restricted_policy_followup": {
+    "field": "decrypt.storage_key_renewal",
+    "default": false,
+    "myron": true,
+    "general_key_upgrades": false,
+    "read_only": true,
+    "auto_repair": false,
+    "metadata_auto_delete_keys": false,
+    "hardware_accepted": false
   }
 }

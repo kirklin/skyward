@@ -363,11 +363,16 @@ pub struct Decrypt {
     /// Let KeyMint renew existing blobs if it requires an upgrade. When
     /// disabled, metadata keys are also protected from automatic deletion.
     pub key_upgrades: bool,
+    /// Permit temporary renewal of an inner hardware-wrapped storage blob
+    /// before conversion, as Android keystore2/vold do. This never enables
+    /// general/credential key upgrades or writes a renewed blob to disk.
+    /// It still calls secure-world upgradeKey; separate from mount access.
+    pub storage_key_renewal: bool,
 }
 
 impl Default for Decrypt {
     fn default() -> Self {
-        Self { read_only: false, auto_repair: true, key_upgrades: true }
+        Self { read_only: false, auto_repair: true, key_upgrades: true, storage_key_renewal: false }
     }
 }
 
@@ -380,6 +385,8 @@ impl Decrypt {
         !self.read_only && self.key_upgrades
     }
 
+    /// Keep on-disk metadata keys protected from automatic initialization
+    /// deletion, including when temporary inner-storage renewal is enabled.
     pub fn preserves_keys(self) -> bool {
         !self.upgrades_keys()
     }
@@ -740,9 +747,19 @@ mod tests {
     }
 
     #[test]
+    fn temporary_storage_renewal_keeps_general_and_filesystem_restrictions() {
+        let base = "[device]\ncodename = \"x\"\n";
+        assert!(!DeviceConfig::parse(base).unwrap().decrypt.storage_key_renewal);
+        let policy = DeviceConfig::parse(&format!("{base}[decrypt]\nread_only = true\nauto_repair = false\nkey_upgrades = false\nstorage_key_renewal = true\n")).unwrap().decrypt;
+        assert!(policy.storage_key_renewal && policy.read_only);
+        assert!(!policy.upgrades_keys() && !policy.checks_filesystem());
+        assert!(policy.preserves_keys(), "temporary renewal must not permit automatic metadata key deletion");
+    }
+
+    #[test]
     fn socrates_opens_writable_data_without_automatic_fsck_or_key_upgrades() {
         let cfg: DeviceConfig = toml::from_str(include_str!("../../../devices/socrates.toml")).unwrap();
-        assert_eq!(cfg.decrypt, Decrypt { read_only: false, auto_repair: false, key_upgrades: false });
+        assert_eq!(cfg.decrypt, Decrypt { read_only: false, auto_repair: false, key_upgrades: false, storage_key_renewal: false });
         let other: DeviceConfig = toml::from_str(include_str!("../../../devices/ishtar.toml")).unwrap();
         assert_eq!(other.decrypt, Decrypt::default());
     }
@@ -832,7 +849,7 @@ mod tests {
         DeviceConfig::parse(text).unwrap();
         assert_eq!(cfg.device.codename, "myron");
         assert!(cfg.device.ab);
-        assert_eq!(cfg.decrypt, Decrypt { read_only: true, auto_repair: false, key_upgrades: false });
+        assert_eq!(cfg.decrypt, Decrypt { read_only: true, auto_repair: false, key_upgrades: false, storage_key_renewal: true });
         assert!(!cfg.decrypt.checks_filesystem() && !cfg.decrypt.upgrades_keys());
         assert!(cfg.decrypt.preserves_keys(), "the packer must disable automatic metadata key deletion");
         assert!(cfg.touch.writes.is_empty(), "FocalTech's raw=0 workaround is unverified");

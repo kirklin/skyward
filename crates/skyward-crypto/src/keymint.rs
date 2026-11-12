@@ -124,6 +124,7 @@ pub struct Hardware {
 pub struct KeyMint<'a> {
     device: Handle<'a>,
     allow_upgrade: bool,
+    allow_storage_renewal: bool,
 }
 
 impl<'a> KeyMint<'a> {
@@ -131,17 +132,25 @@ impl<'a> KeyMint<'a> {
     pub fn open(binder: &'a Binder) -> Result<KeyMint<'a>> {
         let device = service::find(binder, SERVICE)?
             .with_context(|| format!("{SERVICE} is not running; the phone's key service has to be started first"))?;
-        Ok(KeyMint { device, allow_upgrade: true })
+        Ok(KeyMint { device, allow_upgrade: true, allow_storage_renewal: false })
     }
 
-    /// Use existing key blobs only. An upgrade request stays an error,
-    /// rather than asking the secure world to produce a renewed blob.
+    /// Disable both general upgrades and storage renewal. The latter may
+    /// subsequently be opted into without enabling general key upgrades.
     pub fn without_upgrades(mut self) -> Self {
         self.allow_upgrade = false;
+        self.allow_storage_renewal = false;
         self
     }
 
-    pub(crate) fn upgrades_disabled(&self) -> bool {
+    /// Permit Android's temporary inner-storage renewal while leaving the
+    /// general upgrade policy unchanged. No renewed blob is persisted.
+    pub fn with_storage_key_renewal(mut self) -> Self {
+        self.allow_storage_renewal = true;
+        self
+    }
+
+    pub(crate) fn general_upgrades_disabled(&self) -> bool {
         !self.allow_upgrade
     }
 
@@ -165,8 +174,11 @@ impl<'a> KeyMint<'a> {
     /// secure world: what comes back is wrapped again, for the hardware to
     /// unwrap as it reads and writes.
     pub fn ephemeral_storage_key(&self, key: &[u8]) -> Result<Vec<u8>> {
-        let (key, _) = crate::storage_conversion::convert(key, self.allow_upgrade,
-            |key| self.convert(key), |key| self.upgrade(key, |call| call.i32(0)))?;
+        let (key, _) = crate::storage_conversion::convert(key, self.allow_upgrade || self.allow_storage_renewal,
+            |key| self.convert(key), |key| {
+                if self.allow_storage_renewal { self.upgrade_blob(key, |call| call.i32(0)) }
+                else { self.upgrade(key, |call| call.i32(0)) }
+            })?;
         Ok(key)
     }
 
@@ -176,7 +188,7 @@ impl<'a> KeyMint<'a> {
     /// followed by one conversion of the result; no blob is saved or deleted.
     /// Calling upgradeKey is not a read-only secure-world operation.
     pub fn ephemeral_storage_key_with_renewal(&self, key: &[u8]) -> Result<(Vec<u8>, bool)> {
-        anyhow::ensure!(self.upgrades_disabled(), "general key upgrades must stay disabled for this diagnostic");
+        anyhow::ensure!(self.general_upgrades_disabled(), "general key upgrades must stay disabled for this diagnostic");
         crate::storage_conversion::convert(key, true,
             |key| self.convert(key), |key| self.upgrade_blob(key, |call| call.i32(0)))
     }

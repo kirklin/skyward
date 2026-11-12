@@ -18,12 +18,15 @@ width = 1200
 height = 2608
 density = 480
 
-# First bring-up must not repair the filesystem, upgrade KeyMint blobs or
-# let stock metadata initialization delete existing keys automatically.
+# Keep filesystem access read-only, general KeyMint upgrades forbidden and
+# existing metadata keys protected from stock initialization deletion.
 [decrypt]
 read_only = true
 auto_repair = false
 key_upgrades = false
+# 759d4d2's single native test converted the inner storage blob successfully.
+# Keep outer/credential upgrades forbidden; the original disk blobs are kept.
+storage_key_renewal = true
 
 [modules]
 sources = ["vendor_boot", "vendor_dlkm", "vendor", "system_dlkm"]

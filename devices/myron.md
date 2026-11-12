@@ -1,11 +1,13 @@
 # myron: stock evidence and recovery bring-up
 
-This is an experimental recovery candidate, not a tested release. After two
-inconclusive temporary-boot attempts, a separately authorized native
-recovery_b boot reached Skyward. The owner confirmed display and touch;
-ADB and exact running payload hashes were verified. The later 9f round
-also passed StrongBox startup. USB reliability, Weaver acceptance, PIN
-decryption and writable-data acceptance remain incomplete.
+This is an experimental recovery port with incomplete release acceptance.
+Native recovery_b tests verified display/touch, exact running payloads,
+StrongBox startup, both shared-secret peers and Weaver getConfig (64/16/16).
+A separately authorized 759d4d2 test also converted an inner wrapped storage
+blob after one temporary renewal, yielding 100 bytes. Original disk-blob
+hashes were unchanged, and normal HyperOS unlock/files were confirmed after
+restoration. Integrated recovery data mounting, PIN/CE, enforcing mode and
+writable-data acceptance remain incomplete.
 The original recovery was restored and verified. No myron PR is submitted.
 
 Read-only inspection on 2026-11-12 identified REDMI K90 Pro Max
@@ -86,9 +88,10 @@ on both stock StrongBox and Weaver executables and AT_SECURE=1 for each.
 Thus an environment-only LD_LIBRARY_PATH override is insufficient; do not
 claim that the replacement works merely because its file exists. Normal
 system/vendor patch properties were 2026-10-05, while recovery's installed
-build.prop selection had set both to 2026-10-01. Record and resolve this
-mismatch before another storage-key attempt; do not enable key upgrades
-merely to move past the refusal.
+build.prop selection had set both to 2026-10-01. This mismatch remains
+recorded evidence. The later wrapped-storage investigation below established
+the separate temporary-conversion path without guessing patch dates or
+enabling general/credential key upgrades.
 
 ## Services and hardware
 
@@ -98,11 +101,11 @@ merely to move past the refusal.
 | Touch | FocalTech 3683, focaltech_ts on event6, raw flag 1, resolution factor 100; absolute maxima 119999x260799 | Native recovery touch confirmed by owner; no speculative raw=0 write |
 | Touch processing | Actual process maps include libtouchreport.so, libtouchreport_alg.so, libtouchreport_hal.so, libtouchreport_sensor.so and TensorFlow models | Stock service ran as configured; owner confirmed responsive touch |
 | TEE helpers | Stock qseecomd and hlosminkdaemon rc files; live listeners-ready property true | Preserve identities/capabilities and wait for listeners |
-| Default KeyMint | QTI KeyMint4/default, remote provisioning, secure clock, shared secret/default confirmed in VINTF and live service list | Service ran; storage-key setup refused -62; key upgrades remain disabled |
+| Default KeyMint | QTI/default, remote provisioning, secure clock and shared secret/default confirmed; hardware info says OneKeymint version 1, TEE, Qualcomm | Single inner storage renewal/conversion passed; general upgrades remain disabled; integrated mount/PIN pending |
 | Gatekeeper | QTI Rust AIDL/default, system:system | Configured; recovery credential verification untested |
-| Native eSE | eSE1 belongs to the QTI secure-element process, not the NXP NFC process | Start stock QTI service as system:nfc/system before StrongBox |
+| Native eSE | eSE1 belongs to the QTI secure-element process, not the NXP NFC process | Stock driver/node and QTI callback delivery passed |
 | StrongBox | NXP StrongBox3 and sharedsecret/strongbox; live UID 2910, primary GID 0; native HalToHalTransport | 9f RAM dependencies fixed loading and passed startup ready; UID/GID/caps/AT_SECURE confirmed |
-| Weaver | NXP Weaver2/default, UID/GID 2911; stock ese_weaver.so uses OmapiTransport | d923 mapping/declaration passed; single getConfig failed with missing NFC-node evidence; driver follow-up and PIN pending |
+| Weaver | NXP Weaver2/default, UID/GID 2911; original executable uses private native library bind | f32 actual mapping and getConfig passed (64 slots, 16-byte keys/values); PIN/slot access untested |
 | Wi-Fi | qca_cld3_peach_v2/rfkill/cfg80211, cnss-peach, peach_v2 configuration | Recovery log records DHCP lease and external reachability; repeatability untested |
 | Boot control | Stock QTI AIDL BootControl and separate recovery_a/b | Configured early; recovery query/write operations untested |
 
@@ -371,9 +374,26 @@ There is no mount, device-mapper creation, credential input, blob file
 write or deleteKey call. Empty results and further errors stop the path;
 an error on the second conversion is not retried.
 
-The automatic UI/data path and myron's read-only, no-general-upgrade policy
-remain unchanged. This new command has not been hardware-accepted. An
-upgradeKey call is a secure-world key operation, **not read-only evidence**.
+In 759d4d2 the automatic UI/data policy remained unchanged. A separately
+authorized single native diagnostic succeeded: the inner renewal occurred
+and conversion returned 100 bytes. Original disk-blob hashes matched normal
+HyperOS preflight, both recovery checks and post-restoration HyperOS. The
+three full partition hashes also matched; HyperOS mounted data and the
+owner confirmed normal unlock and original files. No data mount, PIN or
+Weaver slot operation was issued in recovery.
+
+The next integration adds `decrypt.storage_key_renewal`, default false and
+explicitly true only for myron. General/credential upgrades remain false,
+filesystem repair stays off, and data access remains read-only. The packer
+still disables automatic metadata key deletion. The data path may opt into
+only the tested inner conversion fallback; this integrated mount/PIN path
+has not been hardware-accepted. The permission applies to each conversion
+of an inner storage blob, including metadata and DE/shared storage, and CE
+storage after credential verification. Each conversion may renew once on
+-62; multiple data-open requests can perform new conversions. Outer and
+credential KeyMint blobs still cannot be upgraded under this policy.
+
+An upgradeKey call is a secure-world key operation, **not read-only evidence**.
 The general AIDL version-binding contract includes old-version invalidation;
 keeping a copy in RAM does not guarantee a vendor implementation has no
 secure-world side effects. Any test needs separate authorization covering

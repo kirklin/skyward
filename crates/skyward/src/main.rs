@@ -415,8 +415,8 @@ fn main() -> Result<()> {
         Cmd::Data { credential, config, close: false } => {
             use skyward_crypto::data;
             let policy = DeviceConfig::load(&config)?.decrypt;
-            println!("decryption policy: read_only={}, auto_fsck={}, key_upgrades={}",
-                policy.read_only, policy.checks_filesystem(), policy.upgrades_keys());
+            println!("decryption policy: read_only={}, auto_fsck={}, key_upgrades={}, storage_key_renewal={}",
+                policy.read_only, policy.checks_filesystem(), policy.upgrades_keys(), policy.storage_key_renewal);
             decrypt::with_key_service(policy, |service| {
                 let opening = data::open_with_options(service, decrypt::options(policy))?;
                 match &opening.mounted {

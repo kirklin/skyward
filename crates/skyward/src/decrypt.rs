@@ -34,8 +34,8 @@ pub struct Decryptor {
 
 impl Decryptor {
     pub fn start(job: Job, policy: Decrypt) -> Result<Decryptor> {
-        skyward_sys::kmsg(&format!("decryption policy: read_only={}, auto_fsck={}, key_upgrades={}",
-            policy.read_only, policy.checks_filesystem(), policy.upgrades_keys()))?;
+        skyward_sys::kmsg(&format!("decryption policy: read_only={}, auto_fsck={}, key_upgrades={}, storage_key_renewal={}",
+            policy.read_only, policy.checks_filesystem(), policy.upgrades_keys(), policy.storage_key_renewal))?;
         let mut fds = [0; 2];
         if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) } != 0 {
             return Err(std::io::Error::last_os_error()).context("make the decrypting thread's wake pipe");
@@ -96,6 +96,7 @@ pub fn with_key_service<T>(policy: Decrypt, work: impl FnOnce(&KeyMint) -> Resul
         let binder = Binder::open()?;
         let service = KeyMint::open(&binder)?;
         let service = if policy.upgrades_keys() { service } else { service.without_upgrades() };
+        let service = if policy.storage_key_renewal { service.with_storage_key_renewal() } else { service };
         work(&service)
     })();
     done.map_err(|e| format!("{e:#}"))

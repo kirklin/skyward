@@ -226,7 +226,7 @@ pub fn open_read_only(service: &KeyMint) -> Result<Opening> {
 }
 
 pub fn open_with_options(service: &KeyMint, options: Options) -> Result<Opening> {
-    anyhow::ensure!(!options.read_only || service.upgrades_disabled(), "read-only decryption requires KeyMint upgrades to be disabled");
+    anyhow::ensure!(!options.read_only || service.general_upgrades_disabled(), "read-only decryption requires general KeyMint upgrades to be disabled");
     let mounted = match mount::is_mount_point(Path::new(MOUNT))? {
         true => {
             let mounted_read_only = mount::is_read_only(Path::new(MOUNT))?;

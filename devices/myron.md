@@ -582,6 +582,23 @@ selectors and response entry counts within the existing trace budget.
 It does not log object identifiers, paths, property values or file content,
 and does not change enumeration, deletion, scope or PUID semantics.
 
+The count diagnostic aa0d84e passed complete CI 43258199965 after correcting
+a Rust-edition syntax issue in the diagnostic branch. Its separately
+authorized native test again passed PIN/RW, one 64 KiB upload, native
+readback and file Delete/results, then stopped before EnumObjects returned.
+The trace showed a known-parent GetObjectHandles returning ten handles,
+followed by known single-object, depth-zero ObjectFormat (0xDC02) and PUID
+(0xDC41) queries returning one entry each. Parent/object identifiers were
+not logged. This may be identity resolution through a parent rather than
+listing the empty probe directory itself; a wrong-directory response or
+PUID/cache root cause has not been established.
+
+The original empty probe directory was checked and removed, six RAM samples
+(761729 bytes) were preserved, and the original recovery/HyperOS plus all
+three partition and metadata ciphertext hashes were verified. The owner
+confirmed normal unlock, desktop and original files. Further code work is
+offline; no additional hardware authorization is implied by these records.
+
 ## Diagnostic executable name
 
 After verifying product, slot and payload, create a RAM symlink to the

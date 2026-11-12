@@ -868,6 +868,89 @@
         "persistent_trace_directory_found": false,
         "normal_os_unlock_and_original_files_user_confirmed": true
       }
+    },
+    "native_aa0d84e_scope_count": {
+      "source_commit": "aa0d84e55ccaff9a7c7f6047aac706c41da39c47",
+      "ci_run": 43258199965,
+      "image_sha256": "0eb24beb709d6bd2c523460a5a115e54d9d4d3f46a25f24826cf53fd176a4901",
+      "startup_service_and_payload_gates_passed": true,
+      "owner_one_correct_pin_and_original_folders_confirmed": true,
+      "data_and_sdcard_rw_verified": true,
+      "mtp_observations": {
+        "source_commit": "aa0d84e55ccaff9a7c7f6047aac706c41da39c47",
+        "native_upload_and_readback_verified": true,
+        "file_delete_results_verified": true,
+        "host_last_stage": "before-enumobjects-api",
+        "host_enumobjects_returned": false,
+        "host_enum_next_entered": false,
+        "directory_delete_entered": false,
+        "host_stages": [
+          "before-content-open",
+          "selected-storage",
+          "selected-download",
+          "before-create-owned-directory",
+          "created-owned-directory",
+          "before-create-owned-file",
+          "before-upload-commit",
+          "uploaded-owned-file",
+          "native-readback-verified",
+          "waiting-for-wrapper-canonical-inode-proof",
+          "before-delete-owned-file",
+          "file-cleanup-current-gate-passed",
+          "before-delete-api",
+          "delete-api-returned",
+          "before-delete-results-getcount",
+          "delete-results-getcount-returned",
+          "before-delete-results-getat",
+          "delete-results-getat-returned",
+          "delete-result-verified",
+          "before-enumerate-after-file-delete",
+          "before-enumobjects-api"
+        ],
+        "scope_count_trace_preserved": true,
+        "samples": 6,
+        "sample_bytes": 761729,
+        "original_empty_dir_removed_by_canonical_inode_guarded_rmdir": true,
+        "alias_raw_paths_absent": true,
+        "second_upload_or_pin_retry": false,
+        "full_mtp_flow_accepted": false
+      },
+      "scope_counts": {
+        "get_handles_parent_category": "known",
+        "get_handles_format": 0,
+        "handle_count": 10,
+        "property_query_scope": "known",
+        "property_query_depth": 0,
+        "property_query_format": 0,
+        "property_query_group": 0,
+        "observed_property_selectors": [
+          "0xDC02 ObjectFormat",
+          "0xDC41 PersistentUniqueObjectIdentifier"
+        ],
+        "property_entry_count": 1,
+        "exact_parent_or_object_identity_logged": false
+      },
+      "trace_limits": "A known parent returned10 handles and subsequent known single depth0 format/PUID queries returned1 entry each. The exact parent was not logged, so this does not prove the device listed the wrong directory or establish a PUID/cache root cause. The own probe directory was verified empty at guarded cleanup.",
+      "restoration": {
+        "time_utc": "2026-11-12T16:44:58.530731+00:00",
+        "device": "myron",
+        "source_commit": "aa0d84e55ccaff9a7c7f6047aac706c41da39c47",
+        "os": "OS4.0.6.0.XPMCNXM",
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false,
+        "partition_hashes": {
+          "recovery_b": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+          "recovery_a": "586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660",
+          "boot_b": "11a20858d4e68869152baf70db0edb3d279516f9d430154cc6c96ba427940748"
+        },
+        "original_recovery_b_restored": true,
+        "boot_b_and_recovery_a_unchanged": true,
+        "metadata_ciphertext_hashes_unchanged": true,
+        "hyperos_data_mounted": true,
+        "persistent_trace_directory_found": false,
+        "normal_os_unlock_and_original_files_user_confirmed": true
+      }
     }
   },
   "scope": {
@@ -889,7 +972,7 @@
     "mtp_complete_workflow_accepted": false
   },
   "remaining": [
-    "Determine the request scope/depth/counts behind WPD EnumObjects after own-file deletion; device GetObjectHandles and initial property-list responses completed, but EnumObjects did not return and Next/folder Delete were not entered",
+    "Investigate WPD EnumObjects identity/cache resolution: observed parent enumeration and ObjectFormat/PUID property queries completed; folder lifetime PUID stability has an independent verified contract concern, not yet established as timeout cause",
     "Enforcing mode and untested destructive recovery operations are not accepted"
   ],
   "temporary_test_candidate": {
@@ -1402,8 +1485,8 @@
     "callback_vintf_mark_strong_import_verified": true,
     "callback_create_binder_actual_call_verified": true,
     "diagnostic_max_log_bytes": 786432,
-    "device_boot_tested": false,
-    "pin_authorized": false
+    "device_boot_tested": true,
+    "pin_authorized": true
   },
   "mtp_scope_count_preparation": {
     "ci_run": 43258199965,
@@ -1414,8 +1497,8 @@
     "diagnostic_scope": "Existing bounded window plus zero/all-ones/known/unknown selectors, protocol depth/format/property/group and dataset first-count only; no handles/paths/property values/file contents",
     "host_v4_native_binary_byte_identical_to_v3": true,
     "host_v4_local_binding_and_guard_checks_passed": true,
-    "device_tested": false,
-    "new_phone_authorization_recorded": false,
+    "device_tested": true,
+    "new_phone_authorization_recorded": true,
     "limits": "Still diagnostic only; no host/device cause or MTP complete pass established."
   }
 }

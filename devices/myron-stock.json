@@ -19,5 +19,11 @@
     "version": 4,
     "kernel_bytes": 0,
     "avb_footer": true
+  },
+  "ci": {
+    "source_commit": "79dec9edc91ce3f47b0fabe615a1d89b36ab996e",
+    "run": "https://github.com/Dingtaiqi/skyward/actions/runs/43151155964",
+    "conclusion": "success",
+    "official_recovery_full_extraction_and_sha256_verified": true
   }
 }

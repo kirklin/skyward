@@ -25,8 +25,12 @@ read-only copy of the phone's recovery_b independently matches that hash:
 Both complete original partitions are saved locally with verified hashes,
 outside Git. The a copy is not substituted for b or identified as the
 4.0.6.0 recovery. Both have boot header v4, no kernel and an AVB footer.
-They are not standalone `fastboot boot` images. CI must still extract the
-official partition and check its complete hash before building a candidate.
+They are not standalone `fastboot boot` images. Updated CI extracted the
+official partition and checked its complete hash before building the candidate.
+A separate 90,202,112-byte temporary v4 container was then made locally
+using the phone's current boot_b kernel and the unchanged CI ramdisk. It
+has not been booted. Its hashes and source identity are saved with the
+private test materials; producing the file is not authorization to boot it.
 
 Public source metadata is recorded in `myron-stock.json`. This is not a
 claim that the whole 10 GB OTA ZIP was downloaded or its full-file MD5
@@ -98,6 +102,8 @@ The initial profile's Linux/ARM64 CI passed at a188aa5
 ([run 43063699023](https://github.com/Dingtaiqi/skyward/actions/runs/43063699023)).
 For this continuation, the targeted myron data-policy/service contract ran
 one test and passed, and config all-target Clippy passed with warnings
-denied. Updated Linux/ARM64 CI is still required for the changed profile.
+denied. Updated Linux/ARM64 CI at 79dec9e also passed all jobs, including
+full workspace tests, ARM64 checks/build and stock recovery extraction/hash
+verification ([run 43151155964](https://github.com/Dingtaiqi/skyward/actions/runs/43151155964)).
 The full path-validation suite is not Windows portable; Linux CI executes
 the complete suite. None of these checks is a recovery boot test.

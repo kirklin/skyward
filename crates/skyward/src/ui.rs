@@ -548,6 +548,12 @@ fn look_for_drive(plugged: &mut Option<Plugged>, seen: &mut Option<String>) -> R
     let shown = match usb::mount(&drive, Path::new(USB_DRIVE)) {
         Ok((part, filesystem)) => {
             skyward_sys::kmsg(&format!("USB drive {part} shown at {USB_DRIVE} as {filesystem}"))?;
+            // 如果检测到启动脚本或 Fedora 根目录，提示用户
+            let fedora_script = Path::new(USB_DRIVE).join("root/start_fedora.sh");
+            let fedora_root = Path::new(USB_DRIVE).join("etc/fedora-release");
+            if fedora_script.is_file() || fedora_root.is_file() {
+                skyward_sys::kmsg("Found external Fedora Linux installation on USB drive")?;
+            }
             Ok(())
         }
         Err(e) => {

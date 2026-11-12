@@ -5249,7 +5249,12 @@ impl App {
             Screen::Terminal => {
                 self.state.layer = Layer::Letters;
                 if self.term.is_none() {
-                    self.shell_folder = "/".into();
+                    let fedora_script = std::path::Path::new("/mnt/usb/root/start_fedora.sh");
+                    if fedora_script.is_file() {
+                        self.shell_folder = "/mnt/usb/root".into();
+                    } else {
+                        self.shell_folder = "/".into();
+                    }
                     vec![Effect::StartShell(self.shell_folder.clone())]
                 } else {
                     Vec::new()

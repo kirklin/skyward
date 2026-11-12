@@ -1,6 +1,6 @@
 {
   "device": "myron",
-  "status": "experimental; PIN/CE, RW mounts, logical switches, physical controls and native MTP upload/readback/file-delete accepted; AF trace locates stall in subsequent empty-folder enumeration, not file Delete/results; original recovery and HyperOS restored",
+  "status": "experimental; core decryption/RW/logical mounts/physical controls and native MTP upload/readback/file Delete accepted; WPD EnumObjects stalls before returning while initial device enumeration/property replies complete; original recovery/HyperOS and normal files confirmed",
   "date": "2026-11-12",
   "stock_version": "OS4.0.6.0.XPMCNXM",
   "framework_api": 37,
@@ -791,6 +791,83 @@
         "persistent_trace_directory_found_after_restore": false
       },
       "limits": "The SDK file Delete API, GetCount and GetAt returned and verified success. It then blocked in EnumObjects/Next while enumerating the now-empty folder. No folder-delete stage was entered. Device/host cause is not established; no full MTP pass claimed."
+    },
+    "native_0df9431_enumobjects_trace": {
+      "source_commit": "0df9431945f49fc8d40b60be4323d47244d45d48",
+      "ci_run": 43250797489,
+      "image_sha256": "01120977f6ce7794ecbd66e7b4cb7982587edbbcbeffe7f923dc2e4f7e63909c",
+      "startup": {
+        "initial_readonly_probe_stopped_before_credentials": true,
+        "early_failure_evidence_retained": true,
+        "service_readiness_and_all_payload_mapping_gates_later_passed": true,
+        "actual_trace_property_verified": true
+      },
+      "owner_one_correct_pin_and_original_folders_confirmed": true,
+      "data_and_sdcard_rw_verified": true,
+      "mtp_observations": {
+        "source_commit": "0df9431945f49fc8d40b60be4323d47244d45d48",
+        "native_upload_readback_sha_marker_verified": true,
+        "file_delete_api_and_results_verified": true,
+        "host_enumobjects_call_did_not_return": true,
+        "host_enum_next_not_entered": true,
+        "directory_delete_not_entered": true,
+        "device_delete_and_get_handles_data_response_completed": true,
+        "device_property_list_replies_completed_in_bounded_trace": 12,
+        "watch_spin_or_stuck_bulk_send_demonstrated": false,
+        "second_upload_or_pin_retry": false,
+        "original_empty_dir_removed_by_canonical_inode_guarded_rmdir": true,
+        "alias_raw_paths_absent": true,
+        "host_stages": [
+          "before-content-open",
+          "selected-storage",
+          "selected-download",
+          "before-create-owned-directory",
+          "created-owned-directory",
+          "before-create-owned-file",
+          "before-upload-commit",
+          "uploaded-owned-file",
+          "native-readback-verified",
+          "waiting-for-wrapper-canonical-inode-proof",
+          "before-delete-owned-file",
+          "file-cleanup-current-gate-passed",
+          "before-delete-api",
+          "delete-api-returned",
+          "before-delete-results-getcount",
+          "delete-results-getcount-returned",
+          "before-delete-results-getat",
+          "delete-results-getat-returned",
+          "delete-result-verified",
+          "before-enumerate-after-file-delete",
+          "before-enumobjects-api"
+        ],
+        "full_mtp_flow_accepted": false
+      },
+      "trace_limits": "GetObjectHandles and 12 GetObjectPropList follow-up replies completed in the bounded trace. Request scope, depth and dataset counts were not logged, so it is unknown whether WPD was refreshing a broader cache. No host-only or device-only cause established.",
+      "trace": {
+        "ram_samples_retrieved": 6,
+        "ram_sample_bytes": 763306,
+        "persistent_directory_found_after_restore": false
+      },
+      "restoration": {
+        "time_utc": "2026-11-12T16:04:22.681273+00:00",
+        "device": "myron",
+        "source_commit": "0df9431945f49fc8d40b60be4323d47244d45d48",
+        "os": "OS4.0.6.0.XPMCNXM",
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false,
+        "partition_hashes": {
+          "recovery_b": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+          "recovery_a": "586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660",
+          "boot_b": "11a20858d4e68869152baf70db0edb3d279516f9d430154cc6c96ba427940748"
+        },
+        "original_recovery_b_restored": true,
+        "boot_b_and_recovery_a_unchanged": true,
+        "metadata_ciphertext_hashes_unchanged": true,
+        "hyperos_data_mounted": true,
+        "persistent_trace_directory_found": false,
+        "normal_os_unlock_and_original_files_user_confirmed": true
+      }
     }
   },
   "scope": {
@@ -812,7 +889,7 @@
     "mtp_complete_workflow_accepted": false
   },
   "remaining": [
-    "Locate and resolve the post-file-delete empty-folder enumeration stall (host EnumObjects/Next); file Delete/results and its device 0x2001 response completed, but arrival/processing/data transmission of enumeration was not traced",
+    "Determine the request scope/depth/counts behind WPD EnumObjects after own-file deletion; device GetObjectHandles and initial property-list responses completed, but EnumObjects did not return and Next/folder Delete were not entered",
     "Enforcing mode and untested destructive recovery operations are not accepted"
   ],
   "temporary_test_candidate": {
@@ -1272,8 +1349,8 @@
     "callback_vintf_mark_strong_import_verified": true,
     "callback_create_binder_actual_call_verified": true,
     "diagnostic_max_log_bytes": 786432,
-    "device_boot_tested": false,
-    "pin_authorized": false
+    "device_boot_tested": true,
+    "pin_authorized": true
   },
   "mtp_enumeration_trace_preparation": {
     "ci_run": 43250797489,
@@ -1282,8 +1359,8 @@
     "diagnostic_scope": "Opt-in DeleteObject and at most 16 following transactions/command reads; related enumeration and dataset/response phases, Changed deduplicated per read; no handles, paths or datasets logged",
     "host_sdk_v3_offline_cases_passed": 66,
     "host_sdk_enumobjects_next_hresult_count_timing_added": true,
-    "device_tested": false,
-    "new_phone_authorization_recorded": false,
+    "device_tested": true,
+    "new_phone_authorization_recorded": true,
     "limits": "Instrumentation and regression coverage only. No protocol-semantic fix or hardware pass claimed."
   }
 }

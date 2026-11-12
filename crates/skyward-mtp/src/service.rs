@@ -283,6 +283,21 @@ fn answer(port: &mut Port, r: &mut Responder, mail: &mut Mailbox, cmd: &Command,
         }
     };
     trace("command-received", None);
+    if traced {
+        match cmd.code {
+            op::GET_OBJECT_HANDLES => {
+                if let Some([_, format, parent]) = cmd.take::<3>() {
+                    let _ = kmsg(&format!("mtp: delete op={:#06x} tid={} stage=enumeration-request parent={} format={format:#010x}", cmd.code, cmd.transaction, r.handle_scope(parent)));
+                }
+            }
+            op::GET_OBJECT_PROP_LIST => {
+                if let Some([handle, format, property, group, depth]) = cmd.take::<5>() {
+                    let _ = kmsg(&format!("mtp: delete op={:#06x} tid={} stage=enumeration-request scope={} depth={depth:#010x} format={format:#010x} property={property:#010x} group={group:#010x}", cmd.code, cmd.transaction, r.handle_scope(handle)));
+                }
+            }
+            _ => {}
+        }
+    }
     let mut stop = || {
         mail.collect();
         mail.urgent()
@@ -330,6 +345,13 @@ fn answer(port: &mut Port, r: &mut Responder, mail: &mut Mailbox, cmd: &Command,
         }
     };
     trace("reply-ready", Some(reply.code));
+    if traced && matches!(cmd.code, op::GET_OBJECT_HANDLES | op::GET_OBJECT_PROP_LIST)
+        && let Some(Outgoing::Dataset(bytes)) = &reply.data
+        && let Some(count) = bytes.get(..4).and_then(|head| head.try_into().ok()).map(u32::from_le_bytes)
+    {
+        let label = if cmd.code == op::GET_OBJECT_HANDLES { "handleCount" } else { "entryCount" };
+        let _ = kmsg(&format!("mtp: delete op={:#06x} tid={} stage=enumeration-result {label}={count}", cmd.code, cmd.transaction));
+    }
     if let Some(why) = &reply.why {
         kmsg(&format!("mtp: {:#06x} answered {:#06x}: {why}", cmd.code, reply.code)).map_err(|e| Halt::Failed(io::Error::other(e)))?;
     }

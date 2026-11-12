@@ -331,6 +331,17 @@ impl Responder {
         self.store.as_ref().and_then(Store::fd)
     }
 
+    /// A diagnostic category only: no object ID or disk access leaves here.
+    #[cfg(target_os = "android")]
+    pub(crate) fn handle_scope(&self, handle: u32) -> &'static str {
+        match handle {
+            0 => "zero-marker",
+            0xFFFF_FFFF => "all-ones-marker",
+            _ if self.store.as_ref().is_some_and(|store| store.contains(handle)) => "known",
+            _ => "unknown",
+        }
+    }
+
     /// What other programs changed in the folders the computer has read,
     /// as events for an open session; with none open, the entries follow
     /// the changes all the same.

@@ -424,6 +424,27 @@ fn property_lists_go_as_deep_as_the_stock_system_s() {
 }
 
 #[test]
+fn property_lists_reject_unknown_and_deleted_single_handles() {
+    let at = scratch("props-invalid-single");
+    fs::write(at.join("own.bin"), b"own").unwrap();
+    let mut r = open(&at);
+    let file = find(&mut r, PARENT_ROOT, "own.bin");
+    for handle in [file + 1, 0xFFFF_FFFE] {
+        let reply = r.answer(&cmd(op::GET_OBJECT_PROP_LIST, &[handle, 0, 0xFFFF_FFFF, 0, 0]), None);
+        assert_eq!(reply.code, response::INVALID_OBJECT_HANDLE);
+        assert!(reply.data.is_none(), "an unknown single handle is an error, not an empty successful dataset");
+    }
+    let listed = prop_list(&dataset(r.answer(&cmd(op::GET_OBJECT_PROP_LIST, &[file, 0, 0xFFFF_FFFF, 0, 0]), None)));
+    assert_eq!(listed.len(), OBJECT_PROPERTIES.len(), "the single object existed before DeleteObject");
+    assert_eq!(r.answer(&cmd(op::DELETE_OBJECT, &[file, 0]), None).code, response::OK);
+    assert!(!at.join("own.bin").exists());
+    let reply = r.answer(&cmd(op::GET_OBJECT_PROP_LIST, &[file, 0, 0xFFFF_FFFF, 0, 0]), None);
+    assert_eq!(reply.code, response::INVALID_OBJECT_HANDLE);
+    assert!(reply.data.is_none(), "a handle deleted in this session cannot become an empty successful property list");
+    fs::remove_dir_all(at).unwrap();
+}
+
+#[test]
 fn property_descriptions_say_what_can_be_set() {
     let mut r = Responder::new(device(), TimeZone::UTC, Arc::default());
     let name = dataset(r.answer(&cmd(op::GET_OBJECT_PROP_DESC, &[u32::from(prop::OBJECT_FILE_NAME), 0]), None));

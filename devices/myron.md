@@ -556,6 +556,32 @@ notification per pending read. Normal I/O decisions and event handling
 are unchanged. The real-inotify test additionally checks that processing
 self-delete events drains the readable watch fd before the next command.
 
+That 0df9431 revision passed complete CI 43250797489 and a separate native
+test. An early read-only startup probe stopped before credentials; its
+evidence was retained, and the later service-ready probe verified the
+actual running payloads, service mappings and trace property before PIN.
+The owner entered one correct PIN and saw original folders. The single
+own-file upload, native readback, path gate and file Delete/results passed.
+The finer SDK journal then stopped before EnumObjects returned; Next and
+folder deletion were never entered.
+
+The phone completed that DeleteObject response, the subsequent
+GetObjectHandles dataset/response and twelve GetObjectPropList
+dataset/responses in the bounded window. It advanced past the initial
+watch-change notification. This does not establish an early watch spin or
+unfinished bulk send, but request scope/depth/counts were not captured,
+and later activity outside the bounded window is unknown. The remaining
+empty own directory was removed after canonical/inode checks, and original
+recovery_b/HyperOS were restored with all three partition and metadata
+ciphertext hashes unchanged. The owner confirmed normal unlock and files.
+All six RAM samples were preserved (763306 bytes), with no persistent trace
+directory found after restoration.
+
+The next diagnostic adds only neutral request-marker categories, protocol
+selectors and response entry counts within the existing trace budget.
+It does not log object identifiers, paths, property values or file content,
+and does not change enumeration, deletion, scope or PUID semantics.
+
 ## Diagnostic executable name
 
 After verifying product, slot and payload, create a RAM symlink to the

@@ -231,7 +231,9 @@ fn picked<const N: usize>(kept: &[String], all: &[&str; N]) -> [bool; N] {
 /// What the settings file held as the recovery started.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Kept {
-    Settings(Settings),
+    /// Boxed: this variant holds far more than the other two, and the enum is
+    /// kept as what the file held rather than as a hot path.
+    Settings(Box<Settings>),
     /// No settings: no file, or one that does not read as settings.
     Nothing,
     /// Where the file is could not be read; it is left alone this time.
@@ -242,7 +244,7 @@ impl Kept {
     /// The settings the file held, if it held any.
     pub fn settings(&self) -> Option<&Settings> {
         match self {
-            Kept::Settings(settings) => Some(settings),
+            Kept::Settings(settings) => Some(settings.as_ref()),
             Kept::Nothing | Kept::Unreadable => None,
         }
     }
@@ -263,7 +265,7 @@ pub struct Keeper {
 impl Keeper {
     pub fn new(kept: &Kept) -> Keeper {
         let holds = match kept {
-            Kept::Settings(settings) => Some(Some(settings.clone())),
+            Kept::Settings(settings) => Some(Some(settings.as_ref().clone())),
             Kept::Nothing => Some(None),
             Kept::Unreadable => None,
         };
@@ -392,7 +394,7 @@ mod tests {
 
     #[test]
     fn changed_settings_are_written_once_they_have_stood_for_a_moment() {
-        let mut keeper = Keeper::new(&Kept::Settings(Settings::default()));
+        let mut keeper = Keeper::new(&Kept::Settings(Box::new(Settings::default())));
         assert_eq!(keeper.due(Settings::default(), 0), None, "what the file holds is not written again");
         let dark = Settings { dark: true, ..Settings::default() };
         assert_eq!(keeper.due(dark.clone(), 1_000), None);

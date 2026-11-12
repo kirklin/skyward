@@ -32,6 +32,13 @@ pub enum Reply {
     Nak,
 }
 
+// A duplicate OFFER may arrive after REQUEST. It is not a refusal: keep
+// waiting for ACK/NAK within the same transaction.
+#[cfg(any(target_os = "android", test))]
+fn answers_phase(reply: &Reply, expect_offer: bool) -> bool {
+    matches!((reply, expect_offer), (Reply::Offer { .. }, true) | (Reply::Ack(_) | Reply::Nak, false))
+}
+
 /// What every question asks to be told besides the address.
 const ASKED: [OptionCode; 6] = [
     OptionCode::SubnetMask,
@@ -145,7 +152,7 @@ pub use client::{obtain, keep, Kept};
 
 #[cfg(target_os = "android")]
 mod client {
-    use super::{discover, extend, reply, request, Lease, Reply};
+    use super::{answers_phase, discover, extend, reply, request, Lease, Reply};
     use anyhow::{bail, Context, Result};
     use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
     use std::os::fd::AsRawFd;
@@ -202,7 +209,7 @@ mod client {
 
     /// Send `question` to `to` and wait for an answer to transaction `xid`,
     /// sending it again as long as none comes; give up after the last wait.
-    fn exchange(s: &UdpSocket, to: SocketAddrV4, question: &[u8], xid: u32, mac: [u8; 6], stop: &AtomicBool) -> Result<Option<Reply>> {
+    fn exchange(s: &UdpSocket, to: SocketAddrV4, question: &[u8], xid: u32, mac: [u8; 6], stop: &AtomicBool, expect_offer: bool) -> Result<Option<Reply>> {
         let mut buf = [0u8; 1500];
         for wait in WAITS {
             s.send_to(question, to).context("send a DHCP question")?;
@@ -213,7 +220,7 @@ mod client {
                 }
                 match s.recv(&mut buf) {
                     Ok(n) => {
-                        if let Some(r) = reply(&buf[..n], xid, mac) {
+                        if let Some(r) = reply(&buf[..n], xid, mac).filter(|r| answers_phase(r, expect_offer)) {
                             return Ok(Some(r));
                         }
                     }
@@ -236,12 +243,12 @@ mod client {
         let s = socket(interface)?;
         for _ in 0..3 {
             let id = xid();
-            let (address, server) = match exchange(&s, broadcast(), &discover(id, mac)?, id, mac, stop)? {
+            let (address, server) = match exchange(&s, broadcast(), &discover(id, mac)?, id, mac, stop, true)? {
                 Some(Reply::Offer { address, server }) => (address, server),
                 Some(_) => continue,
                 None => bail!("no DHCP server offered an address"),
             };
-            match exchange(&s, broadcast(), &request(id, mac, address, server)?, id, mac, stop)? {
+            match exchange(&s, broadcast(), &request(id, mac, address, server)?, id, mac, stop, false)? {
                 Some(Reply::Ack(lease)) => return Ok(lease),
                 Some(_) => continue,
                 None => bail!("the DHCP server at {server} did not give the address it offered"),
@@ -265,7 +272,7 @@ mod client {
         let s = socket(interface)?;
         let id = xid();
         let to = if anyone { broadcast() } else { SocketAddrV4::new(lease.server, SERVER_PORT) };
-        Ok(match exchange(&s, to, &extend(id, mac, lease.address)?, id, mac, stop)? {
+        Ok(match exchange(&s, to, &extend(id, mac, lease.address)?, id, mac, stop, false)? {
             Some(Reply::Ack(kept)) => Kept::Kept(kept),
             Some(_) => Kept::Refused,
             None => Kept::Unanswered,
@@ -278,6 +285,15 @@ mod tests {
     use super::*;
 
     const MAC: [u8; 6] = [0x02, 0x00, 0x00, 0x00, 0x00, 0x04];
+
+    #[test]
+    fn a_duplicate_offer_is_ignored_while_waiting_for_ack() {
+        let offer = Reply::Offer { address: Ipv4Addr::new(192, 168, 1, 23), server: Ipv4Addr::new(192, 168, 1, 1) };
+        assert!(answers_phase(&offer, true));
+        assert!(!answers_phase(&offer, false));
+        assert!(!answers_phase(&Reply::Nak, true));
+        assert!(answers_phase(&Reply::Nak, false));
+    }
 
     /// What a home router answers, put together as one would.
     fn answer(kind: MessageType, xid: u32, mac: [u8; 6], with: &[DhcpOption]) -> Vec<u8> {

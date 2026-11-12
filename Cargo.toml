@@ -47,3 +47,6 @@ strip = true
 # The UI draws every pixel of every frame; it is built for speed.
 [profile.release.package.skyward-ui]
 opt-level = 3
+
+[profile.release.package.tiny-skia]
+opt-level = 3

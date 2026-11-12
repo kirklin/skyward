@@ -5,6 +5,7 @@ use skyward_sys::ueventd;
 use skyward_vab::Mounted;
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
+use std::ffi::CString;
 use std::io;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;
@@ -50,7 +51,7 @@ pub fn start(services: &[Service], libraries: Option<&Path>) -> Result<()> {
         }
         let who = Credentials::of(&s, &known)?;
         if s.oneshot {
-            let status = command(&s, &who).status().with_context(|| format!("run {}", s.path))?;
+            let status = command(&s, &who)?.status().with_context(|| format!("run {}", s.path))?;
             ensure!(status.success(), "{} {} ended: {status}", s.path, s.args.join(" "));
             skyward_sys::kmsg(&format!("ran {} {}", s.path, s.args.join(" ")))?;
             continue;
@@ -209,7 +210,7 @@ fn supervise(s: &Service, who: &Credentials) -> ! {
 
 /// Start the program and wait for it to end.
 fn run(s: &Service, who: &Credentials) -> Result<String> {
-    let mut child = command(s, who).spawn().with_context(|| format!("start {}", s.path))?;
+    let mut child = command(s, who)?.spawn().with_context(|| format!("start {}", s.path))?;
     let status = child.wait().context("wait for it")?;
     Ok(format!("pid {} ended: {status}", child.id()))
 }
@@ -217,17 +218,34 @@ fn run(s: &Service, who: &Credentials) -> Result<String> {
 /// The program as it is started: with what it is given, from the top of the
 /// tree, reading and writing nothing of the recovery's, finding its
 /// libraries where it names them, and as `who`.
-fn command(s: &Service, who: &Credentials) -> Command {
+fn command(s: &Service, who: &Credentials) -> Result<Command> {
     let mut cmd = Command::new(&s.path);
     cmd.args(&s.args).current_dir("/").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    cmd.envs(&s.environment);
     if !s.libraries.is_empty() {
         cmd.env("LD_LIBRARY_PATH", s.libraries.join(":"));
     }
     let who = who.clone();
+    let mounts = s.mounts.iter().map(|m| Ok((CString::new(m.source.as_str())?, CString::new(m.target.as_str())?)))
+        .collect::<Result<Vec<_>>>()?;
     // Only system calls run between the fork and the exec, on what was
     // worked out before it.
-    unsafe { cmd.pre_exec(move || who.take_on()) };
-    cmd
+    unsafe {
+        cmd.pre_exec(move || {
+            if !mounts.is_empty() && (libc::unshare(libc::CLONE_NEWNS) != 0
+                    || libc::mount(std::ptr::null(), c"/".as_ptr(), std::ptr::null(),
+                        libc::MS_REC | libc::MS_PRIVATE, std::ptr::null()) != 0) {
+                return Err(io::Error::last_os_error());
+            }
+            for (source, target) in &mounts {
+                if libc::mount(source.as_ptr(), target.as_ptr(), std::ptr::null(), libc::MS_BIND, std::ptr::null()) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+            }
+            who.take_on()
+        })
+    };
+    Ok(cmd)
 }
 
 /// Lock in memory every file the running programs have mapped or open on

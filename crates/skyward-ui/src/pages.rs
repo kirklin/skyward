@@ -30,12 +30,12 @@ use std::path::Path;
 
 // The colours the stock Settings fills its icons' tiles with, the same in
 // light and dark mode.
-const BLUE: Rgba = Rgba::rgb(0x34, 0x82, 0xff);
-const GREEN: Rgba = Rgba::rgb(0x1d, 0xcd, 0x3a);
-const PURPLE: Rgba = Rgba::rgb(0x77, 0x67, 0xf9);
-const SLATE: Rgba = Rgba::rgb(0x8c, 0x9d, 0xb0);
-const ORANGE: Rgba = Rgba::rgb(0xff, 0x69, 0x00);
-const RED: Rgba = Rgba::rgb(0xfa, 0x38, 0x2e);
+pub(crate) const BLUE: Rgba = Rgba::rgb(0x34, 0x82, 0xff);
+pub(crate) const GREEN: Rgba = Rgba::rgb(0x1d, 0xcd, 0x3a);
+pub(crate) const PURPLE: Rgba = Rgba::rgb(0x77, 0x67, 0xf9);
+pub(crate) const SLATE: Rgba = Rgba::rgb(0x8c, 0x9d, 0xb0);
+pub(crate) const ORANGE: Rgba = Rgba::rgb(0xff, 0x69, 0x00);
+pub(crate) const RED: Rgba = Rgba::rgb(0xfa, 0x38, 0x2e);
 
 /// What every page draws from: style, typefaces, the device readings, and
 /// what the pages hold, from the choices made on them to where the data
@@ -363,14 +363,35 @@ pub fn settings(cx: &Ctx) -> Frame {
     if let Some(r) = slider.below {
         out.push(Hit { rect: r, action: Action::Open(Screen::ScreenOff) });
     }
-    y = widgets::section(&mut c, t, f, slider.bottom, l.pick(["振动", "震動", "Vibration"]));
-    let below = Row::new(l.pick(["触摸振动", "觸控震動", "Touch vibration"])).trail(Trail::Switch(s.vibrate));
-    let vibration = widgets::slider_card(&mut c, t, f, y, Caption::Vibrate, l.pick(["振动强度", "震動強度", "Vibration intensity"]), s.vibration, Some(below));
-    out.push(Hit { rect: vibration.track, action: Action::Slider(Slider::Vibration) });
-    if let Some(r) = vibration.below {
-        out.push(Hit { rect: r, action: Action::Toggle(Switch::Vibrate) });
+    y = slider.bottom;
+    if s.tablet {
+        y = widgets::section(&mut c, t, f, y, l.pick(["屏幕方向", "螢幕方向", "Screen orientation"]));
+        let rotation = widgets::list(&mut c, t, f, y, &[
+            Row::new(l.pick(["自动旋转", "自動旋轉", "Auto-rotate"])).trail(Trail::Switch(s.auto_rotate)),
+        ]);
+        out.extend(hits(&rotation.rows, &[Action::Toggle(Switch::AutoRotate)]));
+        y = rotation.bottom;
     }
-    y = widgets::section(&mut c, t, f, vibration.bottom, l.pick(["通用", "一般", "General"]));
+    if s.supports_vibration {
+        y = widgets::section(&mut c, t, f, y, l.pick(["振动", "震動", "Vibration"]));
+        let below = Row::new(l.pick(["触摸振动", "觸控震動", "Touch vibration"])).trail(Trail::Switch(s.vibrate));
+        let vibration = widgets::slider_card(
+            &mut c,
+            t,
+            f,
+            y,
+            Caption::Vibrate,
+            l.pick(["振动强度", "震動強度", "Vibration intensity"]),
+            s.vibration,
+            Some(below),
+        );
+        out.push(Hit { rect: vibration.track, action: Action::Slider(Slider::Vibration) });
+        if let Some(r) = vibration.below {
+            out.push(Hit { rect: r, action: Action::Toggle(Switch::Vibrate) });
+        }
+        y = vibration.bottom;
+    }
+    y = widgets::section(&mut c, t, f, y, l.pick(["通用", "一般", "General"]));
     let general = widgets::list(&mut c, t, f, y, &[
         Row::new(l.pick(LANGUAGE)).icon(BLUE, Icon::Globe).trail(Trail::Value(l.name())),
         Row::new(l.pick(TIME_ZONE)).icon(ORANGE, Icon::Clock).trail(Trail::Value(l.pick(TIME_ZONES[s.time_zone].0))),
@@ -541,12 +562,17 @@ const MODEL: Text = ["设备型号", "裝置型號", "Model"];
 const PROCESSOR: Text = ["处理器", "處理器", "Processor"];
 const RAM: Text = ["运行内存", "記憶體", "RAM"];
 const BATTERY_CAPACITY: Text = ["电池容量", "電池容量", "Battery capacity"];
+const TYPICAL_CAPACITY: Text = ["电池容量（典型）", "電池容量（典型）", "Battery capacity (typical)"];
 const SCREEN_SIZE: Text = ["屏幕尺寸", "螢幕尺寸", "Screen size"];
 const RESOLUTION: Text = ["分辨率", "解析度", "Resolution"];
 const OS_VERSION: Text = ["OS 版本", "OS 版本", "OS version"];
 const ANDROID_VERSION: Text = ["Android 版本", "Android 版本", "Android version"];
 const CURRENT_SLOT: Text = ["当前槽位", "目前槽位", "Current slot"];
 const DATA_PART: Text = ["data 分区", "data 分割區", "data partition"];
+
+fn battery_capacity(i: &DeviceInfo) -> Option<u64> {
+    i.battery_capacity_mah.map(|v| u64::from(v) * 1000).or_else(|| i.battery.as_ref().and_then(|b| b.design))
+}
 
 /// The phone's processor by its marketing name in `l`, from the phone's
 /// settings, or else by its cores.
@@ -578,8 +604,8 @@ fn about_cards(cx: &Ctx, c: &mut Canvas) -> (Vec<Hit>, f32, f32) {
 
     let processor = soc(l, i).map_or_else(|| fmt::cpu(l, &i.cpu), str::to_string);
     let mut specs = vec![(l.pick(PROCESSOR), processor), (l.pick(RAM), fmt::ram(i.ram_kib))];
-    if let Some(design) = i.battery.as_ref().and_then(|b| b.design) {
-        specs.push((l.pick(BATTERY_CAPACITY), fmt::mah(design)));
+    if let Some(capacity) = battery_capacity(i) {
+        specs.push((l.pick(if i.battery_capacity_mah.is_some() { TYPICAL_CAPACITY } else { BATTERY_CAPACITY }), fmt::mah(capacity)));
     }
     if let Some(d) = i.screen {
         specs.push((l.pick(SCREEN_SIZE), fmt::inches(d)));
@@ -603,8 +629,12 @@ pub fn specs(cx: &Ctx) -> Frame {
     let top = t.m.dp(188.0);
 
     let mut grid = vec![Spec { icon: Outline::Phone, label: l.pick(MODEL), value: fmt::model_lines(&i.model) }];
-    if let Some(design) = i.battery.as_ref().and_then(|b| b.design) {
-        grid.push(Spec { icon: Outline::Battery, label: l.pick(BATTERY_CAPACITY), value: fmt::mah(design) });
+    if let Some(capacity) = battery_capacity(i) {
+        grid.push(Spec {
+            icon: Outline::Battery,
+            label: l.pick(if i.battery_capacity_mah.is_some() { TYPICAL_CAPACITY } else { BATTERY_CAPACITY }),
+            value: fmt::mah(capacity),
+        });
     }
     let cpu = match soc(l, i) {
         Some(soc) => format!("{soc}\n{}", fmt::cpu(l, &i.cpu)),
@@ -650,6 +680,14 @@ pub fn specs(cx: &Ctx) -> Frame {
 
     if let Some(b) = &i.battery {
         let mut rows = vec![(l.pick(["电量", "電量", "Level"]), fmt::level(l, b))];
+        if i.battery_capacity_mah.is_some() {
+            if let Some(v) = b.design {
+                rows.push((l.pick(["设计容量（驱动）", "設計容量（驅動）", "Design capacity (gauge)"]), fmt::mah(v)));
+            }
+            if let Some(v) = b.full {
+                rows.push((l.pick(["当前满充容量", "目前滿充容量", "Full charge capacity"]), fmt::mah(v)));
+            }
+        }
         if let Some(v) = b.temp {
             rows.push((l.pick(["温度", "溫度", "Temperature"]), fmt::celsius(v)));
         }
@@ -1782,7 +1820,7 @@ pub fn search(cx: &Ctx) -> Frame {
         ]);
         widgets::footnote(&mut c, t, f, top, how);
     } else {
-        let found = search::find_on(&s.search, l, |screen| s.offers(screen));
+        let found = search::find_available(&s.search, l, |screen| s.offers(screen), s.supports_vibration);
         if found.is_empty() {
             let typed = s.search.trim();
             let none = tr!(l, "未找到\"{typed}\"", "找不到「{typed}」", "Nothing found for “{typed}”");
@@ -2202,6 +2240,7 @@ pub fn advanced(cx: &Ctx) -> Frame {
     let top = t.m.content_top;
     let tools = widgets::list(&mut c, t, f, top, &[
         Row::new(l.pick(FILES)).icon(BLUE, Icon::Folder),
+        Row::new(l.pick(FEDORA)).icon(BLUE, Icon::Terminal),
         Row::new(l.pick(TERMINAL)).icon(SLATE, Icon::Terminal),
         Row::new(l.pick(RELABEL)).icon(PURPLE, Icon::Shield),
         Row::new(l.pick(FILESYSTEMS)).icon(RED, Icon::Mount),
@@ -2211,6 +2250,7 @@ pub fn advanced(cx: &Ctx) -> Frame {
     let out = hits(&tools.rows, &[
         Action::Open(Screen::Files),
         Action::Open(Screen::Terminal),
+        Action::Open(Screen::Terminal),
         Action::Open(Screen::Relabel),
         Action::Open(Screen::Filesystems),
         Action::Open(Screen::Logs),
@@ -2219,6 +2259,7 @@ pub fn advanced(cx: &Ctx) -> Frame {
     Frame::new(t, c, out, l.pick(ADVANCED), top)
 }
 
+const FEDORA: Text = ["启动外接 Fedora", "啟動外接 Fedora", "Boot Fedora Linux"];
 const RELABEL: Text = ["修复 SELinux 上下文", "修復 SELinux 上下文", "Fix SELinux contexts"];
 const FILESYSTEMS: Text = ["文件系统", "檔案系統", "Filesystems"];
 const STOPPED: Text = ["已停止", "已停止", "Stopped"];

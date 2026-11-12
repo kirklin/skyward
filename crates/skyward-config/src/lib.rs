@@ -44,12 +44,18 @@ pub mod ramdisk {
 #[derive(Debug, Clone, Deserialize)]
 pub struct DeviceConfig {
     pub device: Device,
+    /// Early init settings needed before the recovery's services start.
+    #[serde(default)]
+    pub init: Init,
     #[serde(default)]
     pub display: Display,
     #[serde(default)]
     pub modules: Modules,
     #[serde(default)]
     pub touch: Touch,
+    /// The orientation sensor and its axes relative to the native panel.
+    #[serde(default)]
+    pub orientation: Option<Orientation>,
     #[serde(default)]
     pub partitions: Partitions,
     /// Where the firmware the phone's drivers ask for is, on phones whose
@@ -138,6 +144,45 @@ pub struct Write {
     pub value: String,
 }
 
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Init {
+    #[serde(default)]
+    pub writes: Vec<Write>,
+    #[serde(default)]
+    pub properties: HashMap<String, String>,
+}
+
+/// Qualcomm SSC acceleration, mapped to native screen axes (right, up).
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Orientation {
+    pub backend: OrientationBackend,
+    /// The SSC protection domain's metadata on the firmware partition.
+    #[serde(default)]
+    pub firmware: Option<String>,
+    /// Calibration copied to RAM before SSC can update its registry.
+    #[serde(default)]
+    pub calibration: Option<Calibration>,
+    #[serde(default)]
+    pub swap_xy: bool,
+    #[serde(default)]
+    pub flip_x: bool,
+    #[serde(default)]
+    pub flip_y: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Calibration {
+    pub partition: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OrientationBackend {
+    #[default]
+    Ssc,
+}
+
 /// The partition holding the firmware images of a phone's processors and
 /// radios, which their drivers ask the kernel's firmware loader for, and of
 /// the apps its secure world runs. It is mounted where and as the phone's
@@ -147,11 +192,18 @@ pub struct Write {
 pub struct FirmwarePartition {
     /// The partition's name, without the slot it is of.
     pub partition: String,
+    /// Kernel remoteproc name or domain, on devices whose stock recovery uses
+    /// the older boot_adsp loader.
+    #[serde(default)]
+    pub remoteproc: Option<String>,
 }
 
 /// A file a driver asks the firmware loader for, and where it is.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Firmware {
+    /// Some units keep the address in secure storage instead of this file.
+    #[serde(default)]
+    pub optional: bool,
     /// The name the driver asks for, from the top of the loader's folders.
     pub name: String,
     /// Where the file is: a path in the running recovery, or from the top
@@ -258,6 +310,11 @@ pub struct Names {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Device {
+    /// Tablet navigation uses a persistent master column on wide displays.
+    #[serde(default)]
+    pub tablet: bool,
+    #[serde(default)]
+    pub supports_vibration: Option<bool>,
     pub codename: String,
     #[serde(default)]
     pub brand: String,
@@ -268,6 +325,9 @@ pub struct Device {
     /// SoC marketing name shown on the About page.
     #[serde(default)]
     pub soc: Option<Names>,
+    /// Marketed typical battery capacity; kernel design/full readings stay unchanged.
+    #[serde(default)]
+    pub battery_capacity_mah: Option<u32>,
     /// System property that carries the vendor OS version.
     #[serde(default = "default_os_version_prop")]
     pub os_version_prop: String,
@@ -288,6 +348,13 @@ pub struct Display {
     /// sliding over another rounds its leading corners to it.
     #[serde(default)]
     pub corner_radius: u32,
+    /// Explicit normal brightness limit for panels without Xiaomi's
+    /// phone-specific normal-maximum properties in their device tree.
+    #[serde(default)]
+    pub normal_brightness: Option<u32>,
+    /// Lowest lit raw backlight level, independent of the screen-off value 0.
+    #[serde(default)]
+    pub minimum_brightness: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -317,6 +384,26 @@ pub struct Touch {
     /// step of starting the controller.
     #[serde(default)]
     pub writes: Vec<Write>,
+    /// Swap normalized axes before flipping them into display coordinates.
+    #[serde(default)]
+    pub swap_xy: bool,
+    #[serde(default)]
+    pub flip_x: bool,
+    #[serde(default)]
+    pub flip_y: bool,
+    /// Input device names to leave out, such as a tablet's separate pen.
+    #[serde(default)]
+    pub ignored_devices: Vec<String>,
+}
+
+impl Touch {
+    /// Convert normalized controller coordinates to normalized screen
+    /// coordinates. Normalize before swapping: landscape panels may have
+    /// different ranges on the two controller axes.
+    pub fn map(&self, x: f32, y: f32) -> (f32, f32) {
+        let (x, y) = if self.swap_xy { (y, x) } else { (x, y) };
+        (if self.flip_x { 1.0 - x } else { x }, if self.flip_y { 1.0 - y } else { y })
+    }
 }
 
 /// Partitions as the phone itself mounts them.
@@ -335,6 +422,11 @@ pub struct Partitions {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Service {
     pub path: String,
+    /// Bind mounts visible only to this service, made before dropping root.
+    #[serde(default)]
+    pub mounts: Vec<ServiceMount>,
+    #[serde(default)]
+    pub environment: HashMap<String, String>,
     /// What the program is given after its own path, as init gives a
     /// service the words after its path.
     #[serde(default)]
@@ -390,6 +482,12 @@ pub struct Service {
     /// names it: it keeps these alone, through its change of user.
     #[serde(default)]
     pub capabilities: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ServiceMount {
+    pub source: String,
+    pub target: String,
 }
 
 /// The kernel's capabilities, by the names init's capabilities lines give
@@ -517,6 +615,28 @@ impl DeviceConfig {
         if let Some(firmware) = &cfg.firmware {
             let name = &firmware.partition;
             ensure!(!name.is_empty() && !name.contains('/'), "[firmware] partition: {name} is not a partition's name");
+            if let Some(name) = &firmware.remoteproc {
+                ensure!(!name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c)),
+                    "[firmware] remoteproc must be a kernel processor name");
+            }
+        }
+        for write in &cfg.init.writes {
+            ensure!(Path::new(&write.path).is_absolute() && !write.path.contains(char::is_whitespace)
+                && !write.value.contains(['\n', '\r', '\0']), "[init] writes must be single init commands");
+        }
+        for (name, value) in &cfg.init.properties {
+            ensure!(!name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
+                && !value.contains(['\n', '\r', '\0']), "[init] properties must be single init commands");
+        }
+        if let Some(orientation) = &cfg.orientation {
+            let relative = |s: &str| !s.is_empty() && Path::new(s).components().all(|c| matches!(c, std::path::Component::Normal(_)));
+            if let Some(file) = &orientation.firmware {
+                ensure!(relative(file), "[orientation] firmware must be inside the firmware image folder");
+            }
+            if let Some(calibration) = &orientation.calibration {
+                ensure!(relative(&calibration.path) && !calibration.partition.is_empty() && !calibration.partition.contains('/'),
+                    "[orientation] calibration must name a partition and a path inside it");
+            }
         }
         for name in &cfg.partitions.mounted {
             ensure!(!name.is_empty() && !name.contains('/'), "[partitions] mounted: {name} is not a partition's name");
@@ -530,6 +650,11 @@ impl DeviceConfig {
             );
         }
         for s in &cfg.services {
+            for mount in &s.mounts {
+                for path in [&mount.source, &mount.target] {
+                    ensure!(Path::new(path).is_absolute() && !path.contains('\0'), "[[service]] mounts must use absolute paths without NULs");
+                }
+            }
             ensure!(s.user.is_none() || !s.groups.is_empty(), "[[service]] {}: a program given a user is given its group too", s.path);
             for name in s.user.iter().chain(&s.groups) {
                 ensure!(!name.is_empty() && !name.contains(char::is_whitespace), "[[service]] {}: {name:?} is not an account's name", s.path);
@@ -573,8 +698,9 @@ impl DeviceConfig {
         }
         if let Some(stock) = &cfg.stock {
             let name = stock.package.rsplit('/').next().unwrap_or_default();
+            ensure!(!stock.version.is_empty(), "[stock] version must not be empty");
             ensure!(
-                stock.package.starts_with("https://") && name.ends_with(".zip") && name.contains(&stock.version) && !stock.version.is_empty(),
+                stock.package.starts_with("https://") && name.ends_with(".zip") && name.contains(&stock.version),
                 "[stock] package: {} is not an HTTPS address of the full package of {}",
                 stock.package,
                 stock.version
@@ -585,6 +711,14 @@ impl DeviceConfig {
                 stock.recovery
             );
         }
+        ensure!(cfg.display.normal_brightness != Some(0), "[display] normal_brightness must be positive");
+        if let Some(minimum) = cfg.display.minimum_brightness {
+            ensure!(minimum > 0 && cfg.display.normal_brightness.is_some_and(|top| minimum <= top),
+                "[display] minimum_brightness must be positive and at most normal_brightness, which must be set");
+        }
+        ensure!(cfg.device.supports_vibration != Some(true) || cfg.haptics.is_some(),
+            "[device] supports_vibration = true requires [haptics]");
+        ensure!(cfg.device.battery_capacity_mah != Some(0), "[device] battery_capacity_mah must be positive");
         if let Some(wlan) = &cfg.wlan {
             ensure!(wlan.probe.starts_with("http://"), "[wlan] probe: {} is not a plain HTTP address", wlan.probe);
             for file in &wlan.firmware {
@@ -631,6 +765,63 @@ mod tests {
         assert!(cfg.modules.load.is_empty());
         assert_eq!((cfg.firmware, cfg.wlan, cfg.update), (None, None, None), "a phone may have none of them");
         assert_eq!(cfg.logd, None, "a recovery's own logd usually has all it needs");
+    }
+
+    #[test]
+    fn orientation_is_optional_and_service_mounts_are_absolute() {
+        let base = "[device]\ncodename = 'x'\n";
+        assert!(DeviceConfig::parse(base).unwrap().orientation.is_none());
+        let configured = DeviceConfig::parse(&format!("{base}[orientation]\nbackend = 'ssc'\nswap_xy = true\nflip_x = true\n")).unwrap();
+        let orientation = configured.orientation.unwrap();
+        assert!(orientation.swap_xy && orientation.flip_x && !orientation.flip_y);
+        assert!(DeviceConfig::parse(&format!("{base}[orientation]\nbackend = 'unknown'\n")).is_err());
+        let service = format!("{base}[[service]]\npath='/vendor/bin/sscrpcd'\nmounts=[{{ source='/skyward/run/calibration', target='/mnt/vendor/persist' }}]\n");
+        assert!(DeviceConfig::parse(&service).is_ok());
+        assert!(DeviceConfig::parse(&service.replace("/skyward/run/calibration", "calibration")).is_err());
+        assert!(DeviceConfig::parse(&service.replace("/mnt/vendor/persist", "persist")).is_err());
+        assert!(DeviceConfig::parse(&format!("{base}[orientation]\nbackend='ssc'\ncalibration={{partition='persist',path='../outside'}}\n")).is_err());
+    }
+
+    #[test]
+    fn touch_mapping_preserves_defaults_and_rotates_normalized_tablet_axes() {
+        assert_eq!(Touch::default().map(0.25, 0.75), (0.25, 0.75));
+        let touch = Touch { swap_xy: true, flip_y: true, ..Touch::default() };
+        // Portrait controller -> landscape display: all four corners,
+        // followed by an interior point to catch axis/range mixups.
+        for (raw, screen) in [
+            ((0.0, 0.0), (0.0, 1.0)),
+            ((1.0, 0.0), (0.0, 0.0)),
+            ((0.0, 1.0), (1.0, 1.0)),
+            ((1.0, 1.0), (1.0, 0.0)),
+            ((0.25, 0.75), (0.75, 0.75)),
+        ] {
+            assert_eq!(touch.map(raw.0, raw.1), screen);
+        }
+        let flip_x = Touch { flip_x: true, ..Touch::default() };
+        assert_eq!(flip_x.map(0.25, 0.75), (0.75, 0.75));
+    }
+
+    #[test]
+    fn init_commands_cannot_inject_additional_actions() {
+        let base = "[device]\ncodename='x'\n[init]\n";
+        assert!(DeviceConfig::parse(&format!("{base}properties={{'vendor.test'='true'}}\n")).is_ok());
+        assert!(DeviceConfig::parse(&format!("{base}properties={{'vendor.test'=\"true\\non boot\"}}\n")).is_err());
+        assert!(DeviceConfig::parse("[device]\ncodename = \"x\"\n[display]\nnormal_brightness = 0\n").is_err());
+    }
+
+    #[test]
+    fn sheng_uses_the_tablets_controller_in_native_landscape() {
+        let cfg = DeviceConfig::parse(include_str!("../../../devices/sheng.toml")).unwrap();
+        assert_eq!(cfg.device.codename, "sheng");
+        assert_eq!(cfg.device.battery_capacity_mah, Some(10000));
+        assert_eq!((cfg.display.width, cfg.display.height), (3048, 2032));
+        assert_eq!(cfg.touch.map(0.25, 0.75), (0.75, 0.75));
+        assert!(cfg.touch.ignored_devices.iter().any(|name| name == "NVTCapacitivePen"));
+        assert_eq!(cfg.modules.load, ["nt36532_touch"]);
+        assert_eq!(cfg.services[0].path, "/odm/bin/touch_report_debug");
+        assert!(cfg.haptics.is_none());
+        assert_eq!(cfg.backup.efs, ["persist"]);
+        assert!(cfg.stock.unwrap().package.starts_with("https://"));
     }
 
     #[test]
@@ -704,7 +895,7 @@ mod tests {
             [Write { path: "/sys/class/touch/touch_dev/enable_touch_raw".into(), value: "0".into() }],
             "its controller reports positions itself"
         );
-        assert_eq!(cfg.firmware, Some(FirmwarePartition { partition: "modem".into() }));
+        assert_eq!(cfg.firmware, Some(FirmwarePartition { partition: "modem".into(), remoteproc: None }));
         assert_eq!(cfg.partitions.mounted, ["persist"], "the secure world keeps its own files there");
         let paths: Vec<&str> = cfg.services.iter().map(|s| s.path.as_str()).collect();
         assert_eq!(

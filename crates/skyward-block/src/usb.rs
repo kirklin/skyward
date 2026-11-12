@@ -130,10 +130,16 @@ pub fn mount(drive: &Drive, at: &Path) -> Result<(String, &'static str)> {
     for name in drive.candidates() {
         let device = Path::new(DEV_BLOCK).join(name);
         for (filesystem, own) in FILESYSTEMS {
-            let options: Vec<String> = ["ro", "nosuid", "nodev", "noexec", own].map(str::to_string).into();
+            let options: Vec<String> = ["rw", "nosuid", "nodev", "exec", own].map(str::to_string).into();
             match mount::mount(&device, at, filesystem, &options) {
                 Ok(()) => return Ok((name.to_string(), filesystem)),
-                Err(e) => tried.push(format!("{name} as {filesystem}: {}", e.root_cause())),
+                Err(_) => {
+                    let fallback: Vec<String> = ["ro", "nosuid", "nodev", own].map(str::to_string).into();
+                    match mount::mount(&device, at, filesystem, &fallback) {
+                        Ok(()) => return Ok((name.to_string(), filesystem)),
+                        Err(e) => tried.push(format!("{name} as {filesystem}: {}", e.root_cause())),
+                    }
+                }
             }
         }
     }

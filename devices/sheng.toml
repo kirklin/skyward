@@ -1,0 +1,138 @@
+[device]
+codename = "sheng"
+tablet = true
+supports_vibration = false
+brand = "Xiaomi"
+model = "Xiaomi Pad 6S Pro 12.4"
+ab = true
+soc = { hans = "第二代骁龙®8移动平台", hant = "Snapdragon® 8 Gen 2 行動平台", en = "Snapdragon® 8 Gen 2 Mobile Platform" }
+os_version_prop = "ro.mi.os.version.incremental"
+battery_capacity_mah = 10000
+
+[init]
+writes = [{ path = "/sys/fs/selinux/enforce", value = "0" }]
+properties = { "vendor.gatekeeper.disable_spu" = "true" }
+
+[display]
+# Native landscape panel mode.
+width = 3048
+height = 2032
+# ro.sf.lcd_density in stock odm/etc/build.prop.
+density = 400
+diagonal = 12.4
+normal_brightness = 4095
+minimum_brightness = 1
+
+[touch]
+# Load the controller's RAM firmware after DRM has enabled the panel,
+# instead of waiting for the driver's delayed boot update (~14 seconds).
+writes = [{ path = "/proc/xm_htc_sw_reset", value = "1" }]
+# Map the portrait touch controller to the native landscape panel.
+swap_xy = true
+flip_y = true
+ignored_devices = ["NVTCapacitivePen", "NVTCapacitivePenM80p", "NVTCapacitivePenP81c"]
+
+[orientation]
+backend = "ssc"
+firmware = "adsps.jsn"
+calibration = { partition = "persist", path = "sensors" }
+swap_xy = true
+flip_x = true
+
+[firmware]
+partition = "modem"
+remoteproc = "adsp"
+
+[modules]
+sources = ["vendor_boot", "vendor_dlkm", "vendor"]
+load = ["nt36532_touch"]
+
+# The stock host-processing binary for the Novatek touch controller.
+[[service]]
+path = "/odm/bin/touch_report_debug"
+libraries = ["/odm/lib64", "/vendor/lib64", "/system/lib64"]
+user = "root"
+groups = ["root", "input", "system"]
+capabilities = ["SYS_NICE"]
+
+[[service]]
+path = "/vendor/bin/pd-mapper"
+mounts = [
+    { source = "/skyward/run/sensor-firmware", target = "/vendor/firmware_mnt" },
+    { source = "/skyward/run/sensor-firmware/image", target = "/vendor/firmware" },
+]
+libraries = ["/system/lib64", "/vendor/lib64"]
+
+[[service]]
+path = "/vendor/bin/sscrpcd"
+args = ["sensorspd"]
+mounts = [{ source = "/skyward/run/sensor-persist", target = "/mnt/vendor/persist" }]
+environment = { ADSP_LIBRARY_PATH = "/vendor/lib/rfsa/adsp;/vendor/dsp;/vendor/firmware_mnt/image" }
+libraries = ["/system/lib64", "/vendor/lib64"]
+
+[[service]]
+path = "/vendor/bin/qseecomd"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_property = "vendor.sys.listeners.registered"
+user = "root"
+groups = ["root", "system", "drmrpc", "readproc", "log"]
+
+[[service]]
+path = "/vendor/bin/hw/android.hardware.security.keymint-service-qti"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_service = "android.hardware.security.keymint.IKeyMintDevice/default"
+registers = [
+    "android.hardware.security.sharedsecret.ISharedSecret/default",
+    "android.hardware.security.secureclock.ISecureClock/default",
+    "android.hardware.security.keymint.IRemotelyProvisionedComponent/default",
+]
+user = "root"
+groups = ["root", "system", "drmrpc"]
+
+[[service]]
+path = "/mnt/system_ext/bin/hwservicemanager"
+libraries = ["/mnt/system/system/lib64/bootstrap", "/mnt/system/system/lib64", "/mnt/system_ext/lib64"]
+ready_property = "hwservicemanager.ready"
+user = "system"
+groups = ["system", "readproc"]
+
+[[service]]
+path = "/vendor/bin/hw/android.hardware.gatekeeper@1.0-service-qti"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_hardware_service = "android.hardware.gatekeeper@1.0::IGatekeeper/default"
+user = "root"
+groups = ["root", "system", "drmrpc"]
+
+[[service]]
+path = "/vendor/bin/hw/android.hardware.boot@1.2-service"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_hardware_service = "android.hardware.boot@1.2::IBootControl/default"
+user = "root"
+groups = ["root"]
+
+[wlan]
+# The installed driver identifies the chip as KIWI major version 2.
+modules = ["qca_cld3_kiwi_v2"]
+writes = [{ path = "/sys/kernel/cnss/fs_ready", value = "1" }]
+firmware = [
+    { name = "wlan/qca_cld/kiwi_v2/WCNSS_qcom_cfg.ini", path = "/vendor/etc/wifi/kiwi_v2/WCNSS_qcom_cfg.ini" },
+    { name = "wlan/qca_cld/kiwi_v2/wlan_mac.bin", partition = "persist", path = "kiwi_v2/wlan_mac.bin", optional = true },
+]
+interface = "wlan0"
+supplicant = "/vendor/bin/hw/wpa_supplicant"
+libraries = ["/vendor/lib64", "/system/lib64"]
+service = "android.hardware.wifi.supplicant.ISupplicant/default"
+probe = "http://connect.rom.miui.com/generate_204"
+
+[stock]
+version = "OS3.0.303.0.WNXCNXM"
+package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS3.0.303.0.WNXCNXM/sheng-ota_full-OS3.0.303.0.WNXCNXM-user-16.0-a1bf0154a8.zip"
+recovery = "4b66cca647e21929870dfcc38c5915e35c004016bbe815bb91a87239230d649f"
+
+# This Wi-Fi-only tablet has no cellular modem/EFS backup set.
+[backup]
+efs = ["persist"]
+data_skipped = ["vendor/tzstorage", "vendor/qtee", "vendor/fingerprint", "vendor/fpc", "vendor/goodix"]
+
+[wipe]
+logs = ["/data/miuilog", "/data/vendor/diag", "/data/vendor/log", "/data/vendor/ramdump", "/data/vendor/tombstones", "/data/vendor/wlan_logs"]

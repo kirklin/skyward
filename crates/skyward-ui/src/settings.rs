@@ -39,6 +39,10 @@ pub struct Settings {
     pub dark: bool,
     /// The brightness slider's place, from 0 at its left end to 1.
     pub brightness: f32,
+    /// Follow the orientation sensor on tablets. Missing in older settings: on.
+    pub auto_rotate: bool,
+    /// The direction to retain while automatic rotation is off.
+    pub rotation: crate::rotation::Rotation,
     /// How long the screen stays on with nothing touched, in seconds; 0
     /// keeps it on.
     pub screen_off: u64,
@@ -121,6 +125,8 @@ impl Settings {
             spoken: Some(state.lang.tag().to_string()),
             dark: state.dark,
             brightness: state.brightness,
+            auto_rotate: state.auto_rotate,
+            rotation: state.rotation,
             screen_off: SCREEN_OFF[state.screen_off].map_or(0, |ms| ms / 1000),
             time_zone: TIME_ZONES[state.time_zone].2.to_string(),
             vibrate: state.vibrate,
@@ -170,6 +176,8 @@ impl Settings {
             state.language_chosen = true;
         }
         state.dark = self.dark;
+        state.auto_rotate = self.auto_rotate;
+        state.rotation = self.rotation;
         if (0.0..=1.0).contains(&self.brightness) {
             state.brightness = self.brightness;
         }
@@ -303,6 +311,8 @@ mod tests {
             language_chosen: true,
             dark: true,
             brightness: 0.7,
+            auto_rotate: false,
+            rotation: crate::rotation::Rotation::Left,
             screen_off: 6,
             time_zone: 7,
             vibrate: false,
@@ -348,6 +358,7 @@ mod tests {
         assert!(state.dark && state.compress);
         assert_eq!(Settings::of(&state), Settings { dark: true, backup: Backup { compress: true, ..Backup::default() }, ..Settings::default() });
         assert!(!state.language_chosen);
+        assert!(state.auto_rotate, "older settings enable automatic rotation by default");
         assert!(Settings::read("dark = true").is_err(), "not JSON");
     }
 

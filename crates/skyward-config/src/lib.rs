@@ -633,7 +633,7 @@ impl DeviceConfig {
             let mut targets = std::collections::HashSet::new();
             for library in &s.library_overrides {
                 ensure!(plain_library(&library.source) && plain_library(&library.target), "{}: override must name absolute .so files", s.path);
-                ensure!(Path::new(&library.source).starts_with("/skyward/lib64"), "{}: override source must be in recovery RAM /skyward/lib64", s.path);
+                ensure!(Path::new(&library.source).parent() == Some(Path::new("/skyward/lib64")), "{}: override source must be directly in recovery RAM /skyward/lib64", s.path);
                 ensure!(Path::new(&library.target).starts_with("/vendor/lib64") || Path::new(&library.target).starts_with("/odm/lib64"), "{}: override target must be a vendor/odm library", s.path);
                 ensure!(Path::new(&library.source).file_name() == Path::new(&library.target).file_name(), "{}: override must preserve the library basename", s.path);
                 ensure!(targets.insert(&library.target), "{}: override target is repeated", s.path);
@@ -891,6 +891,7 @@ mod tests {
         for (source, target) in [
             ("/data/test.so", "/odm/lib64/test.so"),
             ("/skyward/lib64/../test.so", "/odm/lib64/test.so"),
+            ("/skyward/lib64/sub/test.so", "/odm/lib64/test.so"),
             ("/skyward/lib64/test.so", "/data/test.so"),
             ("/skyward/lib64/test.so", "/odm/lib64/other.so"),
         ] {

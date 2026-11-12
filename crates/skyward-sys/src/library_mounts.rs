@@ -130,7 +130,9 @@ impl LibraryMounts {
                     || stat.st_dev != mount.source_identity.device
                     || stat.st_ino != mount.source_identity.inode => Err(io::Error::from_raw_os_error(libc::ESTALE)),
                 Ok(()) => {
-                    if unsafe { libc::dup3(fd, mount.mount_source.as_raw_fd(), libc::O_CLOEXEC) } < 0 {
+                    // Rust libc exposes the syscall number on Android, but
+                    // not a dup3 wrapper. Keep the same atomic CLOEXEC operation.
+                    if unsafe { libc::syscall(libc::SYS_dup3, fd, mount.mount_source.as_raw_fd(), libc::O_CLOEXEC) } < 0 {
                         Err(io::Error::last_os_error())
                     } else {
                         Ok(())

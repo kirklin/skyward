@@ -1102,5 +1102,58 @@
     "diagnostic_max_log_bytes": 786432,
     "device_boot_tested": true,
     "pin_authorized": false
+  },
+  "mtp_delete_trace_candidate": {
+    "source_commit": "af568ba7000601f2beb1324f0355b658a8dcd219",
+    "ci_run": 43245275620,
+    "ci_conclusion": "success",
+    "image_file": "skyward-af568ba-myron-OS4.0.6.0.XPMCNXM-diagnostic.img",
+    "image_bytes": 104857600,
+    "image_sha256": "64ded45807a106677323f647b7b8ac3371b0d027fcf0c1c685a6f27e20ddc7e9",
+    "zip_sha256": "77e224c693cdee6d765bb7482104c355f70ff37341542aa1c9963b60bfbd40c1",
+    "header_version": 4,
+    "kernel_bytes": 0,
+    "payloads": {
+      "init.skyward-myron-diagnostics.rc": {
+        "bytes": 229,
+        "sha256": "5504cc2a70fc894207ca7514873af34c1ad265b26630344c919ba4ed0c197a3a"
+      },
+      "skyward/device.toml": {
+        "bytes": 10789,
+        "sha256": "aff151c4234fdfa864ef21d875f6b98c2401d3e09c1d46ce08556b89c6f5d3f6"
+      },
+      "skyward/lib64/ese_weaver.so": {
+        "bytes": 113512,
+        "sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e"
+      },
+      "skyward/myron-diagnostics.sh": {
+        "bytes": 4297,
+        "sha256": "50533210ae05cb1f2a68488aabcd48f7f0bb63420aadeaa0adf055685bf05a09"
+      },
+      "system/bin/recovery": {
+        "bytes": 8647384,
+        "sha256": "1af0b74c0dea0391f01bd3722dbf32f428dd53608590bdb66604c13dc9e34b47"
+      }
+    },
+    "program_matches_same_run_tools": true,
+    "config_and_scripts_match_source": true,
+    "native_library_matches_same_run_artifact_and_reproducible_builds": true,
+    "native_library_sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e",
+    "callback_vintf_mark_strong_import_verified": true,
+    "callback_create_binder_actual_call_verified": true,
+    "diagnostic_max_log_bytes": 786432,
+    "device_boot_tested": false,
+    "pin_authorized": false
+  },
+  "mtp_delete_trace_preparation": {
+    "ci_run": 43245275620,
+    "ci_conclusion": "success",
+    "responder_regression_tests_added": 2,
+    "normal_image_trace_default": "disabled",
+    "diagnostic_scope": "DeleteObject operation/transaction ID/response code/send-stage only; no handles, paths or datasets",
+    "host_sdk_v2_offline_cases_passed": 66,
+    "device_tested": false,
+    "new_phone_authorization_recorded": false,
+    "limits": "Diagnostic instrumentation only; no change to deletion semantics and no claimed fix or hardware acceptance."
   }
 }

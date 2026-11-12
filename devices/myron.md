@@ -1,6 +1,7 @@
 # myron: stock evidence and recovery bring-up
 
-This is an unbooted recovery candidate, not a tested release. No myron PR
+This is an experimental recovery candidate, not a tested release. Two
+temporary-boot attempts have no confirmed Skyward execution. No myron PR
 has been submitted. Build success does not establish display, touch,
 Wi-Fi, PIN decryption or writable-data support.
 
@@ -29,8 +30,16 @@ They are not standalone `fastboot boot` images. Updated CI extracted the
 official partition and checked its complete hash before building the candidate.
 A separate 90,202,112-byte temporary v4 container was then made locally
 using the phone's current boot_b kernel and the unchanged CI ramdisk. It
-has not been booted. Its hashes and source identity are saved with the
-private test materials; producing the file is not authorization to boot it.
+was sent with fastboot boot under explicit temporary-test authorization.
+The v4 attempt reached HyperOS with the supplied command-line marker but
+without the custom ramdisk files. A header-only v3 variant was also
+accepted, but exposed no usable ADB/fastboot path. Windows saw an Android
+WinUSB function with problem code 10; the owner reported the combined
+black-screen-or-fastboot choice. No printk or program-hash evidence proved
+Skyward executed in that attempt. A power-key restart returned to HyperOS.
+The phone remains on b with DSU off; complete boot_b and both original
+recovery hashes were unchanged. No partition-flash, slot-switch, format or
+PIN-attempt commands were issued. See `myron-validation.json`.
 
 Public source metadata is recorded in `myron-stock.json`. This is not a
 claim that the whole 10 GB OTA ZIP was downloaded or its full-file MD5
@@ -90,7 +99,8 @@ packer's automatic metadata-key deletion. It is not a device-wide write
 blocker: explicit wipe/repair, vendor HAL state and the inherited persist
 mount are separate concerns. No keys, credentials or application data were
 read, and no phone mount, daemon start, sysfs write, reboot or flash was
-performed during collection. The already-root shell was used as found.
+performed during the initial collection. A later, separately authorized
+temporary-boot round is recorded above. The already-root shell was used as found.
 
 Before temporary boot testing, prepare a matching kernel-bearing test
 container and verify a return path to normal HyperOS. Start with display,

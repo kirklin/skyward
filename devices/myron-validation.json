@@ -1,0 +1,54 @@
+{
+  "device": "myron",
+  "status": "experimental; custom recovery execution and functions not yet verified",
+  "date": "2026-11-12",
+  "stock_version": "OS4.0.6.0.XPMCNXM",
+  "framework_api": 37,
+  "vendor_api": 36,
+  "hardware_slot": "b",
+  "bootloader_unlocked_confirmed_by_fastboot": true,
+  "candidate": {
+    "source_commit": "79dec9edc91ce3f47b0fabe615a1d89b36ab996e",
+    "ci_run": 43151155964,
+    "ci_conclusion": "success",
+    "image_sha256": "958f955ea248d696cdb4fd4333ec819108e7f358aa9f4567a618c9e9aba7db83",
+    "program_sha256": "d349e2e478d965b2aa243ba30d6444fc13c5a3f20e827362c586a4fd33129f1e",
+    "config_sha256": "88f37d1434f162c6028044777a1c37c19ec860cda35ec87d99a5c3724397c130"
+  },
+  "tests": {
+    "temporary_v4": {
+      "sha256": "ccf04b6afb14b69ca8ad78642d8bd3aba73bdb47bd9de36c5aa11f77e3bdade9",
+      "fastboot_send_and_boot_accepted": true,
+      "observed": "HyperOS boot_completed=1, system_server present, custom /skyward files absent; supplied command-line marker present",
+      "skyward_execution_evidence": false
+    },
+    "temporary_v3": {
+      "sha256": "6fdc65c3b7ac75ea734498f7a47c796b51e8d5f6c53212c80f12c644aaa3bf3b",
+      "fastboot_send_and_boot_accepted": true,
+      "observed": "No ADB/fastboot control; owner reported black-screen-or-fastboot choice; Windows saw VID18D1/PID4E11 WinUSB problem code10",
+      "skyward_execution_evidence": false,
+      "manual_power_restart_required": true
+    },
+    "restore": {
+      "hyperos_boot_completed": true,
+      "slot": "b",
+      "dsu_running": false,
+      "boot_b_full_sha256_unchanged": true,
+      "recovery_a_full_sha256_unchanged": true,
+      "recovery_b_full_sha256_unchanged": true
+    }
+  },
+  "scope": {
+    "partition_flash_or_format_commands": false,
+    "slot_switch_commands": false,
+    "pin_or_weaver_slot_attempts": false,
+    "app_data_inspected": false,
+    "display_touch_wifi_decryption_pass_claimed": false
+  },
+  "remaining": [
+    "Obtain a controllable recovery boot and execution logs",
+    "Resolve recovery USB/temporary-ramdisk path",
+    "Build and verify a source-based native NXP Weaver transport without the Java OMAPI dependency",
+    "Perform separately authorized PIN/CE and writable-data validation before PR"
+  ]
+}

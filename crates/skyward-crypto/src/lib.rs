@@ -1,3 +1,4 @@
+pub mod credential;
 pub mod fscrypt;
 pub mod gatekeeper;
 pub mod keystore;

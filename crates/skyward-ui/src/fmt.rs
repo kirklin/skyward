@@ -838,6 +838,13 @@ pub fn clock(unix: i64, zone: usize) -> String {
     format!("{:02}:{:02}", t.hour(), t.minute())
 }
 
+/// The time of day in the zone at `zone` in [`TIME_ZONES`], `HH:MM:SS`, as
+/// the status bar shows it.
+pub fn clock_seconds(unix: i64, zone: usize) -> String {
+    let t = local(unix, zone);
+    format!("{:02}:{:02}:{:02}", t.hour(), t.minute(), t.second())
+}
+
 /// A Unix time in the zone at `zone` in [`TIME_ZONES`], to the second, as
 /// the name of what is saved then, which sorts by it: `20261021-133000`.
 pub fn stamp(unix: i64, zone: usize) -> String {

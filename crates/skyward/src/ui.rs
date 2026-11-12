@@ -28,6 +28,7 @@ use skyward_sys::Power;
 use skyward_files::Ownership;
 use skyward_block::usb::{self, Drive};
 use skyward_net::download::{self, Failure};
+use crate::credential;
 use skyward_net::http::Servers;
 use skyward_net::release::{Installed, Release, Unanswered};
 use skyward_net::wlan::{Power as WlanPower, Stage as Joining, Wlan};
@@ -36,9 +37,9 @@ use skyward_sys::uevent;
 use skyward_systems::Who;
 use skyward_ui::app::{
     App, Asked, BackupAt, BackupEnd, BackupEntry, BackupRefusal, ClashChoice, Data, DownloadEnd, Effect, EraseStop, FileKind, FileOp,
-    FileRow, FileTask, FsAction, FsRow, Have, Held, ItemEnd, ItemState, JobEnd, Keys, MountFailure, Part, PartKind, PartStop, Place,
-    RenameRefused, Screen, Shot, SkywardEnd, SkywardStage, Target, UsbDrive, UsbLink, Wipe, DATA_OPENING, DATA_PARTITION, DOWNLOADS,
-    INSTALL_UNFINISHED, USB_DRIVE,
+    FileRow, FileTask, FsAction, FsRow, Have, Held, ImageSet, ItemEnd, ItemState, JobEnd, Keys, MountFailure, Part, PartKind, PartStop, Place,
+    RenameRefused, Screen, Shot, Starter, SkywardEnd, SkywardStage, Target, Touch, UsbDrive, UsbLink, Wipe, DATA_OPENING,
+    DATA_PARTITION, DOWNLOADS, INSTALL_UNFINISHED, USB_DRIVE,
 };
 use skyward_ui::settings::Keeper;
 use skyward_ui::surface::kms::KmsSurface;
@@ -56,6 +57,11 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 /// program behind the new one has to start and get ready first.
 const USB_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// The server whose answer carries the time of day, once the network is up:
+/// GitHub's, which the update page reaches anyway, so its answers are taken
+/// through the same names and the same path.
+const TIME_SERVER: &str = "https://api.github.com/";
+
 /// How long the page shows that the work the system asked for is done
 /// before the phone starts the system or powers off.
 const LEAVE_AFTER_MS: u64 = 1500;
@@ -68,6 +74,10 @@ const TOUCH_WAIT: Duration = Duration::from_secs(5);
 /// the display turns off; the phone's own system keeps its panel dozing
 /// about as long after the screen goes off.
 const REST: Duration = Duration::from_secs(5);
+
+/// Two taps that bring a dark screen back: how far apart in time they may
+/// land, and how far apart on the panel, in pixels.
+const TAP_MS: u64 = 800;
 
 /// Where logs saved to the temporary folder go, in the recovery service's
 /// own folder, and where in internal storage the others do.
@@ -91,6 +101,12 @@ struct Backlight {
 
 impl Backlight {
     fn open() -> Result<Self> {
+        Self::open_named("panel0-backlight", "dsi_display0")
+    }
+
+    /// The backlight named `name` under /sys/class/backlight, whose normal
+    /// maximum the display driver names in the parameter `display`.
+    fn open_named(name: &str, display: &str) -> Result<Self> {
         let mut dirs: Vec<PathBuf> = fs::read_dir("/sys/class/backlight")
             .context("read /sys/class/backlight")?
             .map(|e| e.map(|e| e.path()))
@@ -99,7 +115,7 @@ impl Backlight {
         // Qualcomm panels expose panel0-backlight; take it when present.
         let dir = dirs
             .iter()
-            .find(|d| d.file_name().is_some_and(|n| n == "panel0-backlight"))
+            .find(|d| d.file_name().is_some_and(|n| n == name))
             .or(dirs.first())
             .ok_or_else(|| anyhow!("no backlight device"))?
             .clone();
@@ -110,7 +126,7 @@ impl Backlight {
                 .parse()
                 .with_context(|| format!("parse {name}"))
         };
-        let top = normal_max(read("max_brightness")?)?;
+        let top = normal_max(read("max_brightness")?, display)?;
         let level = read("brightness")?;
         Ok(Backlight { path: dir.join("brightness"), top, level })
     }
@@ -143,13 +159,64 @@ const NORMAL_MAX: [(&str, &str); 3] = [
     ("mi,mdss-dsi-fac-bl-max-level", "qcom,mdss-dsi-bl-max-level"),
 ];
 
+/// Whether the phone is shut, as its inner touch panel's driver reports it
+/// from the fold sensor it follows: "capfold_status: 1" open, "0" shut.
+/// Nothing is reported where the driver is not there.
+fn shut_now() -> Option<bool> {
+    let nodes = fs::read_dir("/sys/devices/platform").ok()?;
+    for node in nodes.flatten() {
+        let name = node.file_name();
+        if !name.to_string_lossy().starts_with("synaptics_tcm") {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(node.path().join("synaptics_tcm/capfold_status")) else { continue };
+        let Some(last) = text.split_whitespace().last() else { continue };
+        return Some(last.trim_end_matches(',') == "0");
+    }
+    None
+}
+
+/// Hand the cover screen's digitizer to the kernel once its panel is lit.
+/// Started while the inner panel is still on, the driver takes the panel
+/// going dark as a suspend of its own and leaves the controller in gesture
+/// mode: from then on it reports gestures and no touch point, and the
+/// recovery's pages never see a finger. Starting it on the closed phone
+/// leaves it in the state the open one would give it.
+fn load_cover_touch(cfg: &DeviceConfig) -> Result<()> {
+    if Path::new("/sys/module/goodix_core").is_dir() {
+        return Ok(());
+    }
+    let dirs = cfg
+        .modules
+        .sources
+        .iter()
+        .map(|s| skyward_modules::source_dir(s))
+        .collect::<Result<Vec<_>>>()?;
+    for path in skyward_modules::load(&dirs, &["goodix_core".to_string()])? {
+        skyward_sys::kmsg(&format!("loaded {}", path.display()))?;
+    }
+    Ok(())
+}
+
+/// Hand the digitizer back as the phone opens, so that shutting it again
+/// starts the driver afresh instead of on top of the controller the closed
+/// phone left in gesture mode. Where the kernel keeps it, its state is what
+/// the next shut would inherit, and that state reports no touches.
+fn unload_cover_touch() {
+    let Ok(name) = std::ffi::CString::new("goodix_core") else { return };
+    let rc = unsafe { libc::syscall(libc::SYS_delete_module, name.as_ptr(), 0 as libc::c_uint) };
+    if rc != 0 {
+        let _ = skyward_sys::kmsg("the cover digitizer stays loaded");
+    }
+}
+
 /// The raw backlight level, out of `max`, at the panel's normal maximum.
 /// Above it the panel runs in high brightness mode, which the stock system
 /// keeps for strong sunlight and its slider does not reach. The panel the
 /// display driver booted with gives that maximum in the device tree.
-fn normal_max(max: u32) -> Result<u32> {
-    let param = "/sys/module/msm_drm/parameters/dsi_display0";
-    let boot = fs::read_to_string(param).with_context(|| format!("read {param}"))?;
+fn normal_max(max: u32, display: &str) -> Result<u32> {
+    let param = format!("/sys/module/msm_drm/parameters/{display}");
+    let boot = fs::read_to_string(&param).with_context(|| format!("read {param}"))?;
     // The panel's node, then its configuration after a colon, as in
     // "qcom,mdss_dsi_m1_42_02_0a_dsc_cmd:"; the driver takes no name
     // without the colon either.
@@ -190,11 +257,20 @@ fn power(target: Target) -> Result<()> {
 }
 
 /// File transfer: the service offering internal storage to a computer over
-/// USB, whether it offers the storage now, and the zone, by its place in
-/// the settings, it tells the times of files in.
+/// USB, whether it offers the storage now, whether it had nothing in it
+/// when it was offered last, and the zone, by its place in the settings,
+/// it tells the times of files in.
 struct Transfer {
     service: skyward_mtp::Service,
     offered: bool,
+    /// Internal storage was empty, or not there at all, when it was offered
+    /// last: the folder the switch points at is tied to the decrypted
+    /// partition, and comes up after file transfer may already have started.
+    empty: bool,
+    /// When the empty storage was looked at last, in milliseconds of the
+    /// clock that only runs forward. The frame comes far more often than the
+    /// folders inside storage can appear, and each look costs a listing.
+    looked: u64,
     zone: usize,
 }
 
@@ -211,20 +287,71 @@ impl Transfer {
         };
         let service = skyward_mtp::Service::start(device, skyward_ui::fmt::rules(zone).clone())?;
         skyward_sys::usb::set_mtp(true);
-        Ok(Transfer { service, offered: false, zone })
+        Ok(Transfer { service, offered: false, empty: false, looked: 0, zone })
     }
 
     /// Offer internal storage, named for the computer in `lang`, or take it
     /// back. Once this returns, nothing the computer had under way in it
     /// goes on.
+    ///
+    /// Storage that had nothing in it when it was offered is offered again
+    /// once it has something: at boot the folder is there before the folders
+    /// inside it are, and a computer that was told of an empty storage keeps
+    /// showing an empty storage for as long as it is offered.
     fn offer(&mut self, offer: bool, lang: Lang) -> Result<()> {
-        if offer != self.offered {
-            let description = skyward_ui::fmt::storage_name(lang).into();
-            let storage = offer.then(|| skyward_mtp::Storage { top: PathBuf::from(skyward_crypto::data::SDCARD), description });
-            self.service.offer(storage)?;
-            self.offered = offer;
+        if offer == self.offered {
+            // Only storage that was empty when the computer was told of it is
+            // offered again, so that a computer filling it is not cut off,
+            // and no more than once a second: the frame comes far more often
+            // than the folders can appear.
+            if !(offer && self.empty) || monotonic_ms().saturating_sub(self.looked) < 1_000 {
+                return Ok(());
+            }
+            self.looked = monotonic_ms();
+            let holding = Self::holding();
+            if Self::empty(&holding) {
+                return Ok(());
+            }
+            self.give(false, lang)?;
+            self.give(true, lang)?;
+            self.empty = false;
+            return self.told(true, &holding, true);
         }
-        Ok(())
+        let holding = Self::holding();
+        self.give(offer, lang)?;
+        self.offered = offer;
+        self.empty = offer && Self::empty(&holding);
+        self.told(offer, &holding, false)
+    }
+
+    /// How many entries internal storage holds, or why it could not be read.
+    fn holding() -> std::io::Result<usize> {
+        fs::read_dir(skyward_crypto::data::SDCARD).map(|d| d.count())
+    }
+
+    fn empty(holding: &std::io::Result<usize>) -> bool {
+        match holding {
+            Ok(n) => *n == 0,
+            Err(_) => true,
+        }
+    }
+
+    /// Say what the computer was told, and how much internal storage held.
+    fn told(&self, offer: bool, holding: &std::io::Result<usize>, again: bool) -> Result<()> {
+        skyward_sys::kmsg(&format!(
+            "file transfer offers internal storage: {offer}, holding {} entries{}",
+            match holding {
+                Ok(n) => n.to_string(),
+                Err(e) => format!("an error {e}"),
+            },
+            if again { ", offered again since it had nothing" } else { "" }
+        ))
+    }
+    /// Tell the computer of `storage`, or that it has none.
+    fn give(&mut self, offer: bool, lang: Lang) -> Result<()> {
+        let description = skyward_ui::fmt::storage_name(lang).into();
+        let storage = offer.then(|| skyward_mtp::Storage { top: PathBuf::from(skyward_crypto::data::SDCARD), description });
+        self.service.offer(storage)
     }
 
     /// Stop serving: a port at rest goes back to adb alone first.
@@ -323,11 +450,146 @@ fn in_place(place: Place, path: &str) -> PathBuf {
     }
 }
 
-/// Save the logs chosen into a folder of their own in `into`, named by when
-/// they were saved in the zone the settings chose: the recovery's own, with
-/// what update_engine wrote while it last installed an update and what the
-/// last install script wrote, and the kernel's. Each file is owned as a
-/// copy into the folder would be. Gives the folder.
+/// The folder images of whole partitions are kept in, in `place`.
+fn images_in(place: Place) -> PathBuf {
+    in_place(place, skyward_backup::image::FOLDER)
+}
+
+/// The partitions a phone keeps, by name and bytes, as `/dev/block/by-name`
+/// lists them; one unreadable link is left out rather than failing the list.
+fn read_partitions() -> Result<Vec<skyward_ui::app::Partition>, String> {
+    let found = skyward_block::list_by_name(skyward_block::BY_NAME).map_err(|e| format!("{e:#}"))?;
+    let mut parts = Vec::new();
+    for part in found {
+        match skyward_backup::image::bytes_of(&part.path) {
+            Ok(bytes) => parts.push(skyward_ui::app::Partition { name: part.name, bytes }),
+            Err(_) => continue,
+        }
+    }
+    parts.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(parts)
+}
+
+/// The images kept in `place`, by file name and bytes: internal storage and
+/// a USB drive are told apart, since a backup written to one is not listed
+/// from the other.
+fn read_images(place: Place) -> Vec<skyward_ui::app::ImageFile> {
+    match skyward_backup::image::kept(&images_in(place)) {
+        Ok(found) => found.into_iter().map(|(name, bytes)| skyward_ui::app::ImageFile { name, bytes }).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Reading a whole partition out, or writing an image back over it, on a
+/// thread of its own: the page counts the bytes it reports and shows how it
+/// ended.
+struct ImageWork {
+    done: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    end: std::sync::Arc<std::sync::Mutex<Option<Result<String, String>>>>,
+    _thread: std::thread::JoinHandle<()>,
+}
+
+/// What the thread of [`ImageWork`] does.
+enum ImageTask {
+    /// Read `from` whole into the file `to`, naming the partition `partition`.
+    Backup { from: PathBuf, to: PathBuf, partition: String },
+    /// The same, kept compressed: what every partition's own image is read
+    /// into when the whole phone is backed up.
+    BackupPacked { from: PathBuf, to: PathBuf, partition: String },
+    /// Write the image `from` back into `to`, once what it holds matches the
+    /// digest written beside it.
+    Restore { from: PathBuf, to: PathBuf, digest: String },
+    /// The same, for an image kept compressed.
+    RestorePacked { from: PathBuf, to: PathBuf, digest: String },
+}
+
+impl ImageWork {
+    fn start(job: ImageTask) -> Result<ImageWork> {
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let end = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let (done_at, stop_at, end_at) = (done.clone(), stop.clone(), end.clone());
+        let thread = std::thread::Builder::new()
+            .name("partition image".to_string())
+            .spawn(move || {
+                let outcome = match job {
+                    ImageTask::Backup { from, to, partition } => (|| -> Result<String> {
+                        let bytes = skyward_backup::image::read_out(&from, &to, &done_at, &stop_at)?;
+                        // What the image checks as, and which partition it
+                        // came from, goes beside it: an image without that
+                        // cannot be written back anywhere in particular.
+                        let sha = skyward_backup::image::digest(&to, bytes, &done_at)?;
+                        skyward_backup::image::write_sidecar(&to, &partition, bytes, &sha)?;
+                        Ok(to.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())
+                    })()
+                    .map(|name| format!("{name} · {partition}")),
+                    ImageTask::Restore { from, to, digest } => (|| -> Result<String> {
+                        let bytes = skyward_backup::image::bytes_of(&from)?;
+                        // The image is compared with what was written beside
+                        // it first: a file that changed since it was taken
+                        // would be put back as something else entirely.
+                        let held = skyward_backup::image::digest(&from, bytes, &done_at)?;
+                        anyhow::ensure!(held == digest, "{} checks as {held}, not the {digest} written beside it", from.display());
+                        skyward_backup::image::write_back(&from, &to, &done_at, &stop_at)?;
+                        Ok(format!("{} · {bytes} bytes", to.display()))
+                    })(),
+                    ImageTask::BackupPacked { from, to, partition } => (|| -> Result<String> {
+                        let (bytes, sha) = skyward_backup::image::read_out_packed(&from, &to, &done_at, &stop_at)?;
+                        skyward_backup::image::write_sidecar_packed(&to, &partition, bytes, &sha)?;
+                        Ok(to.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())
+                    })()
+                    .map(|name| format!("{name} · {partition}")),
+                    ImageTask::RestorePacked { from, to, digest } => (|| -> Result<String> {
+                        // Unpacked straight onto the partition, the bytes are
+                        // counted as they land and checked against what the
+                        // sidecar says the image was taken as.
+                        let (bytes, held) = skyward_backup::image::write_back_packed(&from, &to, &done_at, &stop_at)?;
+                        anyhow::ensure!(held == digest, "{} unpacked as {held}, not the {digest} written beside it", from.display());
+                        Ok(format!("{} · {bytes} bytes", to.display()))
+                    })(),
+                };
+                let told = match outcome {
+                    Ok(said) => Ok(said),
+                    Err(e) if format!("{e:#}").contains("stopped as asked") => Err("stopped".to_string()),
+                    Err(e) => Err(format!("{e:#}")),
+                };
+                *end_at.lock().unwrap() = Some(told);
+            })
+            .context("start the partition image thread")?;
+        Ok(ImageWork { done, stop, end, _thread: thread })
+    }
+}
+
+/// The partitions a whole phone's backup still has to read, and the ones
+/// that did not go.
+struct ImageAll {
+    folder: PathBuf,
+    queue: std::collections::VecDeque<(String, PathBuf)>,
+    /// How many have been started, and how many there are in all.
+    taken: usize,
+    total: usize,
+    failed: Vec<String>,
+}
+
+/// Start the next partition of a whole phone's backup, if one is left: the
+/// page counts it from the first byte, named with its place among the rest.
+fn start_next_image(all: &mut Option<ImageAll>, app: &mut App) -> Result<Option<ImageWork>> {
+    let Some(state) = all.as_mut() else { return Ok(None) };
+    let Some((partition, from)) = state.queue.pop_front() else { return Ok(None) };
+    let bytes = skyward_backup::image::bytes_of(&from).with_context(|| format!("measure {}", from.display()))?;
+    let to = state.folder.join(skyward_backup::image::packed_name(&partition));
+    state.taken += 1;
+    let said = format!("{partition} · {}/{}", state.taken, state.total);
+    skyward_sys::kmsg(&format!("reading {partition} out into {}", to.display()))?;
+    app.image_started(false, said, bytes);
+    Ok(Some(ImageWork::start(ImageTask::BackupPacked { from, to, partition })?))
+}
+
+/// The logs the recovery keeps: its own, what update_engine wrote while it
+/// last installed an update and what the last install script wrote, and the
+/// kernel's. Each file is owned as a copy into the folder would be. Gives
+/// the folder.
 fn export_logs(recovery: bool, kernel: bool, into: &Path, zone: usize) -> Result<PathBuf> {
     let there = into.ancestors().find(|p| p.exists()).context("the root is always there")?;
     let ownership = ownership(there)?;
@@ -747,6 +1009,90 @@ fn part_stop(stop: partwork::Stop) -> PartStop {
 /// it, and where the table lists one, it is that. /metadata keeps the key
 /// the data partition opens with, which making it afresh would lose, so it
 /// is offered no other.
+/// The vbmeta blocks the slot the phone runs from keeps, for the AVB page:
+/// each one's name, the flags saying which checks are on, and the algorithm
+/// it is signed with. A phone that names no slot keeps a single vbmeta
+/// block, which is read as slot A's, where its partition is named so.
+fn read_avb() -> Result<Vec<skyward_vab::avb::Reading>> {
+    let slot = skyward_vab::current_slot()?.unwrap_or(skyward_vab::Slot::A);
+    skyward_vab::avb::read(slot)
+}
+
+/// Copy each vbmeta block the phone keeps into `place`, internal storage by
+/// default, before `avbctl` changes them: the flags sit under a signature,
+/// and the copy is the only way back once they have been changed.
+fn keep_vbmeta(place: Place) -> Result<Vec<PathBuf>> {
+    let dir = images_in(place);
+    let there = dir.ancestors().find(|p| p.exists()).context("the root is always there")?;
+    let ownership = ownership(there)?;
+    skyward_files::make_folders(&dir, ownership)?;
+    let stamp = skyward_ui::fmt::stamp(unix_now()?, 8);
+    let mut kept = Vec::new();
+    for name in ["vbmeta_a", "vbmeta_b", "vbmeta_system_a", "vbmeta_system_b"] {
+        let from = PathBuf::from(skyward_block::BY_NAME).join(name);
+        skyward_backup::image::bytes_of(&from).with_context(|| format!("measure {}", from.display()))?;
+        let to = dir.join(format!("{name}-{stamp}.img"));
+        fs::copy(&from, &to).with_context(|| format!("keep {} as {}", from.display(), to.display()))?;
+        kept.push(to);
+    }
+    ensure!(!kept.is_empty(), "this phone keeps no vbmeta block to copy");
+    Ok(kept)
+}
+
+/// Run `avbctl` with `args`, reading what it says back.
+fn avbctl(args: &[&str]) -> Result<String> {
+    let tool = ["/system/bin/avbctl", "/system/xbin/avbctl", "/sbin/avbctl"]
+        .into_iter()
+        .find(|path| Path::new(path).exists())
+        .context("avbctl is not in this recovery, so the checks are left as they are")?;
+    let out = std::process::Command::new(tool)
+        .args(args)
+        .output()
+        .with_context(|| format!("run {tool} {}", args.join(" ")))?;
+    let said = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    ensure!(
+        out.status.success(),
+        "{tool} {} ended with {}: {} {}",
+        args.join(" "),
+        out.status,
+        said,
+        String::from_utf8_lossy(&out.stderr).trim()
+    );
+    Ok(said)
+}
+
+/// What the note in misc asks the next start for, for the starter page.
+fn read_starter() -> Result<Starter, String> {
+    let note = bcb::read(&bcb::misc()).map_err(|e| format!("{e:#}"))?;
+    Ok(Starter { command: note.command, args: note.args })
+}
+
+/// Take away the compiled code the system no longer needs, from the cache
+/// the data partition keeps for it, and say how many went. The data
+/// partition has to be open; a phone that keeps none gives nothing.
+fn clear_compiled() -> Result<usize> {
+    let cache = std::path::Path::new("/data/dalvik-cache");
+    if !cache.is_dir() {
+        return Ok(0);
+    }
+    let mut gone = 0;
+    for entry in fs::read_dir(cache).with_context(|| format!("read {}", cache.display()))? {
+        let entry = entry.with_context(|| format!("read {}", cache.display()))?;
+        let path = entry.path();
+        let removed = match entry.file_type() {
+            Ok(kind) if kind.is_dir() => fs::remove_dir_all(&path),
+            _ => fs::remove_file(&path),
+        };
+        match removed {
+            Ok(()) => gone += 1,
+            // A cache that is already gone is nothing to report.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e).with_context(|| format!("remove {}", path.display())),
+        }
+    }
+    Ok(gone)
+}
+
 fn read_filesystems() -> Result<Vec<FsRow>> {
     let mut rows = Vec::new();
     for (name, point) in [(DATA_PARTITION, "/data"), ("metadata", "/metadata"), ("cache", "/cache")] {
@@ -809,9 +1155,10 @@ fn answer(request: Request, fastboot: bool) -> Vec<Effect> {
     }
 }
 
-/// The time of day for the status bar, in the zone the settings chose.
+/// The time of day for the status bar, in the zone the settings chose, to
+/// the second: the bar shows a clock that moves.
 fn clock(zone: usize) -> Result<String> {
-    Ok(skyward_ui::fmt::clock(unix_now()?, zone))
+    Ok(skyward_ui::fmt::clock_seconds(unix_now()?, zone))
 }
 
 /// Tell the kernel log how the data partition was mounted, where opening
@@ -1029,10 +1376,91 @@ fn have(app: &App, release: &Release) -> Have {
     }
 }
 
+/// Have adb listen on the network at port 5555, or stop it: adbd reads the
+/// port once as it starts, so it is started again either way, and the
+/// cable's own transport comes back on its own.
+fn adb_wifi(on: bool) -> Result<()> {
+    let port = if on { "5555" } else { "-1" };
+    skyward_sys::set_prop("service.adb.tcp.port", port).context("tell adbd which port to listen on")?;
+    skyward_sys::set_prop("ctl.restart", "adbd").context("start adbd again")?;
+    Ok(())
+}
+
+/// The KernelSU modules under the data partition: every folder holding a
+/// `module.prop`, what it calls itself there, and whether a `disable` or
+/// `remove` file stands beside it.
+fn read_modules() -> Result<Vec<skyward_ui::app::Module>> {
+    const DIR: &str = "/data/adb/modules";
+    const UPDATE_DIR: &str = "/data/adb/modules_update";
+    let mut out = Vec::new();
+    let at = Path::new(DIR);
+    if !at.is_dir() {
+        return Ok(out);
+    }
+    for entry in std::fs::read_dir(at).context("read the modules")? {
+        let entry = entry?;
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let prop = match std::fs::read_to_string(dir.join("module.prop")) {
+            Ok(text) => text,
+            Err(_) => continue,
+        };
+        let (mut id, mut name, mut version) = (String::new(), String::new(), String::new());
+        for line in prop.lines() {
+            let Some((key, value)) = line.split_once('=') else { continue };
+            match key.trim() {
+                "id" => id = value.trim().to_string(),
+                "name" => name = value.trim().to_string(),
+                "version" => version = value.trim().to_string(),
+                _ => {}
+            }
+        }
+        if id.is_empty() {
+            id = entry.file_name().to_string_lossy().into_owned();
+        }
+        if name.is_empty() {
+            name = id.clone();
+        }
+        out.push(skyward_ui::app::Module {
+            disabled: dir.join("disable").exists(),
+            remove: dir.join("remove").exists(),
+            // A `skip_mount` file leaves the module's own files where they
+            // are instead of piling them onto the system at a start.
+            skip_mount: dir.join("skip_mount").exists(),
+            // KernelSU puts the new files of an update here and swaps them
+            // in at the next start: until then the old ones still run.
+            pending_update: Path::new(UPDATE_DIR).join(&id).is_dir(),
+            dir,
+            id,
+            name,
+            version,
+        });
+    }
+    out.sort_by_key(|m| m.name.to_lowercase());
+    Ok(out)
+}
+
+/// The name a file taken from `url` is given: the last part of its path,
+/// without what a query or a fragment adds, and safe to put in a folder.
+fn fetched_name(url: &str) -> String {
+    /// Enough for a name, and no more.
+    const MOST: usize = 96;
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    let last = path.rsplit('/').find(|part| !part.is_empty()).unwrap_or("");
+    let clean: String = last.chars().filter(|c| !c.is_control() && !matches!(c, '/' | '\\' | ':')).collect();
+    // A name of dots alone would name the folder itself, or its parent.
+    let name = clean.trim_matches('.').to_string();
+    match name.as_str() {
+        "" => "download.bin".to_string(),
+        _ => name.chars().take(MOST).collect(),
+    }
+}
+
 /// Wait until a device, the installer or the recovery socket has something,
 /// or `timeout_ms` passes.
-fn wait(fds: &[i32], timeout_ms: i32) -> Result<()> {
-    let mut polls: Vec<libc::pollfd> = fds.iter().map(|&fd| libc::pollfd { fd, events: libc::POLLIN, revents: 0 }).collect();
+fn wait(fds: &[i32], timeout_ms: i32) -> Result<()> {    let mut polls: Vec<libc::pollfd> = fds.iter().map(|&fd| libc::pollfd { fd, events: libc::POLLIN, revents: 0 }).collect();
     let n = unsafe { libc::poll(polls.as_mut_ptr(), polls.len() as libc::nfds_t, timeout_ms) };
     if n < 0 {
         let err = std::io::Error::last_os_error();
@@ -1051,9 +1479,20 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     }
     let mut info = skyward_info::collect(cfg)?;
     let fonts = Fonts::load(font, 0, mono)?;
-    let mut surface = KmsSurface::open("/dev/dri/card0")?;
-    let (w, h) = surface.size();
-    eprintln!("display {}", surface.describe());
+    let mut inner = KmsSurface::open("/dev/dri/card0")?;
+    let (w, h) = inner.size();
+    eprintln!("display {}", inner.describe());
+    let scale = cfg.display.density as f32 / 160.0;
+    // A phone that folds shows the pages on whichever of its screens is in
+    // sight: its own while it is open, its cover while it is shut. Only one
+    // of the two is driven at a time — asked for both, the display processor
+    // held up the phone's own screen's flips until the frame timed out — and
+    // the cover's screen is opened the first time the phone shuts.
+    let mut shut_state = false;
+    let mut cover_broken = false;
+    let mut cover: Option<KmsSurface> = None;
+    let mut cover_screen: Option<Canvas> = None;
+    let (mut cw, mut ch) = (0u32, 0u32);
     let mut inputs = Inputs::open(w, h, cfg.touch.writes.clone())?;
     let started = Instant::now();
     let mut touch_known = false;
@@ -1061,6 +1500,48 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     let control = Control::open()?;
     let mut haptics = cfg.haptics.as_ref().map(Haptics::open).transpose()?;
     let mut backlight = Backlight::open()?;
+    let mut cover_backlight = if cfg.display.covers {
+        match Backlight::open_named("panel1-backlight", "dsi_display1") {
+            Ok(b) => Some(b),
+            Err(e) => {
+                skyward_sys::kmsg(&format!("the cover screen has no backlight: {e:#}"))?;
+                None
+            }
+        }
+    } else {
+        None
+    };
+    // A phone that starts open keeps the bootloader's logo on its cover's
+    // panel: a panel nothing ever refreshed holds the last frame it was
+    // given, lit, until it is sent its own off command. Where a display
+    // already drives that panel, taking it down is enough; where the
+    // bootloader left it with no display the kernel can take down, the
+    // panel is set up and taken down again — the one path that sends it the
+    // command, and one that only lands with the phone's own panel off first.
+    if cfg.display.covers && shut_now() == Some(false) {
+        let cleared = match inner.darken(1) {
+            Ok(true) => true,
+            Ok(false) => false,
+            Err(e) => {
+                skyward_sys::kmsg(&format!("the cover's panel is not taken down: {e:#}"))?;
+                false
+            }
+        };
+        if !cleared {
+            let mut cycle = || -> Result<()> {
+                inner.turn_off()?;
+                inner.settle()?;
+                let mut cover = inner.open_again(1)?;
+                cover.turn_off()
+            };
+            match cycle() {
+                Ok(()) => skyward_sys::kmsg("the cover's panel is dark, and the boot logo with it")?,
+                Err(e) => skyward_sys::kmsg(&format!("the cover's panel is not darkened: {e:#}"))?,
+            }
+        } else {
+            skyward_sys::kmsg("the cover's panel is dark, and the boot logo with it")?;
+        }
+    }
     let first = match &request.work {
         Work::Fastboot => Screen::Fastboot,
         Work::PromptWipeData => Screen::CantStart,
@@ -1088,6 +1569,10 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     let locale = request.locale.as_deref().or(info.locale.as_deref());
     let named = locale.map(Lang::for_locale).transpose()?;
     app.take_settings(kept.settings(), named);
+    // Whether a password is kept is the file's own to say, not the settings':
+    // it is what the Decryption row shows beside the switch.
+    app.set_credential_kept(credential::present());
+    app.set_credential_at(credential::saved_at());
     let mut keeper = Keeper::new(&kept);
     skyward_sys::kmsg(&format!(
         "the pages speak {:?}, {}, and the locale named is {}",
@@ -1103,8 +1588,15 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     app.set_asked(asked(&request));
     // Opening the data partition, or a user's own files in it, under way,
     // and the users whose own files are still closed once it is open.
-    let mut decryptor: Option<Decryptor> = None;
+    // The data partition is opened as the recovery starts, not by a page: the
+    // file page and the computer both read internal storage, and neither is
+    // of any use while the partition stays shut. Each user's own files stay
+    // closed until their password is entered, exactly as on the page.
+    let mut decryptor: Option<Decryptor> = Some(Decryptor::start(decrypt::Job::Open)?);
     let mut closed: Vec<Closed> = Vec::new();
+    // The password a start entered, kept until the job says whether it
+    // opened anything: only one that opened the phone is worth keeping.
+    let mut entered: Option<(u32, Vec<u8>)> = None;
     let mut arriving = Some(Incoming::Arrived);
     // The mount page shows the partitions as they are when it opens and
     // after each change; why they cannot be read is the page's to say.
@@ -1115,6 +1607,10 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     // besides the panel's: made ready now, the first slide finds them so.
     Canvas::keep_ready(w, h, 3);
     let mut shown_clock = String::new();
+    // The worker asked for the time once the network joins, and whether it
+    // has been asked yet.
+    let mut clock_worker: Option<updates::Worker> = None;
+    let mut clock_asked = false;
     // The readings are taken again on a thread of their own; those taken
     // here as work ends say how it left the phone, and readings started
     // before them are out of date.
@@ -1126,8 +1622,9 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     let mut blanked = false;
     // When the panel gone dark began to rest.
     let mut rested_at: Option<Instant> = None;
-    // Started for fastboot, the port goes to the phone's own fastbootd. The
-    // page says whether it came up and how far a computer has the port;
+    // The last tap on a dark screen that waits for a second one.
+    let mut last_tap: Option<(u64, f32, f32)> = None;
+    // Started for fastboot, the port goes to the phone's own fastbootd. The    // page says whether it came up and how far a computer has the port;
     // why it did not come up goes to the kernel log and on screen.
     let mut fastboot = first == Screen::Fastboot;
     let mut port_at = Instant::now();
@@ -1325,6 +1822,9 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     let mut relabeler: Option<filework::Worker> = None;
     // Backing up or restoring under way.
     let mut backuper: Option<backup::Worker> = None;
+    let mut image_work: Option<ImageWork> = None;
+    // The partitions a whole phone's backup has still to read.
+    let mut image_all: Option<ImageAll> = None;
     // An update's merge followed: one the recovery found under way, which
     // the kernel took up again as the snapshots were mapped, or one started
     // on the update page.
@@ -1340,8 +1840,10 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     // The DNS servers the network joined gave, for looking names up.
     let servers: Servers = Arc::new(Mutex::new(Vec::new()));
     // The WLAN, on a phone whose driver the recovery brings up; it starts
-    // off. Without the bundle of the vendor interface's libraries the
+    // off, and comes on with the recovery itself on a phone whose file asks
+    // for it. Without the bundle of the vendor interface's libraries the
     // supplicant does not start, and the WLAN page says why.
+    let mut wlan_at_start = false;
     let wlan = match &cfg.wlan {
         Some(w) => {
             app.state.wlan = Some(Wlan::default());
@@ -1350,7 +1852,15 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                 let _ = skyward_sys::kmsg(&format!("the vendor interface's libraries are not open: {e:#}"));
                 None
             });
-            Some(wlan::Worker::start(w.clone(), modules, libraries, servers.clone())?)
+            let worker = wlan::Worker::start(w.clone(), modules, libraries, servers.clone())?;
+            if w.auto {
+                // Behind the data partition: the networks joined before are
+                // kept there, and the supplicant cannot read them while it
+                // stays shut, so the WLAN comes on once it is open.
+                skyward_sys::kmsg("the WLAN comes on once the data partition is open")?;
+                wlan_at_start = true;
+            }
+            Some(worker)
         }
         None => None,
     };
@@ -1362,6 +1872,8 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     // Asking GitHub for Skyward's newest release, and updating to it.
     let mut skyward_checker: Option<updates::Worker> = None;
     let mut skyward_updater: Option<updates::Worker> = None;
+    // Taking the file an address typed on the download page holds.
+    let mut fetcher: Option<updates::Worker> = None;
     // The phone sleeps while its screen is off and nothing needs it awake.
     let sleeper = Sleeper::start()?;
     // A uevent may be a charger or a computer attached or taken away: the
@@ -1402,6 +1914,16 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                 other => unreachable!("time passing asks for nothing but the motor, not {other:?}"),
             }
         }
+        // The clock starts from the phone's own RTC, which Android's time
+        // daemon corrects; the network knows the time, and the bar shows it
+        // to the second, so a server is asked once the network joins.
+        if !clock_asked && app.wlan_mark().is_some() {
+            clock_asked = true;
+            match updates::Worker::start(updates::Task::SyncTime { url: TIME_SERVER.to_string() }, servers.clone()) {
+                Ok(worker) => clock_worker = Some(worker),
+                Err(e) => skyward_sys::kmsg(&format!("asking the network for the time did not start: {e:#}"))?,
+            }
+        }
         let time = clock(app.state.time_zone)?;
         if time != shown_clock {
             shown_clock = time;
@@ -1439,17 +1961,97 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
             app.set_fastboot(running, link);
             port_at = Instant::now();
         }
+        // The phone shut or opened: the pages go from one screen to the
+        // other, the screen they leave going dark first, as the display
+        // processor is never asked to run both at once.
+        if cfg.display.covers {
+            if let Some(shut) = shut_now() {
+                if shut != shut_state {
+                    if shut && !cover_broken {
+                        backlight.show(None)?;
+                        inner.turn_off()?;
+                        // The commit turning the phone's own panel off has to
+                        // land before the cover is configured: asked for in the
+                        // same breath, the cover's mode is refused with EINVAL.
+                        inner.settle()?;
+                        if cover.is_none() {
+                            let mut refused = None;
+                            for attempt in 0..3 {
+                                if attempt > 0 {
+                                    std::thread::sleep(Duration::from_millis(200));
+                                }
+                                match inner.open_again(1) {
+                                    Ok(c) => {
+                                        let (x, y) = c.size();
+                                        (cw, ch) = (x, y);
+                                        if let Err(e) = load_cover_touch(cfg) {
+                                            let _ = skyward_sys::kmsg(&format!("the cover digitizer is not loaded: {e:#}"));
+                                        }
+                                        inputs.cover_size(cw, ch);
+                                        Canvas::keep_ready(cw, ch, 3);
+                                        cover_screen = Some(Canvas::new(cw, ch));
+                                        eprintln!("display {}", c.describe());
+                                        cover = Some(c);
+                                        shut_state = true;
+                                        refused = None;
+                                        app.refresh();
+                                        break;
+                                    }
+                                    Err(e) => refused = Some(e),
+                                }
+                            }
+                            // Refused, the pages stay on the phone's own
+                            // screen, which comes back with the next frame;
+                            // the cover is asked for again on the next shut.
+                            if let Some(e) = refused {
+                                let _ = skyward_sys::kmsg(&format!("the cover screen is not driven: {e:#}"));
+                                cover_broken = true;
+                            }
+                        } else {
+                            shut_state = true;
+                        }
+                        app.refresh();
+                    } else if !shut {
+                        if let Some(cb) = &mut cover_backlight {
+                            cb.show(None)?;
+                        }
+                        if let Some(c) = &mut cover {
+                            c.turn_off()?;
+                        }
+                        unload_cover_touch();
+                        // The cover is set up again from scratch the next time
+                        // the phone shuts: a panel driven once and turned off
+                        // does not always take the same mode twice.
+                        cover = None;
+                        cover_screen = None;
+                        (cw, ch) = (0, 0);
+                        inputs.cover_size(0, 0);
+                        shut_state = false;
+                        cover_broken = false;
+                        app.refresh();
+                    }
+                }
+            }
+        }
+        let on_cover = shut_state && cover.is_some() && cover_screen.is_some();
         let panel = app.panel(now);
         let mut shown = false;
         if panel.is_some() {
             // A display turned off comes on again with a frame drawn for it.
-            if app.take_dirty() || !surface.is_on() {
+            let dark = if on_cover { cover.as_ref().is_some_and(|c| !c.is_on()) } else { !inner.is_on() };
+            if app.take_dirty() || dark {
                 let t0 = Instant::now();
-                app.compose(&mut screen, &fonts, &info, &shown_clock, now);
-                surface.present(&screen)?;
-                eprintln!("frame {:?} in {} ms", app.screen(), t0.elapsed().as_millis());
+                let (surface, canvas) = match (on_cover, cover.as_mut(), cover_screen.as_mut()) {
+                    (true, Some(c), Some(canvas)) => (c, canvas),
+                    _ => (&mut inner, &mut screen),
+                };
+                let (aw, ah) = surface.size();
+                app.resize(aw, ah, scale);
+                app.compose(canvas, &fonts, &info, &shown_clock, now);
+                surface.present(canvas)?;
+                eprintln!("frame {:?} at {aw}x{ah} in {} ms", app.screen(), t0.elapsed().as_millis());
                 if let Some(path) = dump {
-                    fs::write(path, &screen.data).with_context(|| format!("write {}", path.display()))?;
+                    fs::write(path, &canvas.data).with_context(|| format!("write {}", path.display()))?;
                 }
                 shown = true;
             }
@@ -1458,33 +2060,75 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
             // Black out the panel's frame memory before the backlight goes
             // to 0 and the display off, so an OLED that floors the backlight
             // above zero rather than cutting it shows nothing as it goes off.
-            screen.data.fill(0);
-            surface.present(&screen)?;
-            surface.settle()?;
+            match (on_cover, cover.as_mut(), cover_screen.as_mut()) {
+                (true, Some(c), Some(canvas)) => {
+                    canvas.data.fill(0);
+                    c.present(canvas)?;
+                    c.settle()?;
+                }
+                _ => {
+                    screen.data.fill(0);
+                    inner.present(&screen)?;
+                    inner.settle()?;
+                }
+            }
             blanked = true;
         }
         // After the frame is on the panel, so a panel coming back on lights
         // with what it should show now, never with what it showed when it
         // went off.
-        if backlight.level == 0 && panel.is_some() {
-            surface.settle()?;
+        let lit = if on_cover { cover_backlight.as_ref().map_or(0, |b| b.level) } else { backlight.level };
+        if lit == 0 && panel.is_some() {
+            match (on_cover, cover.as_mut()) {
+                (true, Some(c)) => c.settle()?,
+                _ => inner.settle()?,
+            }
         }
-        backlight.show(panel)?;
+        // The backlight follows the screen the pages show on; the other one
+        // stays dark, which also keeps its panel asleep.
+        if on_cover {
+            backlight.show(None)?;
+            if let Some(cb) = &mut cover_backlight {
+                cb.show(panel)?;
+            }
+        } else {
+            backlight.show(panel)?;
+            if let Some(cb) = &mut cover_backlight {
+                cb.show(None)?;
+            }
+        }
         if panel.is_some() {
             // Lit, a panel that came on again switches to its fastest
             // refresh.
-            surface.speed_up()?;
+            match (on_cover, cover.as_mut()) {
+                (true, Some(c)) => c.speed_up()?,
+                _ => inner.speed_up()?,
+            }
             rested_at = None;
-        } else if surface.is_on() {
-            // With the backlight off, the panel rests, and the touch
-            // controller following it stops drawing power.
-            surface.rest()?;
-            rested_at = Some(Instant::now());
-        } else if rested_at.is_some_and(|at| at.elapsed() >= REST) {
-            // Rested long enough, the display goes off: the panel and the
-            // display processor feeding it stop drawing power.
-            surface.turn_off()?;
-            rested_at = None;
+        } else {
+            let on = if on_cover { cover.as_ref().is_some_and(KmsSurface::is_on) } else { inner.is_on() };
+            if on {
+                // With the backlight off, the panel rests, and the touch
+                // controller following it stops drawing power. A screen that
+                // two taps are to bring back cannot rest, since the taps come
+                // from that controller: it stays lit at no brightness
+                // instead, and the phone no longer sleeps.
+                if !app.state.wake_by_tap {
+                    match (on_cover, cover.as_mut()) {
+                        (true, Some(c)) => c.rest()?,
+                        _ => inner.rest()?,
+                    }
+                    rested_at = Some(Instant::now());
+                }
+            } else if rested_at.is_some_and(|at| at.elapsed() >= REST) {
+                // Rested long enough, the display goes off: the panel and the
+                // display processor feeding it stop drawing power.
+                match (on_cover, cover.as_mut()) {
+                    (true, Some(c)) => c.turn_off()?,
+                    _ => inner.turn_off()?,
+                }
+                rested_at = None;
+            }
         }
         // A page at rest draws the rows it has yet to while nothing else
         // is to be done, a band at a time, looking for input between bands.
@@ -1497,6 +2141,9 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
         // A resting panel turns off once its rest is over.
         let rest_left = rested_at.map(|at| REST.saturating_sub(at.elapsed()).as_millis() as i32);
         let timeout = if ahead { 0 } else { until_due.into_iter().chain(rest_left).min().map_or(1000, |t| t.clamp(floor, 1000)) };
+        // A phone that folds looks at the fold sensor between waits, so that
+        // shutting it is seen while nothing else is going on.
+        let timeout = if cfg.display.covers { timeout.min(400) } else { timeout };
         // With the display off, the phone sleeps unless something needs it
         // awake: work under way, fastboot or sideload, a restart on its way,
         // a command running in the terminal, a network being joined, the
@@ -1521,7 +2168,8 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
             Some(sh) => !sh.waiting()?,
             None => false,
         };
-        let may_sleep = surface.is_off()
+        let active_off = if on_cover { cover.as_ref().is_some_and(KmsSurface::is_off) } else { inner.is_off() };
+        let may_sleep = active_off
             && !busy
             && !fastboot
             && !sideloading
@@ -1583,6 +2231,41 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
         fds.push(readings.fd());
         wait(&fds, timeout)?;
         let now = monotonic_ms();
+        // A partition's image has no pipe to wake on: its thread keeps a
+        // counter the page reads and one word for how it ended.
+        if let Some(work) = &image_work {
+            app.image_at(work.done.load(std::sync::atomic::Ordering::Relaxed));
+            let ended = work.end.lock().map(|mut w| w.take()).unwrap_or(None);
+            if let Some(outcome) = ended {
+                image_work = None;
+                // A whole phone's backup reads the next partition as the
+                // one before it ends, and says how the lot went at the end.
+                if let Some(state) = image_all.as_mut() {
+                    if let Err(why) = &outcome {
+                        state.failed.push(why.clone());
+                    }
+                    match start_next_image(&mut image_all, &mut app) {
+                        Ok(Some(next)) => image_work = Some(next),
+                        Ok(None) => {
+                            let state = image_all.take().expect("a backup that has no next one has one");
+                            let kept = state.taken - state.failed.len();
+                            app.image_ended(if state.failed.is_empty() {
+                                Ok(format!("{kept}/{total} partitions kept", total = state.total))
+                            } else {
+                                Err(format!("{kept}/{total} partitions kept, {failed} failed: {why}",
+                                    total = state.total, failed = state.failed.len(), why = state.failed.join("; ")))
+                            });
+                        }
+                        Err(e) => {
+                            image_all = None;
+                            app.image_ended(Err(format!("{e:#}")));
+                        }
+                    }
+                } else {
+                    app.image_ended(outcome);
+                }
+            }
+        }
         for slept in sleeper.slept() {
             match slept {
                 Slept::Woke => skyward_sys::kmsg("the phone slept and woke")?,
@@ -1650,6 +2333,17 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     };
                     if cache_after && !app.state.cache_partition {
                         skyward_sys::kmsg("the install asked for the cache partition to be erased, and the phone has none")?;
+                    }
+                    // Compiled code belongs to the system it was compiled
+                    // for: one installed over another would start with code
+                    // it refuses, and compiling it again costs less than a
+                    // start that fails.
+                    if installed && matches!(request.work, Work::Update(_)) {
+                        match clear_compiled() {
+                            Ok(n) if n > 0 => skyward_sys::kmsg(&format!("{n} compiled caches of the system replaced are gone"))?,
+                            Ok(_) => {}
+                            Err(e) => skyward_sys::kmsg(&format!("the compiled caches were left as they were: {e:#}"))?,
+                        }
                     }
                     if wipe_after {
                         ensure!(eraser.is_none(), "erasing is under way already");
@@ -1979,7 +2673,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                         app.download_ended(end, have(&app, &release), now);
                         fetched = true;
                     }
-                    updates::Event::Checked(_) | updates::Event::SkywardChecked(_) | updates::Event::Writing { .. } => {
+                    updates::Event::Checked(_) | updates::Event::SkywardChecked(_) | updates::Event::Writing { .. } | updates::Event::Timed(_) => {
                         unreachable!("a download asks nothing of its own, and writes nothing")
                     }
                 }
@@ -2019,12 +2713,64 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                         app.skyward_ended(end, now);
                         updated = true;
                     }
-                    updates::Event::Checked(_) | updates::Event::SkywardChecked(_) => unreachable!("an update asks nothing of its own"),
+                    updates::Event::Checked(_) | updates::Event::SkywardChecked(_) | updates::Event::Timed(_) => unreachable!("an update asks nothing of its own"),
                 }
             }
         }
         if updated {
             skyward_updater = None;
+        }
+        let mut taken = false;
+        if let Some(t) = &fetcher {
+            for ev in t.events() {
+                match ev {
+                    updates::Event::Progress(progress, rate) => app.fetch_progress(progress, rate),
+                    updates::Event::Ended(end) => {
+                        let end = match end {
+                            updates::End::Downloaded => DownloadEnd::Downloaded,
+                            updates::End::Stopped => DownloadEnd::Stopped,
+                            updates::End::Failed(why) => DownloadEnd::Failed(why),
+                            updates::End::Updated(_) | updates::End::NotWritten(_) | updates::End::WriteFailed(..) => {
+                                unreachable!("a file taken from an address is only downloaded")
+                            }
+                        };
+                        skyward_sys::kmsg(&format!("taking a file from an address ended: {end:?}"))?;
+                        app.fetch_ended(end, now);
+                        taken = true;
+                    }
+                    updates::Event::Checked(_) | updates::Event::SkywardChecked(_) | updates::Event::Writing { .. } | updates::Event::Timed(_) => {
+                        unreachable!("taking a file from an address asks nothing, and writes nothing")
+                    }
+                }
+            }
+        }
+        if taken {
+            fetcher = None;
+        }
+        // The network says what time it is, and the bar shows it to the
+        // second, so the answer is taken to correct the phone's clock once.
+        let mut told = false;
+        if let Some(c) = &clock_worker {
+            for ev in c.events() {
+                let updates::Event::Timed(time) = ev else { unreachable!("asking the time downloads nothing") };
+                told = true;
+                match time {
+                    Ok(time) => {
+                        let was = unix_now()?;
+                        if time != was {
+                            skyward_sys::clock::set_wall(time)?;
+                            skyward_sys::kmsg(&format!("the network says the time is {time}, and the phone's clock said {was}"))?;
+                            app.redraw();
+                        } else {
+                            skyward_sys::kmsg(&format!("the network agrees with the phone's clock, {time}"))?;
+                        }
+                    }
+                    Err(why) => skyward_sys::kmsg(&format!("the network did not say the time: {why}"))?,
+                }
+            }
+        }
+        if told {
+            clock_worker = None;
         }
         if let Some(ended) = decryptor.as_ref().and_then(Decryptor::ended) {
             decryptor = None;
@@ -2035,6 +2781,31 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     }
                     closed = opening.closed;
                     show_closed(&mut app, &closed)?;
+                    // A password kept from an earlier start is tried before
+                    // the page asks for one, where a user's files are still
+                    // closed and there is one to try.
+                    if app.state.remember_credential && decryptor.is_none() {
+                        if let Some(user) = closed.iter().find(|c| !c.made_up).map(|c| c.user) {
+                            match credential::load() {
+                                Ok(secret) => {
+                                    skyward_sys::kmsg("trying the password kept from the last time data was opened")?;
+                                    entered = Some((user, secret.clone()));
+                                    let job = decrypt::Job::Unlock { closed: closed.clone(), user, credential: secret };
+                                    decryptor = Some(Decryptor::start(job)?);
+                                }
+                                Err(e) => {
+                                    skyward_sys::kmsg(&format!("the kept password was not read: {e:#}"))?;
+                                }
+                            }
+                        }
+                    }
+                    if wlan_at_start {
+                        wlan_at_start = false;
+                        if let Some(w) = &wlan {
+                            skyward_sys::kmsg("the data partition is open, so the WLAN comes on")?;
+                            w.send(wlan::Command::On);
+                        }
+                    }
                 }
                 decrypt::Ended::Opened(Err(why)) => {
                     skyward_sys::kmsg(&format!("the data partition stays closed: {why}"))?;
@@ -2051,10 +2822,31 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     app.data_failed(why);
                 }
                 decrypt::Ended::Unlocked(Ok(still)) => {
+                    let opened = match &entered {
+                        Some((user, _)) => !still.iter().any(|c| c.user == *user),
+                        None => false,
+                    };
                     closed = still;
                     show_closed(&mut app, &closed)?;
+                    // The password that opened the user it was entered for is
+                    // the one worth keeping. The system's own user 999 never
+                    // opens in a recovery, so the files of every user being
+                    // open is not what decides this.
+                    if let Some((_, secret)) = entered.take() {
+                        if opened && app.state.remember_credential {
+                            match credential::save(&secret) {
+                                Ok(()) => {
+                                    skyward_sys::kmsg("the password that opened the data partition is kept, sealed")?;
+                                    app.set_credential_kept(true);
+                                    app.set_credential_at(credential::saved_at());
+                                }
+                                Err(e) => skyward_sys::kmsg(&format!("the password that opened the data partition was not kept: {e:#}"))?,
+                            }
+                        }
+                    }
                 }
                 decrypt::Ended::Unlocked(Err(why)) => {
+                    entered = None;
                     skyward_sys::kmsg(&format!("what was entered did not open the user's files: {why}"))?;
                     app.unlock_failed(why, now);
                 }
@@ -2116,7 +2908,47 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     skyward_sys::kmsg(&format!("asked on the recovery socket: {asked:?}"))?;
                     answer(asked, fastboot)
                 }
-                Incoming::Input(Event::Touch(t, at)) => app.touch(t, &fonts, at),
+                Incoming::Input(Event::Touch(t, at, which)) => {
+                    // Two taps on a dark screen bring it back, when the panel
+                    // is kept lit at no brightness for them instead of being
+                    // put to sleep; one tap alone does nothing.
+                    let mut woke = false;
+                    if app.state.wake_by_tap && app.panel(now).is_none() {
+                        // Only the second landing counts: the finger coming off
+                        // between the two taps is not a gap. Where the taps land
+                        // does not matter: on a dark screen there is nothing to
+                        // aim at.
+                        if let Touch::Down(x, y) = t {
+                            let again = last_tap.is_some_and(|(before, _, _)| at.saturating_sub(before) <= TAP_MS);
+                            last_tap = if again { None } else { Some((at, x, y)) };
+                            if again {
+                                app.woken_by_tap(now);
+                                skyward_sys::kmsg("two taps on the dark screen brought it back")?;
+                                woke = true;
+                            } else {
+                                // The first tap, so a screen that stays dark
+                                // says whether its touches come through at
+                                // all.
+                                skyward_sys::kmsg(&format!("a tap on the dark screen at {x}, {y}"))?;
+                            }
+                        }
+                    }
+                    if woke {
+                        Default::default()
+                    } else if which == 1 {
+                        if on_cover && cw > 0 {
+                            app.resize(cw, ch, scale);
+                            app.touch(t, &fonts, at)
+                        } else {
+                            Default::default()
+                        }
+                    } else if on_cover {
+                        Default::default()
+                    } else {
+                        app.resize(w, h, scale);
+                        app.touch(t, &fonts, at)
+                    }
+                }
                 Incoming::Input(Event::Key(k, true)) => app.key(k, now),
                 Incoming::Input(Event::Key(k, false)) => app.key_up(k, now),
             };
@@ -2299,7 +3131,9 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     }
                     Effect::Unlock { user, code } => {
                         ensure!(decryptor.is_none(), "the data partition is being opened already");
-                        let job = decrypt::Job::Unlock { closed: closed.clone(), user, credential: code.into_bytes() };
+                        let secret = code.into_bytes();
+                        entered = Some((user, secret.clone()));
+                        let job = decrypt::Job::Unlock { closed: closed.clone(), user, credential: secret };
                         decryptor = Some(Decryptor::start(job)?);
                     }
                     Effect::ReadDir(folder) => list(&mut app, folder)?,
@@ -2363,6 +3197,65 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     Effect::StopRelabel => relabeler.as_ref().context("there is no relabeling to stop")?.stop(),
                     // Partitions that cannot be read are the page's to say.
                     Effect::ReadFilesystems => app.set_filesystems(read_filesystems().map_err(|e| format!("{e:#}"))),
+                    // The vbmeta blocks read are what the page shows; a
+                    // slot that keeps none, or a block that is not a vbmeta
+                    // block, is for the page to say too.
+                    Effect::ReadAvb => app.set_avb(read_avb().map_err(|e| format!("{e:#}"))),
+                    // The blocks are copied first, then the phone's own tool
+                    // is asked to turn the checks off or on: writing the
+                    // header here would leave it under no signature this
+                    // bootloader accepts.
+                    Effect::AvbChecks { on } => {
+                        let before = read_avb().map_err(anyhow::Error::msg)?;
+                        let kept = keep_vbmeta(app.state.backup_to)
+                            .with_context(|| "copy the vbmeta blocks first, nothing has been changed")?;
+                        skyward_sys::kmsg(&format!(
+                            "vbmeta kept in {} before the checks change",
+                            kept[0].parent().map(|p| p.display().to_string()).unwrap_or_default()
+                        ))?;
+                        let (verity, verification) = if on { ("enable-verity", "enable-verification") } else { ("disable-verity", "disable-verification") };
+                        let a = avbctl(&[verity])?;
+                        let b = avbctl(&[verification])?;
+                        skyward_sys::kmsg(&format!("avbctl {verity}, {verification}: {a} / {b}"))?;
+                        // What the blocks say now against what they said
+                        // before: the flags the two calls were meant to move,
+                        // said plainly rather than left to be inferred from
+                        // the page's own words.
+                        let after = read_avb().map_err(anyhow::Error::msg)?;
+                        let mut moved = Vec::new();
+                        for block in &after {
+                            let was = before.iter().find(|b| b.name == block.name).map(|b| b.flags);
+                            let was = match was {
+                                Some(was) => was,
+                                None => continue,
+                            };
+                            if was != block.flags {
+                                moved.push(format!("{} {:#04x} -> {:#04x}", block.name, was, block.flags));
+                            }
+                        }
+                        let said = if moved.is_empty() {
+                            format!("avbctl {verity} / {verification}: nothing moved; the flags read the same")
+                        } else {
+                            format!("avbctl {verity} / {verification}: {}", moved.join(", "))
+                        };
+                        skyward_sys::kmsg(&said)?;
+                        app.set_avb(Ok(after));
+                        app.report(&said, now);
+                    }
+                    // What misc asks the next start for, and the note wiped.
+                    Effect::ReadStarter => app.set_starter(read_starter()),
+                    Effect::ClearStarter => {
+                        match bcb::clear(&bcb::misc()) {
+                            Ok(()) => {
+                                skyward_sys::kmsg("the boot request in misc is wiped")?;
+                                app.set_starter(read_starter());
+                            }
+                            Err(e) => {
+                                skyward_sys::kmsg(&format!("the boot request in misc was not wiped: {e:#}"))?;
+                                app.set_starter(Err(format!("{e:#}")));
+                            }
+                        }
+                    }
                     // The data partition made afresh as another filesystem
                     // is a factory reset, as the system asks for one; the
                     // rest is work on one partition. Opening the data
@@ -2502,7 +3395,11 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     Effect::CheckSkyward => {
                         ensure!(skyward_checker.is_none(), "GitHub is being asked already");
                         let probe = cfg.wlan.as_ref().context("the phone's WLAN is not brought up")?.probe.clone();
-                        let task = updates::Task::CheckSkyward { probe, codename: cfg.device.codename.clone() };
+                        // The mirror picked on the update page or the download
+                        // page carries the question too where it carries GitHub's
+                        // API; GitHub itself is asked after it.
+                        let mirror = skyward_ui::app::MIRRORS.get(app.state.mirror).filter(|m| !m.is_empty()).map(|m| (*m).to_string());
+                        let task = updates::Task::CheckSkyward { probe, codename: cfg.device.codename.clone(), mirror };
                         skyward_checker = Some(updates::Worker::start(task, servers.clone())?);
                     }
                     // The zip goes into the recovery's own folder, which is
@@ -2513,10 +3410,160 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                         ensure!(installer.is_none(), "an installer is running already");
                         skyward_sys::kmsg(&format!("updating Skyward to {}", build.name))?;
                         let path = Path::new(skyward_sys::RUN).join(&build.name);
-                        let task = updates::Task::UpdateSkyward { build, codename: cfg.device.codename.clone(), path };
+                        // The mirror chosen on the download page carries the
+                        // zip too; with none chosen the file is asked for
+                        // where GitHub sends it.
+                        let mirror = skyward_ui::app::MIRRORS.get(app.state.mirror).filter(|m| !m.is_empty()).map(|m| (*m).to_string());
+                        let task = updates::Task::UpdateSkyward { build, codename: cfg.device.codename.clone(), path, mirror };
                         skyward_updater = Some(updates::Worker::start(task, servers.clone())?);
                     }
                     Effect::StopSkywardUpdate => skyward_updater.as_ref().context("Skyward is not being updated")?.stop(),
+                    // What an address holds goes into internal storage's
+                    // Download folder, under the last part of the address.
+                    Effect::FetchUrl(url) => {
+                        ensure!(fetcher.is_none(), "a file is being taken already");
+                        let name = fetched_name(&url);
+                        let path = Path::new(skyward_crypto::data::SDCARD).join("Download").join(&name);
+                        skyward_sys::kmsg(&format!("taking {url} into {}", path.display()))?;
+                        let task = updates::Task::Fetch { url, path };
+                        fetcher = Some(updates::Worker::start(task, servers.clone())?);
+                    }
+                    Effect::StopFetch => fetcher.as_ref().context("no file is being taken")?.stop(),
+                    // adbd reads the port once, as it starts; asked to listen
+                    // on the network it is started again, which the cable's
+                    // own transport survives.
+                    Effect::AdbWifi(on) => {
+                        let said = match adb_wifi(on) {
+                            Ok(()) => match (on, app.state.lang) {
+                                (true, skyward_ui::Lang::En) => "adb listens on the network too, at port 5555".to_string(),
+                                (true, _) => "adb 现在也在网络的 5555 端口监听".to_string(),
+                                (false, skyward_ui::Lang::En) => "adb no longer listens on the network".to_string(),
+                                (false, _) => "adb 不再监听网络".to_string(),
+                            },
+                            Err(e) => format!("{e:#}"),
+                        };
+                        skyward_sys::kmsg(&format!("adb over the network: {said}"))?;
+                        app.report(&said, now);
+                    }
+                    Effect::ReadModules => app.modules_listed(read_modules()?),
+                    Effect::ReadImages => {
+                        let parts = read_partitions();
+                        let images = read_images(app.state.backup_to);
+                        app.set_images(parts, images);
+                    }
+                    // Every partition the phone keeps, one after another,
+                    // each compressed as it is read: the phone's own storage
+                    // would not hold them all as they are.
+                    Effect::ImageAll { which } => {
+                        ensure!(image_work.is_none(), "a partition is being read out already");
+                        let dir = images_in(app.state.backup_to);
+                        let there = dir.ancestors().find(|p| p.exists()).context("the root is always there")?;
+                        let ownership = ownership(there)?;
+                        skyward_files::make_folders(&dir, ownership)?;
+                        let found = skyward_block::list_by_name(skyward_block::BY_NAME)?;
+                        // The partitions that hold a whole system or the
+                        // user's own data are left out: they are the ones too
+                        // big to keep, and the ones an install makes afresh.
+                        const LEFT_OUT: [&str; 5] = ["super", "userdata", "data", "metadata", "cache"];
+                        // What a phone cannot be put back together without:
+                        // the images it starts from, the two that say whether
+                        // it may start at all, and the ones that hold its
+                        // radio's own calibration.
+                        const CRITICAL: [&str; 14] = [
+                            "boot_a", "boot_b", "init_boot_a", "init_boot_b", "vendor_boot_a", "vendor_boot_b", "dtbo_a", "dtbo_b",
+                            "vbmeta_a", "vbmeta_b", "vbmeta_system_a", "vbmeta_system_b", "persist", "misc",
+                        ];
+                        // The few a phone needs to start at all: the images
+                        // the bootloader loads, the ones saying whether they
+                        // may be loaded, and the two small blocks that hold
+                        // what makes the next start different.
+                        const LEAST: [&str; 10] = [
+                            "boot_a", "boot_b", "init_boot_a", "init_boot_b", "vbmeta_a", "vbmeta_b", "persist", "misc", "dtbo_a", "dtbo_b",
+                        ];
+                        let mut queue = VecDeque::new();
+                        for part in found {
+                            let keep = match which {
+                                ImageSet::Key => CRITICAL.contains(&part.name.as_str()),
+                                ImageSet::Least => LEAST.contains(&part.name.as_str()),
+                                ImageSet::All => !LEFT_OUT.contains(&part.name.as_str()),
+                            };
+                            if keep {
+                                queue.push_back(part.path);
+                            }
+                        }
+                        let total = queue.len();
+                        let mut all = ImageAll { folder: dir, queue: VecDeque::new(), taken: 0, total, failed: Vec::new() };
+                        for path in queue {
+                            let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                            all.queue.push_back((name, path));
+                        }
+                        image_all = Some(all);
+                        image_work = start_next_image(&mut image_all, &mut app).context("start the first partition")?;
+                    }
+                    // A partition's image is read out into a folder of its
+                    // own beside the backups, named for the partition and
+                    // when it was taken.
+                    Effect::ImageBackup { partition } => {
+                        ensure!(image_work.is_none(), "a partition is being read out already");
+                        let from = PathBuf::from(skyward_block::BY_NAME).join(&partition);
+                        ensure!(from.exists(), "{partition} is not a partition this phone keeps");
+                        let bytes = skyward_backup::image::bytes_of(&from)?;
+                        let dir = images_in(app.state.backup_to);
+                        let there = dir.ancestors().find(|p| p.exists()).context("the root is always there")?;
+                        let ownership = ownership(there)?;
+                        skyward_files::make_folders(&dir, ownership)?;
+                        let name = format!("{partition}-{}.img", skyward_ui::fmt::stamp(unix_now()?, app.state.time_zone));
+                        let to = dir.join(&name);
+                        skyward_sys::kmsg(&format!("reading {partition} out into {}", to.display()))?;
+                        app.image_started(false, partition.clone(), bytes);
+                        image_work = Some(ImageWork::start(ImageTask::Backup { from, to, partition })?);
+                    }
+                    // Writing an image back needs the partition its sidecar
+                    // names: one whose sidecar is gone is left alone.
+                    Effect::ImageRestore { image } => {
+                        ensure!(image_work.is_none(), "a partition is being written already");
+                        let from = images_in(app.state.backup_to).join(&image);
+                        ensure!(from.exists(), "{image} is no longer there");
+                        let (partition, bytes, digest) = skyward_backup::image::read_sidecar(&from)?;
+                        let to = PathBuf::from(skyward_block::BY_NAME).join(&partition);
+                        ensure!(to.exists(), "{partition} is not a partition this phone keeps");
+                        skyward_sys::kmsg(&format!("writing {image} back into {}", to.display()))?;
+                        app.image_started(true, image.clone(), bytes);
+                        image_work = Some(if skyward_backup::image::packed(&from)? {
+                            ImageWork::start(ImageTask::RestorePacked { from, to, digest })?
+                        } else {
+                            ImageWork::start(ImageTask::Restore { from, to, digest })?
+                        });
+                    }
+                    Effect::StopImage => {
+                        if let Some(work) = &image_work {
+                            work.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+                        }
+                    }
+                    // A `disable` file is what KernelSU reads as it starts a
+                    // module: written, the module does nothing next time, and
+                    // taken away it runs again. A `remove` file has it drop
+                    // the module outright.
+                    Effect::ToggleModule { at, off } => {
+                        let marker = at.join("disable");
+                        let change = if off { std::fs::File::create(&marker).map(|_| ()) } else { std::fs::remove_file(&marker) };
+                        match change {
+                            Ok(()) => skyward_sys::kmsg(&format!("module {}: disable {off}", at.display()))?,
+                            Err(e) => skyward_sys::kmsg(&format!("module {} not changed: {e}", at.display()))?,
+                        }
+                        app.modules_listed(read_modules()?);
+                    }
+                    // A `remove` file is all KernelSU needs: it drops the
+                    // folder itself at the next start. Until that start the
+                    // module is here and can be kept by taking the file away.
+                    Effect::DropModule { at } => {
+                        let marker = at.join("remove");
+                        match std::fs::File::create(&marker) {
+                            Ok(_) => skyward_sys::kmsg(&format!("module {} is dropped at the next start", at.display()))?,
+                            Err(e) => skyward_sys::kmsg(&format!("module {} not dropped: {e}", at.display()))?,
+                        }
+                        app.modules_listed(read_modules()?);
+                    }
                     // Logs that cannot be saved are the page's to report;
                     // the recovery carries on.
                     Effect::ExportLogs { recovery, kernel, storage } => {
@@ -2586,6 +3633,43 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                             w.send(systems::Task::Resume);
                         }
                     }
+                    // The password that opens the data partition is written
+                    // into its sealed file the next time one is entered, and
+                    // taken away at once when the switch goes off.
+                    Effect::RememberCredential(on) => {
+                        if on {
+                            if credential::present() {
+                                skyward_sys::kmsg("a password is kept already, sealed; the next one that opens the data partition replaces it")?;
+                            } else {
+                                skyward_sys::kmsg("the password that opens the data partition is kept, sealed, from the next one entered")?;
+                            }
+                        } else {
+                            match credential::forget() {
+                                Ok(true) => {
+                                    skyward_sys::kmsg("the kept password is taken away")?;
+                                    app.set_credential_kept(false);
+                                }
+                                Ok(false) => skyward_sys::kmsg("there was no kept password to take away")?,
+                                Err(e) => skyward_sys::kmsg(&format!("the kept password was not taken away: {e:#}"))?,
+                            }
+                        }
+                    }
+                    // The one entry taken away while the switch stays on: the
+                    // next password that opens the data partition is kept in
+                    // its place.
+                    Effect::ForgetCredential => match credential::forget() {
+                        Ok(true) => {
+                            skyward_sys::kmsg("the kept password is taken away; the switch stays on")?;
+                            app.set_credential_kept(false);
+                            app.set_credential_at(None);
+                            app.report("the kept password is taken away", now);
+                        }
+                        Ok(false) => {
+                            skyward_sys::kmsg("there was no kept password to take away")?;
+                            app.report("there was no kept password to take away", now);
+                        }
+                        Err(e) => skyward_sys::kmsg(&format!("the kept password was not taken away: {e:#}"))?,
+                    },
                     // A port that something else has takes file transfer
                     // on, or leaves it, when it comes back to rest.
                     Effect::FileTransfer(on) => {
@@ -2624,7 +3708,13 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
         let kept = match &mut transfer {
             Some(t) if !t.service.running() => Err(anyhow!("the file transfer service ended")),
             Some(t) => {
-                let offer = app.state.data.storage_open() && eraser.is_none() && installer.is_none();
+                // The owner's own files stay encrypted until their password is
+                // entered, but the folders the system keeps for them — pictures,
+                // downloads — are in the partition's own encryption, and a
+                // computer reaches those without it. Only a partition that
+                // never opened is left off.
+                let storage = matches!(&app.state.data, Data::Open | Data::Locked { .. } | Data::Opening);
+                let offer = storage && eraser.is_none() && installer.is_none();
                 t.offer(offer, app.state.lang).and_then(|()| {
                     if t.zone != app.state.time_zone {
                         t.service.set_zone(skyward_ui::fmt::rules(app.state.time_zone).clone())?;

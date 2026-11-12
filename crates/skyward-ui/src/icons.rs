@@ -65,6 +65,8 @@ pub enum Icon {
     Battery,
     /// Two phones, the one behind showing round the one in front.
     Systems,
+    /// An arrow pointing down into a tray: a file taken from an address.
+    Download,
 }
 
 /// The stock icons' box: every outline here is laid out in it.
@@ -346,9 +348,16 @@ const SYSTEMS: &[Part] = &[
     cut(Shape::Line("M14.4,20.2H18", 1.3)),
 ];
 
+const DOWNLOAD: &[Part] = &[
+    // The arrow: its shaft, then its head.
+    add(Shape::Line("M14,5.4V16.2", 2.2)),
+    add(Shape::Line("M9.7,12.2L14,16.5L18.3,12.2", 2.2)),
+    // The tray it comes down into.
+    add(Shape::Line("M7,21.2V23.4H21V21.2", 2.2)),
+];
+
 /// What `icon`'s glyph is drawn from, and at what share of its size.
-fn outline(icon: Icon) -> (&'static [Part], f32) {
-    match icon {
+fn outline(icon: Icon) -> (&'static [Part], f32) {    match icon {
         Icon::Install => (INSTALL, 1.0),
         Icon::Backup => (BACKUP, 1.0),
         Icon::Restore => (RESTORE, 1.0),
@@ -371,6 +380,7 @@ fn outline(icon: Icon) -> (&'static [Part], f32) {
         Icon::Wlan => (WLAN, 1.0),
         Icon::Battery => (BATTERY, 1.0),
         Icon::Systems => (SYSTEMS, 1.0),
+        Icon::Download => (DOWNLOAD, 1.0),
     }
 }
 

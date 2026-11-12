@@ -67,6 +67,11 @@ enum Cmd {
         /// The monospaced typeface's licence, which goes with it.
         #[arg(long)]
         mono_license: PathBuf,
+        /// Extra files to put into the ramdisk, taken from this folder as the
+        /// top of the recovery's root. A phone whose vendor programs need
+        /// libraries the stock recovery lacks carries them here.
+        #[arg(long)]
+        extra: Option<PathBuf>,
         #[arg(long)]
         out: PathBuf,
     },
@@ -105,7 +110,7 @@ fn main() -> Result<()> {
             img.kernel = BootImage::read(&kernel)?.kernel;
             write(&out, &img, &img.to_bytes()?)
         }
-        Cmd::Recovery { stock, binary, system_init, config, font, mono, mono_license, out } => {
+        Cmd::Recovery { stock, binary, system_init, config, font, mono, mono_license, extra, out } => {
             let size = partition_size(&stock)?;
             let mut img = BootImage::read(&stock)?;
             let mut rd = Ramdisk::decode(&img.ramdisk)?;
@@ -135,6 +140,12 @@ fn main() -> Result<()> {
                 rd.add(paths::TASK_PROFILES, 0o644, TASK_PROFILES.to_vec())?;
             }
             rd.add(paths::MTP_RC, 0o644, MTP_RC.to_vec())?;
+            // Libraries and programs a phone's own vendor services need that
+            // the stock recovery does not carry, laid out as the root of the
+            // recovery's own file system.
+            if let Some(extra) = &extra {
+                add_tree(&mut rd, extra, extra)?;
+            }
             // On an unlocked device adbd keeps root when ro.secure is 0 and
             // lets any computer in without authorization when ro.adb.secure is
             // 0; init lets a later line of a property file override an earlier
@@ -165,6 +176,34 @@ fn main() -> Result<()> {
 
 /// The partition a recovery is made on, as a full update package names it.
 const RECOVERY: &str = "recovery";
+
+/// Put every file under `dir` into the ramdisk, named from `root` so a folder
+/// given as the recovery's root lands where it says.
+fn add_tree(rd: &mut Ramdisk, root: &Path, dir: &Path) -> Result<()> {
+    for entry in std::fs::read_dir(dir).with_context(|| format!("read {}", dir.display()))? {
+        let entry = entry.with_context(|| format!("read {}", dir.display()))?;
+        let path = entry.path();
+        let kind = entry.file_type().with_context(|| format!("read {}", path.display()))?;
+        if kind.is_dir() {
+            add_tree(rd, root, &path)?;
+            continue;
+        }
+        if !kind.is_file() {
+            continue;
+        }
+        let rel = path.strip_prefix(root).with_context(|| format!("{} is under {}", path.display(), root.display()))?;
+        let name = rel.to_string_lossy().replace('\\', "/");
+        let data = std::fs::read(&path).with_context(|| format!("read {}", path.display()))?;
+        // A program is made runnable; a library is readable by whoever links it.
+        let mode = if name.starts_with("system/bin/") || name.starts_with("system/xbin/") { 0o755 } else { 0o644 };
+        if rd.find(&name).is_some() {
+            rd.replace(&name, data)?;
+        } else {
+            rd.add(&name, mode, data)?;
+        }
+    }
+    Ok(())
+}
 
 /// Take the recovery partition out of the stock build's full update package
 /// on its server, reading only what that partition takes of it, and write it

@@ -49,6 +49,15 @@ pub struct Settings {
     pub vibration: f32,
     /// A computer connected over USB is offered internal storage.
     pub file_transfer: bool,
+    /// What opened the data partition once is kept, sealed for this phone,
+    /// and tried again at the next start.
+    pub remember_credential: bool,
+    /// Two taps on the dark screen wake it; the panel then stays lit at no
+    /// brightness instead of going off.
+    pub wake_by_tap: bool,
+    /// Which mirror an address is taken through, as its place in
+    /// [`crate::app::MIRRORS`]; 0 leaves every address alone.
+    pub mirror: usize,
     pub install: Install,
     pub backup: Backup,
     pub logs: Logs,
@@ -126,6 +135,9 @@ impl Settings {
             vibrate: state.vibrate,
             vibration: state.vibration,
             file_transfer: state.file_transfer,
+            remember_credential: state.remember_credential,
+            wake_by_tap: state.wake_by_tap,
+            mirror: state.mirror,
             install: Install { check_signature: state.check_signature, keep_recovery: state.keep_recovery },
             backup: Backup {
                 parts: names(&state.backup, &PARTS),
@@ -184,6 +196,11 @@ impl Settings {
             state.vibration = self.vibration;
         }
         state.file_transfer = self.file_transfer;
+        state.remember_credential = self.remember_credential;
+        state.wake_by_tap = self.wake_by_tap;
+        if self.mirror < crate::app::MIRRORS.len() {
+            state.mirror = self.mirror;
+        }
         state.check_signature = self.install.check_signature;
         state.keep_recovery = self.install.keep_recovery;
         state.backup = picked(&self.backup.parts, &PARTS);
@@ -214,7 +231,9 @@ fn picked<const N: usize>(kept: &[String], all: &[&str; N]) -> [bool; N] {
 /// What the settings file held as the recovery started.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Kept {
-    Settings(Settings),
+    /// Boxed: this variant holds far more than the other two, and the enum is
+    /// kept as what the file held rather than as a hot path.
+    Settings(Box<Settings>),
     /// No settings: no file, or one that does not read as settings.
     Nothing,
     /// Where the file is could not be read; it is left alone this time.
@@ -225,7 +244,7 @@ impl Kept {
     /// The settings the file held, if it held any.
     pub fn settings(&self) -> Option<&Settings> {
         match self {
-            Kept::Settings(settings) => Some(settings),
+            Kept::Settings(settings) => Some(settings.as_ref()),
             Kept::Nothing | Kept::Unreadable => None,
         }
     }
@@ -246,7 +265,7 @@ pub struct Keeper {
 impl Keeper {
     pub fn new(kept: &Kept) -> Keeper {
         let holds = match kept {
-            Kept::Settings(settings) => Some(Some(settings.clone())),
+            Kept::Settings(settings) => Some(Some(settings.as_ref().clone())),
             Kept::Nothing => Some(None),
             Kept::Unreadable => None,
         };
@@ -375,7 +394,7 @@ mod tests {
 
     #[test]
     fn changed_settings_are_written_once_they_have_stood_for_a_moment() {
-        let mut keeper = Keeper::new(&Kept::Settings(Settings::default()));
+        let mut keeper = Keeper::new(&Kept::Settings(Box::default()));
         assert_eq!(keeper.due(Settings::default(), 0), None, "what the file holds is not written again");
         let dark = Settings { dark: true, ..Settings::default() };
         assert_eq!(keeper.due(dark.clone(), 1_000), None);

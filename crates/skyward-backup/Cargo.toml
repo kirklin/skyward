@@ -10,6 +10,7 @@ libc = { workspace = true }
 lz4_flex = "0.14.0"
 serde = { workspace = true }
 sha2 = "0.10.9"
+skyward-block = { path = "../skyward-block" }
 skyward-files = { path = "../skyward-files" }
 tar = "0.4.46"
 toml = { workspace = true }

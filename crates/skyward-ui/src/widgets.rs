@@ -190,6 +190,8 @@ pub(crate) fn wrap(c: &Canvas, face: &Face, text: &str, px: f32, max_w: f32) -> 
 pub struct Bar<'a> {
     pub clock: &'a str,
     pub battery: Option<(u8, Option<Bolt>)>,
+    /// A cable is in the phone's port, whether or not it charges it.
+    pub usb: bool,
     /// The network joined, while it has an address.
     pub wlan: Option<WlanMark>,
     /// The data partition, open or not; nothing once it is wiped, when
@@ -247,13 +249,19 @@ pub fn status_bar(c: &mut Canvas, t: &Theme, f: &Fonts, bar: &Bar, ink: Rgba) {
         c.lay(&art, ox, oy, 1.0);
         right -= m.dp(BATTERY_W_DP + BATTERY_CAP_DP);
     }
-    // From the battery leftwards: the network's fan, the data partition's
-    // lock, the slot's badge, the temperature, and leftmost, as the stock
-    // bar keeps it, how fast data goes.
+    // From the battery leftwards: the plug while a cable is in, the
+    // network's fan, the data partition's lock, the slot's badge, the
+    // temperature, and leftmost, as the stock bar keeps it, how fast data
+    // goes.
     let gap = m.dp(MARK_GAP_DP);
     let mut left = right;
+    if bar.usb {
+        let size = m.dp(USB_MARK_DP);
+        icons::glyph(c, Icon::Usb, left - gap - size / 2.0, cy, size, ink);
+        left -= gap + size;
+    }
     if let Some(w) = &bar.wlan {
-        left = wlan_mark(c, t, w, right, cy, ink);
+        left = wlan_mark(c, t, w, left, cy, ink);
     }
     if let Some(open) = bar.data {
         let (art, ox, oy, w) = lock_mark(t, open, left - gap, cy, ink);
@@ -276,6 +284,10 @@ pub fn status_bar(c: &mut Canvas, t: &Theme, f: &Fonts, bar: &Bar, ink: Rgba) {
 /// Room between the marks on the bar's right, as the stock bar leaves it
 /// after its network speed and before its battery, in dp.
 const MARK_GAP_DP: f32 = 4.33;
+
+/// How wide the plug shown while a cable is in is, in dp: a little under
+/// the battery, so it reads as a mark of the same family.
+const USB_MARK_DP: f32 = 12.5;
 
 /// The stock status bar icons' corners, which ease into their sides: from
 /// where a side starts to bend to where the next one is straight again,
@@ -2210,20 +2222,34 @@ pub fn version_line(t: &Theme, f: &Fonts, text: &str) -> Sprite {
 }
 
 /// How far below the version, in dp, the author's line stands.
-const AUTHOR_BELOW_DP: f32 = 19.0;
+const AUTHOR_BELOW_DP: f32 = 26.0;
 
-/// Who made the recovery, a line under the version in its type.
-pub fn author_line(t: &Theme, f: &Fonts, text: &str) -> Sprite {
-    hero_line(t, f, text, t.m.dp(AUTHOR_BELOW_DP))
+/// Who made the recovery, its lines one under another under the version,
+/// in its type.
+pub fn author_lines(t: &Theme, f: &Fonts, lines: &[&str]) -> Sprite {
+    let m = &t.m;
+    let px = m.dp(17.2);
+    let step = px * 1.5;
+    let widths: Vec<f32> = lines.iter().map(|line| Canvas::new(0, 0).text_width(&f.body, line, px)).collect();
+    let w = widths.iter().copied().fold(0.0, f32::max);
+    let base = m.dp(301.0) + f.body.cap(px) + m.dp(AUTHOR_BELOW_DP);
+    let (left, top) = ((m.w as f32 - w) / 2.0 - m.dp(2.0), base - px * 1.2);
+    let tall = (step * (lines.len() as f32 - 1.0) + px * 1.6).ceil() as u32;
+    Sprite::capture(left, top, (w + m.dp(4.0)).ceil() as u32, tall, |c, dx, dy| {
+        for (i, (line, lw)) in lines.iter().zip(&widths).enumerate() {
+            let at = base + i as f32 * step + dy;
+            c.text(&f.body, line, (m.w as f32 - lw) / 2.0 + dx, at, px, Rgba::rgb(0, 0, 0), None);
+        }
+    })
 }
 
 /// A line centred under the About wordmark in the version's type, `below`
 /// the version's place.
 fn hero_line(t: &Theme, f: &Fonts, text: &str, below: f32) -> Sprite {
     let m = &t.m;
-    let px = m.dp(13.3);
+    let px = m.dp(15.4);
     let w = Canvas::new(0, 0).text_width(&f.body, text, px);
-    let base = m.dp(296.3) + f.body.cap(px) + below;
+    let base = m.dp(301.0) + f.body.cap(px) + below;
     let (left, top) = ((m.w as f32 - w) / 2.0 - m.dp(2.0), base - px * 1.2);
     Sprite::capture(left, top, (w + m.dp(4.0)).ceil() as u32, (px * 1.6).ceil() as u32, |c, dx, dy| {
         c.text(&f.body, text, (m.w as f32 - w) / 2.0 + dx, base + dy, px, Rgba::rgb(0, 0, 0), None);
@@ -2823,7 +2849,10 @@ mod tests {
         let f = crate::font::bundled();
         let draw = |mark: WlanMark| {
             let mut c = Canvas::filled(1200, 160, t.pal.bg);
-            let bar = Bar { clock: "01:27", battery: Some((40, Some(Bolt::Charging))), wlan: Some(mark), data: None, slot: None, temp: None };
+            // No cable: this is the stock bar's own arrangement of the fan, and
+            // the plug this fork draws while a cable is in takes the space to
+            // its right, which that comparison would not survive.
+            let bar = Bar { clock: "01:27", battery: Some((40, Some(Bolt::Charging))), usb: false, wlan: Some(mark), data: None, slot: None, temp: None };
             status_bar(&mut c, &t, &f, &bar, t.pal.status);
             c
         };
@@ -2861,7 +2890,7 @@ mod tests {
         let f = crate::font::bundled();
         let mut c = Canvas::filled(1200, 160, t.pal.bg);
         let wlan = Some(WlanMark { level: 3, receiving: true, sending: true, speed: "0.00".into(), unit: "KB/s" });
-        let bar = Bar { clock: "01:27", battery: Some((40, None)), wlan, data: Some(false), slot: Some("B"), temp: Some(362) };
+        let bar = Bar { clock: "01:27", battery: Some((40, None)), usb: false, wlan, data: Some(false), slot: Some("B"), temp: Some(362) };
         status_bar(&mut c, &t, &f, &bar, t.pal.status);
         // Runs of inked columns on the bar's right half, those a few pixels
         // apart taken as one mark.
@@ -2933,7 +2962,7 @@ mod tests {
         let f = crate::font::bundled();
         let draw = |kind| {
             let mut c = Canvas::filled(1200, 160, Rgba::rgb(0, 0, 0));
-            let bar = Bar { clock: "01:27", battery: Some((64, Some(kind))), wlan: None, data: None, slot: None, temp: None };
+            let bar = Bar { clock: "01:27", battery: Some((64, Some(kind))), usb: false, wlan: None, data: None, slot: None, temp: None };
             status_bar(&mut c, &t, &f, &bar, t.pal.status);
             c
         };

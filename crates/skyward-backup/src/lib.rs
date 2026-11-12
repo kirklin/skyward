@@ -2,6 +2,7 @@
 //! the files each of its parts is kept in.
 
 pub mod archive;
+pub mod image;
 pub mod store;
 
 use anyhow::{ensure, Context, Result};

@@ -31,12 +31,95 @@ const FIRMWARE: &str = "/etc/firmware";
 const PARTITIONS: &str = "/skyward/wlan";
 
 /// The supplicant's settings, and the folder of its control socket, in the
-/// recovery service's own folder.
+/// recovery service's own folder, for as long as the data partition stays
+/// closed: what it keeps there is gone when the phone is turned off.
 const HOME: &str = "/skyward/run/supplicant";
+
+/// Where the networks joined once are kept: on the data partition, which
+/// opens only once its password is entered. A recovery that has got that
+/// far joins them again by itself on the next start.
+const KEPT: &str = "/data/misc/wifi/skyward";
 
 /// The user the supplicant takes on as it starts, who has to be able to
 /// make its socket.
 const WIFI: u32 = 1010;
+
+/// The folder the supplicant keeps its settings in: the data partition's
+/// once it is open, so that a network joined once is joined again on the
+/// next start, and the recovery's own folder before that, where nothing
+/// outlives the phone.
+fn home() -> PathBuf {
+    if !Path::new("/data/misc/wifi").is_dir() {
+        return PathBuf::from(HOME);
+    }
+    let kept = Path::new(KEPT);
+    if fs::create_dir_all(kept).is_err() {
+        return PathBuf::from(HOME);
+    }
+    // The supplicant takes on the user `wifi`, which has to write here.
+    let _ = std::os::unix::fs::chown(kept, Some(WIFI), Some(WIFI));
+    let _ = fs::set_permissions(kept, fs::Permissions::from_mode(0o770));
+    kept.to_path_buf()
+}
+
+/// How a network is protected, read back from the `key_mgmt` the recovery
+/// set for it.
+fn security_of(key_mgmt: &str) -> Option<Security> {
+    let key_mgmt = key_mgmt.trim();
+    match key_mgmt {
+        "NONE" => Some(Security::Open),
+        "OWE" => Some(Security::Owe),
+        _ if key_mgmt.contains("SAE") && key_mgmt.contains("WPA-PSK") => Some(Security::PskSae),
+        _ if key_mgmt.contains("SAE") => Some(Security::Sae),
+        _ if key_mgmt.contains("WPA-PSK") => Some(Security::Psk),
+        _ => None,
+    }
+}
+
+/// The bytes the supplicant was given as hex, read back.
+fn unhex(text: &str) -> Option<Vec<u8>> {
+    let text = text.trim();
+    if !text.len().is_multiple_of(2) {
+        return None;
+    }
+    (0..text.len() / 2).map(|i| u8::from_str_radix(text.get(2 * i..2 * i + 2)?, 16).ok()).collect()
+}
+
+/// Keep the network just joined, as the words that set it up after the id
+/// the supplicant gave it: a later start gives it another id, and these are
+/// set again on that one. Written only where it outlives the phone.
+fn remember(commands: &[String]) {
+    let at = home();
+    if at.as_path() != Path::new(HOME) {
+        let bodies = commands.iter().filter_map(|c| {
+            let (what, rest) = c.split_once(' ')?;
+            if what != "SET_NETWORK" {
+                return None;
+            }
+            rest.split_once(' ').map(|(_, body)| body.to_string())
+        });
+        let text = bodies.collect::<Vec<_>>().join("\n");
+        let path = at.join("joined");
+        if let Err(e) = fs::write(&path, text + "\n") {
+            let _ = skyward_sys::kmsg(&format!("keep the network joined: {e:#}"));
+            return;
+        }
+        let _ = std::os::unix::fs::chown(&path, Some(WIFI), Some(WIFI));
+        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+    }
+}
+
+/// The network kept from a start that opened the data partition, also as
+/// the words that set it up. Empty where none was kept.
+fn kept_network() -> Vec<String> {
+    if home().as_path() == Path::new(HOME) {
+        return Vec::new();
+    }
+    fs::read_to_string(Path::new(KEPT).join("joined"))
+        .map(|text| text.lines().filter(|l| !l.trim().is_empty()).map(str::to_owned).collect())
+        .unwrap_or_default()
+}
+
 
 /// How long the driver may take to make its interface, the chip's firmware
 /// loading meanwhile.
@@ -317,6 +400,8 @@ impl Station {
                     }
                 }
                 self.state.joined = None;
+                // Left behind, it would be joined again on the next start.
+                let _ = fs::remove_file(Path::new(KEPT).join("joined"));
             }
         }
     }
@@ -331,6 +416,15 @@ impl Station {
             Ok(r) => {
                 self.running = Some(r);
                 self.state.power = Power::On;
+                // A record an earlier build left goes too: nothing is kept
+                // on a phone that asks for nothing to be kept.
+                if !self.cfg.remember {
+                    let path = Path::new(KEPT).join("joined");
+                    if path.exists() && fs::remove_file(&path).is_ok() {
+                        let _ = skyward_sys::kmsg("the network kept is gone: this phone keeps none");
+                    }
+                }
+                self.resume();
                 self.command(Command::Scan);
             }
             Err(e) => {
@@ -343,7 +437,7 @@ impl Station {
     fn start(&self) -> Result<Running> {
         bring_up(&self.cfg, &self.modules)?;
         let mut child = start_supplicant(&self.cfg, self.libraries.as_deref())?;
-        let socket = Path::new(HOME).join("sockets").join(&self.cfg.interface);
+        let socket = home().join("sockets").join(&self.cfg.interface);
         let connected = (|| -> Result<(Control, Control)> {
             let control = Control::open(&socket)?;
             ensure!(control.ask("PING")?.trim_end() == "PONG", "wpa_supplicant does not answer PING");
@@ -400,10 +494,64 @@ impl Station {
         // One the last scan did not see may hide its name, as one added by
         // hand may.
         let hidden = !r.found.iter().any(|b| b.ssid == joined.ssid);
-        for c in supplicant::network_commands(id, &joined.ssid, joined.security, password, hidden)? {
-            r.control.order(&c)?;
+        let commands = supplicant::network_commands(id, &joined.ssid, joined.security, password, hidden)?;
+        for c in &commands {
+            r.control.order(c)?;
         }
-        r.control.order(&format!("SELECT_NETWORK {id}"))
+        r.control.order(&format!("SELECT_NETWORK {id}"))?;
+        // Kept where the data partition has been opened, this network is
+        // joined again by itself on the next start — unless the phone asks
+        // that nothing is kept, in which case the password never leaves the
+        // running memory.
+        if self.cfg.remember {
+            remember(&commands);
+        }
+        Ok(())
+    }
+
+    /// Join the network kept from a start that opened the data partition,
+    /// so that a phone left alone reaches the network it reached before.
+    fn resume(&mut self) {
+        if !self.cfg.remember {
+            return;
+        }
+        let kept = kept_network();
+        if kept.is_empty() {
+            return;
+        }
+        let joined = {
+            let Some(r) = self.running.as_ref() else { return };
+            match Self::join_kept(r, &kept) {
+                Ok(joined) => joined,
+                Err(e) => {
+                    let _ = skyward_sys::kmsg(&format!("join the network kept: {e:#}"));
+                    return;
+                }
+            }
+        };
+        let _ = skyward_sys::kmsg("the WLAN joins the network it joined before");
+        self.state.joined = Some(joined);
+    }
+
+    /// Set up and choose the kept network on a supplicant just started.
+    fn join_kept(r: &Running, kept: &[String]) -> Result<Joined> {
+        let id: u32 = r.control.ask("ADD_NETWORK")?.trim().parse().context("wpa_supplicant numbered the network with no number")?;
+        let mut security = None;
+        let mut ssid = None;
+        for body in kept {
+            r.control.order(&format!("SET_NETWORK {id} {body}"))?;
+            let Some((name, value)) = body.split_once(' ') else { continue };
+            match name {
+                "ssid" => ssid = unhex(value),
+                "key_mgmt" => security = security_of(value),
+                _ => {}
+            }
+        }
+        let ssid = ssid.context("the network kept has no name")?;
+        let security = security.context("the network kept does not say how it is protected")?;
+        r.control.order(&format!("SELECT_NETWORK {id}"))?;
+        let name = String::from_utf8_lossy(&ssid).into_owned();
+        Ok(Joined { ssid, name, security, stage: Stage::Joining })
     }
 
     /// Read what the supplicant has told.
@@ -709,16 +857,22 @@ fn place(file: &Firmware) -> Result<()> {
 
 /// Start the supplicant on the interface, and wait for its control socket.
 fn start_supplicant(cfg: &Config, libraries: Option<&Path>) -> Result<Child> {
-    let home = Path::new(HOME);
-    let sockets = home.join("sockets");
+    let folder = home();
+    let sockets = folder.join("sockets");
     fs::create_dir_all(&sockets).with_context(|| format!("make {}", sockets.display()))?;
-    fs::set_permissions(home, fs::Permissions::from_mode(0o755)).with_context(|| format!("open {} to the supplicant", home.display()))?;
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o755)).with_context(|| format!("open {} to the supplicant", folder.display()))?;
     std::os::unix::fs::chown(&sockets, Some(WIFI), Some(WIFI)).with_context(|| format!("give {} to the supplicant", sockets.display()))?;
     fs::set_permissions(&sockets, fs::Permissions::from_mode(0o770)).with_context(|| format!("keep {} to the supplicant", sockets.display()))?;
-    let settings = home.join("wpa_supplicant.conf");
-    fs::write(&settings, format!("ctrl_interface={}\nupdate_config=0\np2p_disabled=1\npmf=1\nsae_pwe=2\n", sockets.display()))
-        .with_context(|| format!("write {}", settings.display()))?;
-    fs::set_permissions(&settings, fs::Permissions::from_mode(0o644)).with_context(|| format!("open {} to the supplicant", settings.display()))?;
+    let settings = folder.join("wpa_supplicant.conf");
+    // Kept on the data partition, the settings already hold the networks
+    // joined before: they stay, and the supplicant may write them back.
+    let kept = folder != Path::new(HOME);
+    if !settings.exists() {
+        fs::write(&settings, format!("ctrl_interface={}\nupdate_config={}\np2p_disabled=1\npmf=1\nsae_pwe=2\n", sockets.display(), u8::from(kept)))
+            .with_context(|| format!("write {}", settings.display()))?;
+        fs::set_permissions(&settings, fs::Permissions::from_mode(0o644)).with_context(|| format!("open {} to the supplicant", settings.display()))?;
+        let _ = std::os::unix::fs::chown(&settings, Some(WIFI), Some(WIFI));
+    }
     let socket = sockets.join(&cfg.interface);
     // One an earlier run left would answer nothing.
     if socket.exists() {

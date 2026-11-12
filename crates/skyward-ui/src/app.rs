@@ -28,6 +28,7 @@ use skyward_net::supplicant::Security;
 use skyward_net::wlan::{Joined, Network, Power, Stage as Joining, Traffic, Wlan};
 use skyward_systems::{Overview, Who};
 use skyward_vab::{BootSlots, Hold, Slot, SnapshotState, Standing};
+use std::path::PathBuf;
 
 /// The pages of the recovery.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,6 +63,12 @@ pub enum Screen {
     BackupJob,
     /// Tools for the experienced: files, a terminal, the logs.
     Advanced,
+    /// The KernelSU modules under the data partition, to switch one off
+    /// before its next start, or to drop it.
+    Modules,
+    /// Whole partitions, kept as an image each and written back from one,
+    /// which is how a phone that will not start is brought back.
+    Images,
     Files,
     /// One file, and what can be done with it.
     FileInfo,
@@ -77,6 +84,11 @@ pub enum Screen {
     /// The partitions whose filesystems can be repaired or made afresh as
     /// another.
     Filesystems,
+    /// What the blocks that say whether the bootloader and the kernel check
+    /// what they start say now.
+    Avb,
+    /// What the bootloader control block in misc asks the next start to do.
+    Starter,
     /// One of them: what it holds, and what to do to it, with a swipe to
     /// do it.
     Filesystem,
@@ -94,6 +106,9 @@ pub enum Screen {
     /// Skyward's newest release, and updating to it: its build for the
     /// phone downloaded and written into the recovery partitions.
     SkywardUpdate,
+    /// A file taken from an address typed on the screen's own keyboard, into
+    /// internal storage: the address, and then how the taking of it goes.
+    Fetch,
     /// Skyward's own licence.
     License,
     /// The interface typeface and the terms it is used under.
@@ -260,6 +275,18 @@ pub const DECRYPT_FIRST: Text = ["请先完成「解密」", "請先完成「解
 /// What going back is told while work that can be stopped goes on.
 const WAIT_OR_STOP: Text = ["请等待完成或停止后再返回", "請等待完成或停止後再返回", "Wait for it to finish, or stop it, before going back"];
 
+/// What the download page says of an address that is not one.
+pub const FETCH_NEEDS_ADDRESS: Text = [
+    "请填写以 http:// 或 https:// 开头的地址",
+    "請填寫以 http:// 或 https:// 開頭的位址",
+    "Enter an address that starts with http:// or https://",
+];
+
+/// Said when the address typed is kept for pasting.
+pub const COPIED: Text = ["已复制，可以在别处粘回来", "已複製，可以在別處貼回來", "Copied, to be pasted back here"];
+/// Said when there is nothing to paste.
+pub const NOTHING_COPIED: Text = ["还没有复制过内容", "還沒有複製過內容", "Nothing has been copied yet"];
+
 /// A password typed, which what is printed of it leaves out: the recovery
 /// prints each effect the pages ask for.
 #[derive(Clone, Default, PartialEq, Eq)]
@@ -316,6 +343,16 @@ pub enum Place {
     /// A USB drive plugged into the port, which the runtime shows read
     /// only.
     UsbDrive,
+}
+
+/// Which partitions a page's one-touch backup reads out: all of them but the
+/// ones a phone cannot keep, the ones it cannot be put back together
+/// without, or the few it needs to start at all.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImageSet {
+    All,
+    Key,
+    Least,
 }
 
 /// The USB drive plugged in, as the runtime found it.
@@ -452,6 +489,46 @@ pub struct FsRow {
     pub others: Vec<String>,
 }
 
+/// A partition the image page lists, by its name under `/dev/block/by-name`
+/// and the bytes its device holds.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Partition {
+    pub name: String,
+    pub bytes: u64,
+}
+
+/// An image the image page found, by its file name and its bytes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ImageFile {
+    pub name: String,
+    pub bytes: u64,
+}
+
+/// What the bootloader control block asks: the command the bootloader acts
+/// on, and the arguments the recovery it starts should run with.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Starter {
+    pub command: String,
+    pub args: Vec<String>,
+}
+
+/// Reading one partition out, or writing one image back, as the image page
+/// shows it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ImageJob {
+    /// Writing an image back into its partition, rather than reading one out.
+    pub restore: bool,
+    /// The partition's name, or the image's file name, as the page says it.
+    pub name: String,
+    /// The bytes the whole of it takes.
+    pub bytes: u64,
+    pub done: u64,
+    /// How it ended; none while it is under way.
+    pub outcome: Option<Result<String, String>>,
+    /// Stopping was asked for and is under way.
+    pub stopping: bool,
+}
+
 /// What the filesystem page does to the partition it shows.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FsAction {
@@ -556,6 +633,11 @@ pub enum Switch {
     /// Write Skyward back into the recovery partitions an install writes
     /// over.
     KeepRecovery,
+    /// Keep what opened the data partition, sealed for this phone, and try
+    /// it again at the next start.
+    RememberCredential,
+    /// Wake the screen on two taps rather than the power button alone.
+    WakeByTap,
     Wlan,
     /// Show the password typed rather than a dot for each character.
     ShowPassword,
@@ -1316,8 +1398,52 @@ pub enum Action {
     UpdateSkyward,
     /// Stop downloading the build.
     StopSkywardUpdate,
+    /// Take what the address typed on the download page holds.
+    Fetch,
+    /// Stop taking it.
+    StopFetch,
+    /// Have adb listen on the network too, or stop it doing so.
+    SetAdbWifi(bool),
+    /// Wipe the note in misc that asks the bootloader for the recovery.
+    ClearStarter,
+    /// Switch the module it names off, or on again, before its next start.
+    ToggleModule(usize),
+    /// Write the part of an address the key names into what is typed.
+    UrlKey(UrlKey),
+    /// Offer the next mirror for the addresses typed after this.
+    CycleMirror,
+    /// Keep the address typed as the text the pages paste.
+    CopyUrl,
+    /// Write the text the pages copied into the address typed.
+    PasteUrl,
     /// A control whose work is not wired up yet; touching it says so.
     Unavailable(&'static str),
+    /// Ask for the module it names to be dropped, and again to go through
+    /// with it: the first touch only arms.
+    DropModule(usize),
+    /// Read the whole of the partition at this place in the image page's
+    /// list out into an image file.
+    ImageBackup(usize),
+    /// Read every partition the phone keeps out into compressed images, one
+    /// after another.
+    ImageAll,
+    /// The same, but only the partitions a phone cannot be put back
+    /// together without.
+    ImageKey,
+    /// The same again, but only the few a phone needs to start at all,
+    /// which is all some want kept.
+    ImageLeast,
+    /// Write the image at this place in the image page's list back into its
+    /// partition, and again to go through with it: the first touch only arms.
+    ImageRestore(usize),
+    /// Stop reading a partition out or writing it back.
+    StopImage,
+    /// Turn the AVB checks the page lists off, or on again, and again to go
+    /// through with it: the first touch only arms.
+    AvbChecks { on: bool },
+    /// Take the kept credential away, leaving the switch on: the next
+    /// password that opens the data partition is kept in its place.
+    ForgetCredential,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1571,6 +1697,108 @@ impl Frame {
     }
 }
 
+/// A key the download page puts above its keyboard: the parts of an
+/// address the keyboard buries a layer or two down, and the two prefixes
+/// and the one mirror most links are typed with.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UrlKey {
+    Https,
+    Http,
+    Proxy,
+    Colon,
+    Slash,
+    Dot,
+    Dash,
+    Under,
+    Equals,
+    Query,
+    Amp,
+    Percent,
+}
+
+impl UrlKey {
+    /// All of them, in the order the page lays them out.
+    pub const ALL: [UrlKey; 12] =
+        [UrlKey::Https, UrlKey::Http, UrlKey::Proxy, UrlKey::Colon, UrlKey::Slash, UrlKey::Dot, UrlKey::Dash, UrlKey::Under, UrlKey::Equals, UrlKey::Query, UrlKey::Amp, UrlKey::Percent];
+
+    /// What it writes into the address.
+    pub fn text(self) -> &'static str {
+        match self {
+            UrlKey::Https => "https://",
+            UrlKey::Http => "http://",
+            UrlKey::Proxy => "gh-proxy.com/",
+            UrlKey::Colon => ":",
+            UrlKey::Slash => "/",
+            UrlKey::Dot => ".",
+            UrlKey::Dash => "-",
+            UrlKey::Under => "_",
+            UrlKey::Equals => "=",
+            UrlKey::Query => "?",
+            UrlKey::Amp => "&",
+            UrlKey::Percent => "%",
+        }
+    }
+
+    /// What the key says.
+    pub fn label(self) -> &'static str {
+        match self {
+            UrlKey::Colon => ":",
+            UrlKey::Slash => "/",
+            UrlKey::Dot => ".",
+            UrlKey::Dash => "-",
+            UrlKey::Under => "_",
+            UrlKey::Equals => "=",
+            UrlKey::Query => "?",
+            UrlKey::Amp => "&",
+            UrlKey::Percent => "%",
+            _ => self.text(),
+        }
+    }
+}
+
+/// The mirrors an address is taken through, in the order the download page
+/// offers them: nothing first, so no link is sent through a third party
+/// unless the user picks one. The first three carry GitHub's API as well as
+/// the files it hands out, so they answer which release is the newest too;
+/// the last two only carry the files.
+pub const MIRRORS: [&str; 6] = [
+    "",
+    "https://gh-proxy.com/",
+    "https://gh-proxy.org/",
+    "https://gh-proxy.cc/",
+    "https://ghfast.top/",
+    "https://github.akams.cn/",
+];
+
+/// A mirror only helps on GitHub's own hosts, so an address there is
+/// prefixed with it and every other address is left as it is.
+fn proxied(url: &str) -> bool {
+    ["https://github.com/", "https://raw.githubusercontent.com/", "https://objects.githubusercontent.com/"].iter().any(|host| url.starts_with(host))
+}
+
+/// One of the KernelSU modules under the data partition: what it calls
+/// itself, and whether it is switched off or dropped at the next start.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Module {
+    /// The folder it keeps its files in.
+    pub dir: PathBuf,
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    /// A `disable` file stands in the folder: the module does nothing at
+    /// the next start, but is kept.
+    pub disabled: bool,
+    /// A `remove` file stands in the folder: KernelSU drops it at the
+    /// next start.
+    pub remove: bool,
+    /// A `skip_mount` file stands in the folder: the module runs, but its
+    /// files are not piled onto the system at a start.
+    pub skip_mount: bool,
+    /// KernelSU holds new files for it in `modules_update`: it is swapped
+    /// in at the next start, so what runs now is still the old version.
+    pub pending_update: bool,
+}
+
 /// Choices the pages show and the user changes, and where installing
 /// stands.
 #[derive(Clone, Debug, PartialEq)]
@@ -1621,6 +1849,18 @@ pub struct State {
     /// Skyward goes back into the recovery partitions an install writes
     /// over.
     pub keep_recovery: bool,
+    /// What opened the data partition once is kept on /metadata, sealed for
+    /// this phone, and tried at the next start.
+    pub remember_credential: bool,
+    /// Two taps on the dark screen wake it, rather than the power button
+    /// alone. The panel is then left lit at no brightness instead of going
+    /// off, so the phone no longer sleeps.
+    pub wake_by_tap: bool,
+    /// Whether a password is kept now, as the file on /metadata says.
+    pub credential_kept: bool,
+    /// When what was kept was sealed, in whole seconds since 1970, so the
+    /// page can say how long it has been there.
+    pub credential_at: Option<i64>,
     /// How Skyward went back into the recovery partitions the install
     /// wrote over, where it did.
     pub reflash: Option<Reflash>,
@@ -1714,6 +1954,25 @@ pub struct State {
     /// The filesystem page's partitions, as the runtime last read them, or
     /// why it could not; none until it has.
     pub filesystems: Option<Result<Vec<FsRow>, String>>,
+    /// The partitions the image page lists, as the runtime last read them,
+    /// or why it could not; none until it has.
+    pub partitions: Option<Result<Vec<Partition>, String>>,
+    /// The images kept, by file name and bytes, biggest first.
+    pub images: Vec<ImageFile>,
+    /// Reading a partition out or writing it back, or how that last ended.
+    pub image: Option<ImageJob>,
+    /// The image armed to be written back, by its place in [`State::images`]:
+    /// the first touch arms, the next goes through with it.
+    pub armed_image: Option<usize>,
+    /// Which way the AVB page has been armed to change the checks: the
+    /// first touch arms it, the next goes through.
+    pub armed_avb: Option<bool>,
+    /// The vbmeta blocks the slot keeps, as the runtime last read them, or
+    /// why it could not; none until it has.
+    pub avb: Option<Result<Vec<skyward_vab::avb::Reading>, String>>,
+    /// What the bootloader control block asks, as the runtime last read it,
+    /// or why it could not.
+    pub starter: Option<Result<Starter, String>>,
     /// Which of them the page for one shows, and what it is to do to it:
     /// a repair, which leaves what it holds as it is, until another is
     /// chosen.
@@ -1748,6 +2007,25 @@ pub struct State {
     pub skyward_check: SkywardCheck,
     /// Updating Skyward, or how that last ended.
     pub skyward_job: Option<SkywardJob>,
+    /// The address typed on the download page, and the taking of it, or how
+    /// that last ended.
+    pub url: String,
+    pub fetch_job: Option<DownloadJob>,
+    /// adb also listens on the network, so a computer reaches the phone
+    /// without the cable; off until it is turned on, and off again at the
+    /// next start.
+    pub adb_wifi: bool,
+    /// The KernelSU modules under the data partition, once they are read.
+    pub modules: Option<Vec<Module>>,
+    /// Which mirror an address is taken through, as its place in
+    /// [`MIRRORS`]; the first is no mirror at all.
+    pub mirror: usize,
+    /// The module a drop was asked for, waiting for a second touch to go
+    /// through: only one is armed at a time.
+    pub armed_drop: Option<PathBuf>,
+    /// The text the pages copy and paste into their own fields: a recovery
+    /// has no clipboard of the system's to share with an app.
+    pub typed_clip: String,
     /// How fast data went over the network joined in the last second.
     pub traffic: Traffic,
 }
@@ -1778,6 +2056,11 @@ impl Default for State {
             check_signature: false,
             recovery_partitions: false,
             keep_recovery: true,
+            remember_credential: false,
+            wake_by_tap: false,
+            credential_kept: false,
+            credential_at: None,
+            starter: None,
             reflash: None,
             mounts: Ok(Vec::new()),
             mount_failure: None,
@@ -1818,6 +2101,12 @@ impl Default for State {
             job: None,
             relabel: None,
             filesystems: None,
+            partitions: None,
+            images: Vec::new(),
+            image: None,
+            armed_image: None,
+            armed_avb: None,
+            avb: None,
             fs_chosen: 0,
             fs_action: FsAction::Repair,
             part_work: None,
@@ -1834,6 +2123,13 @@ impl Default for State {
             download: None,
             skyward_check: SkywardCheck::Idle,
             skyward_job: None,
+            url: String::new(),
+            fetch_job: None,
+            adb_wifi: false,
+            modules: None,
+            mirror: 0,
+            armed_drop: None,
+            typed_clip: String::new(),
             traffic: Traffic::default(),
         }
     }
@@ -1964,6 +2260,11 @@ pub enum Effect {
     Screenshot { storage: bool },
     /// Offer internal storage to a computer over USB, or stop.
     FileTransfer(bool),
+    /// Keep what opened the data partition, sealed on /metadata, or take it
+    /// away.
+    RememberCredential(bool),
+    /// Take the kept credential away, leaving the switch as it is.
+    ForgetCredential,
     /// Start receiving a package over USB.
     Sideload,
     /// Start installing the file at this path from the top of a place,
@@ -2072,6 +2373,15 @@ pub enum Effect {
     /// Read the partitions for the filesystem page, which has just opened,
     /// telling them with [`App::set_filesystems`].
     ReadFilesystems,
+    /// Read the vbmeta blocks the slot keeps for the AVB page, which has just
+    /// opened, telling them with [`App::set_avb`].
+    ReadAvb,
+    /// Read what the bootloader control block in misc asks, which the
+    /// starter page has just opened, telling it with [`App::set_starter`].
+    ReadStarter,
+    /// Zero the bootloader control block, so the next start follows its
+    /// reboot reason and nothing else.
+    ClearStarter,
     /// Do `action` to the filesystem page's partition by its name, telling
     /// how it goes with [`App::part_work_started`], [`App::part_listed`],
     /// [`App::part_at`], [`App::part_ended`] and [`App::part_work_ended`];
@@ -2121,6 +2431,43 @@ pub enum Effect {
     /// [`App::skyward_ended`].
     UpdateSkyward(Build),
     StopSkywardUpdate,
+    /// Take what the address holds into internal storage, telling how it
+    /// goes with [`App::fetch_progress`] and [`App::fetch_ended`].
+    FetchUrl(String),
+    StopFetch,
+    /// Start or stop adb listening on the network.
+    AdbWifi(bool),
+    /// Read the KernelSU modules under the data partition, and tell the page
+    /// with [`App::modules_listed`].
+    ReadModules,
+    /// Put a `disable` file into the module at `at`, or take it away.
+    ToggleModule { at: PathBuf, off: bool },
+    /// Put a `remove` file into the module at `at`, so KernelSU drops it at
+    /// the next start.
+    DropModule { at: PathBuf },
+    /// Read the partitions and the images kept for the image page, which has
+    /// just opened, telling them with [`App::set_images`].
+    ReadImages,
+    /// Read the whole of the partition `partition`, by its name under
+    /// `/dev/block/by-name`, out into an image file of its own, telling how
+    /// it goes with [`App::image_started`], [`App::image_at`] and
+    /// [`App::image_ended`].
+    ImageBackup { partition: String },
+    /// Write the image kept as `image` back into the partition it was read
+    /// from, telling how it goes as reading one out does.
+    ImageRestore { image: String },
+    /// Read every partition the phone keeps out into compressed images of
+    /// their own, one after another, telling how it goes as one does; `key`
+    /// keeps only the partitions a phone cannot be put together again
+    /// without.
+    /// Read partitions out into compressed images, one after another: which
+    /// of them, by name.
+    ImageAll { which: ImageSet },
+    /// Stop reading a partition out or writing it back between two reads.
+    StopImage,
+    /// Turn the AVB checks off, or on again, with the tool the phone's own
+    /// tools make for it; the vbmeta blocks are copied first.
+    AvbChecks { on: bool },
     /// Merge the update that waits in the slot the phone runs from,
     /// telling how it goes with [`App::set_update`].
     Merge,
@@ -2803,6 +3150,37 @@ impl App {
         self.corners = radius;
     }
 
+    /// Lay the pages out again for a screen of another size, so that the
+    /// same page shows on both the phone's own screen and its cover at the
+    /// size of each. Everything drawn for the old size is dropped: the page
+    /// shown, the bands drawn ahead of it, and the lists laid out to the old
+    /// width. What the pages hold, and where they stand, stay as they were.
+    pub fn resize(&mut self, w: u32, h: u32, px_per_dp: f32) {
+        if (self.w, self.h, self.px_per_dp) == (w, h, px_per_dp) {
+            return;
+        }
+        self.w = w;
+        self.h = h;
+        self.px_per_dp = px_per_dp;
+        self.frame = None;
+        self.spots = None;
+        self.shown = None;
+        self.layer = None;
+        self.backdrop = None;
+        self.row_art = None;
+        self.charge_canvas = None;
+        self.titles = None;
+        self.search_words = None;
+        self.chip = None;
+        self.button_chip = None;
+        self.turn = None;
+        self.drawn.clear();
+        self.spare.clear();
+        self.stale.clear();
+        self.cols = 0;
+        self.dirty = true;
+    }
+
     pub fn theme(&self) -> Theme {
         if self.state.dark {
             Theme::dark(self.w, self.h, self.px_per_dp)
@@ -3132,6 +3510,13 @@ impl App {
         }
         self.woke_at = Some(now);
         self.stir(now);
+    }
+
+    /// Two taps on a dark screen: it comes back at the brightness set, as
+    /// the power button would bring it back.
+    pub fn woken_by_tap(&mut self, now: u64) {
+        self.wake(now);
+        self.refresh();
     }
 
     /// A charger or a computer was attached, `cable_in`, or taken away: the
@@ -3464,6 +3849,73 @@ impl App {
         self.refresh();
     }
 
+    /// The vbmeta blocks the slot keeps for the AVB page, as the runtime read
+    /// them, or why it could not.
+    pub fn set_avb(&mut self, rows: Result<Vec<skyward_vab::avb::Reading>, String>) {
+        self.state.avb = Some(rows);
+        self.refresh();
+    }
+
+    /// What the bootloader control block asks, as the runtime read it; one
+    /// that could not be read comes with why.
+    pub fn set_starter(&mut self, starter: Result<Starter, String>) {
+        self.state.starter = Some(starter);
+        self.refresh();
+    }
+
+    /// Whether a password is kept, and when it was sealed, as the file that
+    /// keeps it says.
+    pub fn set_credential_kept(&mut self, kept: bool) {
+        if self.state.credential_kept != kept {
+            self.state.credential_kept = kept;
+            self.refresh();
+        }
+    }
+
+    /// When the kept password was sealed, in whole seconds since 1970.
+    pub fn set_credential_at(&mut self, at: Option<i64>) {
+        if self.state.credential_at != at {
+            self.state.credential_at = at;
+            self.refresh();
+        }
+    }
+
+    /// The partitions and the images kept, as the runtime read them; a
+    /// partition list that could not be read comes with why.
+    pub fn set_images(&mut self, partitions: Result<Vec<Partition>, String>, images: Vec<ImageFile>) {
+        self.state.partitions = Some(partitions);
+        self.state.images = images;
+        self.state.armed_image = None;
+        self.refresh();
+    }
+
+    /// Reading a partition out, or writing an image back, has begun.
+    pub fn image_started(&mut self, restore: bool, name: String, bytes: u64) {
+        self.state.image = Some(ImageJob { restore, name, bytes, done: 0, outcome: None, stopping: false });
+        self.state.armed_image = None;
+        self.refresh();
+    }
+
+    /// How far it has come, in bytes.
+    pub fn image_at(&mut self, done: u64) {
+        if let Some(job) = &mut self.state.image {
+            if job.done != done {
+                job.done = done;
+                self.refresh();
+            }
+        }
+    }
+
+    /// How it ended: a line saying what was kept or written back, or why
+    /// nothing was.
+    pub fn image_ended(&mut self, outcome: Result<String, String>) {
+        if let Some(job) = &mut self.state.image {
+            job.outcome = Some(outcome);
+            job.stopping = false;
+        }
+        self.refresh();
+    }
+
     /// The partition the page of one shows.
     fn fs_row(&self) -> Option<&FsRow> {
         self.state.filesystems.as_ref()?.as_ref().ok()?.get(self.state.fs_chosen)
@@ -3607,13 +4059,14 @@ impl App {
     /// What the status bar shows of the WLAN: the network joined, while it
     /// has an address.
     /// What the status bar shows, its clock reading `clock`: the battery,
-    /// the network joined, the data partition's lock, the slot the system
-    /// runs from, and the battery's temperature.
+    /// whether a cable is in, the network joined, the data partition's
+    /// lock, the slot the system runs from, and the battery's temperature.
     pub fn bar<'a>(&self, clock: &'a str, info: &DeviceInfo) -> Bar<'a> {
         let battery = info.battery.as_ref();
         Bar {
             clock,
             battery: battery.map(|b| (b.level, b.charging().then_some(if b.quick { Bolt::Quick } else { Bolt::Charging }))),
+            usb: battery.is_some_and(|b| b.plugged),
             wlan: self.wlan_mark(),
             data: match self.state.data {
                 Data::Erased => None,
@@ -3685,6 +4138,35 @@ impl App {
         job.stage = Some(stage);
         job.rate = rate;
         if self.screen() == Screen::SkywardUpdate {
+            self.refresh();
+        }
+    }
+
+    /// How far taking the file at the typed address has come, and how fast
+    /// it goes, in bytes a second.
+    pub fn fetch_progress(&mut self, progress: Progress, rate: u64) {
+        let job = self.state.fetch_job.as_mut().expect("only a taking of a file under way moves on");
+        job.progress = Some(progress);
+        job.rate = rate;
+        if self.screen() == Screen::Fetch {
+            self.refresh();
+        }
+    }
+
+    /// Taking the file has ended: the page says how, lit for the user to
+    /// read.
+    pub fn fetch_ended(&mut self, end: DownloadEnd, now: u64) {
+        let job = self.state.fetch_job.as_mut().expect("only a taking of a file under way ends");
+        job.stopping = false;
+        job.outcome = Some(end);
+        self.wake(now);
+        self.refresh();
+    }
+
+    /// The KernelSU modules under the data partition, as they were read.
+    pub fn modules_listed(&mut self, modules: Vec<Module>) {
+        self.state.modules = Some(modules);
+        if self.screen() == Screen::Modules {
             self.refresh();
         }
     }
@@ -5062,7 +5544,26 @@ impl App {
     fn arrive_at(&mut self, s: Screen) -> Vec<Effect> {
         match s {
             Screen::Mount => vec![Effect::ReadMounts],
+            Screen::Modules => {
+                self.state.modules = None;
+                vec![Effect::ReadModules]
+            }
             Screen::Filesystems => vec![Effect::ReadFilesystems],
+            Screen::Avb => {
+                self.state.avb = None;
+                vec![Effect::ReadAvb]
+            }
+            // The job under way is kept, so leaving the page and coming back
+            // shows how it stands; one that has ended is shown as it ended
+            // until another begins.
+            Screen::Images => {
+                self.state.partitions = None;
+                vec![Effect::ReadImages]
+            }
+            Screen::Starter => {
+                self.state.starter = None;
+                vec![Effect::ReadStarter]
+            }
             Screen::Slot | Screen::Reboot => vec![Effect::ReadSlots],
             Screen::Systems => vec![Effect::ReadSystems],
             Screen::Restore => vec![self.find_backups()],
@@ -5171,6 +5672,8 @@ impl App {
                     Switch::Verify => &mut self.state.verify,
                     Switch::Signature => &mut self.state.check_signature,
                     Switch::KeepRecovery => &mut self.state.keep_recovery,
+                    Switch::RememberCredential => &mut self.state.remember_credential,
+                    Switch::WakeByTap => &mut self.state.wake_by_tap,
                     Switch::ShowPassword => &mut self.state.show_password,
                     Switch::Wlan => unreachable!("the WLAN switch is turned above"),
                 };
@@ -5180,6 +5683,12 @@ impl App {
                 if switch == Switch::FileTransfer {
                     return vec![Effect::FileTransfer(now_on)];
                 }
+                if switch == Switch::RememberCredential {
+                    return vec![Effect::RememberCredential(now_on)];
+                }
+            }
+            Action::ForgetCredential => {
+                return vec![Effect::ForgetCredential];
             }
             Action::MountToggle(i) => {
                 if self.state.mount_failure.take().is_some() {
@@ -5370,6 +5879,8 @@ impl App {
             Action::BackupTo(place) => {
                 self.state.backup_to = place;
                 self.refresh();
+                // The images kept are listed from the place now chosen.
+                return vec![Effect::ReadImages];
             }
             // All a backup holds is ticked to restore at first.
             Action::OpenBackup(i) => {
@@ -5631,6 +6142,165 @@ impl App {
                     return vec![Effect::StopDownload];
                 }
             }
+            // What is taken goes into internal storage, which the decrypt
+            // page opens, over a network the WLAN page joins.
+            Action::Fetch => {
+                let url = self.state.url.trim().to_string();
+                if !(url.starts_with("http://") || url.starts_with("https://")) {
+                    self.say(self.state.lang.pick(FETCH_NEEDS_ADDRESS), now);
+                    return Vec::new();
+                }
+                if !self.state.data.storage_open() {
+                    self.open(Screen::Decrypt);
+                    return self.arrive_at(Screen::Decrypt);
+                }
+                if !self.state.online() {
+                    self.open(Screen::Wlan);
+                    return self.arrive_at(Screen::Wlan);
+                }
+                if self.state.fetch_job.as_ref().is_none_or(|job| job.outcome.is_some()) {
+                    let through = if proxied(&url) { format!("{}{url}", MIRRORS[self.state.mirror]) } else { url.clone() };
+                    self.state.fetch_job = Some(DownloadJob { progress: None, rate: 0, outcome: None, stopping: false });
+                    self.state.url = url;
+                    self.refresh();
+                    return vec![Effect::FetchUrl(through)];
+                }
+            }
+            Action::CycleMirror => {
+                self.state.mirror = (self.state.mirror + 1) % MIRRORS.len();
+                self.refresh();
+            }
+            Action::CopyUrl => {
+                self.state.typed_clip = self.state.url.clone();
+                self.say(self.state.lang.pick(COPIED), now);
+            }
+            Action::PasteUrl => {
+                if self.state.typed_clip.is_empty() {
+                    self.say(self.state.lang.pick(NOTHING_COPIED), now);
+                } else {
+                    let clip = self.state.typed_clip.clone();
+                    self.state.url.push_str(&clip);
+                    self.refresh();
+                }
+            }
+            Action::StopFetch => {
+                let job = self.state.fetch_job.as_mut().expect("only a taking of a file under way is stopped");
+                if job.outcome.is_none() && !job.stopping {
+                    job.stopping = true;
+                    self.refresh();
+                    return vec![Effect::StopFetch];
+                }
+            }
+            Action::UrlKey(key) => {
+                if self.screen() == Screen::Fetch {
+                    self.state.url.push_str(key.text());
+                    self.refresh();
+                }
+            }
+            Action::SetAdbWifi(on) => {
+                self.state.adb_wifi = on;
+                self.refresh();
+                return vec![Effect::AdbWifi(on)];
+            }
+            Action::ClearStarter => return vec![Effect::ClearStarter],
+            Action::DropModule(at) => {
+                let Some(module) = self.state.modules.as_mut().and_then(|ms| ms.get_mut(at)) else { return Vec::new() };
+                // The first touch arms it and says so; the second, with
+                // nothing else touched in between, goes through.
+                if self.state.armed_drop.as_ref() != Some(&module.dir) {
+                    self.state.armed_drop = Some(module.dir.clone());
+                    self.refresh();
+                    return Vec::new();
+                }
+                module.remove = true;
+                self.state.armed_drop = None;
+                let path = module.dir.clone();
+                self.refresh();
+                return vec![Effect::DropModule { at: path }];
+            }
+            // Reading a partition out is kept whole or not at all, and takes
+            // nothing away, so one touch begins it.
+            Action::ImageBackup(at) => {
+                if self.state.image.is_some() {
+                    return Vec::new();
+                }
+                let Some(part) = self.state.partitions.as_ref().and_then(|p| p.as_ref().ok()).and_then(|p| p.get(at)) else {
+                    return Vec::new();
+                };
+                let name = part.name.clone();
+                return vec![Effect::ImageBackup { partition: name }];
+            }
+            Action::ImageRestore(at) => {
+                if self.state.image.is_some() {
+                    return Vec::new();
+                }
+                let Some(image) = self.state.images.get(at) else { return Vec::new() };
+                // The first touch arms it and says so; the second, with
+                // nothing else touched in between, goes through: this writes
+                // over a whole partition.
+                if self.state.armed_image != Some(at) {
+                    self.state.armed_image = Some(at);
+                    self.refresh();
+                    return Vec::new();
+                }
+                self.state.armed_image = None;
+                let name = image.name.clone();
+                self.refresh();
+                return vec![Effect::ImageRestore { image: name }];
+            }
+            // Every partition, one after another: the first touch arms it,
+            // as one partition's own backup does not need to, since this
+            // writes many files rather than one.
+            Action::ImageAll | Action::ImageKey | Action::ImageLeast => {
+                if self.state.image.is_some() {
+                    return Vec::new();
+                }
+                if self.state.armed_image != Some(usize::MAX) {
+                    self.state.armed_image = Some(usize::MAX);
+                    self.refresh();
+                    return Vec::new();
+                }
+                self.state.armed_image = None;
+                self.refresh();
+                let which = match action {
+                    Action::ImageKey => ImageSet::Key,
+                    Action::ImageLeast => ImageSet::Least,
+                    _ => ImageSet::All,
+                };
+                return vec![Effect::ImageAll { which }];
+            }
+            Action::AvbChecks { on } => {
+                let armed = self.state.armed_avb;
+                if armed != Some(on) {
+                    self.state.armed_avb = Some(on);
+                    self.refresh();
+                    return Vec::new();
+                }
+                self.state.armed_avb = None;
+                self.refresh();
+                return vec![Effect::AvbChecks { on }];
+            }
+            Action::StopImage => {
+                if let Some(job) = &mut self.state.image {
+                    if job.outcome.is_none() {
+                        job.stopping = true;
+                        self.refresh();
+                        return vec![Effect::StopImage];
+                    }
+                }
+            }
+            // The switch moves at once, as the module's own file does in the
+            // runtime: the page then shows what was read again.
+            Action::ToggleModule(at) => {
+                if let Some(m) = self.state.modules.as_mut().and_then(|ms| ms.get_mut(at)) {
+                    m.disabled = !m.disabled;
+                    m.remove = false;
+                    let off = m.disabled;
+                    let path = m.dir.clone();
+                    self.refresh();
+                    return vec![Effect::ToggleModule { at: path, off }];
+                }
+            }
             Action::InstallDownloaded => {
                 let name = self.state.newest().expect("the package installed is the newest system's").name.clone();
                 let Have::Whole(size) = self.state.have else { unreachable!("only a whole package is offered to install") };
@@ -5688,6 +6358,7 @@ impl App {
             Screen::Decrypt => &mut self.state.code,
             Screen::Rename => &mut self.state.new_name,
             Screen::WlanPassword => &mut self.state.password,
+            Screen::Fetch => &mut self.state.url,
             Screen::WlanAdd => {
                 let a = self.state.adding.as_mut().expect("the page adds a network");
                 match a.field {
@@ -5876,6 +6547,8 @@ impl App {
                         return self.act(Action::Open(first.screen), now);
                     }
                 }
+                // Done on the download page takes what the address holds.
+                Screen::Fetch => return self.act(Action::Fetch, now),
                 Screen::Decrypt if self.state.code.is_empty() => self.say(l.pick(["请输入锁屏密码", "請輸入螢幕鎖定密碼", "Enter the screen lock"]), now),
                 Screen::Decrypt => {
                     let code = std::mem::take(&mut self.state.code);
@@ -11645,5 +12318,68 @@ mod tests {
         assert_eq!(app.deadline(1000), Some(12_000));
         app.tick(15_000);
         assert!(!app.display_on());
+    }
+
+    #[test]
+    fn the_avb_page_asks_for_the_blocks_as_it_opens_and_shows_what_it_was_told() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Advanced, W, H, PPD);
+        assert_eq!(tap(&mut app, &f, &i, Action::Open(Screen::Avb)), vec![Effect::ReadAvb]);
+        assert_eq!(app.screen(), Screen::Avb);
+        assert!(app.state.avb.is_none(), "nothing is said before the blocks are read");
+        assert!(app.frame(&f, &i).canvas.h > 0, "and the page says it is reading");
+        app.set_avb(Ok(vec![
+            skyward_vab::avb::Reading { name: "vbmeta_a".into(), flags: 0, algorithm: 2 },
+            skyward_vab::avb::Reading { name: "vbmeta_system_a".into(), flags: 1, algorithm: 2 },
+        ]));
+        assert!(app.frame(&f, &i).canvas.h > 0, "the blocks read are drawn");
+        app.set_avb(Err("no vbmeta partition for slot A".into()));
+        assert!(app.frame(&f, &i).canvas.h > 0, "and so is a slot whose blocks could not be read");
+    }
+
+    // The cover of a foldable: 1208 × 1392 beside a 1224 × 2912 screen, at
+    // the density both are laid out to.
+    const COVER_W: u32 = 1208;
+    const COVER_H: u32 = 1392;
+    const COVER_PPD: f32 = 2.875;
+
+    #[test]
+    fn the_page_lays_itself_out_again_for_the_cover_at_its_size() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Settings, W, H, PPD);
+        let at = app.top().1;
+        let (wide, tall) = {
+            let fr = app.frame(&f, &i);
+            (fr.canvas.w, fr.hits.len())
+        };
+        assert_eq!(wide, W, "drawn as wide as the screen to start with");
+        assert!(tall > 0, "with controls on the page");
+        app.set_screen_corners(134.0);
+        app.resize(COVER_W, COVER_H, COVER_PPD);
+        let (wide, tall) = {
+            let fr = app.frame(&f, &i);
+            (fr.canvas.w, fr.hits.len())
+        };
+        assert_eq!(app.screen(), Screen::Settings, "the page shown stays");
+        assert_eq!(app.top().1, at, "and where it stands");
+        assert_eq!(wide, COVER_W, "drawn as wide as the cover");
+        assert!(tall > 0, "still with controls on the page");
+        let t = app.theme();
+        assert_eq!((t.m.w, t.m.h), (COVER_W, COVER_H), "laid out as tall as the cover too");
+    }
+
+    #[test]
+    fn a_size_the_page_already_has_keeps_it_drawn_and_another_size_drops_it() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Home, W, H, PPD);
+        app.frame(&f, &i);
+        assert!(app.frame.is_some(), "the page is drawn");
+        app.resize(W, H, PPD);
+        assert!(app.frame.is_some(), "the size it already has keeps what is drawn");
+        assert_eq!((app.w, app.h, app.px_per_dp), (W, H, PPD));
+        app.resize(COVER_W, COVER_H, COVER_PPD);
+        assert!(app.frame.is_none(), "another size drops what is drawn");
+        assert_eq!(app.cols, 0, "and the rows laid out to the old width with it");
+        assert_eq!((app.w, app.h, app.px_per_dp), (COVER_W, COVER_H, COVER_PPD));
     }
 }

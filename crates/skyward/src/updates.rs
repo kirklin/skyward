@@ -12,6 +12,7 @@ use skyward_net::http::{self, Servers};
 use skyward_net::reach::{self, Reach};
 use skyward_net::release::{self, Installed, Release, Unanswered};
 use skyward_vab::Slot;
+use std::fs;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -42,12 +43,18 @@ pub enum Task {
     /// Ask GitHub for Skyward's newest release and its zip for the phone
     /// `codename` names; where that fails, `probe` says whether the network
     /// is why.
-    CheckSkyward { probe: String, codename: String },
+    CheckSkyward { probe: String, codename: String, mirror: Option<String> },
     /// Download `build` to `path`, check that its image is Skyward for the
     /// phone `codename` names, and write the image into the recovery
     /// partitions of the slot that starts next and of any other slot that
     /// holds Skyward.
-    UpdateSkyward { build: Build, codename: String, path: PathBuf },
+    UpdateSkyward { build: Build, codename: String, path: PathBuf, mirror: Option<String> },
+    /// Take what `url` holds into `path`: an address the user typed, which
+    /// nothing vouches for, so what comes is kept as it comes.
+    Fetch { url: String, path: PathBuf },
+    /// Ask `url`'s server what time it keeps: the clock the recovery
+    /// started with is the phone's own, and the network has the right one.
+    SyncTime { url: String },
 }
 
 pub enum Event {
@@ -57,6 +64,9 @@ pub enum Event {
     /// How far the download has come, and how fast it goes, in bytes a
     /// second.
     Progress(Progress, u64),
+    /// The time of day a server kept, in Unix seconds, or why it did not
+    /// say.
+    Timed(Result<i64, String>),
     /// Skyward's build is written into the recovery partitions and read
     /// back: bytes so far, of all.
     Writing { done: u64, total: u64 },
@@ -148,17 +158,18 @@ impl Worker {
                         let end = fetch(&servers, release.urls.clone(), &sum, &release.name, &path, &stopping, &using, &tell, &mut refused);
                         tell(Event::Ended(end));
                     }
-                    Task::CheckSkyward { probe, codename } => {
+                    Task::CheckSkyward { probe, codename, mirror } => {
                         let a = http::agent(servers.clone());
                         *using.lock().expect("the agent is not held by a thread that panicked") = Some(a.clone());
-                        let answer = github::ask(&a, &codename, skyward_info::VERSION).map_err(|e| unanswered(&e, github::LATEST, &probe, &servers));
+                        let answer = github::ask(&a, &codename, skyward_info::VERSION, mirror.as_deref()).map_err(|e| unanswered(&e, github::LATEST, &probe, &servers));
                         tell(Event::SkywardChecked(answer));
                     }
                     // GitHub's API hands the zip out at a short-lived address
                     // of the file itself, which it gives again once one has
                     // run out and is turned down; the release's link on
                     // github.com is tried after it.
-                    Task::UpdateSkyward { build, codename, path } => {
+                    Task::UpdateSkyward { build, codename, path, mirror } => {
+                        let through = mirror.as_deref();
                         let a = http::agent(servers.clone());
                         *using.lock().expect("the agent is not held by a thread that panicked") = Some(a.clone());
                         let located = github::locate(&a, &build.url, skyward_info::VERSION)
@@ -173,7 +184,7 @@ impl Worker {
                             }
                             located_again = true;
                             match github::locate(a, &build.url, skyward_info::VERSION) {
-                                Ok(fresh) => Again::From(build.sources(Some(fresh))),
+                                Ok(fresh) => Again::From(build.sources(Some(fresh), through)),
                                 Err(e) => {
                                     let _ = skyward_sys::kmsg(&format!("asking GitHub again where {} is: {e:#}", build.name));
                                     Again::Retry
@@ -181,7 +192,7 @@ impl Worker {
                             }
                         };
                         let sum = Sum::Sha256(build.sha256.clone());
-                        let end = match fetch(&servers, build.sources(located), &sum, &build.name, &path, &stopping, &using, &tell, &mut refused) {
+                        let end = match fetch(&servers, build.sources(located, through), &sum, &build.name, &path, &stopping, &using, &tell, &mut refused) {
                             // Stopping asked for as the last of it came is
                             // stopping still: nothing is written.
                             End::Downloaded if stopping.load(Ordering::Relaxed) => End::Stopped,
@@ -197,6 +208,23 @@ impl Worker {
                             _ => {}
                         }
                         tell(Event::Ended(end));
+                    }
+                    // One address, typed by the user, and nothing that
+                    // vouches for what it holds: the same address is asked
+                    // again while the connection fails, and the file keeps
+                    // whatever name it ends with.
+                    Task::Fetch { url, path } => {
+                        let name = path.file_name().map_or_else(|| url.clone(), |n| n.to_string_lossy().into_owned());
+                        let mut refused = |_a: &ureq::Agent| Again::Retry;
+                        let end = fetch(&servers, vec![url.clone()], &Sum::Unchecked, &name, &path, &stopping, &using, &tell, &mut refused);
+                        tell(Event::Ended(end));
+                    }
+                    // Nothing is written here: the answer is the time, and
+                    // whoever asked it sets the phone's clock.
+                    Task::SyncTime { url } => {
+                        let a = http::agent(servers.clone());
+                        *using.lock().expect("the agent is not held by a thread that panicked") = Some(a.clone());
+                        tell(Event::Timed(http::server_time(&a, &url).map_err(|e| format!("{e:#}"))));
                     }
                 }
             })
@@ -322,7 +350,13 @@ fn fetch(
             return End::Failed(Failure::NoRoom { needed: room.needed, free: room.free });
         }
         if e.is::<Damaged>() {
-            return End::Failed(Failure::Damaged);
+            // The file that came is not the one GitHub summed. A mirror,
+            // which some networks reach faster than github.com itself, is the
+            // likeliest to have given something else, so another source is
+            // asked before the download gives up on the file being damaged.
+            if url + 1 == urls.len() {
+                return End::Failed(Failure::Damaged);
+            }
         }
         let _ = skyward_sys::kmsg(&format!("downloading {name} from {}: {e:#}", host(&urls[url])));
         if e.is::<Refused>() {
@@ -351,14 +385,17 @@ fn fetch(
     }
 }
 
-/// Write the image in the zip at `path`, once it is Skyward for the phone
-/// `codename` names, into the recovery partitions of the slot that starts
-/// next and of any other slot that holds Skyward, telling how far that has
-/// come.
+/// Write the image at `path` — a zip holding it, or the bare image — once it
+/// is Skyward for the phone `codename` names, into the recovery partitions of
+/// the slot that starts next and of any other slot that holds Skyward,
+/// telling how far that has come.
 fn write(path: &Path, codename: &str, tell: &dyn Fn(Event)) -> End {
     let dir = Path::new(skyward_block::BY_NAME);
     let ready = || -> Result<(Vec<u8>, Vec<Slot>)> {
-        let image = upgrade::unzip(path)?;
+        let image = match path.extension().and_then(|e| e.to_str()) {
+            Some("img") => fs::read(path).with_context(|| format!("read {}", path.display()))?,
+            _ => upgrade::unzip(path)?,
+        };
         upgrade::check(&image, codename)?;
         let next = skyward_vab::boot::next_slot().context("ask which slot starts next")?;
         Ok((image, upgrade::slots(dir, next)?))

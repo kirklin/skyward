@@ -45,16 +45,23 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
+      # The version is compiled in: it is the number the phone shows in About
+      # and the one it says it is when it asks for the next release. A release
+      # carries the version its tag names, whether or not the branch it is cut
+      # from has been numbered for it yet.
+      - name: Take the version from the tag
+        if: github.ref_type == 'tag'
+        run: sed -i "s/^version = \"[^\"]*\"/version = \"${GITHUB_REF_NAME#v}\"/" Cargo.toml
       - name: Build the recovery service for the phone
-        run: cargo ndk -t arm64-v8a --platform 30 build --locked --release -p skyward
+        run: cargo ndk -t arm64-v8a --platform 30 build --release ${{ github.ref_type != 'tag' && '--locked' || '' }} -p skyward
       # It runs as a second system's first program, before any library is
       # there to load.
       - name: Build the second system's first program, static
         env:
           RUSTFLAGS: -C target-feature=+crt-static
-        run: cargo ndk -t arm64-v8a --platform 30 build --locked --release -p skyward-system-init --target-dir target/system-init
+        run: cargo ndk -t arm64-v8a --platform 30 build --release ${{ github.ref_type != 'tag' && '--locked' || '' }} -p skyward-system-init --target-dir target/system-init
       - name: Build the packer
-        run: cargo build --locked --release -p skyward-pack
+        run: cargo build --release ${{ github.ref_type != 'tag' && '--locked' || '' }} -p skyward-pack
       - name: Gather them
         run: |
           mkdir tools

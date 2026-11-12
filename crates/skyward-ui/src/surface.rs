@@ -311,6 +311,23 @@ pub mod kms {
         Ok(card)
     }
 
+    /// The same display card through a file descriptor of its own, sharing
+    /// the open file the master was taken on: a card has one DRM master,
+    /// and modes are set only through the file holding it, so the second
+    /// screen shares that file instead of opening the card anew.
+    fn dup_card(card: &Card) -> Result<Card> {
+        let fd = unsafe { libc::dup(card.as_fd().as_raw_fd()) };
+        if fd < 0 {
+            return Err(std::io::Error::last_os_error()).context("share the display card");
+        }
+        // The shared file already carries the client's capabilities: what
+        // is set here is set on the same client.
+        let shared = Card(unsafe { <File as std::os::fd::FromRawFd>::from_raw_fd(fd) });
+        shared.set_client_capability(drm::ClientCapability::UniversalPlanes, true).context("enable universal planes")?;
+        shared.set_client_capability(drm::ClientCapability::Atomic, true).context("enable atomic modesetting")?;
+        Ok(shared)
+    }
+
     /// The value of the choice named `choice` of an enum property.
     fn enum_value(card: &Card, id: property::Handle, choice: &str) -> Result<u64> {
         let info = card.get_property(id).context("read property")?;
@@ -515,19 +532,42 @@ pub mod kms {
     }
 
     impl KmsSurface {
+        /// The phone's own screen: the first built-in panel that is
+        /// connected.
         pub fn open(path: &str) -> Result<Self> {
-            let card = open_card(path)?;
+            Self::open_panel(path, 0)
+        }
+
+        /// The `which`-th built-in panel that is connected, counting up
+        /// from the lowest connector: 0 is the screen the phone shows the
+        /// pages on, 1 the cover of a phone that folds.
+        pub fn open_panel(path: &str, which: usize) -> Result<Self> {
+            Self::open_panel_on(open_card(path)?, which)
+        }
+
+        /// The `which`-th built-in panel driven through the display card
+        /// this screen already holds: a card has one DRM master, and only
+        /// the file it was taken on may set modes, so the second screen
+        /// shares that file rather than opening the card again, which
+        /// would leave it without the master and its commits refused.
+        pub fn open_again(&self, which: usize) -> Result<Self> {
+            Self::open_panel_on(dup_card(&self.card)?, which)
+        }
+
+        fn open_panel_on(card: Card, which: usize) -> Result<Self> {
             let res = card.resource_handles().context("read KMS resources")?;
 
-            let mut panel = None;
+            let mut panels = Vec::new();
             for &h in res.connectors() {
                 let info = card.get_connector(h, true).context("read connector")?;
                 if is_panel(info.interface()) && info.state() == connector::State::Connected {
-                    panel = Some(info);
-                    break;
+                    panels.push(info);
                 }
             }
-            let conn = panel.ok_or_else(|| anyhow!("no connected built-in panel"))?;
+            let conn = panels
+                .into_iter()
+                .nth(which)
+                .ok_or_else(|| anyhow!("no connected built-in panel number {which}"))?;
             let preferred = conn
                 .modes()
                 .iter()
@@ -546,7 +586,21 @@ pub mod kms {
             let (w, h) = (mode.size().0 as u32, mode.size().1 as u32);
 
             // The CRTC already driving the panel, or the first one an
-            // encoder of this connector can drive.
+            // encoder of this connector can drive that no other connector
+            // scans out on: the cover's panel takes one of its own, as
+            // taking the phone's screen off its CRTC would black it.
+            let mut busy = Vec::new();
+            for &h in res.connectors().iter().filter(|&&c| c != conn.handle()) {
+                // A connector whose properties cannot be read is taken as
+                // driving no CRTC: nothing here needs its name.
+                if let Ok(props) = Props::read(&card, h) {
+                    if let Ok((_, crtc)) = props.get("CRTC_ID") {
+                        if crtc != 0 {
+                            busy.push(crtc);
+                        }
+                    }
+                }
+            }
             let current = match conn.current_encoder() {
                 Some(e) => card.get_encoder(e).context("read encoder")?.crtc(),
                 None => None,
@@ -557,7 +611,9 @@ pub mod kms {
                     let mut found = None;
                     for &e in conn.encoders() {
                         let enc = card.get_encoder(e).context("read encoder")?;
-                        if let Some(&c) = res.filter_crtcs(enc.possible_crtcs()).first() {
+                        if let Some(&c) =
+                            res.filter_crtcs(enc.possible_crtcs()).iter().find(|c| !busy.contains(&u64::from(u32::from(**c))))
+                        {
                             found = Some(c);
                             break;
                         }
@@ -784,6 +840,45 @@ pub mod kms {
             self.card.atomic_commit(AtomicCommitFlags::empty(), req).context("rest the panel")?;
             self.power = Power::Resting;
             Ok(())
+        }
+
+        /// Turn the panel at `which` off without ever setting it up: the
+        /// bootloader draws its logo on every panel it can, and a panel that
+        /// nothing refreshes keeps that last frame lit until it is sent its
+        /// own off command. Only a commit that takes the panel's CRTC down
+        /// sends it, so this does exactly that and nothing else, never asking
+        /// for a mode. Says whether the panel was driven at all.
+        pub fn darken(&self, which: usize) -> Result<bool> {
+            let res = self.card.resource_handles().context("read KMS resources")?;
+            let mut panels = Vec::new();
+            for &h in res.connectors() {
+                let info = self.card.get_connector(h, true).context("read connector")?;
+                if is_panel(info.interface()) && info.state() == connector::State::Connected {
+                    panels.push(h);
+                }
+            }
+            let Some(&conn) = panels.get(which) else { return Ok(false) };
+            let props = Props::read(&self.card, conn)?;
+            let driven = props.value("CRTC_ID")?;
+            // A panel sharing this screen's own display is left alone:
+            // taking it down would take the pages down with it.
+            if driven == 0 || driven == u64::from(u32::from(self.crtc)) {
+                return Ok(false);
+            }
+            let Some(crtc) = res.crtcs().iter().copied().find(|c| u64::from(u32::from(*c)) == driven) else {
+                return Ok(false);
+            };
+            let crtc_props = Props::read(&self.card, crtc)?;
+            if crtc_props.value("ACTIVE")? == 0 {
+                return Ok(false);
+            }
+            let mut req = atomic::AtomicModeReq::new();
+            // The connector lets the panel go before its display is taken
+            // down: a display detached from nothing is refused.
+            req.add_property(conn, props.handle("CRTC_ID")?, property::Value::CRTC(None));
+            req.add_property(crtc, crtc_props.handle("ACTIVE")?, property::Value::Boolean(false));
+            self.card.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, req).context("darken the panel")?;
+            Ok(true)
         }
 
         /// Turn the display off: the panel and the display processor feeding

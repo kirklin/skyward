@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 #[cfg(target_os = "android")]
 mod backup;
 #[cfg(target_os = "android")]
+mod credential;
+#[cfg(target_os = "android")]
 mod decrypt;
 #[cfg(target_os = "android")]
 mod filework;
@@ -17,6 +19,8 @@ mod haptics;
 mod input;
 #[cfg(target_os = "android")]
 mod merge;
+#[cfg(target_os = "android")]
+mod orientation;
 #[cfg(target_os = "android")]
 mod partwork;
 #[cfg(target_os = "android")]

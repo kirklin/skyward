@@ -12,8 +12,10 @@ use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::path::PathBuf;
 
 pub enum Event {
-    /// A touch and when the panel reported it, on [`monotonic_ms`]'s clock.
-    Touch(Touch, u64),
+    /// A touch, when the panel reported it on [`monotonic_ms`]'s clock, and
+    /// the screen it landed on: 0 the phone's own, 1 the cover of a phone
+    /// that folds, which the pages are laid out for at its own size.
+    Touch(Touch, u64, usize),
     /// A button going down, or coming back up.
     Key(Key, bool),
 }
@@ -82,10 +84,18 @@ struct Panel {
     /// The kernel dropped events that were not read in time; what arrives
     /// up to the next report is incomplete.
     dropped: bool,
+    /// The screen this panel's touches land on, in pixels, as the pages are
+    /// laid out for it.
+    w: f32,
+    h: f32,
+    /// The panel reads its touches in the frame memory's own orientation, and
+    /// on the cover screen that is the pages' turned half a turn: a finger at
+    /// the bottom left is reported at the top right.
+    flip: bool,
 }
 
 impl Panel {
-    fn new(path: PathBuf, dev: RawDevice) -> Result<Self> {
+    fn new(path: PathBuf, dev: RawDevice, w: f32, h: f32, flip: bool) -> Result<Self> {
         let mut x_range = None;
         let mut y_range = None;
         let mut slots = 1;
@@ -108,8 +118,22 @@ impl Panel {
             return Err(io::Error::last_os_error()).context("stamp touch events with the monotonic clock");
         }
         set_nonblocking(dev.as_raw_fd()).context("make touch non-blocking")?;
-        let mut panel =
-            Panel { dev, path, x_range, y_range, slots, slot: 0, down: false, was_down: false, raw: (0, 0), moved: false, dropped: false };
+        let mut panel = Panel {
+            dev,
+            path,
+            x_range,
+            y_range,
+            slots,
+            slot: 0,
+            down: false,
+            was_down: false,
+            raw: (0, 0),
+            moved: false,
+            dropped: false,
+            w,
+            h,
+            flip,
+        };
         // The kernel drops a position equal to the one a slot already holds,
         // so a touch landing where the last one lifted carries no position;
         // start from what the panel holds now.
@@ -130,7 +154,8 @@ impl Panel {
         Ok(())
     }
 
-    fn read(&mut self, w: f32, h: f32, out: &mut Vec<Event>) -> io::Result<()> {
+    fn read(&mut self, which: usize, out: &mut Vec<Event>) -> io::Result<()> {
+        let (w, h) = (self.w, self.h);
         let events: Vec<InputEvent> = match self.dev.fetch_events() {
             Ok(events) => events.collect(),
             Err(e) if e.kind() == ErrorKind::WouldBlock => return Ok(()),
@@ -149,10 +174,11 @@ impl Panel {
                     let span = |r: (i32, i32)| (r.1 - r.0).max(1) as f32;
                     let x = (self.raw.0 - self.x_range.0) as f32 / span(self.x_range) * w;
                     let y = (self.raw.1 - self.y_range.0) as f32 / span(self.y_range) * h;
+                    let (x, y) = if self.flip { (w - x, h - y) } else { (x, y) };
                     match (self.was_down, self.down) {
-                        (false, true) => out.push(Event::Touch(Touch::Down(x, y), at)),
-                        (true, true) if self.moved => out.push(Event::Touch(Touch::Move(x, y), at)),
-                        (true, false) => out.push(Event::Touch(Touch::Up, at)),
+                        (false, true) => out.push(Event::Touch(Touch::Down(x, y), at, which)),
+                        (true, true) if self.moved => out.push(Event::Touch(Touch::Move(x, y), at, which)),
+                        (true, false) => out.push(Event::Touch(Touch::Up, at, which)),
                         _ => {}
                     }
                     self.was_down = self.down;
@@ -185,12 +211,18 @@ pub struct Inputs {
     /// the phone awake until it is read.
     wakeful: Wakeful,
     panel: Option<Panel>,
+    /// The cover panel's touchscreen, on a phone that folds and shows the
+    /// pages on both its screens.
+    cover: Option<Panel>,
     buttons: Vec<(PathBuf, RawDevice)>,
     seen: HashSet<PathBuf>,
     /// What the touchscreen is told each time its panel is taken in.
     touch_writes: Vec<Write>,
     w: f32,
     h: f32,
+    /// The cover screen's own size, for touches landing on it.
+    cw: f32,
+    ch: f32,
 }
 
 impl Inputs {
@@ -212,11 +244,14 @@ impl Inputs {
             watch,
             wakeful,
             panel: None,
+            cover: None,
             buttons: Vec::new(),
             seen: HashSet::new(),
             touch_writes,
             w: w as f32,
             h: h as f32,
+            cw: 0.0,
+            ch: 0.0,
         };
         inputs.scan()?;
         if inputs.panel.is_none() {
@@ -231,7 +266,7 @@ impl Inputs {
     /// the device description writes to the touchscreen.
     fn scan(&mut self) -> Result<()> {
         for (path, dev) in evdev::raw_stream::enumerate() {
-            if !self.seen.insert(path.clone()) {
+            if self.seen.contains(&path) {
                 continue;
             }
             let direct = dev.properties().contains(PropType::DIRECT);
@@ -242,12 +277,29 @@ impl Inputs {
             eprintln!("input {}: {:?} direct={direct} multitouch={mt} keys={keys}", path.display(), dev.name().unwrap_or("?"));
             if direct && mt && self.panel.is_none() {
                 self.wakeful.add(dev.as_raw_fd())?;
-                self.panel = Some(Panel::new(path, dev)?);
+                self.panel = Some(Panel::new(path.clone(), dev, self.w, self.h, false)?);
+                self.seen.insert(path);
                 for w in &self.touch_writes {
                     fs::write(&w.path, &w.value).with_context(|| format!("write {} to {}", w.value, w.path))?;
                     skyward_sys::kmsg(&format!("wrote {} to {} for the touchscreen", w.value, w.path))?;
                 }
+            } else if mt && self.cover.is_none() && self.cw > 0.0 {
+                // The cover screen's digitizer, which the pages are laid out
+                // for at the cover's size. Xiaomi's cover touch driver makes
+                // a virtual input device, without the DIRECT property the
+                // phone's own panel has, so it is taken for its multitouch
+                // axes alone.
+                self.seen.insert(path.clone());
+                let (cw, ch) = (self.cw, self.ch);
+                match Panel::new(path, dev, cw, ch, true) {
+                    Ok(panel) => {
+                        self.wakeful.add(panel.dev.as_raw_fd())?;
+                        self.cover = Some(panel);
+                    }
+                    Err(e) => eprintln!("the cover touchscreen was not taken: {e:#}"),
+                }
             } else if keys {
+                self.seen.insert(path.clone());
                 set_nonblocking(dev.as_raw_fd()).context("make buttons non-blocking")?;
                 self.wakeful.add(dev.as_raw_fd())?;
                 self.buttons.push((path, dev));
@@ -277,7 +329,19 @@ impl Inputs {
 
     /// Whether a touch panel has come up.
     pub fn has_panel(&self) -> bool {
-        self.panel.is_some()
+        self.panel.is_some() || self.cover.is_some()
+    }
+
+    /// The cover screen's size, so that touches landing on it are mapped to
+    /// the pages laid out for it rather than to the phone's own screen.
+    pub fn cover_size(&mut self, w: u32, h: u32) {
+        self.cw = w as f32;
+        self.ch = h as f32;
+        // A digitizer that was already there, waiting to be told the size of
+        // the screen it touches, is taken in now.
+        if let Err(e) = self.scan() {
+            eprintln!("touch devices not taken: {e:#}");
+        }
     }
 
     /// Readable while a device has something queued, or /dev/input changed.
@@ -291,15 +355,34 @@ impl Inputs {
             self.scan()?;
         }
         let mut out = Vec::new();
+        let mut lost: Vec<PathBuf> = Vec::new();
         if let Some(panel) = &mut self.panel {
-            match panel.read(self.w, self.h, &mut out) {
+            match panel.read(0, &mut out) {
                 Ok(()) => {}
                 Err(e) if gone(&e) => {
                     eprintln!("input {}: removed", panel.path.display());
-                    self.seen.remove(&panel.path);
-                    self.panel = None;
+                    lost.push(panel.path.clone());
                 }
                 Err(e) => return Err(e).context("read touch events"),
+            }
+        }
+        if let Some(panel) = &mut self.cover {
+            match panel.read(1, &mut out) {
+                Ok(()) => {}
+                Err(e) if gone(&e) => {
+                    eprintln!("input {}: removed", panel.path.display());
+                    lost.push(panel.path.clone());
+                }
+                Err(e) => return Err(e).context("read cover touch events"),
+            }
+        }
+        for path in lost {
+            self.seen.remove(&path);
+            if self.panel.as_ref().is_some_and(|p| p.path == path) {
+                self.panel = None;
+            }
+            if self.cover.as_ref().is_some_and(|p| p.path == path) {
+                self.cover = None;
             }
         }
         let mut removed = Vec::new();

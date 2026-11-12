@@ -32,7 +32,7 @@ pub fn read() -> Result<Kept> {
 fn read_file() -> Result<Kept> {
     match fs::read_to_string(FILE) {
         Ok(text) => match Settings::read(&text) {
-            Ok(settings) => Ok(Kept::Settings(settings)),
+            Ok(settings) => Ok(Kept::Settings(Box::new(settings))),
             Err(e) => {
                 skyward_sys::kmsg(&format!("{FILE} does not read as settings, and is written afresh: {e:#}"))?;
                 Ok(Kept::Nothing)

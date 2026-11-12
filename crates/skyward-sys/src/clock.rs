@@ -32,6 +32,17 @@ pub fn wall(rtc_s: u64, offset_ms: u64) -> u64 {
     rtc_s * 1000 + offset_ms
 }
 
+/// Set the system clock to `unix` seconds, from a source that knows better
+/// than the phone's own: a server's answer.
+pub fn set_wall(unix: i64) -> Result<()> {
+    use anyhow::Context;
+    let ts = libc::timespec { tv_sec: unix as libc::time_t, tv_nsec: 0 };
+    if unsafe { libc::clock_settime(libc::CLOCK_REALTIME, &ts) } != 0 {
+        return Err(std::io::Error::last_os_error()).context("set the system clock");
+    }
+    Ok(())
+}
+
 /// Set the system clock to the real time and return it, in Unix
 /// milliseconds: the RTC's count plus the offset Android left on persist.
 #[cfg(target_os = "android")]

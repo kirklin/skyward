@@ -18,6 +18,9 @@ const CHUNK: usize = 1 << 20;
 pub enum Sum {
     Md5(String),
     Sha256(String),
+    /// No digest was given: a file taken from an address the user typed,
+    /// which nothing vouches for. What comes is kept as it comes.
+    Unchecked,
 }
 
 /// Where a package is downloaded to until it is whole and checked.
@@ -132,7 +135,53 @@ pub fn fetch(agent: &ureq::Agent, url: &str, path: &Path, sum: &Sum, stop: &Atom
     match sum {
         Sum::Md5(hex) => fetch_as::<Md5>(agent, url, path, hex, stop, progress),
         Sum::Sha256(hex) => fetch_as::<Sha256>(agent, url, path, hex, stop, progress),
+        Sum::Unchecked => fetch_unchecked(agent, url, path, stop, progress),
     }
+}
+
+/// [`fetch`] for an address the user typed, which nothing vouches for: what
+/// comes is written as it comes, and where the server says how long it is
+/// that is shown; a server that says nothing is still written whole.
+fn fetch_unchecked(agent: &ureq::Agent, url: &str, path: &Path, stop: &AtomicBool, progress: &mut dyn FnMut(Progress)) -> Result<()> {
+    let dir = path.parent().context("a package's path is in a folder")?;
+    fs::create_dir_all(dir).with_context(|| format!("make {}", dir.display()))?;
+    let part = partial(path);
+    let mut response = agent.get(url).call().context("start the download")?;
+    match response.status().as_u16() {
+        200 => {}
+        status => bail!(Refused(status)),
+    }
+    let total = content_length(response.headers()).unwrap_or(0);
+    let room = free(dir)?;
+    if total > 0 && total > room {
+        bail!(NoRoom { needed: total, free: room });
+    }
+    let mut file = fs::File::create(&part).with_context(|| format!("write {}", part.display()))?;
+    let mut body = response.body_mut().with_config().limit(u64::MAX).reader();
+    let mut buf = vec![0u8; CHUNK];
+    let mut done = 0u64;
+    progress(Progress::Downloading { done, total });
+    loop {
+        if stop.load(Ordering::Relaxed) {
+            drop(file);
+            let _ = fs::remove_file(&part);
+            bail!(crate::Stopped);
+        }
+        let n = body.read(&mut buf).context("download the file")?;
+        if n == 0 {
+            break;
+        }
+        file.write_all(&buf[..n]).with_context(|| format!("write {}", part.display()))?;
+        done += n as u64;
+        progress(Progress::Downloading { done, total: total.max(done) });
+    }
+    if total > 0 && done != total {
+        drop(file);
+        let _ = fs::remove_file(&part);
+        bail!("the server stopped sending at {done} of {total} bytes");
+    }
+    file.sync_all().with_context(|| format!("write {} through", part.display()))?;
+    fs::rename(&part, path).with_context(|| format!("name {} {}", part.display(), path.display()))
 }
 
 /// [`fetch`], with the digest by `D` in hex.

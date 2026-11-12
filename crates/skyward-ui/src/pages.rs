@@ -3,7 +3,7 @@ use crate::app::{
     FileOp, FileTask, Fold, Folder, Frame, FsAction, FsChoice, FsRow, Have, HeroArt, Hit, Install, JobEnd, Keys, Pick, Place, Rows, Screen,
     SkywardCheck, SkywardEnd, SkywardJob, SkywardStage, Slider, Source, State, Switch, SystemsWork, Target, UsbDrive, UsbLink, Wipe, ADDABLE,
     BACKUP_PARTS, DATA_ERASED, DATA_PARTITION, DOWNLOADS, FASTBOOT_CHOICES, SCREEN_OFF, TARGETS, TIME_ZONES, USB_DRIVE_UNREADABLE,
-    USB_DRIVE_WANTED, WIPES, installs, starting,
+    USB_DRIVE_WANTED, WIPES, installs, starting, UrlKey,
 };
 use crate::canvas::Canvas;
 use crate::color::Rgba;
@@ -87,6 +87,8 @@ pub fn render(screen: Screen, cx: &Ctx) -> Frame {
         Screen::Terminal => terminal(cx),
         Screen::Relabel => relabel(cx),
         Screen::Filesystems => filesystems(cx),
+        Screen::Avb => avb(cx),
+        Screen::Starter => starter(cx),
         Screen::Filesystem => filesystem(cx),
         Screen::PartWork => part_work(cx),
         Screen::Language => language(cx),
@@ -94,6 +96,9 @@ pub fn render(screen: Screen, cx: &Ctx) -> Frame {
         Screen::Logs => logs(cx),
         Screen::Update => update(cx),
         Screen::SkywardUpdate => skyward_update(cx),
+        Screen::Fetch => fetch(cx),
+        Screen::Modules => modules(cx),
+        Screen::Images => images(cx),
         Screen::License => license(cx),
         Screen::FontLicense => font_license(cx),
         Screen::Slot => slot(cx),
@@ -175,6 +180,21 @@ const TIME_ZONE: Text = ["时区", "時區", "Time zone"];
 const LICENSE: Text = ["开源许可", "開放原始碼授權", "Open source licenses"];
 const FONTS: Text = ["界面字体", "介面字型", "UI fonts"];
 const DUAL_BOOT: Text = ["双系统", "雙系統", "Dual boot"];
+const MODULES: Text = ["KernelSU 模块", "KernelSU 模組", "KernelSU modules"];
+const MIRROR: Text = ["加速源", "加速源", "Mirror"];
+const MIRROR_NAMES: [Text; 6] = [
+    ["不加速", "不加速", "no mirror"],
+    ["gh-proxy.com", "gh-proxy.com", "gh-proxy.com"],
+    ["gh-proxy.org", "gh-proxy.org", "gh-proxy.org"],
+    ["gh-proxy.cc", "gh-proxy.cc", "gh-proxy.cc"],
+    ["ghfast.top", "ghfast.top", "ghfast.top"],
+    ["github.akams.cn", "github.akams.cn", "github.akams.cn"],
+];
+const MIRROR_UPDATE_NOTE: Text = [
+    "安装包走你选的这个；检查更新先用能转 GitHub 接口的镜像（gh-proxy），不行再直连。与「下载地址」页共用这一个选择。",
+    "安裝檔走你選的這個；檢查更新先用能轉 GitHub 介面的鏡像（gh-proxy），不行再直連。與「下載位址」頁共用這一個選擇。",
+    "The package goes through the mirror you pick; the check goes through a mirror that carries GitHub's API first, then straight to GitHub. One choice, shared with the download page.",
+];
 
 /// A canvas for a page `h` tall in the colour `bg`, holding the rows `cx`
 /// asks to be drawn.
@@ -370,7 +390,11 @@ pub fn settings(cx: &Ctx) -> Frame {
     if let Some(r) = vibration.below {
         out.push(Hit { rect: r, action: Action::Toggle(Switch::Vibrate) });
     }
-    y = widgets::section(&mut c, t, f, vibration.bottom, l.pick(["通用", "一般", "General"]));
+    y = widgets::section(&mut c, t, f, vibration.bottom, l.pick(["屏幕", "螢幕", "Screen"]));
+    let screen = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(WAKE_BY_TAP)).icon(SLATE, Icon::Power).trail(Trail::Switch(s.wake_by_tap))]);
+    out.extend(hits(&screen.rows, &[Action::Toggle(Switch::WakeByTap)]));
+    let slept = widgets::footnote(&mut c, t, f, screen.bottom, l.pick(WAKE_BY_TAP_NOTE));
+    y = widgets::section(&mut c, t, f, slept, l.pick(["通用", "一般", "General"]));
     let general = widgets::list(&mut c, t, f, y, &[
         Row::new(l.pick(LANGUAGE)).icon(BLUE, Icon::Globe).trail(Trail::Value(l.name())),
         Row::new(l.pick(TIME_ZONE)).icon(ORANGE, Icon::Clock).trail(Trail::Value(l.pick(TIME_ZONES[s.time_zone].0))),
@@ -385,6 +409,35 @@ pub fn settings(cx: &Ctx) -> Frame {
         "When on, a computer can manage the files in internal storage, once it is decrypted.",
     ]);
     y = widgets::footnote(&mut c, t, f, usb.bottom, note);
+    y = widgets::section(&mut c, t, f, y, l.pick(["解密", "解密", "Decryption"]));
+    let kept = l.pick(if s.credential_kept { CREDENTIAL_KEPT } else { CREDENTIAL_NONE });
+    let decrypt = widgets::list(
+        &mut c,
+        t,
+        f,
+        y,
+        &[Row::new(l.pick(REMEMBER_CREDENTIAL)).subtitle(kept).icon(SLATE, Icon::Lock).trail(Trail::Switch(s.remember_credential))],
+    );
+    out.extend(hits(&decrypt.rows, &[Action::Toggle(Switch::RememberCredential)]));
+    // What was kept, and when: one entry, taken away on its own while the
+    // switch stays on, so the next password takes its place.
+    let mut under = decrypt.bottom;
+    if s.credential_kept {
+        let when = match s.credential_at {
+            Some(at) => format!("{} {}", l.pick(CREDENTIAL_SAVED), fmt::datetime(l, at, s.time_zone)),
+            None => l.pick(CREDENTIAL_SAVED_UNKNOWN).to_string(),
+        };
+        let drop = widgets::list(
+            &mut c,
+            t,
+            f,
+            under,
+            &[Row::new(l.pick(CREDENTIAL_DROP)).subtitle(&when).icon(SLATE, Icon::More).trail(Trail::None)],
+        );
+        out.extend(hits(&drop.rows, &[Action::ForgetCredential]));
+        under = drop.bottom;
+    }
+    y = widgets::footnote(&mut c, t, f, under, l.pick(REMEMBER_NOTE));
     y = widgets::section(&mut c, t, f, y, l.pick(["调试", "偵錯", "Debugging"]));
     let debug = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(TERMINAL)).icon(SLATE, Icon::Terminal)]);
     out.extend(hits(&debug.rows, &[Action::Open(Screen::Terminal)]));
@@ -512,8 +565,10 @@ pub fn mount(cx: &Ctx) -> Frame {
     Frame::new(t, fit(c, t, bottom), out, l.pick(["挂载", "掛載", "Mount"]), top)
 }
 
-/// Who made the recovery, as the About page names them under its version.
-const AUTHOR: &str = "© 2026 Kirk Lin";
+/// Who made the recovery, as the About page names them under its version:
+/// one line each, the year first, then the two names with the ampersand
+/// between them on a line of its own.
+const AUTHOR: [&str; 3] = ["Kirk Lin", "&", "一只小小小蜻蜓"];
 
 /// About this device, modelled on the stock「我的设备」: the wordmark, the
 /// version and its author over a moving colour field, and the summary,
@@ -529,9 +584,9 @@ pub fn about(cx: &Ctx) -> Frame {
     let (out, summary_top, bottom) = about_cards(cx, &mut c);
     let canvas = fit(c, t, bottom);
     let art = HeroArt {
-        wordmark: widgets::wordmark(t, f, "Skyward", m.dp(233.7), m.dp(37.8)),
+        wordmark: widgets::wordmark(t, f, "Skyward", m.dp(246.0), m.dp(45.0)),
         version: widgets::version_line(t, f, VERSION),
-        author: widgets::author_line(t, f, AUTHOR),
+        author: widgets::author_lines(t, f, &AUTHOR),
         runs: canvas.runs(),
     };
     Frame { header: false, hero: Some(art), ..Frame::new(t, canvas, out, cx.state.lang.pick(ABOUT), summary_top) }
@@ -2197,30 +2252,261 @@ const STOP: Text = ["停止", "停止", "Stop"];
 
 /// Tools for the experienced.
 pub fn advanced(cx: &Ctx) -> Frame {
-    let (t, f, l) = (cx.t, cx.f, cx.state.lang);
-    let mut c = page(cx);
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = long_page(cx);
     let top = t.m.content_top;
     let tools = widgets::list(&mut c, t, f, top, &[
         Row::new(l.pick(FILES)).icon(BLUE, Icon::Folder),
         Row::new(l.pick(TERMINAL)).icon(SLATE, Icon::Terminal),
         Row::new(l.pick(RELABEL)).icon(PURPLE, Icon::Shield),
         Row::new(l.pick(FILESYSTEMS)).icon(RED, Icon::Mount),
+        Row::new(l.pick(AVB)).icon(SLATE, Icon::Lock).trail(Trail::Value(avb_value(cx))),
+        Row::new(l.pick(STARTER)).icon(SLATE, Icon::Terminal).trail(Trail::Value(starter_value(cx))),
         Row::new(l.pick(LOGS)).icon(ORANGE, Icon::Log),
         Row::new(l.pick(UPDATE)).icon(GREEN, Icon::Layers).trail(Trail::Value(update_value(cx))),
+        Row::new(l.pick(FETCH)).icon(BLUE, Icon::Download),
+        Row::new(l.pick(MODULES)).icon(PURPLE, Icon::Install),
+        Row::new(l.pick(IMAGES)).icon(SLATE, Icon::Backup),
+        Row::new(l.pick(ADB_WIFI)).icon(SLATE, Icon::Usb).trail(Trail::Value(l.pick(if s.adb_wifi { AVB_ON } else { AVB_OFF }))),
     ]);
     let out = hits(&tools.rows, &[
         Action::Open(Screen::Files),
         Action::Open(Screen::Terminal),
         Action::Open(Screen::Relabel),
         Action::Open(Screen::Filesystems),
+        Action::Open(Screen::Avb),
+        Action::Open(Screen::Starter),
         Action::Open(Screen::Logs),
         Action::Open(Screen::Update),
+        Action::Open(Screen::Fetch),
+        Action::Open(Screen::Modules),
+        Action::Open(Screen::Images),
+        Action::SetAdbWifi(!s.adb_wifi),
     ]);
     Frame::new(t, c, out, l.pick(ADVANCED), top)
 }
 
+const ADB_WIFI: Text = ["无线 ADB", "無線 ADB", "ADB over the network"];
+const REMEMBER_CREDENTIAL: Text = ["记住解密密码", "記住解密密碼", "Keep the decryption password"];
+const CREDENTIAL_KEPT: Text = ["已保存密文", "已儲存密文", "kept, sealed"];
+const CREDENTIAL_NONE: Text = ["尚未保存", "尚未儲存", "nothing kept"];
+const CREDENTIAL_DROP: Text = ["删除已保存的密文", "刪除已儲存的密文", "Take the kept password away"];
+const CREDENTIAL_SAVED: Text = ["保存于", "儲存於", "sealed"];
+const CREDENTIAL_SAVED_UNKNOWN: Text = ["保存时间不明", "儲存時間不明", "sealed at an unknown time"];
+const REMEMBER_NOTE: Text = [
+    "开启后，成功解开 data 分区时输入的那个密码会被加密保存，下次进入 recovery 自动尝试。它用 AES-GCM 加密，密钥由本机序列号派生，存在 /metadata/skyward/credential，不写进设置文件：把文件拷到别的手机解不开，关掉开关就删除。\n\n但密钥不在 TEE 里（recovery 没法让安全世界封装一个它没见过的密钥），所以它防得住「把文件拷走」，防不住拿着这台手机的人——对方可以运行同样的代码。这也是它默认关闭的原因。",
+    "開啟後，成功解開 data 分割區時輸入的那個密碼會被加密保存，下次進入 recovery 自動嘗試。它用 AES-GCM 加密，金鑰由本機序號衍生，存在 /metadata/skyward/credential，不寫進設定檔：把檔案拷到別的手機解不開，關掉開關就刪除。\n\n但金鑰不在 TEE 裡（recovery 沒辦法讓安全世界封裝一個它沒見過的金鑰），所以它防得住「把檔案拷走」，防不住拿著這台手機的人——對方可以執行同樣的程式。這也是它預設關閉的原因。",
+    "When on, the password that opened the data partition is kept sealed, and tried again at the next start. It is sealed with AES-GCM under a key derived from this phone's serial number, kept at /metadata/skyward/credential and never in the settings file: copied to another phone it does not open, and turning the switch off deletes it.\n\nThe key is not in the TEE, though — a recovery cannot have the secure world wrap a key it has never seen — so it keeps the file from being carried off, not the phone out of someone's hands, who can run the same code. That is why it ships off.",
+];
+const IMAGES: Text = ["分区镜像", "分割區鏡像", "Partition images"];
+const WAKE_BY_TAP: Text = ["双击亮屏", "雙擊亮屏", "Wake on two taps"];
+const WAKE_BY_TAP_NOTE: Text = [
+    "开启后，熄屏状态下在同一处连点两下就把屏幕叫回来，不用按电源键。代价是熄屏时面板只是亮度为 0、并不真的关掉，触摸控制器因此一直在工作，整机也不再休眠：这一版就是拿这点换双击。默认关闭。",
+    "開啟後，熄屏狀態下在同一處連點兩下就把螢幕叫回來，不必按電源鍵。代價是熄屏時面板只是亮度為 0、並不真的關掉，觸控控制器因此一直在工作，整機也不再休眠：這一版就是拿這點換雙擊。預設關閉。",
+    "When on, two taps in the same place bring a dark screen back without the power key. The cost is that a dark screen is the panel at no brightness rather than off, so the touch controller keeps working and the phone no longer sleeps: that is what buys the double tap here. Off by default.",
+];
+
 const RELABEL: Text = ["修复 SELinux 上下文", "修復 SELinux 上下文", "Fix SELinux contexts"];
 const FILESYSTEMS: Text = ["文件系统", "檔案系統", "Filesystems"];
+
+const AVB: Text = ["AVB 校验", "AVB 校驗", "AVB checks"];
+const AVB_ON: Text = ["开启", "開啟", "On"];
+const AVB_OFF: Text = ["关闭", "關閉", "Off"];
+const AVB_PARTLY: Text = ["部分关闭", "部分關閉", "Partly off"];
+const AVB_UNKNOWN: Text = ["未知", "未知", "Unknown"];
+const AVB_READING: Text = ["正在读取 vbmeta", "正在讀取 vbmeta", "Reading the vbmeta blocks"];
+const AVB_NONE: Text = ["这个槽位没有 vbmeta 分区", "這個槽位沒有 vbmeta 分割區", "This slot keeps no vbmeta partition"];
+const AVB_UNREADABLE: Text = ["无法读取 vbmeta", "無法讀取 vbmeta", "Couldn't read the vbmeta blocks"];
+const AVB_CHANGE: Text = ["改动", "改動", "Change"];
+const AVB_OFF_ROW: Text = ["关闭 verity 与 verification", "關閉 verity 與 verification", "Turn verity and verification off"];
+const AVB_OFF_NOTE: Text = [
+    "先用 avbctl 把两个 vbmeta 与前一次改动前的原块复制到上面那个镜像文件夹，再写 flags。官方系统会无法启动，官方 OTA 会失败。点一下先准备，再点一下开始。",
+    "先用 avbctl 把兩個 vbmeta 與前一次改動前的原塊複製到上面那個鏡像資料夾，再寫 flags。官方系統會無法啟動，官方 OTA 會失敗。點一下先準備，再點一下開始。",
+    "Copies the vbmeta blocks into the image folder above first, then has avbctl write the flags. The phone's own system will not start and official updates fail. One tap arms it, the next starts it.",
+];
+const AVB_ON_ROW: Text = ["恢复 verity 与 verification", "恢復 verity 與 verification", "Turn verity and verification on"];
+const AVB_ON_NOTE: Text = [
+    "用 avbctl 把 flags 写回开启；写在未签名的 header 上，锁着 bootloader 的机器会起不来，解锁的不受影响。点一下先准备，再点一下开始。",
+    "用 avbctl 把 flags 寫回開啟；寫在未簽章的 header 上，鎖著 bootloader 的機器會起不來，解鎖的不受影響。點一下先準備，再點一下開始。",
+    "Has avbctl write the flags back on; written into a header with no signature, a locked bootloader refuses it, an unlocked one does not. One tap arms it, the next starts it.",
+];
+const AVB_ARMED: Text = ["再点一次确认改写 vbmeta", "再點一次確認改寫 vbmeta", "tap again to change the vbmeta blocks"];
+
+/// The starter row's trailing word: what the bootloader control block asks,
+/// or that it asks for nothing, or nothing is known yet.
+fn starter_value(cx: &Ctx) -> &'static str {
+    let l = cx.state.lang;
+    match &cx.state.starter {
+        None => l.pick(AVB_UNKNOWN),
+        Some(Err(_)) => l.pick(AVB_UNKNOWN),
+        Some(Ok(s)) if s.command.is_empty() && s.args.is_empty() => l.pick(STARTER_NONE_SHORT),
+        Some(Ok(s)) => match s.command.as_str() {
+            "boot-recovery" => l.pick(STARTER_RECOVERY_SHORT),
+            "boot-fastboot" => l.pick(STARTER_FASTBOOT_SHORT),
+            _ => l.pick(STARTER_OTHER_SHORT),
+        },
+    }
+}
+
+const STARTER: Text = ["启动指令", "啟動指令", "Boot request"];
+const STARTER_READING: Text = ["正在读取 misc", "正在讀取 misc", "Reading misc"];
+const STARTER_NONE: Text = ["misc 里没有待执行的指令，下次开机按正常流程启动。", "misc 裡沒有待執行的指令，下次開機按正常流程啟動。", "Nothing is pending in misc; the next start follows the usual path."];
+const STARTER_UNREADABLE: Text = ["无法读取 misc", "無法讀取 misc", "Couldn't read misc"];
+const STARTER_COMMAND: Text = ["指令", "指令", "Command"];
+const STARTER_ARGUMENT: Text = ["参数", "參數", "Argument"];
+const STARTER_CLEAR: Text = ["清除这条指令", "清除這條指令", "Clear this request"];
+
+const STARTER_NONE_SHORT: Text = ["无", "無", "nothing"];
+const STARTER_RECOVERY_SHORT: Text = ["进 recovery", "進 recovery", "recovery"];
+const STARTER_FASTBOOT_SHORT: Text = ["进 fastboot", "進 fastboot", "fastboot"];
+const STARTER_OTHER_SHORT: Text = ["有", "有", "pending"];
+const STARTER_NOTE: Text = [
+    "启动指令是 bootloader 和 recovery 共用的那块 misc 里的一张便条：系统要恢复出厂、要装一个更新包、或要把下一次启动送进 fastboot 时，会先在 misc 写下这条指令，bootloader 看到它就把 recovery 启动起来。\n\n清除只是把这张便条抹掉，不动任何分区。若系统留下了「要求擦除 data 但还没擦」的便条，清掉它，下次开机就不会再进 recovery。",
+    "啟動指令是 bootloader 和 recovery 共用的那塊 misc 裡的一張便條：系統要恢復出廠、要裝一個更新包、或要把下一次啟動送進 fastboot 時，會先在 misc 寫下這條指令，bootloader 看到它就把 recovery 啟動起來。\n\n清除只是把這張便條抹掉，不動任何分割區。若系統留下了「要求擦除 data 但還沒擦」的便條，清掉它，下次開機就不會再進 recovery。",
+    "The boot request is a note in misc, the block the bootloader and the recovery share: when the system wants a factory reset, wants an update package installed, or wants the next start to go to fastboot, it writes the note, and the bootloader starts the recovery when it sees one.\n\nClearing only wipes the note; no partition is touched. When the system left a note asking for data to be erased but never erased it, clearing it keeps the next start out of the recovery.",
+];
+fn avb_value(cx: &Ctx) -> &'static str {
+    let l = cx.state.lang;
+    match &cx.state.avb {
+        Some(Ok(rows)) if !rows.is_empty() && rows.iter().all(|r| r.whole()) => l.pick(AVB_ON),
+        Some(Ok(rows)) if !rows.is_empty() && rows.iter().all(|r| !r.whole()) => l.pick(AVB_OFF),
+        Some(Ok(rows)) if !rows.is_empty() => l.pick(AVB_PARTLY),
+        _ => l.pick(AVB_UNKNOWN),
+    }
+}
+
+/// What the blocks that say whether the bootloader and the kernel check what
+/// they start say now: each one's flags, the algorithm it is signed with, and
+/// what turning those checks off would mean.
+///
+/// It only reads. The flags sit under a signature, and a header changed here
+/// no longer matches it: an unlocked bootloader does not look at that, a
+/// locked one does. So this page says what stands, and leaves writing to
+/// install scripts and to the tools made for it.
+pub fn avb(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = long_page(cx);
+    let mut out = Vec::new();
+    let top = t.m.content_top;
+    let title = l.pick(AVB);
+    let mut y = top;
+    match &s.avb {
+        None => y = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(AVB_READING)).trail(Trail::None)]).bottom,
+        Some(Err(why)) => {
+            y = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(AVB_UNREADABLE)).trail(Trail::None)]).bottom;
+            y = widgets::footnote(&mut c, t, f, y, why);
+        }
+        Some(Ok(rows)) if rows.is_empty() => {
+            y = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(AVB_NONE)).trail(Trail::None)]).bottom;
+        }
+        Some(Ok(rows)) => {
+            let states: Vec<&'static str> = rows
+                .iter()
+                .map(|r| match (r.verity(), r.verification()) {
+                    (true, true) => l.pick(AVB_ON),
+                    (false, false) => l.pick(AVB_OFF),
+                    _ => l.pick(AVB_PARTLY),
+                })
+                .collect();
+            let subs: Vec<String> = rows
+                .iter()
+                .map(|r| format!("flags {:#010x} · {}", r.flags, skyward_vab::avb::algorithm_name(r.algorithm)))
+                .collect();
+            let list: Vec<Row> = rows
+                .iter()
+                .zip(&states)
+                .zip(&subs)
+                .map(|((r, state), sub)| Row::new(&r.name).subtitle(sub).trail(Trail::Text(state)))
+                .collect();
+            y = widgets::list(&mut c, t, f, y, &list).bottom;
+        }
+    }
+    // What can be done about them, once the blocks have been copied: the
+    // page says the cost plainly rather than hiding it behind a switch.
+    let armed = s.armed_avb;
+    let change = widgets::section(&mut c, t, f, y + t.m.card_gap, l.pick(AVB_CHANGE));
+    let off = widgets::list(
+        &mut c,
+        t,
+        f,
+        change,
+        &[Row::new(l.pick(AVB_OFF_ROW))
+            .subtitle(l.pick(if armed == Some(false) { AVB_ARMED } else { AVB_OFF_NOTE }))
+            .icon(SLATE, Icon::Shield)
+            .trail(Trail::None)],
+    );
+    if let Some(rect) = off.rows.first() {
+        out.push(Hit { rect: *rect, action: Action::AvbChecks { on: false } });
+    }
+    let on = widgets::list(
+        &mut c,
+        t,
+        f,
+        off.bottom,
+        &[Row::new(l.pick(AVB_ON_ROW))
+            .subtitle(l.pick(if armed == Some(true) { AVB_ARMED } else { AVB_ON_NOTE }))
+            .icon(SLATE, Icon::Lock)
+            .trail(Trail::None)],
+    );
+    if let Some(rect) = on.rows.first() {
+        out.push(Hit { rect: *rect, action: Action::AvbChecks { on: true } });
+    }
+    y = on.bottom;
+    let what = l.pick([
+        "AVB 让 bootloader 校验启动分区的签名，让内核逐块校验 system、vendor 的内容。这里列出每个 vbmeta 区块的 flags 与签名算法；要改就走下面「改动」里的两行，改之前会先把原块复制出来。\n\n关掉这两项之后，官方系统会无法启动，官方 OTA 也会失败，部分应用与售后工具会读到这个状态。",
+        "AVB 讓 bootloader 校驗啟動分割區的簽章，讓核心逐塊校驗 system、vendor 的內容。這裡列出每個 vbmeta 區塊的 flags 與簽章演算法；要改就走下面「改動」裡的兩行，改之前會先把原塊複製出來。\n\n關掉這兩項之後，官方系統會無法啟動，官方 OTA 也會失敗，部分應用程式與售後工具會讀到這個狀態。",
+        "AVB has the bootloader check the signature of what it starts, and the kernel check the blocks of system and vendor. This page lists each vbmeta block's flags and the algorithm it is signed with; the rows under Change alter them, after copying the blocks out first.\n\nWith both checks off, the phone's own system will not start, official updates fail, and some apps and service tools read the state.",
+    ]);
+    y = widgets::paragraph(&mut c, t, f, y + t.m.card_gap, what);
+    Frame::new(t, fit(c, t, y), out, title, top)
+}
+
+/// What the bootloader control block in misc asks, and a way to wipe the
+/// note it asks with.
+pub fn starter(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = long_page(cx);
+    let mut out = Vec::new();
+    let top = t.m.content_top;
+    let title = l.pick(STARTER);
+    let mut y = top;
+    let mut pending = false;
+    match &s.starter {
+        None => y = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(STARTER_READING)).trail(Trail::None)]).bottom,
+        Some(Err(why)) => {
+            y = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(STARTER_UNREADABLE)).trail(Trail::None)]).bottom;
+            y = widgets::footnote(&mut c, t, f, y, why);
+        }
+        Some(Ok(starter)) if starter.command.is_empty() && starter.args.is_empty() => {
+            // A row's title is one line and stops at the edge of the
+            // screen, so the whole of what it says is set below it.
+            y = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(STARTER_NONE_SHORT)).icon(SLATE, Icon::Terminal).trail(Trail::None)]).bottom;
+            y = widgets::paragraph(&mut c, t, f, y, l.pick(STARTER_NONE));
+        }
+        Some(Ok(starter)) => {
+            pending = true;
+            let command = if starter.command.is_empty() { "-" } else { &starter.command };
+            // The words themselves, whole: a bootloader note carries long
+            // arguments and a line break between its command and its flags,
+            // which a row's subtitle would cut off at the edge.
+            y = widgets::section(&mut c, t, f, y, l.pick(STARTER_COMMAND));
+            y = widgets::paragraph(&mut c, t, f, y, command);
+            if !starter.args.is_empty() {
+                y = widgets::section(&mut c, t, f, y + t.m.card_gap, l.pick(STARTER_ARGUMENT));
+                y = widgets::paragraph(&mut c, t, f, y, &starter.args.join("\n"));
+            }
+        }
+    }
+    if pending {
+        let clear = widgets::list(&mut c, t, f, y + t.m.card_gap, &[Row::new(l.pick(STARTER_CLEAR)).trail(Trail::None)]);
+        if let Some(rect) = clear.rows.first() {
+            out.push(Hit { rect: *rect, action: Action::ClearStarter });
+        }
+        y = clear.bottom;
+    }
+    y = widgets::paragraph(&mut c, t, f, y + t.m.card_gap, l.pick(STARTER_NOTE));
+    Frame::new(t, fit(c, t, y), out, title, top)
+}
 const STOPPED: Text = ["已停止", "已停止", "Stopped"];
 const STOPPING: Text = ["正在停止", "正在停止", "Stopping"];
 
@@ -2727,13 +3013,16 @@ fn downloaded(l: Lang, progress: Progress, rate: u64) -> (&'static str, String, 
 /// Skyward's own update: the build running now; Skyward's newest release
 /// on GitHub, and updating to it; then what to note before updating.
 pub fn skyward_update(cx: &Ctx) -> Frame {
-    let (t, f, l) = (cx.t, cx.f, cx.state.lang);
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
     let mut c = long_page(cx);
     let top = t.m.content_top;
     let mut out = Vec::new();
     let y = widgets::section_first(&mut c, t, f, top, l.pick(["本机", "本機", "This phone"]));
     let y = widgets::info_card(&mut c, t, f, y, &[(l.pick(["当前版本", "目前版本", "Current version"]), VERSION.to_string())]);
     let y = widgets::section(&mut c, t, f, y, l.pick(["在线更新", "線上更新", "Online update"]));
+    let through = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(MIRROR)).trail(Trail::Value(l.pick(MIRROR_NAMES[s.mirror])))]);
+    out.extend(hits(&through.rows, &[Action::CycleMirror]));
+    let y = widgets::footnote(&mut c, t, f, through.bottom, l.pick(MIRROR_UPDATE_NOTE));
     let y = skyward_online(&mut c, cx, y, &mut out);
     let points = [
         l.pick([
@@ -3298,9 +3587,365 @@ pub fn rename(cx: &Ctx) -> Frame {
     Frame { caret: Some(caret), ..Frame::new(t, c, out, l.pick(RENAME), top) }
 }
 
-/// The folder an entry goes to already holds its name: what to do.
-pub fn clash(cx: &Ctx) -> Frame {
+const FETCH: Text = ["从链接下载", "從連結下載", "Download an address"];const FETCH_START: Text = ["下载", "下載", "Download"];
+
+/// An address typed on the screen's own keyboard, its file taken into
+/// internal storage: the address, then how taking it goes.
+pub fn fetch(cx: &Ctx) -> Frame {
     let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = page(cx);
+    let top = t.m.content_top;
+    let mut out = Vec::new();
+    // While it is taken, the address gives way to how far it has come.
+    if let Some(job) = s.fetch_job.as_ref().filter(|j| j.outcome.is_none()) {
+        let (heading, detail, share) = match job.progress {
+            None => (l.pick(GETTING_READY), String::new(), None),
+            Some(p) => downloaded(l, p, job.rate),
+        };
+        let y = widgets::progress_card(&mut c, t, f, top, heading, &detail, share);
+        let label = l.pick(if job.stopping { ["正在停止", "正在停止", "Stopping"] } else { STOP });
+        let stop = widgets::list(&mut c, t, f, y + t.m.card_gap, &[Row::new(label).trail(Trail::None)]);
+        if !job.stopping {
+            out.extend(hits(&stop.rows, &[Action::StopFetch]));
+        }
+        return Frame::new(t, c, out, l.pick(FETCH), top);
+    }
+    let (y, caret) = widgets::text_field(&mut c, t, f, top, &s.url);
+    // Which mirror the address goes through, tapped to offer the next one.
+    let through = widgets::list(&mut c, t, f, y + t.m.dp(10.0), &[Row::new(l.pick(MIRROR)).trail(Trail::Value(l.pick(MIRROR_NAMES[s.mirror])))]);
+    out.extend(hits(&through.rows, &[Action::CycleMirror]));
+    let y = through.bottom;
+    let note = match s.fetch_job.as_ref().and_then(|j| j.outcome.as_ref()) {
+        Some(DownloadEnd::Downloaded) => l.pick([
+            "已保存到内部存储的 Download 文件夹。",
+            "已儲存到內部儲存空間的 Download 資料夾。",
+            "Saved into internal storage's Download folder.",
+        ]).to_string(),
+        Some(DownloadEnd::Failed(why)) => fmt::download_failure(l, why),
+        Some(DownloadEnd::Stopped) => l.pick(["已停止，没有留下残缺的文件。", "已停止，沒有留下殘缺的檔案。", "Stopped, and no part is left behind."]).to_string(),
+        // Nothing said until something happened: the keys below already
+        // tell how an address is written, and a line of words over them
+        // would only cover them.
+        _ => String::new(),
+    };
+    if !note.is_empty() {
+        widgets::footnote(&mut c, t, f, y, &note);
+    }
+    url_keys(&mut c, t, f, l, &mut out);
+    keyboard_hits(&mut c, t, f, s, l.pick(FETCH_START), &mut out);
+    Frame { caret: Some(caret), ..Frame::new(t, c, out, l.pick(FETCH), t.m.content_top) }
+}
+
+/// The keys for the parts of an address that the keyboard buries two layers
+/// down, three to a row just above it: `https://`, `http://` and the
+/// mirror's prefix first, then the separators a link is full of, and a row
+/// under them that keeps the address and writes it back.
+fn url_keys(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, out: &mut Vec<Hit>) {
+    let (pad, gap, h) = (t.m.margin, t.m.dp(6.0), t.m.dp(32.0));
+    let w = (t.m.w as f32 - pad * 2.0 - gap * 2.0) / 3.0;
+    let rows = UrlKey::ALL.len().div_ceil(3);
+    let bottom = t.m.h as f32 - widgets::keyboard_height(t) - t.m.dp(10.0);
+    let top = bottom - (h * (rows as f32 + 1.0) + gap * rows as f32);
+    for (i, key) in UrlKey::ALL.iter().enumerate() {
+        let (row, col) = (i / 3, i % 3);
+        let rect = Rect::new(pad + col as f32 * (w + gap), top + row as f32 * (h + gap), w, h);
+        c.fill_round_rect(rect.x, rect.y, rect.w, rect.h, t.m.dp(6.0), t.pal.search);
+        c.text_center(&f.body, key.label(), rect.x + rect.w / 2.0, rect.y + rect.h / 2.0, t.m.sub_px, t.pal.text);
+        out.push(Hit { rect, action: Action::UrlKey(*key) });
+    }
+    // Keeping the address and writing it back, under the keys, two to the
+    // row so the words fit.
+    let row = top + rows as f32 * (h + gap);
+    let wide = (w * 3.0 + gap * 2.0 - gap) / 2.0;
+    for (i, (label, action)) in [(l.pick(COPY_ADDRESS), Action::CopyUrl), (l.pick(PASTE_ADDRESS), Action::PasteUrl)].iter().enumerate() {
+        let rect = Rect::new(pad + i as f32 * (wide + gap), row, wide, h);
+        c.fill_round_rect(rect.x, rect.y, rect.w, rect.h, t.m.dp(6.0), t.pal.search);
+        c.text_center(&f.body, label, rect.x + rect.w / 2.0, rect.y + rect.h / 2.0, t.m.sub_px, t.pal.text);
+        out.push(Hit { rect, action: *action });
+    }
+}
+
+const COPY_ADDRESS: Text = ["复制地址", "複製位址", "Copy address"];
+const PASTE_ADDRESS: Text = ["粘贴", "貼上", "Paste"];
+
+/// The KernelSU modules under the data partition: tapping one switches it
+/// off before the next start, or on again, which is what brings a system
+/// back that a module kept from starting.
+pub fn modules(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = long_page(cx);
+    let top = t.m.content_top;
+    let Some(mods) = s.modules.as_ref() else {
+        let said = widgets::paragraph(&mut c, t, f, top, l.pick(READING_MODULES));
+        return Frame::new(t, c, Vec::new(), l.pick(MODULES), said);
+    };
+    if mods.is_empty() {
+        let said = widgets::paragraph(&mut c, t, f, top, l.pick(NO_MODULES));
+        return Frame::new(t, c, Vec::new(), l.pick(MODULES), said);
+    }
+    let armed = s.armed_drop.as_ref();
+    // What a module says of itself under its name: its version, and what it
+    // does besides run or not — its files kept off the system, and a new
+    // version waiting for the next start.
+    let subs: Vec<String> = mods
+        .iter()
+        .map(|m| {
+            let mut sub = m.version.clone();
+            for (holds, said) in [(m.skip_mount, l.pick(MODULE_SKIP_MOUNT)), (m.pending_update, l.pick(MODULE_PENDING))] {
+                if holds {
+                    if !sub.is_empty() {
+                        sub.push_str(" · ");
+                    }
+                    sub.push_str(said);
+                }
+            }
+            sub
+        })
+        .collect();
+    let states: Vec<&str> = mods
+        .iter()
+        .map(|m| l.pick(if m.remove { MODULE_DROP } else if m.disabled { MODULE_OFF } else { MODULE_ON }))
+        .collect();
+    let rows: Vec<Row> = mods
+        .iter()
+        .zip(&subs)
+        .zip(&states)
+        .map(|((m, sub), state)| Row::new(&m.name).subtitle(sub).trail(Trail::Value(state)))
+        .collect();
+    let list = widgets::list(&mut c, t, f, top, &rows);
+    let actions: Vec<Action> = (0..mods.len()).map(Action::ToggleModule).collect();
+    let mut out = hits(&list.rows, &actions);
+    // Drops, under a heading of their own: a touch arms one, and the same
+    // touch again, with nothing else tapped, drops it.
+    let head = list.bottom + t.m.dp(18.0);
+    let said = widgets::section(&mut c, t, f, head, l.pick(DROP_HEAD));
+    let drops: Vec<Row> = mods
+        .iter()
+        .map(|m| {
+            let label = l.pick(if armed == Some(&m.dir) { DROP_AGAIN } else { DROP });
+            Row::new(&m.name).trail(Trail::Value(label))
+        })
+        .collect();
+    let list = widgets::list(&mut c, t, f, said + t.m.dp(8.0), &drops);
+    let actions: Vec<Action> = (0..mods.len()).map(Action::DropModule).collect();
+    out.extend(hits(&list.rows, &actions));
+    widgets::footnote(&mut c, t, f, list.bottom + t.m.dp(14.0), l.pick(MODULE_NOTE));
+    Frame::new(t, c, out, l.pick(MODULES), top)
+}
+
+const IMAGE_PART_HEAD: Text = ["分区", "分割區", "Partitions"];
+const IMAGE_FILE_HEAD: Text = ["已保存的镜像", "已儲存的鏡像", "Images kept"];
+const IMAGE_BACKUP: Text = ["备份", "備份", "back up"];
+const IMAGE_RESTORE: Text = ["恢复", "還原", "write back"];
+const IMAGE_ARMED: Text = ["再点一次确认", "再點一次確認", "tap again"];
+const IMAGE_READING: Text = ["正在读取分区…", "正在讀取分割區…", "Reading the partitions…"];
+const IMAGE_UNREADABLE: Text = ["无法读取分区列表", "無法讀取分割區清單", "Couldn't read the partitions"];
+const IMAGE_NONE: Text = ["还没有保存过镜像", "還沒有儲存過鏡像", "No images kept yet"];
+const IMAGE_STOP: Text = ["停止", "停止", "stop"];
+const IMAGE_STOPPING: Text = ["正在停止", "正在停止", "stopping"];
+const IMAGE_BACKING: Text = ["正在读出分区", "正在讀出分割區", "Reading the partition out"];
+const IMAGE_WRITING: Text = ["正在写回分区", "正在寫回分割區", "Writing the partition back"];
+const IMAGE_KEPT: Text = ["已保存", "已儲存", "kept"];
+const IMAGE_WROTE: Text = ["已写回并读回校验", "已寫回並讀回校驗", "written back and read back"];
+const IMAGE_FAILED: Text = ["失败", "失敗", "failed"];
+const IMAGE_ALL: Text = ["全部分区备份", "全部分割區備份", "Back up every partition"];
+const IMAGE_ALL_NOTE: Text = [
+    "逐个读出，每个都用 LZ4 压一遍再存进上面的文件夹；super 与 data 这类占满几个 G 的不在内。点一下先准备，再点一下开始。",
+    "逐個讀出，每個都用 LZ4 壓一遍再存進上面的資料夾；super 與 data 這類佔滿幾個 G 的不在內。點一下先準備，再點一下開始。",
+    "One after another, each compressed with LZ4 into the folder above; super and data, which fill gigabytes, are left out. One tap arms it, the next starts it.",
+];
+const IMAGE_ALL_ARMED: Text = ["再点一次开始", "再點一次開始", "tap again to start"];
+const IMAGE_KEY: Text = ["只备份关键分区", "只備份關鍵分區", "Back up the key partitions"];
+const IMAGE_KEY_NOTE: Text = [    "boot、init_boot、vendor_boot、dtbo、vbmeta、vbmeta_system、persist、misc 这几个能开机的关键块，同样压成 .img.lz4。点一下先准备，再点一下开始。",
+    "boot、init_boot、vendor_boot、dtbo、vbmeta、vbmeta_system、persist、misc 這幾個能開機的關鍵塊，同樣壓成 .img.lz4。點一下先準備，再點一下開始。",
+    "The blocks a phone needs to start at all — boot, init_boot, vendor_boot, dtbo, vbmeta, vbmeta_system, persist, misc — compressed the same way. One tap arms it, the next starts it.",
+];
+const IMAGE_LEAST: Text = ["只备份最小可开机集", "只備份最小可開機集", "Back up only what starts it"];
+const IMAGE_LEAST_NOTE: Text = [
+    "再少一档：只有 boot、init_boot、vbmeta、dtbo、persist、misc 的两槽，合起来几十兆，是最小的一份「还能开机」。vendor_boot 与 vbmeta_system 不在内。点一下先准备，再点一下开始。",
+    "再少一檔：只有 boot、init_boot、vbmeta、dtbo、persist、misc 的兩槽，合起來幾十兆，是最小的一份「還能開機」。vendor_boot 與 vbmeta_system 不在內。點一下先準備，再點一下開始。",
+    "Smaller still: only both slots of boot, init_boot, vbmeta, dtbo, persist and misc, tens of megabytes together, the smallest thing that can still start. vendor_boot and vbmeta_system are not in it. One tap arms it, the next starts it.",
+];
+const IMAGE_TO: Text = ["存到", "存到", "Kept in"];
+const IMAGE_PLACE: Text = ["内部存储", "內部儲存", "internal storage"];
+const IMAGE_PLACE_USB: Text = ["U 盘", "U 盤", "a USB drive"];
+const IMAGE_NOTE_SHORT: Text = ["镜像写进 Skyward/partitions", "鏡像寫進 Skyward/partitions", "images go in Skyward/partitions"];
+const IMAGE_USB_NOTE: Text = [
+    "写进 U 盘的 Skyward/partitions；盘没插好或读不了时，这里会说明原因，不会写到别的地方。",
+    "寫進 U 盤的 Skyward/partitions；盤沒插好或讀不了時，這裡會說明原因，不會寫到別的地方。",
+    "images go in Skyward/partitions on the drive; when it is not plugged in or cannot be read, the page says why rather than writing elsewhere.",
+];
+const IMAGE_NOTE: Text = [    "镜像把整个分区逐字节保存成 .img，旁边的 .sha256 记下它的摘要、来自哪个分区。备份只读分区，不动它；写回会覆盖整个分区、无法撤销，所以要点两次，写完还会把分区读回来比对。镜像存在 Skyward/partitions，可以先拷到电脑留存；分区很大时，先确认剩余空间够。",
+    "鏡像把整個分割區逐位元組儲存成 .img，旁邊的 .sha256 記下它的摘要、來自哪個分割區。備份只讀分割區，不動它；寫回會覆蓋整個分割區、無法復原，所以要點兩次，寫完還會把分割區讀回來比對。鏡像存在 Skyward/partitions，可以先拷到電腦留存；分割區很大時，先確認剩餘空間夠。",
+    "An image keeps a whole partition byte for byte as an .img, and the .sha256 beside it records its digest and which partition it came from. Backing one up only reads the partition; writing one back covers the whole of it and cannot be undone, so it takes two touches, and the partition is read back and compared once written. Images go in Skyward/partitions, and can be copied off the phone; check the room left first, as a partition can be large.",
+];
+
+/// One partition's bytes saved as a file, and a file written back over the
+/// partition it came from.
+pub fn images(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let top = t.m.content_top;
+    // How long this page is cannot be known before the rows are laid out, and
+    // a phone's partition list is longer than three screens. It is drawn once
+    // on a long page, and again on one as tall as it turned out to be.
+    let mut drawn: Option<(Canvas, f32, Vec<Hit>)> = None;
+    let mut height = t.m.h * 3;
+    for _ in 0..2 {
+        let mut c = sheet(cx, height, t.pal.bg);
+        let mut out = Vec::new();
+        let mut y = top;
+    // The job under way, or how the last one ended, said first: it is what
+    // the page was opened for.
+    if let Some(job) = &s.image {
+        let verb = l.pick(match (job.restore, job.bytes > 0 && job.done >= job.bytes) {
+            (false, false) => IMAGE_BACKING,
+            (true, false) => IMAGE_WRITING,
+            (false, true) => IMAGE_KEPT,
+            (true, true) => IMAGE_WROTE,
+        });
+        let sub = format!("{verb} · {} / {}", fmt::bytes(job.done), fmt::bytes(job.bytes));
+        let y0 = widgets::list(&mut c, t, f, y, &[Row::new(&job.name).subtitle(&sub).trail(Trail::None)]).bottom;
+        y = match &job.outcome {
+            Some(Ok(said)) => widgets::footnote(&mut c, t, f, y0, said),
+            Some(Err(why)) => {
+                let bad = format!("{}：{why}", l.pick(IMAGE_FAILED));
+                widgets::footnote(&mut c, t, f, y0, &bad)
+            }
+            None => {
+                let label = l.pick(if job.stopping { IMAGE_STOPPING } else { IMAGE_STOP });
+                let stop = widgets::list(&mut c, t, f, y0 + t.m.dp(8.0), &[Row::new(label).trail(Trail::None)]);
+                if let Some(rect) = stop.rows.first() {
+                    out.push(Hit { rect: *rect, action: Action::StopImage });
+                }
+                stop.bottom
+            }
+        } + t.m.card_gap;
+    }
+    // The partitions, by name, each with the bytes it holds.
+    let head = widgets::section(&mut c, t, f, y, l.pick(IMAGE_PART_HEAD));
+    // Every one of them at once, compressed: the reason a phone can keep a
+    // backup of itself in its own storage at all.
+    // Where the images go: internal storage, or a USB drive plugged in, the
+    // same choice the backup page keeps, so both pages agree.
+    let to = widgets::list(
+        &mut c,
+        t,
+        f,
+        head,
+        &[Row::new(l.pick(IMAGE_TO))
+            .subtitle(l.pick(if s.backup_to == Place::Storage { IMAGE_NOTE_SHORT } else { IMAGE_USB_NOTE }))
+            .icon(SLATE, Icon::UsbDrive)
+            .trail(Trail::Value(l.pick(if s.backup_to == Place::Storage { IMAGE_PLACE } else { IMAGE_PLACE_USB })))],
+    );
+    if let Some(rect) = to.rows.first() {
+        let other = if s.backup_to == Place::Storage { Place::UsbDrive } else { Place::Storage };
+        out.push(Hit { rect: *rect, action: Action::BackupTo(other) });
+    }
+    let whole = widgets::list(
+        &mut c,
+        t,
+        f,
+        to.bottom,
+        &[Row::new(l.pick(IMAGE_ALL))
+            .subtitle(l.pick(if s.armed_image == Some(usize::MAX) { IMAGE_ALL_ARMED } else { IMAGE_ALL_NOTE }))
+            .icon(SLATE, Icon::Download)
+            .trail(Trail::None)],
+    );
+    if let Some(rect) = whole.rows.first() {
+        out.push(Hit { rect: *rect, action: Action::ImageAll });
+    }
+    let key = widgets::list(
+        &mut c,
+        t,
+        f,
+        whole.bottom,
+        &[Row::new(l.pick(IMAGE_KEY)).subtitle(l.pick(IMAGE_KEY_NOTE)).icon(SLATE, Icon::Shield).trail(Trail::None)],
+    );
+    if let Some(rect) = key.rows.first() {
+        out.push(Hit { rect: *rect, action: Action::ImageKey });
+    }
+    let least = widgets::list(
+        &mut c,
+        t,
+        f,
+        key.bottom,
+        &[Row::new(l.pick(IMAGE_LEAST)).subtitle(l.pick(IMAGE_LEAST_NOTE)).icon(SLATE, Icon::Shield).trail(Trail::None)],
+    );
+    if let Some(rect) = least.rows.first() {
+        out.push(Hit { rect: *rect, action: Action::ImageLeast });
+    }
+    let key = least;
+    let y = match &s.partitions {
+        None => widgets::list(&mut c, t, f, key.bottom, &[Row::new(l.pick(IMAGE_READING)).trail(Trail::None)]).bottom,
+        Some(Err(why)) => {
+            let said = widgets::list(&mut c, t, f, key.bottom, &[Row::new(l.pick(IMAGE_UNREADABLE)).trail(Trail::None)]).bottom;
+            widgets::footnote(&mut c, t, f, said, why)
+        }
+        Some(Ok(list)) if list.is_empty() => widgets::list(&mut c, t, f, key.bottom, &[Row::new(l.pick(IMAGE_NONE)).trail(Trail::None)]).bottom,
+        Some(Ok(list)) => {
+            let subs: Vec<String> = list.iter().map(|p| fmt::bytes(p.bytes)).collect();
+            let rows: Vec<Row> = list
+                .iter()
+                .zip(&subs)
+                .map(|(p, sub)| Row::new(&p.name).subtitle(sub).trail(Trail::Value(l.pick(IMAGE_BACKUP))))
+                .collect();
+            let l0 = widgets::list(&mut c, t, f, key.bottom, &rows);
+            let actions: Vec<Action> = (0..list.len()).map(Action::ImageBackup).collect();
+            out.extend(hits(&l0.rows, &actions));
+            l0.bottom
+        }
+    };
+    // The images kept, by file name.
+    let head = widgets::section(&mut c, t, f, y + t.m.dp(18.0), l.pick(IMAGE_FILE_HEAD));
+    let y = if s.images.is_empty() {
+        widgets::list(&mut c, t, f, head, &[Row::new(l.pick(IMAGE_NONE)).trail(Trail::None)]).bottom
+    } else {
+        let subs: Vec<String> = s.images.iter().map(|img| fmt::bytes(img.bytes)).collect();
+        let rows: Vec<Row> = s
+            .images
+            .iter()
+            .zip(&subs)
+            .enumerate()
+            .map(|(k, (img, sub))| {
+                let label = l.pick(if s.armed_image == Some(k) { IMAGE_ARMED } else { IMAGE_RESTORE });
+                Row::new(&img.name).subtitle(sub).trail(Trail::Value(label))
+            })
+            .collect();
+        let l0 = widgets::list(&mut c, t, f, head, &rows);
+        let actions: Vec<Action> = (0..s.images.len()).map(Action::ImageRestore).collect();
+        out.extend(hits(&l0.rows, &actions));
+        l0.bottom
+    };
+    let y = widgets::footnote(&mut c, t, f, y + t.m.dp(14.0), l.pick(IMAGE_NOTE));
+        let need = (y + t.m.margin * 2.0).ceil() as u32;
+        drawn = Some((c, y, out));
+        if need <= height {
+            break;
+        }
+        height = need;
+    }
+    let (c, y, out) = drawn.expect("the page is drawn at least once");
+    Frame::new(t, fit(c, t, y), out, l.pick(["分区镜像", "分割區鏡像", "Partition images"]), top)
+}
+
+const READING_MODULES: Text = ["正在读取模块…", "正在讀取模組…", "Reading the modules…"];
+const NO_MODULES: Text = ["没有找到模块。", "沒有找到模組。", "No modules were found."];
+const MODULE_ON: Text = ["启用", "啟用", "on"];
+const MODULE_OFF: Text = ["已停用", "已停用", "off"];
+const MODULE_DROP: Text = ["待删除", "待刪除", "dropping"];
+const MODULE_SKIP_MOUNT: Text = ["不挂载", "不掛載", "not mounted"];
+const MODULE_PENDING: Text = ["待更新", "待更新", "update pending"];
+const DROP_HEAD: Text = ["彻底删除", "徹底刪除", "Drop a module"];
+const DROP: Text = ["删除", "刪除", "drop"];
+const DROP_AGAIN: Text = ["再点一次确认", "再點一次確認", "tap again"];
+const MODULE_NOTE: Text = [
+    "上面点一下切换：已停用的模块下次开机不再运行，但文件还在。下面点一下「删除」会再问一次，确认后 KernelSU 在下次开机时删掉整个模块目录，无法撤销。系统被模块拖住时，先停用最近装的模块再开机即可。",
+    "上面點一下切換：已停用的模組下次開機不再執行，但檔案還在。下面點一下「刪除」會再問一次，確認後 KernelSU 在下次開機時刪掉整個模組目錄，無法撤銷。系統被模組拖住時，先停用最近裝的模組再開機即可。",
+    "Tap above to switch: a disabled module does nothing at the next start but keeps its files. Tap drop below, then tap it once more: KernelSU then deletes the whole module folder at the next start, and that cannot be undone. When a module keeps the system from starting, disable the one installed last and start again.",
+];
+
+/// The folder an entry goes to already holds its name: what to do.
+pub fn clash(cx: &Ctx) -> Frame {    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
     let (clip, into, _) = s.clash.as_ref().expect("the clash page shows a clash");
     let name = Path::new(&clip.path).file_name().map_or_else(|| clip.path.clone(), |n| n.to_string_lossy().into_owned());
     let verb = l.pick(match clip.op {

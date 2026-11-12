@@ -424,6 +424,40 @@ A fresh normal-HyperOS read-only inspection confirmed OS/vendor properties
 This difference remains evidence to investigate; no patch date was changed,
 and matching those strings is not established as a fix for the inner blob.
 
+## Logical mount toggle interaction and pending correction
+
+The 2a586d1 RW round verified data/sdcard writable and the recovery log
+reported all users unlocked. The owner confirmed brightness changes and
+Wi-Fi hotspot visibility. The MTP payload test was not performed: PC
+PnP/WPD identity matched, but Shell device identity properties were absent.
+No fixture directory/file was created. Power/wake feedback remains to be
+clarified; the final return to HyperOS was the controller's restoration.
+
+The owner found every available logical mount switch reported failure.
+Read-only evidence showed vendor_dlkm absent in the parent namespace while
+Weaver's private namespace still mounted the original RO dm-6, named
+vendor_dlkm_b. The prior unmount_one removed the parent filesystem, then
+tried to delete a DM device still held by the service namespace. The normal
+mount path then unconditionally created a same-name DM, which already
+existed. This left the displayed failure after a partial state change.
+
+The source correction makes the UI's single-partition unmount remove only
+its filesystem view. A normal remount reuses an existing DM only after
+verifying RO and every linear/zero extent against this slot's LP metadata;
+wrong type, backing device, offset, lengths, gaps and overflow are refused
+without logging target parameters. A failed remount does not delete an
+existing shared DM. Strict full unmap/OTA cleanup, snapshot handling and
+the already-shown mount path keep their prior behavior. Eight boundary
+tests accompany this change; real-device switch acceptance is pending.
+
+During evidence collection the original mi_ext_b, mi_product_b and
+vendor_dlkm_b EROFS RO views were restored using their original still-mapped
+devices. No table was reloaded or service identity changed. The round then
+ended with original recovery_b, normal HyperOS, all three partition hashes
+and metadata ciphertext hashes verified. No test file or persistent trace
+was left. The owner subsequently entered FASTBOOT manually; no new flash
+authorization has been inferred from that action.
+
 ## Diagnostic executable name
 
 After verifying product, slot and payload, create a RAM symlink to the

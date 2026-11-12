@@ -1,6 +1,6 @@
 {
   "device": "myron",
-  "status": "experimental; native read-only data/PIN/CE and original-file access accepted; writable-data/MTP follow-up prepared; release acceptance incomplete",
+  "status": "experimental; RW mount and PIN unlock path confirmed, brightness/Wi-Fi scan owner-reported; logical mount-toggle interaction fixed in source pending CI/device test; MTP payload test not performed",
   "date": "2026-11-12",
   "stock_version": "OS4.0.6.0.XPMCNXM",
   "framework_api": 37,
@@ -477,6 +477,96 @@
         "hyperos_unlock_and_original_files_user_confirmed": true
       },
       "limits": "Read-only data and PIN/CE accepted. Writable data, MTP payload mutations, enforcing mode and other untested recovery functions are not established."
+    },
+    "native_2a586d1": {
+      "source_commit": "2a586d1dc692549f45619f297e139f35c0d64035",
+      "ci_run": 43220845766,
+      "image_sha256": "42fe51b4fa10e1ba1583938f4f02610534c58df1590ec4d5b677470715b29fad",
+      "writable_ui_probe": {
+        "candidate": "2a586d1dc692549f45619f297e139f35c0d64035",
+        "writable_ui_probe_completed": true,
+        "data_mounted_writable": true,
+        "metadata_ciphertext_hashes_match_preflight": true,
+        "general_upgrades_enabled": false,
+        "inner_renewal_scope": "at most one renewal per conversion; automatic UI metadata/DE/shared opening",
+        "manual_conversion_or_data_cli_invoked": false,
+        "credential_or_weaver_operation_issued_by_probe": false,
+        "hardware_info_only": true,
+        "spblob_header_count": 3,
+        "pin_authorized_by_probe": false
+      },
+      "limited_acceptance": {
+        "writable_data_and_sdcard_verified": true,
+        "recovery_reports_all_users_unlocked": true,
+        "host_supplied_credential": false,
+        "metadata_ciphertext_hashes_unchanged": true,
+        "mtp_fixture_created": false,
+        "mtp_payload_transfer_tested": false,
+        "mount_toggle_bug_observed": true,
+        "original_erofs_mount_views_restored": true,
+        "diagnostic_samples": 6,
+        "diagnostic_sample_bytes": 759752,
+        "persistent_trace_directory_found": false
+      },
+      "temporary_mount_view_restoration": {
+        "restored": [
+          {
+            "partition": "mi_ext_b",
+            "mount_point": "/mnt/mi_ext",
+            "same_original_child_device": true,
+            "filesystem": "erofs",
+            "read_only": true,
+            "mapping_recreated_or_reloaded": false
+          },
+          {
+            "partition": "mi_product_b",
+            "mount_point": "/mnt/mi_product",
+            "same_original_child_device": true,
+            "filesystem": "erofs",
+            "read_only": true,
+            "mapping_recreated_or_reloaded": false
+          },
+          {
+            "partition": "vendor_dlkm_b",
+            "mount_point": "/vendor_dlkm",
+            "same_original_child_device": true,
+            "filesystem": "erofs",
+            "read_only": true,
+            "mapping_recreated_or_reloaded": false
+          }
+        ],
+        "block_or_user_files_written": false,
+        "service_or_library_identity_changed": false
+      },
+      "restoration": {
+        "time_utc": "2026-11-12T13:25:00.836484+00:00",
+        "device": "myron",
+        "os": "OS4.0.6.0.XPMCNXM",
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false,
+        "partition_hashes": {
+          "recovery_b": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+          "recovery_a": "586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660",
+          "boot_b": "11a20858d4e68869152baf70db0edb3d279516f9d430154cc6c96ba427940748"
+        },
+        "original_recovery_b_restored": true,
+        "boot_b_and_recovery_a_unchanged": true,
+        "metadata_blob_hashes_unchanged_through_postrestore": true,
+        "hyperos_data_mounted": true,
+        "no_persistent_trace_directory_found_in_recovery": true,
+        "writable_recovery_mounts_verified": true,
+        "recovery_all_users_unlocked_log_confirmed": true,
+        "mtp_fixture_created": false,
+        "mtp_payload_readwrite_not_tested": true,
+        "host_supplied_credential": false
+      },
+      "owner_reports": {
+        "brightness_changes": true,
+        "wifi_hotspots_visible": true,
+        "power_keys_wake_touch": "pending clarification; the final return to HyperOS was the controller-requested restoration"
+      },
+      "mtp_limit": "USB parent and WPD node uniquely matched, but the Shell identity collector lacked device identity properties; no fixture was created or transferred. This is not proof of MTP driver failure."
     }
   },
   "scope": {
@@ -491,12 +581,16 @@
     "pin_decryption_pass_claimed": true,
     "device_wide_no_writes_claimed": false,
     "credential_or_guess_supplied_from_host": false,
-    "weaver_slot_write_commands": false
+    "weaver_slot_write_commands": false,
+    "writable_mount_accepted": true,
+    "writable_file_payload_tested": false,
+    "mtp_payload_mutations_tested": false
   },
   "remaining": [
-    "Validate writable data with no automatic fsck or general key upgrades; limit changes to a uniquely owned small test payload and verify cleanup",
-    "Validate MTP read/write/hash and cleanup on that payload without accessing user file contents",
-    "Enforcing mode and remaining recovery functions require separate evidence before release/PR"
+    "Verify logical unmount/remount toggles after retaining shared DM mappings and checking reused RO linear/zero targets",
+    "Resolve Windows WPD-to-Shell identity metadata and complete the bounded own-payload MTP test; no payload was created in 2a",
+    "Clarify power/wake owner feedback separately from the explicitly requested restoration reboot",
+    "Enforcing mode and untested destructive recovery operations are not accepted"
   ],
   "temporary_test_candidate": {
     "source_commit": "79dec9edc91ce3f47b0fabe615a1d89b36ab996e",
@@ -778,5 +872,47 @@
     "diagnostic_max_log_bytes": 786432,
     "device_boot_tested": true,
     "pin_authorized": true
+  },
+  "writable_mount_candidate": {
+    "source_commit": "2a586d1dc692549f45619f297e139f35c0d64035",
+    "ci_run": 43220845766,
+    "ci_conclusion": "success",
+    "image_file": "skyward-2a586d1-myron-OS4.0.6.0.XPMCNXM-diagnostic.img",
+    "image_bytes": 104857600,
+    "image_sha256": "42fe51b4fa10e1ba1583938f4f02610534c58df1590ec4d5b677470715b29fad",
+    "zip_sha256": "37ef3f8f331b5539d0c13a29c132b4ec68e46d0dfeef1202ea61f646abe585c6",
+    "header_version": 4,
+    "kernel_bytes": 0,
+    "payloads": {
+      "init.skyward-myron-diagnostics.rc": {
+        "bytes": 229,
+        "sha256": "5504cc2a70fc894207ca7514873af34c1ad265b26630344c919ba4ed0c197a3a"
+      },
+      "skyward/device.toml": {
+        "bytes": 10789,
+        "sha256": "aff151c4234fdfa864ef21d875f6b98c2401d3e09c1d46ce08556b89c6f5d3f6"
+      },
+      "skyward/lib64/ese_weaver.so": {
+        "bytes": 113512,
+        "sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e"
+      },
+      "skyward/myron-diagnostics.sh": {
+        "bytes": 4120,
+        "sha256": "042a5b49fad6a3fda417319cb62e632855fabc2a1145e33e948de3c3fa9dd2ac"
+      },
+      "system/bin/recovery": {
+        "bytes": 8645080,
+        "sha256": "d5803eedbc9982a7537d72ffaef992335dd58f391fbafa417d319bdc383d4c22"
+      }
+    },
+    "program_matches_same_run_tools": true,
+    "config_and_scripts_match_source": true,
+    "native_library_matches_same_run_artifact_and_reproducible_builds": true,
+    "native_library_sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e",
+    "callback_vintf_mark_strong_import_verified": true,
+    "callback_create_binder_actual_call_verified": true,
+    "diagnostic_max_log_bytes": 786432,
+    "device_boot_tested": true,
+    "pin_authorized": false
   }
 }

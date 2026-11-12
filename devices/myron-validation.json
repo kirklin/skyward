@@ -92,7 +92,7 @@
     "device_wide_no_writes_claimed": false
   },
   "remaining": [
-    "Fix capability-aware StrongBox/Weaver library loading without modifying vendor/odm",
+    "Real-device validation of capability-aware loading; source fix and Linux root namespace tests passed, actual service mapping remains unverified",
     "Verify mapped replacement library path/hash and AT_SECURE/capabilities before read-only Weaver getConfig",
     "Resolve security-patch mismatch and storage-key upgrade refusal without allowing key upgrades in this diagnostic profile",
     "Complete repeatable USB, hardware and independently authorized PIN/CE/writable-data tests before PR"
@@ -135,5 +135,45 @@
         "sha256": "5504cc2a70fc894207ca7514873af34c1ad265b26630344c919ba4ed0c197a3a"
       }
     }
+  },
+  "followup_candidate": {
+    "source_commit": "9f0adfbd30bfd00a1f90404170e84df91e1f5092",
+    "ci_run": 43171699583,
+    "ci_conclusion": "success",
+    "image_file": "skyward-9f0adfb-myron-OS4.0.6.0.XPMCNXM-diagnostic.img",
+    "image_bytes": 104857600,
+    "image_sha256": "884f9e57fb9c113efa6a4dca396dad66ca33c7b91512f9aba2becd5e16d513d7",
+    "zip_sha256": "3adfefb56f154ea70f871598f47be707146a0efd752a93a83ff531ecb7e5ad55",
+    "kernel_bytes": 0,
+    "header_version": 4,
+    "payloads": {
+      "system/bin/recovery": {
+        "bytes": 8642120,
+        "sha256": "7b63b6006d26f7d4cce1d746077383c834f6b67267f94c3c82ef60c83f1e7d48"
+      },
+      "init.skyward-myron-diagnostics.rc": {
+        "bytes": 229,
+        "sha256": "5504cc2a70fc894207ca7514873af34c1ad265b26630344c919ba4ed0c197a3a"
+      },
+      "skyward/device.toml": {
+        "bytes": 9846,
+        "sha256": "9954a301b1b330824277e76f884ea46a11fbc8c61c0472efa76ca22ecbd4437d"
+      },
+      "skyward/lib64/ese_weaver.so": {
+        "bytes": 113360,
+        "sha256": "09a4095831aae55a4589606da194c0bd7f1369a3195316af643810b4136fc5a2"
+      },
+      "skyward/myron-diagnostics.sh": {
+        "bytes": 3624,
+        "sha256": "389c99e0f447beb6f2e9420219c71e4c2473556e7b423199c4dbc9b2e1e9f4a9"
+      }
+    },
+    "program_matches_same_run_tools_artifact": true,
+    "private_library_mounts_and_hash_pinned_recovery_dependencies": true,
+    "host_and_real_root_namespace_tests_passed": true,
+    "diagnostic_log_max_bytes": 786432,
+    "device_boot_tested": false,
+    "pin_tests_authorized": false,
+    "original_recovery_b_backup_sha256": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc"
   }
 }

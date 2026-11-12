@@ -177,7 +177,16 @@ same-executable process from an earlier UI instance must also match the
 requested library inode in its own mount view before adoption. Pinning uses
 the process's namespace rather than opening a possibly different host path.
 
-This follow-up has not been boot-tested. Preserve SELinux enforcing policy;
+The follow-up at `9f0adfb` passed full workspace tests, the actual sudo
+child-namespace test, ARM64 lint/build and image packaging
+([run 43171699583](https://github.com/Dingtaiqi/skyward/actions/runs/43171699583)).
+The 104857600-byte image SHA256 is
+`884f9e57fb9c113efa6a4dca396dad66ca33c7b91512f9aba2becd5e16d513d7`.
+Its program exactly matches the same run's tools artifact; profile and
+trace scripts match the source commit, and the native SO remains `09a409...`.
+This follow-up has not been boot-tested. A new test requires fresh myron
+identity/slot checks and separate authorization; never use it on socrates.
+Preserve SELinux enforcing policy;
 check the source inode's label, the actual service domain and denied mmap
 operations. A bind retains the source inode's label. Before getConfig,
 verify process identity/caps/AT_SECURE, the library mapping's device/inode,

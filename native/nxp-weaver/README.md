@@ -4,9 +4,10 @@ This source kit builds an `ese_weaver.so` prototype for the stock myron
 OS4.0.6.0.XPMCNXM recovery userspace. The 4ab myron test verified its actual
 child-view hash/inode mappings and eSE startup. Its single getConfig failed
 before SELECT because QTI rejected a callback with system Binder stability.
-This revision enables the standard stable-AIDL build option; the revised
-library has not been device-tested. Successful slot configuration and PIN
-use are not established.
+The f32 revision enabled the standard stable-AIDL build option. It passed
+complete CI and one gated native getConfig: 64 slots, 16-byte keys and
+16-byte values. Credential operations and PIN decryption remain untested;
+the separate storage-key upgrade refusal still keeps data closed.
 
 It compiles Weaver and a private copy of the direct NXP HAL transport together.
 The Binder boundary uses stable AIDL V1 through `libbinder_ndk` C functions.
@@ -134,9 +135,11 @@ they keep CAP_SYS_ADMIN, CAP_SYS_NICE and CAP_WAKE_ALARM. An environment-only
 LD_LIBRARY_PATH override is insufficient. A bind keeps the source inode's
 label; verify that the actual service can read and executable-map it without
 changing enforcing policy. The private-bind mapping gate passed in 4ab; its
-single read-only getConfig failed before applet selection. The callback
-stability correction still requires runtime validation. An unconfirmed
-override must never proceed to a PIN/key attempt.
+single read-only getConfig failed before applet selection. The f32
+callback correction then passed the same mapping gate and one getConfig.
+That result does not authorize or establish a PIN/key operation; enforcing
+SELinux operation also remains unverified. An unconfirmed override must
+never proceed to a PIN/key attempt.
 Do not add a security bypass to force loading. Stop
 if service discovery or applet selection fails. Do not probe credentials,
 try dummy/wrong PINs or keys, write/erase slots, or loop authentication

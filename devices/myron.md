@@ -309,6 +309,39 @@ full recovery_a/b and boot_b hashes matched pre-test. Storage-key -62 and
 the no-upgrade policy remain unchanged. The callback fix is not yet an
 accepted device result; see the structured validation record.
 
+## f32 native Weaver configuration acceptance
+
+The f32dee0 callback-stability revision passed complete CI run 43194221841,
+13 sanitizer-backed transport tests, strict ABI/import checks and two
+byte-identical independent-output native builds. The checked image contains
+the same library as that run's native artifact. Its callback factory really
+calls AIBinder_markVintfStability, provided strongly by exact REC
+libbinder_ndk at LIBBINDER_NDK30.
+
+A separately authorized recovery_b-only native test then passed program,
+configuration, module/node, executable identity, capabilities, AT_SECURE and
+actual child-view hash/inode mapping gates. Exactly one read-only getConfig
+succeeded: **64 slots, 16-byte keys and 16-byte values**. Logs show QTI's
+callback connected, transmit completed and ParseSlotInfo returned 64. No
+credential or slot read/write was issued. Both shared-secret peers agreed.
+
+This establishes callback delivery and configuration retrieval, not PIN
+decryption. Data stayed closed because its existing storage key still
+returned -62 with upgrades forbidden. Keep that preservation policy; do not
+guess patch dates, upgrade keys or infer credential readiness from getConfig.
+The observed SELinux state was permissive as found; enforcing-mode operation
+has not been accepted.
+
+Six RAM diagnostic samples totalled 764850 bytes, within the 768 KiB cap.
+MTP/ADB remained available through the observed interval. ADB can report
+the valid transport state `recovery`; waiting exclusively for `device` can
+mistakenly report a connected recovery as unavailable.
+
+The test ended with original recovery_b restored and normal HyperOS on slot
+b, DSU off. Full recovery_a/b and boot_b hashes match the pre-test values.
+No persistent trace directory was found. The one-round authorization ended;
+further boot, credential or data-write tests need their own agreed scope.
+
 ## Diagnostic executable name
 
 After verifying product, slot and payload, create a RAM symlink to the

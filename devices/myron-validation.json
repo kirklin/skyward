@@ -1,6 +1,6 @@
 {
   "device": "myron",
-  "status": "experimental; NFC/eSE backend and shared-secret agreement now work; native Weaver callback stability fix under construction; getConfig/decryption not accepted",
+  "status": "experimental; native Weaver getConfig accepted on device (64/16/16); storage-key -62 blocks data mount; PIN/CE and writable-data acceptance remain pending",
   "date": "2026-11-12",
   "stock_version": "OS4.0.6.0.XPMCNXM",
   "framework_api": 37,
@@ -271,6 +271,83 @@
         "getconfig_result": "service error1: Failed to retrieve slots info",
         "pin_or_slot_operations_issued": false
       }
+    },
+    "native_f32dee0": {
+      "source_commit": "f32dee018d60373db91f3cf45a3157df6952f9b3",
+      "ci_run": 43194221841,
+      "image_sha256": "d2eb776210ce4a12d54495ef665cebb304a4c7817c96f1be5275932c796a7045",
+      "native_library_sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e",
+      "program_config_scripts_and_partition_hashes_match": true,
+      "native_build_checks": {
+        "independent_output_builds_byte_identical": true,
+        "callback_createBinder_calls_markVintfStability": true,
+        "strong_import_and_exact_REC_symbol_version_checked": true,
+        "transport_sanitizer_tests_passed": 13
+      },
+      "nfc_node_gate": {
+        "loaded_module": "nxp_nci",
+        "source_sha256": "ae9a9fcf262e29ca5be19c5db733174baec47d5978acb2d864bbf05dc2de6735",
+        "node": "/dev/nq-nci",
+        "uid": 1027,
+        "gid": 1027,
+        "mode": "0660",
+        "chip_ready_not_yet_asserted": true
+      },
+      "weaver_mapping_gate": {
+        "executable_original": true,
+        "uid": 2911,
+        "gid": 2911,
+        "cap_eff": "0000000800a00000",
+        "AT_SECURE": 1,
+        "private_namespace": true,
+        "child_view_sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e",
+        "host_original_sha256": "556b6eb12522f6e9c306846ab6b8fa65f24be5f9c23e8e5ef19a54b45fcb8e4e",
+        "mapped_inode_matches_child_view_and_bundled_source": true,
+        "all_mapping_lines_verified": 4,
+        "selinux_enforce_as_found": "0",
+        "process_context": "u:r:recovery:s0",
+        "gate_passed_for_readonly_getConfig": true,
+        "pin_authorized": false
+      },
+      "sharedsecret_two_peers_agreed": true,
+      "readonly_getconfig": {
+        "attempts": 1,
+        "exit_code": 0,
+        "success": true,
+        "slots": 64,
+        "key_bytes": 16,
+        "value_bytes": 16,
+        "pin_or_slot_operation": false
+      },
+      "runtime_path": "QTI callback onStateChange connected=true; transmit completed; ParseSlotInfo returned 64; channel subsequently closed",
+      "data": "Not mounted; existing storage key still requires forbidden upgrade (-62); no PIN or key-upgrade operation issued",
+      "usb": "MTP/ADB available throughout observed recovery interval; host initially reported state=recovery, which is a valid ADB transport state",
+      "selinux_limit": "Observed permissive as found; enforcing-mode operation not accepted",
+      "diagnostic_samples": {
+        "count": 6,
+        "total_sample_bytes": 764850,
+        "limit_bytes": 786432,
+        "location": "RAM"
+      },
+      "restoration": {
+        "time_utc": "2026-11-12T09:56:57.065784+00:00",
+        "device": "myron",
+        "os": "OS4.0.6.0.XPMCNXM",
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false,
+        "partition_hashes": {
+          "recovery_b": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+          "recovery_a": "586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660",
+          "boot_b": "11a20858d4e68869152baf70db0edb3d279516f9d430154cc6c96ba427940748"
+        },
+        "original_recovery_b_restored": true,
+        "boot_b_and_recovery_a_unchanged": true,
+        "no_trace_directory_found": true,
+        "getconfig_attempts": 1,
+        "getconfig_result": "64 slots; key16 bytes; value16 bytes",
+        "pin_or_slot_operations_issued": false
+      }
     }
   },
   "scope": {
@@ -286,9 +363,9 @@
     "device_wide_no_writes_claimed": false
   },
   "remaining": [
-    "Build and verify generated AIDL callback VINTF stability marking; repeat the single read-only getConfig only in a newly authorized test",
-    "Do not infer APDU parsing failure from the generic GetSlots exit log; no SELECT/GETSLOTS was sent in the 4ab failure path",
-    "Investigate storage-key -62 with existing-key preservation after Weaver config readiness; no guessed dates or upgrades",
+    "Investigate existing storage-key upgrade requirement (-62) offline, preserving keys and keeping automatic upgrades forbidden",
+    "A successful getConfig does not establish credential/slot read/write or PIN decryption; these require separate authorization and readiness checks",
+    "Enforcing-mode operation remains unverified; do not change policy to bypass failures",
     "Complete separately authorized PIN/CE/writable-data and recovery-function tests before PR"
   ],
   "temporary_test_candidate": {
@@ -442,6 +519,48 @@
     },
     "program_matches_same_run_tools": true,
     "config_and_scripts_match_source": true,
+    "diagnostic_max_log_bytes": 786432,
+    "device_boot_tested": true,
+    "pin_authorized": false
+  },
+  "binder_stability_candidate": {
+    "source_commit": "f32dee018d60373db91f3cf45a3157df6952f9b3",
+    "ci_run": 43194221841,
+    "ci_conclusion": "success",
+    "image_file": "skyward-f32dee0-myron-OS4.0.6.0.XPMCNXM-diagnostic.img",
+    "image_bytes": 104857600,
+    "image_sha256": "d2eb776210ce4a12d54495ef665cebb304a4c7817c96f1be5275932c796a7045",
+    "zip_sha256": "1608e7b2ac57214045e370eaaaec1e41f4fb812b345d6584dc7c5a6930543d2a",
+    "header_version": 4,
+    "kernel_bytes": 0,
+    "payloads": {
+      "init.skyward-myron-diagnostics.rc": {
+        "bytes": 229,
+        "sha256": "5504cc2a70fc894207ca7514873af34c1ad265b26630344c919ba4ed0c197a3a"
+      },
+      "skyward/device.toml": {
+        "bytes": 10528,
+        "sha256": "ae547cf947e0d421b85c91638191269b7584044ae5a7c97eab8e0bc67b29a91f"
+      },
+      "skyward/lib64/ese_weaver.so": {
+        "bytes": 113512,
+        "sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e"
+      },
+      "skyward/myron-diagnostics.sh": {
+        "bytes": 4120,
+        "sha256": "042a5b49fad6a3fda417319cb62e632855fabc2a1145e33e948de3c3fa9dd2ac"
+      },
+      "system/bin/recovery": {
+        "bytes": 8642120,
+        "sha256": "7b63b6006d26f7d4cce1d746077383c834f6b67267f94c3c82ef60c83f1e7d48"
+      }
+    },
+    "program_matches_same_run_tools": true,
+    "config_and_scripts_match_source": true,
+    "native_library_matches_same_run_artifact_and_reproducible_builds": true,
+    "native_library_sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e",
+    "callback_vintf_mark_strong_import_verified": true,
+    "callback_create_binder_actual_call_verified": true,
     "diagnostic_max_log_bytes": 786432,
     "device_boot_tested": true,
     "pin_authorized": false

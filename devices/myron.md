@@ -3,8 +3,9 @@
 This is an experimental recovery candidate, not a tested release. After two
 inconclusive temporary-boot attempts, a separately authorized native
 recovery_b boot reached Skyward. The owner confirmed display and touch;
-ADB and exact running payload hashes were verified. StrongBox/Weaver
-bring-up, PIN decryption and writable-data acceptance remain incomplete.
+ADB and exact running payload hashes were verified. The later 9f round
+also passed StrongBox startup. USB reliability, Weaver acceptance, PIN
+decryption and writable-data acceptance remain incomplete.
 The original recovery was restored and verified. No myron PR is submitted.
 
 Read-only inspection on 2026-11-12 identified REDMI K90 Pro Max
@@ -100,8 +101,8 @@ merely to move past the refusal.
 | Default KeyMint | QTI KeyMint4/default, remote provisioning, secure clock, shared secret/default confirmed in VINTF and live service list | Service ran; storage-key setup refused -62; key upgrades remain disabled |
 | Gatekeeper | QTI Rust AIDL/default, system:system | Configured; recovery credential verification untested |
 | Native eSE | eSE1 belongs to the QTI secure-element process, not the NXP NFC process | Start stock QTI service as system:nfc/system before StrongBox |
-| StrongBox | NXP StrongBox3 and sharedsecret/strongbox; live UID 2910, primary GID 0; native HalToHalTransport | Fails to load libvndksupport under secure execution; negotiation untested |
-| Weaver | NXP Weaver2/default, UID/GID 2911; stock ese_weaver.so uses OmapiTransport | File bundled; service not reached after StrongBox timeout; override/applet/PIN untested |
+| StrongBox | NXP StrongBox3 and sharedsecret/strongbox; live UID 2910, primary GID 0; native HalToHalTransport | 9f RAM dependencies fixed loading and passed startup ready; UID/GID/caps/AT_SECURE confirmed |
+| Weaver | NXP Weaver2/default, UID/GID 2911; stock ese_weaver.so uses OmapiTransport | 9f reached service but missed VINTF fragment; RAM correction reached thread loop; mapping/getConfig/PIN still pending |
 | Wi-Fi | qca_cld3_peach_v2/rfkill/cfg80211, cnss-peach, peach_v2 configuration | Recovery log records DHCP lease and external reachability; repeatability untested |
 | Boot control | Stock QTI AIDL BootControl and separate recovery_a/b | Configured early; recovery query/write operations untested |
 
@@ -184,8 +185,9 @@ The 104857600-byte image SHA256 is
 `884f9e57fb9c113efa6a4dca396dad66ca33c7b91512f9aba2becd5e16d513d7`.
 Its program exactly matches the same run's tools artifact; profile and
 trace scripts match the source commit, and the native SO remains `09a409...`.
-This follow-up has not been boot-tested. A new test requires fresh myron
-identity/slot checks and separate authorization; never use it on socrates.
+This follow-up was boot-tested in a separately authorized round, described
+below. A further test requires fresh myron identity/slot checks and agreed
+scope; never use it on socrates.
 Preserve SELinux enforcing policy;
 check the source inode's label, the actual service domain and denied mmap
 operations. A bind retains the source inode's label. Before getConfig,
@@ -193,6 +195,62 @@ verify process identity/caps/AT_SECURE, the library mapping's device/inode,
 and SHA256 through /proc/PID/root/odm/lib64/ese_weaver.so. The host view must
 still contain the original library, including for StrongBox and QTI eSE.
 Neither a binder registration nor a matching filename establishes this.
+
+## 9f native round and explicit Weaver fragment fix
+
+The owner confirmed display and touch. Program, profile, bundled SO and
+partition hashes matched. StrongBox passed startup readiness with its
+original executable, UID/GID 2910/0, capabilities 0000000800a00000 and
+AT_SECURE=1. Its two missing RAM dependencies matched the pinned hashes.
+The host, StrongBox and QTI eSE retained the original Weaver SO hash.
+SELinux was observed permissive; this round did not change its mode or
+policy, and enforcing operation has not been validated.
+
+Weaver then aborted on service registration. Its stock v2 manifest spells
+IWeaver and default in separate interface/instance elements; the generic
+fqname text filter missed it. A diagnostic RAM-only copy converted that
+actual fragment to framework type, followed by servicemanager restart and
+a supervised restart of QTI eSE. Weaver was then observed waiting in its
+Binder thread loop. Subsequent USB loss prevented the full child-view
+mapping/auxv gate, so no getConfig, slot access or PIN command was issued.
+The profile now explicitly names that existing stock fragment via
+service.description. This follow-up configuration needs a fresh boot test;
+the RAM adjustment is not proof that the previously archived image works
+without intervention.
+
+USB was initially adb and later mtp,adb. Repeated loss left no host USB
+node, without an owner cable/switch action at the first loss. The owner
+confirmed that toggling File Transfer in recovery restored connectivity;
+this is a workaround and not proof that reboot is required. Subsequent
+source audit identified an operator diagnostic error: invoking
+/system/bin/recovery service ... does not run a subcommand. The basename
+recovery unconditionally enters the recovery startup path, which resets
+non-adb USB through none before requesting adb. These calls are a concrete
+trigger sufficient to explain the observed losses; independent USB
+instability has not been established. A private tar of six bounded RAM
+samples and the recovery log was saved. The owner returned to HyperOS before the remaining
+query. The candidate was still in recovery_b, so it was subsequently
+restored with the exact original and normal HyperOS was verified again.
+Full recovery_a, restored recovery_b and boot_b hashes matched pre-test.
+No persistent trace directory was found.
+
+Read-only normal-system provenance collected twelve static property files.
+The raw replay and last writers still gave 2026-10-01, unlike the live
+2026-10-05 properties. Absolute REC import results remain unknown; do not
+attribute the discrepancy to imports without evidence. No property date
+was changed and key upgrades remain disabled. UI-triggered storage-key
+setup again stopped at -62 with data closed.
+
+## Diagnostic executable name
+
+After verifying product, slot and payload, create a RAM symlink to the
+same binary with a non-recovery basename, such as /skyward/skyward-cli.
+Confirm its --help lists service and weaver, then use that alias for CLI
+queries. Do not append diagnostic arguments to /system/bin/recovery:
+its unconditional basename dispatch runs UI startup and can reset USB,
+read/clear BCB and redo bring-up. No CLI query result can be claimed from
+those mistaken invocations. The failed mapping/getConfig attempt in this
+round did not issue a getConfig call.
 
 ## Data policy and validation limits
 
@@ -236,6 +294,9 @@ Weaver library identities/maps, capability and AT_SECURE metadata, and
 bounded recovery/kernel/logd output. Raw traces are private diagnostic
 material and must not be published unreviewed.
 Each sample file is capped at 128 KiB; all six logs total at most 768 KiB.
+The next diagnostic variant samples at about 0/15/30/45/75/105 seconds and
+includes the gadget UDC binding, function links and FFS readiness, covering
+UI/MTP startup that the earlier 0..25-second trace missed.
 
 Booting this variant requires separate authorization for those metadata
 log writes and the chosen boot/installation method. The separately authorized native test above ran this variant. That test

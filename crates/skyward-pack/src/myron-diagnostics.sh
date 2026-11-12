@@ -35,11 +35,16 @@ if [ -n "$source" ] && [ -n "$expected" ] && [ "$(readlink -f "$source")" = "$ex
 fi
 printf 'skyward myron diagnostics: %s\n' "$destination" > /dev/kmsg
 
-# Six bounded samples, no credential input or partition contents.
+# Six bounded samples at about 0/15/30/45/75/105 seconds. Cover UI/MTP
+# startup and the later USB loss; retain the same total byte bound.
 for sample in 0 1 2 3 4 5; do
+    case "$sample" in
+        1|2|3) sleep 15 ;;
+        4|5) sleep 30 ;;
+    esac
     {
         date
-        for property in ro.product.device ro.boot.slot_suffix ro.boot.mode sys.usb.config sys.usb.state sys.usb.controller sys.usb.configfs sys.usb.ffs.ready init.svc.adbd init.svc.recovery; do
+        for property in ro.product.device ro.boot.slot_suffix ro.boot.mode sys.usb.config sys.usb.state sys.usb.controller sys.usb.configfs sys.usb.config_disable sys.usb.ffs.ready sys.usb.ffs.mtp.ready init.svc.adbd init.svc.recovery; do
             printf '%s=%s\n' "$property" "$(getprop "$property")"
         done
         ps -A
@@ -62,6 +67,12 @@ for sample in 0 1 2 3 4 5; do
             done
         done
         ls -l /sys/class/udc /dev/dri /dev/input
+        for node in /config/usb_gadget/g1/UDC /config/usb_gadget/g1/idVendor /config/usb_gadget/g1/idProduct; do
+            printf '%s: ' "$node"
+            cat "$node"
+        done
+        ls -l /config/usb_gadget/g1/configs/b.1/f1 /config/usb_gadget/g1/configs/b.1/f2
+        grep -E ' /dev/usb-ffs/(adb|mtp) ' /proc/mounts
         for node in /sys/class/udc/*/state; do
             printf '%s: ' "$node"
             cat "$node"
@@ -71,5 +82,4 @@ for sample in 0 1 2 3 4 5; do
         timeout 2 logcat -b all -d -t 200 | tail -c 32768
     } 2>&1 | head -c 131072 > "$destination/sample-$sample.log"
     sync
-    [ "$sample" = 5 ] || sleep 5
 done

@@ -1,6 +1,7 @@
 # Initial profile from read-only stock inspection on 2026-11-12:
 # OS4.0.6.0.XPMCNXM, framework 17/API37, vendor 16/API36.
-# Recovery boot, touch, decryption and WLAN are not yet tested on myron.
+# Native recovery boot/touch and StrongBox startup were tested on myron.
+# USB reliability, Weaver getConfig, decryption and writable data are pending.
 # See myron.md, including the Java OMAPI dependency of stock Weaver.
 [device]
 codename = "myron"
@@ -184,6 +185,9 @@ path = "/odm/bin/hw/android.hardware.weaver-service.nxp-qti"
 libraries = ["/system/lib64", "/vendor/lib64", "/odm/lib64", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"]
 library_overrides = [{ source = "/skyward/lib64/ese_weaver.so", target = "/odm/lib64/ese_weaver.so" }]
 ready_service = "android.hardware.weaver.IWeaver/default"
+# This stock fragment spells interface/instance separately, so the generic
+# fqname text filter misses it. Publish the actual fragment explicitly.
+description = "/odm/etc/vintf/manifest/android.hardware.weaver-service.nxp.xml"
 user = "vendor_nxp_weaver"
 groups = ["vendor_nxp_weaver"]
 

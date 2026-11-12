@@ -861,6 +861,7 @@ mod tests {
         assert_eq!(gatekeeper.ready_service.as_deref(), Some("android.hardware.gatekeeper.IGatekeeper/default"));
         assert_eq!(weaver.path, "/odm/bin/hw/android.hardware.weaver-service.nxp-qti");
         assert_eq!(weaver.ready_service.as_deref(), Some("android.hardware.weaver.IWeaver/default"));
+        assert_eq!(weaver.description.as_deref(), Some("/odm/etc/vintf/manifest/android.hardware.weaver-service.nxp.xml"));
         assert_eq!((weaver.user.as_deref(), &weaver.groups[..]), (Some("vendor_nxp_weaver"), &["vendor_nxp_weaver".to_string()][..]));
         assert!(cfg.services.iter().all(|s| s.ready_hardware_service.is_none()), "these stock HALs use AIDL");
         assert!(!cfg.services.iter().any(|s| s.path.contains("goodix")), "this phone has NXP, not Goodix");

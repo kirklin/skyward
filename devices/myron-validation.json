@@ -1,6 +1,6 @@
 {
   "device": "myron",
-  "status": "experimental; native recovery display, touch and ADB verified; StrongBox and Weaver bring-up incomplete",
+  "status": "experimental; native display/touch/ADB and StrongBox startup verified; USB reliability, Weaver acceptance and decryption incomplete",
   "date": "2026-11-12",
   "stock_version": "OS4.0.6.0.XPMCNXM",
   "framework_api": 37,
@@ -77,6 +77,84 @@
       "normal_vendor_security_patch": "2026-10-05",
       "recovery_installed_vendor_build_prop_security_patch": "2026-10-01",
       "implication": "Environment-only LD_LIBRARY_PATH cannot provide the service-specific override under secure execution; actual replacement mapping remains unverified"
+    },
+    "native_9f0adfb": {
+      "source_commit": "9f0adfbd30bfd00a1f90404170e84df91e1f5092",
+      "image_sha256": "884f9e57fb9c113efa6a4dca396dad66ca33c7b91512f9aba2becd5e16d513d7",
+      "running_program_config_source_library_and_partition_hashes_match": true,
+      "owner_confirmed_display_and_touch": true,
+      "strongbox": {
+        "startup_ready_passed": true,
+        "uid": 2910,
+        "gid": 0,
+        "cap_eff": "0000000800a00000",
+        "AT_SECURE": 1,
+        "executable_kept_original": true,
+        "missing_ram_libraries_hashes_match": true
+      },
+      "original_weaver_library_preserved_in_host_strongbox_and_native_se_views": true,
+      "weaver_before_ram_change": "Repeated SIGABRT at vendor wrapper service registration; servicemanager reported missing android.hardware.weaver.IWeaver/default in VINTF",
+      "manifest_cause": "Stock AIDL v2 fragment uses interface/name and instance separately; generic fqname substring filter skipped it",
+      "ram_diagnostic_change": {
+        "fragment_source": "/odm/etc/vintf/manifest/android.hardware.weaver-service.nxp.xml",
+        "original_fragment_sha256": "5369c71b2f4245f4c72d788d7c0be43fdee5dd8aa1ec5f1ae48dfcfca6b30b79",
+        "framework_copy_sha256": "e87a7c21dbc4ca611449c20246addeede4eb841e294fd3f27cfa82f750ffb018",
+        "destination": "/system/etc/vintf/manifest/android.hardware.weaver-service.nxp.xml",
+        "only_in_ram": true,
+        "servicemanager_restarted": true,
+        "native_se_sent_SIGTERM_for_supervised_reregistration": true
+      },
+      "weaver_after_ram_change": "PID observed in binder_thread_read after registration retry; complete child-view mapping/auxv gate not collected after another USB loss",
+      "mapped_weaver_replacement_fully_verified": false,
+      "getconfig_attempted": false,
+      "pin_or_slot_operations_issued": false,
+      "usb": {
+        "initial_config": "adb",
+        "file_transfer_config": "mtp,adb",
+        "repeated_disconnect_observed": true,
+        "owner_denied_cable_or_switch_changes_at_first_loss": true,
+        "file_transfer_off_on_restored_connection": true,
+        "owner_clarified_reboot_not_required_for_this_workaround": true,
+        "root_cause_confirmed": false,
+        "diagnostic_entrypoint_error": {
+          "invoked": "/system/bin/recovery service ...",
+          "actual_dispatch": "basename recovery unconditionally enters recovery() regardless of arguments",
+          "usb_side_effect": "recovery startup resets any non-adb USB state through none before requesting adb",
+          "explanatory_status": "These diagnostic calls are a direct software trigger sufficient to explain observed loss; independent USB instability not established",
+          "correction": "Use a RAM symlink with basename skyward-cli, verify --help, then invoke actual CLI diagnostics"
+        },
+        "independent_usb_failure_verified": false
+      },
+      "selinux": "Permissive as observed; no SELinux mode or policy change issued in this round; enforcing operation not validated",
+      "data": "Not mounted in observed snapshots; UI-triggered storage-key setup again refused -62 and key-upgrade policy remained disabled",
+      "trace": "Six RAM samples plus recovery log saved in private tar; no persistent diagnostic trace directory found",
+      "restoration": {
+        "device": "myron",
+        "os": "OS4.0.6.0.XPMCNXM",
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false,
+        "partition_hashes": {
+          "recovery_b": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+          "recovery_a": "586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660",
+          "boot_b": "11a20858d4e68869152baf70db0edb3d279516f9d430154cc6c96ba427940748"
+        },
+        "original_recovery_b_restored": true,
+        "boot_b_and_recovery_a_unchanged": true,
+        "no_trace_directory_found": true,
+        "getconfig_attempted": false,
+        "pin_attempts_issued": false
+      }
+    },
+    "property_provenance_readonly": {
+      "files_collected": 12,
+      "normal_system_and_vendor_patch": "2026-10-05",
+      "raw_property_replay_system_and_vendor_patch": "2026-10-01",
+      "last_system_patch_writer": "/mnt/product/etc/build.prop:40",
+      "last_vendor_patch_writer": "/vendor/build.prop:42",
+      "rec_import_runtime_model": "unknown",
+      "properties_changed": false,
+      "key_operations_issued_by_collector": false
     }
   },
   "scope": {
@@ -92,10 +170,10 @@
     "device_wide_no_writes_claimed": false
   },
   "remaining": [
-    "Real-device validation of capability-aware loading; source fix and Linux root namespace tests passed, actual service mapping remains unverified",
-    "Verify mapped replacement library path/hash and AT_SECURE/capabilities before read-only Weaver getConfig",
-    "Resolve security-patch mismatch and storage-key upgrade refusal without allowing key upgrades in this diagnostic profile",
-    "Complete repeatable USB, hardware and independently authorized PIN/CE/writable-data tests before PR"
+    "Validate the explicit stock Weaver description in a freshly built image, then child-view mapping/auxv and read-only getConfig",
+    "Recheck USB with corrected CLI entrypoint; do not classify probe-triggered gadget resets as independent hardware/USB failure",
+    "Investigate live versus raw property patch-level difference and storage-key upgrade refusal without guessing dates or enabling upgrades",
+    "Complete separately authorized PIN/CE and writable-data tests before PR"
   ],
   "temporary_test_candidate": {
     "source_commit": "79dec9edc91ce3f47b0fabe615a1d89b36ab996e",
@@ -172,7 +250,7 @@
     "private_library_mounts_and_hash_pinned_recovery_dependencies": true,
     "host_and_real_root_namespace_tests_passed": true,
     "diagnostic_log_max_bytes": 786432,
-    "device_boot_tested": false,
+    "device_boot_tested": true,
     "pin_tests_authorized": false,
     "original_recovery_b_backup_sha256": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc"
   }

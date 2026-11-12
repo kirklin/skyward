@@ -1,7 +1,8 @@
 # Native NXP Weaver recovery component for myron
 
 This source kit builds an `ese_weaver.so` prototype for the stock myron
-OS4.0.6.0.XPMCNXM recovery userspace. It has not been executed on a device.
+OS4.0.6.0.XPMCNXM recovery userspace. Its actual child-view mapping and successful getConfig have not yet been
+proven on a device. The myron recovery container has been boot-tested.
 
 It compiles Weaver and a private copy of the direct NXP HAL transport together.
 The Binder boundary uses stable AIDL V1 through `libbinder_ndk` C functions.
@@ -118,7 +119,7 @@ system StrongBox and Weaver both have file capabilities and AT_SECURE=1;
 they keep CAP_SYS_ADMIN, CAP_SYS_NICE and CAP_WAKE_ALARM. An environment-only
 LD_LIBRARY_PATH override is insufficient. A bind keeps the source inode's
 label; verify that the actual service can read and executable-map it without
-changing enforcing policy. The private-bind follow-up has not been tested
+changing enforcing policy. The private-bind follow-up has not completed its mapping/getConfig gates
 on hardware. An unconfirmed override must never proceed to a PIN/key attempt.
 Do not add a security bypass to force loading. Stop
 if service discovery or applet selection fails. Do not probe credentials,

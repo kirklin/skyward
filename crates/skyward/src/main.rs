@@ -573,6 +573,74 @@ fn hand_over(owners: &[skyward_config::Owners]) -> Result<usize> {
 #[cfg(target_os = "android")]
 const RECOVERY_LIBRARIES: &str = "/system/lib64";
 
+/// Supply only missing, hash-pinned files to the recovery's RAM library
+/// directory. Never replace an existing library or write an installed partition.
+#[cfg(target_os = "android")]
+fn provide_recovery_libraries(libraries: &[skyward_config::RecoveryLibrary]) -> Result<()> {
+    use anyhow::ensure;
+    use std::fs::{self, File, OpenOptions};
+    use std::io::Seek;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    if libraries.is_empty() {
+        return Ok(());
+    }
+    ensure!(ramdisk::in_recovery(), "missing libraries may only be supplied in the recovery ramdisk");
+    let check = |file: &mut File, expected: &str| -> Result<()> {
+        let stat = file.metadata()?;
+        ensure!(stat.is_file(), "a recovery library is not a regular file");
+        file.rewind()?;
+        let actual = skyward_backup::store::digest(&mut *file, stat.len(), &mut |_| {})?;
+        ensure!(actual.eq_ignore_ascii_case(expected), "recovery library SHA256 differs: {actual}");
+        file.rewind()?;
+        Ok(())
+    };
+    let existing = |path: &Path, expected: &str| -> Result<bool> {
+        match fs::symlink_metadata(path) {
+            Ok(stat) => {
+                ensure!(stat.is_file(), "{} is not a regular RAM library", path.display());
+                check(&mut File::open(path)?, expected)?;
+                Ok(true)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(e) => Err(e).with_context(|| format!("stat {}", path.display())),
+        }
+    };
+    for library in libraries {
+        let source = Path::new(&library.source);
+        let mut from = File::open(source).with_context(|| format!("open {}", source.display()))?;
+        check(&mut from, &library.sha256).with_context(|| format!("verify {}", source.display()))?;
+        let name = source.file_name().context("a recovery library needs a basename")?;
+        let to = Path::new(RECOVERY_LIBRARIES).join(name);
+        if existing(&to, &library.sha256)? {
+            continue;
+        }
+        let part = to.with_file_name(format!(".{}.{}.skyward-part", name.to_string_lossy(), std::process::id()));
+        let mut temp = OpenOptions::new().read(true).write(true).create_new(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC).mode(0o600).open(&part)
+            .with_context(|| format!("create {}", part.display()))?;
+        let result = (|| -> Result<()> {
+            std::io::copy(&mut from, &mut temp)?;
+            check(&mut temp, &library.sha256)?;
+            temp.set_permissions(fs::Permissions::from_mode(0o644))?;
+            // link is atomic and cannot replace a file another caller installed.
+            match fs::hard_link(&part, &to) {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    ensure!(existing(&to, &library.sha256)?, "RAM library disappeared during installation");
+                    Ok(())
+                }
+                Err(e) => Err(e).with_context(|| format!("supply {}", to.display())),
+            }
+        })();
+        let cleanup = fs::remove_file(&part);
+        result?;
+        cleanup.with_context(|| format!("remove our RAM temporary file {}", part.display()))?;
+        skyward_sys::kmsg(&format!("supplied missing RAM library {} with SHA256 {}", to.display(), library.sha256))?;
+    }
+    Ok(())
+}
+
 /// How long logd may take to say it is ready once started.
 #[cfg(target_os = "android")]
 const LOGD_READY: std::time::Duration = std::time::Duration::from_secs(5);

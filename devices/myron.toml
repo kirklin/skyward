@@ -162,6 +162,13 @@ groups = ["system"]
 [[service]]
 path = "/odm/bin/hw/android.hardware.security.keymint3-service.strongbox.nxp"
 libraries = ["/system/lib64", "/vendor/lib64", "/odm/lib64", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"]
+# File capabilities trigger AT_SECURE, so missing dependencies must be in
+# the REC's normal RAM search path, not just in LD_LIBRARY_PATH. These two
+# installed 4.0.6 files' imports/versions match the exact REC/linker.
+recovery_libraries = [
+    { source = "/mnt/system/system/lib64/libvndksupport.so", sha256 = "24a35b4ca97ebb2fd8cab02baf8d4e3af49ceb7309c93268e5670eda3930d112" },
+    { source = "/mnt/system/system/lib64/bootstrap/libdl_android.so", sha256 = "6ad8ee8bc0a67a2582f9a9bcc37a40af4aa21236b968a08a895099058066305a" },
+]
 ready_service = "android.hardware.security.keymint.IKeyMintDevice/strongbox"
 registers = ["android.hardware.security.keymint.IRemotelyProvisionedComponent/strongbox", "android.hardware.security.sharedsecret.ISharedSecret/strongbox"]
 user = "vendor_nxp_strongbox"
@@ -169,11 +176,13 @@ groups = ["root"]
 
 # This is NXP Weaver2, not the conditional Goodix service on nezha.
 # Its account is 2911 in the installed vendor passwd/group files.
-# Its stock ese_weaver.so still uses Java OMAPI: this service can register
-# without proving PIN operations work. See myron.md for the blocker.
+# Its stock ese_weaver.so uses Java OMAPI. Preserve the executable/filecaps
+# and bind the native replacement only in this child's private namespace.
+# Confirm the actual mapped inode/hash before any read-only getConfig.
 [[service]]
 path = "/odm/bin/hw/android.hardware.weaver-service.nxp-qti"
-libraries = ["/skyward/lib64", "/system/lib64", "/vendor/lib64", "/odm/lib64", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"]
+libraries = ["/system/lib64", "/vendor/lib64", "/odm/lib64", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"]
+library_overrides = [{ source = "/skyward/lib64/ese_weaver.so", target = "/odm/lib64/ese_weaver.so" }]
 ready_service = "android.hardware.weaver.IWeaver/default"
 user = "vendor_nxp_weaver"
 groups = ["vendor_nxp_weaver"]

@@ -44,11 +44,18 @@ for sample in 0 1 2 3 4 5; do
         done
         ps -A
         sha256sum /system/bin/recovery /skyward/device.toml /skyward/lib64/ese_weaver.so /odm/lib64/ese_weaver.so
-        for process in android.hardware.weaver-service.nxp-qti android.hardware.secure_element-service.qti vendor.xiaomi.hw.touchfeature-service; do
+        cat /sys/fs/selinux/enforce
+        for process in android.hardware.weaver-service.nxp-qti android.hardware.security.keymint3-service.strongbox.nxp android.hardware.secure_element-service.qti vendor.xiaomi.hw.touchfeature-service; do
             for pid in $(pidof "$process"); do
                 printf 'PROCESS %s PID %s\n' "$process" "$pid"
                 grep -E '^(Uid|Gid|Groups|CapPrm|CapEff):' "/proc/$pid/status"
                 grep -E 'ese_weaver|libjc_keymint|/skyward/' "/proc/$pid/maps" | tail -c 4096
+                # A private bind can retain the stock pathname in maps.
+                # Verify bytes/inode in the child's own mount view as well.
+                sha256sum "/proc/$pid/root/odm/lib64/ese_weaver.so"
+                stat -c '%d %D %i %n' /skyward/lib64/ese_weaver.so "/proc/$pid/root/odm/lib64/ese_weaver.so"
+                ls -Z /skyward/lib64/ese_weaver.so "/proc/$pid/root/odm/lib64/ese_weaver.so"
+                cat "/proc/$pid/attr/current"
                 # Kernel aux-vector metadata includes AT_SECURE, which can
                 # explain an ignored library path. It is not process memory.
                 od -An -t x8 "/proc/$pid/auxv" | head -c 4096

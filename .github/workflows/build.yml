@@ -41,6 +41,11 @@ jobs:
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --locked --workspace
+      - name: Verify private library mounts in real child namespaces
+        run: |
+          binary=$(cargo test --locked -p skyward-sys --test library_mounts --no-run --message-format=json | jq -r 'select(.reason == "compiler-artifact" and .target.name == "library_mounts" and .executable != null) | .executable')
+          test -n "$binary"
+          sudo -- "$binary" --ignored --exact private_bind_mounts_are_isolated --test-threads=1
       - name: Check the optional myron trace script
         run: sh -n crates/skyward-pack/src/myron-diagnostics.sh
       - name: Lint what runs on the phone

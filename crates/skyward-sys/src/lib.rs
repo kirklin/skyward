@@ -9,6 +9,8 @@ pub mod bcb;
 pub mod clock;
 pub mod control;
 pub mod cpu;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub mod library_mounts;
 #[cfg(target_os = "android")]
 pub mod sleep;
 #[cfg(target_os = "android")]

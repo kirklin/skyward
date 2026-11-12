@@ -7,7 +7,9 @@ It compiles Weaver and a private copy of the direct NXP HAL transport together.
 The Binder boundary uses stable AIDL V1 through `libbinder_ndk` C functions.
 The vendor wrapper still sees the `WeaverImpl` interface and platform
 `std::__1` ABI. No vendor transport C++ object is shared with the rebuilt code.
-The intended installation is a service-specific `/skyward/lib64` library path.
+The library is packed under `/skyward/lib64`. The capability-aware myron
+candidate gives only Weaver a read-only bind at the stock SO path in a
+private child mount namespace, preserving the original executable/filecaps.
 Do not replace libraries in the vendor partition.
 
 ## Build on Linux x86_64
@@ -106,15 +108,19 @@ eSE1 service.
 Any separately authorized device test should start with initialization and
 the read-only slot configuration query (`GetSlots`/Weaver `getConfig`), after
 confirming the intended library is actually loaded. First inspect the
-recovery process's `/proc/<pid>/maps` for the `/skyward/lib64/ese_weaver.so`
-mapping and verify that file's SHA256 against the build proof. Capture its
-auxv, capabilities and file capabilities as part of that check. The normal
-system process was observed with CAP_SYS_ADMIN, CAP_SYS_NICE and
-CAP_WAKE_ALARM despite no corresponding rc capability declaration. File
-capabilities or AT_SECURE could cause the linker to ignore LD_LIBRARY_PATH;
-this has not been checked in recovery. An unconfirmed override must never
-proceed to a PIN/key attempt. Do not add a security bypass to force loading.
-Stop
+Weaver process's `/proc/<pid>/maps`. A private bind may retain the stock
+`/odm/lib64/ese_weaver.so` pathname, so compare its mapped device/inode with
+`/proc/<pid>/root/odm/lib64/ese_weaver.so` and verify that child-view file's
+SHA256 against the build proof. The host and unrelated services must still
+see the original SO. Capture UID/GID, auxv, capabilities, file capabilities,
+service domain and source-inode SELinux label as part of that check. Normal
+system StrongBox and Weaver both have file capabilities and AT_SECURE=1;
+they keep CAP_SYS_ADMIN, CAP_SYS_NICE and CAP_WAKE_ALARM. An environment-only
+LD_LIBRARY_PATH override is insufficient. A bind keeps the source inode's
+label; verify that the actual service can read and executable-map it without
+changing enforcing policy. The private-bind follow-up has not been tested
+on hardware. An unconfirmed override must never proceed to a PIN/key attempt.
+Do not add a security bypass to force loading. Stop
 if service discovery or applet selection fails. Do not probe credentials,
 try dummy/wrong PINs or keys, write/erase slots, or loop authentication
 attempts. Real authentication and decryption require a complete reviewed

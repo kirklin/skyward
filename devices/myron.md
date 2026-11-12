@@ -139,7 +139,9 @@ from the official recovery for linking, and needs no full Android tree or
 private vendor input. The regular myron workflow builds it from source and
 passes `--library .../ese_weaver.so` to the packer. Omitting that library
 with the new profile is an error, not an image silently using the old path.
-Only Weaver searches `/skyward/lib64` first; vendor partitions are unchanged.
+Only Weaver receives the replacement in its private mount view; vendor
+partitions are unchanged. AT_SECURE prevents the earlier environment-only
+search order from being sufficient.
 
 The standalone offline build produced 113360 bytes with SHA256
 `09a4095831aae55a4589606da194c0bd7f1369a3195316af643810b4136fc5a2`.
@@ -151,10 +153,37 @@ operation replay: only a fresh, explicit SELECT-not-found response permits
 switching to another of the three exact stock AIDs; an ambiguous transport
 failure stops. None of those tests contacts hardware or authenticates a user.
 
-Runtime validation remains mandatory. Check the mapped library path and
-hash, process auxv/AT_SECURE and capabilities before the read-only getConfig
+Runtime validation remains mandatory. Check the mapped device/inode and
+child-view hash, process auxv/AT_SECURE and capabilities before the read-only getConfig
 query; do not proceed to any PIN/key operation if the override or native
 service access is unconfirmed. See the kit README for build and test records.
+
+## Follow-up capability-aware loading candidate
+
+The next candidate keeps the stock executables, UIDs/GIDs, file capabilities
+and exec paths. StrongBox requests only two missing, SHA256-pinned installed
+libraries: libvndksupport.so and bootstrap/libdl_android.so. The recovery
+supplies them under RAM /system/lib64 before starting that service, reuses
+only identical existing files and refuses conflicting files. The nineteen
+strong imports across these two files match the exact REC libraries/linker,
+including their GNU versions; see `myron-recovery-libraries.json`. No libc,
+libc++, Binder or installed-partition library is replaced.
+
+Weaver requests a read-only bind of the bundled native SO onto the stock
+SO path in its own private mount namespace, before the original executable
+runs as its normal account. Other processes retain their original view.
+The environment library path is no longer the replacement mechanism. A
+same-executable process from an earlier UI instance must also match the
+requested library inode in its own mount view before adoption. Pinning uses
+the process's namespace rather than opening a possibly different host path.
+
+This follow-up has not been boot-tested. Preserve SELinux enforcing policy;
+check the source inode's label, the actual service domain and denied mmap
+operations. A bind retains the source inode's label. Before getConfig,
+verify process identity/caps/AT_SECURE, the library mapping's device/inode,
+and SHA256 through /proc/PID/root/odm/lib64/ese_weaver.so. The host view must
+still contain the original library, including for StrongBox and QTI eSE.
+Neither a binder registration nor a matching filename establishes this.
 
 ## Data policy and validation limits
 

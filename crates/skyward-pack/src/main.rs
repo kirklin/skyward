@@ -124,9 +124,10 @@ fn main() -> Result<()> {
             }
             let read = |p: &PathBuf| std::fs::read(p).with_context(|| format!("read {}", p.display()));
             let cfg = skyward_config::DeviceConfig::load(&config)?;
-            if cfg.device.codename == "myron" && cfg.services.iter().any(|s| s.libraries.iter().any(|p| p == "/skyward/lib64")) {
-                ensure!(library.iter().any(|p| p.file_name().is_some_and(|n| n == "ese_weaver.so")),
-                    "myron's profile requires --library pointing to the source-built ese_weaver.so");
+            for replacement in cfg.services.iter().flat_map(|s| &s.library_overrides) {
+                let name = Path::new(&replacement.source).file_name().context("a library override needs a basename")?;
+                ensure!(library.iter().any(|p| p.file_name().is_some_and(|n| n == name)),
+                    "the profile requires --library pointing to {}", name.to_string_lossy());
             }
             rd.replace(paths::RECOVERY, read(&binary)?)?;
             // Install scripts look for the commands a stock recovery lacks

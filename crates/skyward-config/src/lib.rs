@@ -247,6 +247,22 @@ pub struct Logd {
     pub libraries: Vec<String>,
 }
 
+/// An installed-system library missing from the recovery's RAM lib64.
+/// Existing files must match this digest and are never replaced.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct RecoveryLibrary {
+    pub source: String,
+    pub sha256: String,
+}
+
+/// A library seen only in one service's private mount namespace.
+/// The original executable, file capabilities and other processes stay intact.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct LibraryOverride {
+    pub source: String,
+    pub target: String,
+}
+
 /// Files the phone's own init hands to one account as it boots, each given
 /// the same mode, as a run of its chown and chmod lines does: device nodes,
 /// and the kernel's switches that the phone's own programs open.
@@ -392,6 +408,14 @@ pub struct Service {
     /// Directories for LD_LIBRARY_PATH, searched in order.
     #[serde(default)]
     pub libraries: Vec<String>,
+    /// Hash-pinned missing libraries supplied to RAM /system/lib64 before
+    /// this service starts, including where secure exec ignores the env.
+    #[serde(default)]
+    pub recovery_libraries: Vec<RecoveryLibrary>,
+    /// Read-only file binds made in the child before it takes its identity.
+    /// Only that service sees the replacement; disk partitions are unchanged.
+    #[serde(default)]
+    pub library_overrides: Vec<LibraryOverride>,
     /// The program runs once, to its end, as a service of init's marked
     /// oneshot does: it is not started again, the programs after it start
     /// once it has ended, and it has to end well.
@@ -510,7 +534,10 @@ impl Service {
     /// Whether the program, or a directory it loads libraries from, is
     /// under `dir`: without what is mounted there it cannot start again.
     pub fn uses(&self, dir: &Path) -> bool {
-        Path::new(&self.path).starts_with(dir) || self.libraries.iter().any(|l| Path::new(l).starts_with(dir))
+        Path::new(&self.path).starts_with(dir)
+            || self.libraries.iter().any(|l| Path::new(l).starts_with(dir))
+            || self.recovery_libraries.iter().any(|l| Path::new(&l.source).starts_with(dir))
+            || self.library_overrides.iter().any(|l| Path::new(&l.source).starts_with(dir) || Path::new(&l.target).starts_with(dir))
     }
 
     /// Whether the program is this phone's to run, by the installed
@@ -591,6 +618,25 @@ impl DeviceConfig {
             }
             for name in &s.capabilities {
                 ensure!(capability(name).is_some(), "[[service]] {}: {name} is not a capability init knows", s.path);
+            }
+            let plain_library = |name: &str| {
+                let p = Path::new(name);
+                p.is_absolute() && !name.contains('\0') && p.extension().is_some_and(|e| e == "so")
+                    && p.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)))
+            };
+            let mut supplied = std::collections::HashSet::new();
+            for library in &s.recovery_libraries {
+                ensure!(plain_library(&library.source), "{}: recovery library is not an absolute .so file", s.path);
+                ensure!(library.sha256.len() == 64 && library.sha256.bytes().all(|c| c.is_ascii_hexdigit()), "{}: recovery library needs a SHA256", s.path);
+                ensure!(supplied.insert(Path::new(&library.source).file_name()), "{}: recovery library basename is repeated", s.path);
+            }
+            let mut targets = std::collections::HashSet::new();
+            for library in &s.library_overrides {
+                ensure!(plain_library(&library.source) && plain_library(&library.target), "{}: override must name absolute .so files", s.path);
+                ensure!(Path::new(&library.source).starts_with("/skyward/lib64"), "{}: override source must be in recovery RAM /skyward/lib64", s.path);
+                ensure!(Path::new(&library.target).starts_with("/vendor/lib64") || Path::new(&library.target).starts_with("/odm/lib64"), "{}: override target must be a vendor/odm library", s.path);
+                ensure!(Path::new(&library.source).file_name() == Path::new(&library.target).file_name(), "{}: override must preserve the library basename", s.path);
+                ensure!(targets.insert(&library.target), "{}: override target is repeated", s.path);
             }
         }
         for folder in &cfg.backup.data_skipped {
@@ -821,12 +867,35 @@ mod tests {
         let strongbox = service("/odm/bin/hw/android.hardware.security.keymint3-service.strongbox.nxp");
         assert_eq!(strongbox.user.as_deref(), Some("vendor_nxp_strongbox"));
         assert_eq!(strongbox.groups, ["root"], "stock process has GID 0");
+        assert_eq!(strongbox.recovery_libraries.len(), 2);
+        assert_eq!(strongbox.recovery_libraries[0].source, "/mnt/system/system/lib64/libvndksupport.so");
+        assert_eq!(weaver.library_overrides, [LibraryOverride {
+            source: "/skyward/lib64/ese_weaver.so".into(), target: "/odm/lib64/ese_weaver.so".into(),
+        }]);
+        assert!(cfg.services.iter().filter(|s| s.path != weaver.path).all(|s| s.library_overrides.is_empty()), "only Weaver gets the replacement");
         assert!(strongbox.registers.iter().any(|s| s == "android.hardware.security.sharedsecret.ISharedSecret/strongbox"), "include the stock peer in notes-key agreement");
         assert_eq!(listeners.ready_property.as_deref(), Some("vendor.sys.listeners.registered"));
         let touch = service("/odm/bin/hw/vendor.xiaomi.hw.touchfeature-service");
         assert_eq!(touch.user.as_deref(), Some("system"));
         assert_eq!(touch.capabilities, ["SYS_NICE"]);
         assert!(cfg.owners.iter().any(|o| o.user == "system" && o.group == "system" && o.mode == 0o666 && o.paths.iter().any(|p| p == "/dev/xiaomi-touch")));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn private_library_overrides_cannot_target_data_or_escape_ram_sources() {
+        let config = |source: &str, target: &str| format!(
+            "[device]\ncodename = \"test\"\n[[service]]\npath = \"/odm/bin/hw/test\"\nlibrary_overrides = [{{source = \"{source}\", target = \"{target}\"}}]\n"
+        );
+        assert!(DeviceConfig::parse(&config("/skyward/lib64/test.so", "/odm/lib64/test.so")).is_ok());
+        for (source, target) in [
+            ("/data/test.so", "/odm/lib64/test.so"),
+            ("/skyward/lib64/../test.so", "/odm/lib64/test.so"),
+            ("/skyward/lib64/test.so", "/data/test.so"),
+            ("/skyward/lib64/test.so", "/odm/lib64/other.so"),
+        ] {
+            assert!(DeviceConfig::parse(&config(source, target)).is_err(), "{source} -> {target}");
+        }
     }
 
     #[test]

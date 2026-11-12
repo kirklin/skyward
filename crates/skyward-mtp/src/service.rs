@@ -345,10 +345,13 @@ fn answer(port: &mut Port, r: &mut Responder, mail: &mut Mailbox, cmd: &Command,
         }
     };
     trace("reply-ready", Some(reply.code));
-    if traced && matches!(cmd.code, op::GET_OBJECT_HANDLES | op::GET_OBJECT_PROP_LIST)
-        && let Some(Outgoing::Dataset(bytes)) = &reply.data
-        && let Some(count) = bytes.get(..4).and_then(|head| head.try_into().ok()).map(u32::from_le_bytes)
-    {
+    let count = match &reply.data {
+        Some(Outgoing::Dataset(bytes)) if traced && matches!(cmd.code, op::GET_OBJECT_HANDLES | op::GET_OBJECT_PROP_LIST) => {
+            bytes.get(..4).and_then(|head| head.try_into().ok()).map(u32::from_le_bytes)
+        }
+        _ => None,
+    };
+    if let Some(count) = count {
         let label = if cmd.code == op::GET_OBJECT_HANDLES { "handleCount" } else { "entryCount" };
         let _ = kmsg(&format!("mtp: delete op={:#06x} tid={} stage=enumeration-result {label}={count}", cmd.code, cmd.transaction));
     }

@@ -1,6 +1,6 @@
 # Skyward for bixi · 1.0.0
 
-> 机型：小米 MIX Flip 2（`bixi`，SM8750 / `sun`，A/B + 动态分区，官方 `OS4.0.11.XOHCNXM`）
+> 机型：小米 MIX Flip 2（`bixi`，SM8750 / `sun`，Android 17，A/B + 动态分区，现役系统 `OS4.0.11.XOHCNXM`，出包基线 `OS4.0.0.11.XOHCNXM`）
 > 上游：[kirklin/skyward](https://github.com/kirklin/skyward)；本分支：[`bixi-cover-display-v2`](https://github.com/XQAB/skyward/tree/bixi-cover-display-v2)（PR #38）
 
 ## 这是第一个可以日常用的版本

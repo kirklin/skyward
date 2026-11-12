@@ -6,7 +6,7 @@
 
 Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 
-> **小米 MIX Flip 2（`bixi`）· 1.0.0** —— 本分支把 Skyward 做成这台机器的版本（SM8750，A/B + 动态分区，官方 `OS4.0.11.XOHCNXM`）。外屏是主力屏；密码记住一次之后 `/data` 自己就开；分区镜像可以存到 U 盘；`avbctl` 改完会把写前写后的 flags 差值报回来；recovery 还能从 GitHub 发行里更新自己——**优先裸 `.img`，没有才退回 `.zip`**，并且走你选的加速源。
+> **小米 MIX Flip 2（`bixi`）· 1.0.0** —— 本分支把 Skyward 做成这台机器的版本（SM8750，Android 17，A/B + 动态分区，现役系统 `OS4.0.11.XOHCNXM`，出包基线 `OS4.0.0.11.XOHCNXM`）。外屏是主力屏；密码记住一次之后 `/data` 自己就开；分区镜像可以存到 U 盘；`avbctl` 改完会把写前写后的 flags 差值报回来；recovery 还能从 GitHub 发行里更新自己——**优先裸 `.img`，没有才退回 `.zip`**，并且走你选的加速源。
 > 完整变更、借鉴了哪些 fork 的哪些做法、以及已知限制：见 [CHANGELOG-bixi.md](CHANGELOG-bixi.md) · [Releases](https://github.com/XQAB/skyward/releases)
 
 <p align="center">

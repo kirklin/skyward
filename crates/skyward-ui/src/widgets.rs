@@ -2849,7 +2849,10 @@ mod tests {
         let f = crate::font::bundled();
         let draw = |mark: WlanMark| {
             let mut c = Canvas::filled(1200, 160, t.pal.bg);
-            let bar = Bar { clock: "01:27", battery: Some((40, Some(Bolt::Charging))), usb: true, wlan: Some(mark), data: None, slot: None, temp: None };
+            // No cable: this is the stock bar's own arrangement of the fan, and
+            // the plug this fork draws while a cable is in takes the space to
+            // its right, which that comparison would not survive.
+            let bar = Bar { clock: "01:27", battery: Some((40, Some(Bolt::Charging))), usb: false, wlan: Some(mark), data: None, slot: None, temp: None };
             status_bar(&mut c, &t, &f, &bar, t.pal.status);
             c
         };

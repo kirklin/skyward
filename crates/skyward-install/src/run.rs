@@ -726,6 +726,7 @@ fn apply<S>(ctx: &Context, mount: &Mount<S>, update: &Update) -> Result<i32> {
 
     let total = update.payload_size;
     let mut stage = Stage::Writing { done: 0, total };
+    mount.watch_payload(update.payload_offset, total);
     ctx.send(Event::Progress(stage.clone()));
     let mut told = Instant::now();
     let (mut partitions, mut verifying, mut finishing, mut error) = (0, None, false, None);
@@ -745,7 +746,7 @@ fn apply<S>(ctx: &Context, mount: &Mount<S>, update: &Update) -> Result<i32> {
         } else if let Some((index, partition)) = &verifying {
             Stage::Verifying { index: *index, count: partitions.max(index + 1), partition: partition.clone() }
         } else {
-            Stage::Writing { done: mount.served().saturating_sub(update.payload_offset).min(total), total }
+            Stage::Writing { done: mount.payload_read().min(total), total }
         };
         let moved_on = std::mem::discriminant(&now) != std::mem::discriminant(&stage);
         if now != stage && (moved_on || told.elapsed() >= PROGRESS_EVERY) {

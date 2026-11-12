@@ -1,6 +1,6 @@
 {
   "device": "myron",
-  "status": "experimental; PIN/CE, RW mounts, logical switches, physical keys/wake/touch/haptics and BootControl reads accepted; native MTP upload/readback/file-delete passed, empty-directory cleanup stage timed out; restored HyperOS and original files confirmed",
+  "status": "experimental; PIN/CE, RW mounts, logical switches, physical controls and native MTP upload/readback/file-delete accepted; AF trace locates stall in subsequent empty-folder enumeration, not file Delete/results; original recovery and HyperOS restored",
   "date": "2026-11-12",
   "stock_version": "OS4.0.6.0.XPMCNXM",
   "framework_api": 37,
@@ -714,6 +714,83 @@
         "normal_os_unlock_and_original_files_user_confirmed": true
       },
       "limits": "Native upload/readback/file deletion accepted. Empty-directory cleanup stage timed out; exact COM call and device/host cause are not established. Remaining empty own folder was removed with canonical/inode-guarded nonrecursive rmdir. Full WPD cleanup, enforcing mode and destructive operations are not accepted."
+    },
+    "native_af568ba_enumeration_trace": {
+      "source_commit": "af568ba7000601f2beb1324f0355b658a8dcd219",
+      "ci_run": 43245275620,
+      "image_sha256": "64ded45807a106677323f647b7b8ac3371b0d027fcf0c1c685a6f27e20ddc7e9",
+      "startup_payload_service_and_actual_trace_property_verified": true,
+      "owner_correct_pin_and_original_folders_confirmed": true,
+      "data_and_sdcard_rw_verified": true,
+      "one_own_file_bytes": 65536,
+      "mtp_acceptance": {
+        "source_commit": "af568ba7000601f2beb1324f0355b658a8dcd219",
+        "native_upload_and_readback_full_sha_marker_verified": true,
+        "file_delete_api_and_results_getcount_getat_returned": true,
+        "post_file_delete_empty_directory_enumeration_blocked": true,
+        "directory_delete_stage_entered": false,
+        "device_file_delete_response_completed": true,
+        "second_upload_or_pin_retry": false,
+        "remaining_original_empty_directory_removed_by_canonical_inode_guarded_rmdir": true,
+        "alias_raw_paths_absent": true,
+        "host_stages": [
+          "before-content-open",
+          "selected-storage",
+          "selected-download",
+          "before-create-owned-directory",
+          "created-owned-directory",
+          "before-create-owned-file",
+          "before-upload-commit",
+          "uploaded-owned-file",
+          "native-readback-verified",
+          "waiting-for-wrapper-canonical-inode-proof",
+          "before-delete-owned-file",
+          "file-cleanup-current-gate-passed",
+          "before-delete-api",
+          "delete-api-returned",
+          "before-delete-results-getcount",
+          "delete-results-getcount-returned",
+          "before-delete-results-getat",
+          "delete-results-getat-returned",
+          "delete-result-verified",
+          "before-enumerate-after-file-delete"
+        ],
+        "full_mtp_flow_accepted": false
+      },
+      "device_trace": {
+        "delete_commands_observed": 1,
+        "reply_code": "0x2001",
+        "command_reply_and_response_send_completed": true,
+        "scope_limit": "This image traced DeleteObject only; arrival/handling/data transfer of the later enumeration request was not instrumented."
+      },
+      "restoration": {
+        "time_utc": "2026-11-12T15:32:39.510498+00:00",
+        "device": "myron",
+        "source_commit": "af568ba7000601f2beb1324f0355b658a8dcd219",
+        "os": "OS4.0.6.0.XPMCNXM",
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false,
+        "partition_hashes": {
+          "recovery_b": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+          "recovery_a": "586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660",
+          "boot_b": "11a20858d4e68869152baf70db0edb3d279516f9d430154cc6c96ba427940748"
+        },
+        "original_recovery_b_restored": true,
+        "boot_b_and_recovery_a_unchanged": true,
+        "metadata_ciphertext_hashes_unchanged": true,
+        "hyperos_data_mounted": true,
+        "persistent_trace_directory_found": false,
+        "normal_os_unlock_and_original_files_user_confirmed": false
+      },
+      "trace_capture": {
+        "live_delete_trace_preserved": true,
+        "recovery_log_tail_preserved": true,
+        "ram_sample_archive_retrieved": false,
+        "script_sample_cap_bytes": 786432,
+        "persistent_trace_directory_found_after_restore": false
+      },
+      "limits": "The SDK file Delete API, GetCount and GetAt returned and verified success. It then blocked in EnumObjects/Next while enumerating the now-empty folder. No folder-delete stage was entered. Device/host cause is not established; no full MTP pass claimed."
     }
   },
   "scope": {
@@ -735,7 +812,7 @@
     "mtp_complete_workflow_accepted": false
   },
   "remaining": [
-    "Locate and resolve the Windows WPD empty-directory cleanup-stage timeout with bounded protocol/SDK phase evidence, then validate the complete upload/readback/file+empty-directory cleanup flow; exact blocked COM call and device/host cause are not established",
+    "Locate and resolve the post-file-delete empty-folder enumeration stall (host EnumObjects/Next); file Delete/results and its device 0x2001 response completed, but arrival/processing/data transmission of enumeration was not traced",
     "Enforcing mode and untested destructive recovery operations are not accepted"
   ],
   "temporary_test_candidate": {
@@ -1142,8 +1219,8 @@
     "callback_vintf_mark_strong_import_verified": true,
     "callback_create_binder_actual_call_verified": true,
     "diagnostic_max_log_bytes": 786432,
-    "device_boot_tested": false,
-    "pin_authorized": false
+    "device_boot_tested": true,
+    "pin_authorized": true
   },
   "mtp_delete_trace_preparation": {
     "ci_run": 43245275620,
@@ -1152,8 +1229,8 @@
     "normal_image_trace_default": "disabled",
     "diagnostic_scope": "DeleteObject operation/transaction ID/response code/send-stage only; no handles, paths or datasets",
     "host_sdk_v2_offline_cases_passed": 66,
-    "device_tested": false,
-    "new_phone_authorization_recorded": false,
+    "device_tested": true,
+    "new_phone_authorization_recorded": true,
     "limits": "Diagnostic instrumentation only; no change to deletion semantics and no claimed fix or hardware acceptance."
   }
 }

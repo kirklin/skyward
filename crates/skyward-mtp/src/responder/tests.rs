@@ -643,6 +643,12 @@ fn deleting_watched_objects_does_not_repeat_removed_events_for_the_same_session(
     let folder = find(&mut r, PARENT_ROOT, "fixture");
     let file = find(&mut r, folder, "own.bin");
     assert!(r.fd().is_some(), "exercise the real inotify backend");
+    let readable = |r: &Responder| {
+        let mut fd = libc::pollfd { fd: r.fd().unwrap(), events: libc::POLLIN, revents: 0 };
+        let n = unsafe { libc::poll(&mut fd, 1, 0) };
+        assert!(n >= 0, "poll the real watch descriptor");
+        n == 1 && fd.revents & libc::POLLIN != 0
+    };
     assert!(r.changes().is_empty());
     // An external change proves the watches really deliver removals.
     fs::write(at.join("fixture/external.bin"), b"external").unwrap();
@@ -652,10 +658,14 @@ fn deleting_watched_objects_does_not_repeat_removed_events_for_the_same_session(
     assert_eq!(r.changes(), [Event { code: event::OBJECT_REMOVED, param: external }]);
 
     assert_eq!(r.answer(&cmd(op::DELETE_OBJECT, &[file, 0]), None).code, response::OK);
+    assert!(readable(&r), "the kernel queued this session's file deletion");
     assert!(r.changes().is_empty(), "the command already removed this file's handle");
+    assert!(!readable(&r), "an empty changes result must still drain the watch fd");
     assert!(handles(&mut r, folder, 0).is_empty());
     assert_eq!(r.answer(&cmd(op::DELETE_OBJECT, &[folder, 0]), None).code, response::OK);
+    assert!(readable(&r), "the folder deletion and watch removal queued events");
     assert!(r.changes().is_empty(), "IN_DELETE and IN_IGNORED must not repeat the session's removal");
+    assert!(!readable(&r), "drain IN_DELETE/IN_IGNORED before waiting for the next command");
     assert!(r.changes().is_empty(), "draining again must not replay removals");
     assert!(handles(&mut r, PARENT_ROOT, 0).is_empty());
     fs::remove_dir_all(at).unwrap();

@@ -216,6 +216,7 @@ fn attend(port: &mut Port, r: &mut Responder, mail: &mut Mailbox, transaction: u
 /// computer has read are told as they come.
 fn session(port: &mut Port, r: &mut Responder, mail: &mut Mailbox) -> Result<Ended> {
     let mut transaction = 0;
+    let mut trace_followups = 0u8;
     loop {
         let bytes = match port.command(r.fd()) {
             Ok(Next::Command(bytes)) => bytes,
@@ -246,7 +247,16 @@ fn session(port: &mut Port, r: &mut Responder, mail: &mut Mailbox) -> Result<End
             continue;
         };
         transaction = cmd.transaction;
-        match answer(port, r, mail, &cmd) {
+        let trace_delete = cmd.code == op::DELETE_OBJECT && skyward_sys::prop("debug.skyward.mtp_delete_trace").as_deref() == Some("1");
+        let trace = trace_delete || (trace_followups > 0 && matches!(cmd.code,
+            op::GET_NUM_OBJECTS | op::GET_OBJECT_HANDLES | op::GET_OBJECT_INFO | op::GET_OBJECT_PROP_VALUE | op::GET_OBJECT_PROP_LIST));
+        if trace_delete {
+            trace_followups = 16;
+            port.trace_next_commands(16);
+        } else {
+            trace_followups = trace_followups.saturating_sub(1);
+        }
+        match answer(port, r, mail, &cmd, trace) {
             Ok(()) => {}
             Err(Halt::Cancelled) => kmsg(&format!("mtp: the computer cancelled {:#06x}", cmd.code))?,
             Err(Halt::Stopped) => kmsg(&format!("mtp: {:#06x} stopped for the storage", cmd.code))?,
@@ -263,12 +273,11 @@ fn session(port: &mut Port, r: &mut Responder, mail: &mut Mailbox) -> Result<End
 
 /// One transaction: the data that comes with the command, the answer and
 /// its data, and the response.
-fn answer(port: &mut Port, r: &mut Responder, mail: &mut Mailbox, cmd: &Command) -> Result<(), Halt> {
-    // Only the optional myron diagnostic image enables this property.
+fn answer(port: &mut Port, r: &mut Responder, mail: &mut Mailbox, cmd: &Command, traced: bool) -> Result<(), Halt> {
+    // Only a bounded window after a diagnostic DeleteObject is traced.
     // Never log object handles, paths, datasets or error text here.
-    let trace_delete = cmd.code == op::DELETE_OBJECT && skyward_sys::prop("debug.skyward.mtp_delete_trace").as_deref() == Some("1");
     let trace = |stage: &str, code: Option<u16>| {
-        if trace_delete {
+        if traced {
             let code = code.map(|c| format!(" response={c:#06x}")).unwrap_or_default();
             let _ = kmsg(&format!("mtp: delete op={:#06x} tid={} stage={stage}{code}", cmd.code, cmd.transaction));
         }
@@ -328,7 +337,12 @@ fn answer(port: &mut Port, r: &mut Responder, mail: &mut Mailbox, cmd: &Command)
         kmsg("mtp: the computer opened a session").map_err(|e| Halt::Failed(io::Error::other(e)))?;
     }
     match reply.data {
-        Some(Outgoing::Dataset(bytes)) => port.send_data(cmd.code, cmd.transaction, &bytes, &mut stop)?,
+        Some(Outgoing::Dataset(bytes)) => {
+            trace("dataset-start", Some(reply.code));
+            let sent = port.send_data(cmd.code, cmd.transaction, &bytes, &mut stop);
+            trace(if sent.is_ok() { "dataset-complete" } else { "dataset-failed" }, Some(reply.code));
+            sent?;
+        }
         Some(Outgoing::File { file, offset, length }) => port.send_file(cmd.code, cmd.transaction, &file, offset, length, &mut stop)?,
         None => {}
     }

@@ -525,6 +525,37 @@ inotify regression tests check file deletion, empty enumeration, folder
 deletion and the next transaction; they do not establish USB delivery on
 this phone. Finer host SDK stages are also needed before assigning a cause.
 
+The af568ba diagnostic image passed complete CI 43245275620 and a separately
+authorized native test. Startup verified the actual enabled trace property,
+the program/profile/partition hashes and the original security-service
+identities. The owner again entered one correct PIN on the phone and saw
+the original folders; data/sdcard were verified writable.
+
+The v2 host client completed its single 64 KiB upload and native readback,
+then verified the independent canonical/inode/hash cleanup gate. Its file
+Delete call, result GetCount/GetAt and result verification all returned.
+The phone recorded that DeleteObject command, an OK (0x2001) reply, and
+completed bulk response transmission. The host then blocked in the
+post-file-delete empty-folder enumeration (EnumObjects/Next), before any
+folder-delete stage was entered. This is more precise than the prior
+round's broad directory-cleanup label. Enumeration request arrival and
+data transmission were not instrumented, so neither a host fault nor a
+device transport fault is established.
+
+The remaining original empty directory was checked against its canonical
+path and inode and removed with one nonrecursive rmdir. No second upload
+or credential attempt occurred. Original recovery_b and normal HyperOS
+were restored, with all three partition and metadata ciphertext hashes
+unchanged. Live DeleteObject trace and the recovery-log tail were retained;
+the six-sample RAM archive was not retrieved in this round.
+
+The next diagnostic revision extends the same opt-in trace to at most
+sixteen following transactions and command reads, covering related
+enumeration operations, dataset sends and a deduplicated watch-change
+notification per pending read. Normal I/O decisions and event handling
+are unchanged. The real-inotify test additionally checks that processing
+self-delete events drains the readable watch fd before the next command.
+
 ## Diagnostic executable name
 
 After verifying product, slot and payload, create a RAM symlink to the

@@ -7,8 +7,9 @@ A separately authorized 759d4d2 test also converted an inner wrapped storage
 blob after one temporary renewal, yielding 100 bytes. Original disk-blob
 hashes were unchanged, and normal HyperOS unlock/files were confirmed after
 restoration. Integrated read-only mounting and correct-PIN/CE access passed
-in 34fe498, with original folders visible. Writable-data/MTP and
-enforcing-mode acceptance remain incomplete.
+in 34fe498, with original folders visible. The 2a586d1 round verified writable
+data/sdcard mounts, and aa35835 passed all three available logical mount
+switches. MTP payload transfer and enforcing-mode acceptance remain incomplete.
 The original recovery was restored and verified. No myron PR is submitted.
 
 Read-only inspection on 2026-11-12 identified REDMI K90 Pro Max
@@ -102,7 +103,7 @@ enabling general/credential key upgrades.
 | Touch | FocalTech 3683, focaltech_ts on event6, raw flag 1, resolution factor 100; absolute maxima 119999x260799 | Native recovery touch confirmed by owner; no speculative raw=0 write |
 | Touch processing | Actual process maps include libtouchreport.so, libtouchreport_alg.so, libtouchreport_hal.so, libtouchreport_sensor.so and TensorFlow models | Stock service ran as configured; owner confirmed responsive touch |
 | TEE helpers | Stock qseecomd and hlosminkdaemon rc files; live listeners-ready property true | Preserve identities/capabilities and wait for listeners |
-| Default KeyMint | QTI/default, remote provisioning, secure clock and shared secret/default confirmed; hardware info says OneKeymint version 1, TEE, Qualcomm | Inner conversion and read-only PIN/CE passed; general upgrades remain disabled; writable follow-up pending |
+| Default KeyMint | QTI/default, remote provisioning, secure clock and shared secret/default confirmed; hardware info says OneKeymint version 1, TEE, Qualcomm | Inner conversion, PIN/CE and writable mounts passed; general upgrades remain disabled; MTP payload follow-up pending |
 | Gatekeeper | QTI Rust AIDL/default, system:system | Configured; recovery credential verification untested |
 | Native eSE | eSE1 belongs to the QTI secure-element process, not the NXP NFC process | Stock driver/node and QTI callback delivery passed |
 | StrongBox | NXP StrongBox3 and sharedsecret/strongbox; live UID 2910, primary GID 0; native HalToHalTransport | 9f RAM dependencies fixed loading and passed startup ready; UID/GID/caps/AT_SECURE confirmed |
@@ -424,14 +425,15 @@ A fresh normal-HyperOS read-only inspection confirmed OS/vendor properties
 This difference remains evidence to investigate; no patch date was changed,
 and matching those strings is not established as a fix for the inner blob.
 
-## Logical mount toggle interaction and pending correction
+## Logical mount toggle correction and native acceptance
 
 The 2a586d1 RW round verified data/sdcard writable and the recovery log
 reported all users unlocked. The owner confirmed brightness changes and
 Wi-Fi hotspot visibility. The MTP payload test was not performed: PC
 PnP/WPD identity matched, but Shell device identity properties were absent.
-No fixture directory/file was created. Power/wake feedback remains to be
-clarified; the final return to HyperOS was the controller's restoration.
+No fixture directory/file was created. The owner clarified that the reported
+return to HyperOS was the controller's restoration, with no confirmed key
+fault. Power/wake and touch after wake still need a separate acceptance check.
 
 The owner found every available logical mount switch reported failure.
 Read-only evidence showed vendor_dlkm absent in the parent namespace while
@@ -448,7 +450,7 @@ wrong type, backing device, offset, lengths, gaps and overflow are refused
 without logging target parameters. A failed remount does not delete an
 existing shared DM. Strict full unmap/OTA cleanup, snapshot handling and
 the already-shown mount path keep their prior behavior. Eight boundary
-tests accompany this change; real-device switch acceptance is pending.
+tests accompany this change. Complete CI 43228377535 passed for aa35835.
 
 During evidence collection the original mi_ext_b, mi_product_b and
 vendor_dlkm_b EROFS RO views were restored using their original still-mapped
@@ -457,6 +459,22 @@ ended with original recovery_b, normal HyperOS, all three partition hashes
 and metadata ciphertext hashes verified. No test file or persistent trace
 was left. The owner subsequently entered FASTBOOT manually; no new flash
 authorization has been inferred from that action.
+
+In a separately authorized aa35835 short test, vendor_dlkm was turned off
+and back on. Kernel evidence confirmed the parent filesystem view vanished,
+the original RO DM device remained, and remount reused that same device as
+EROFS RO. Weaver kept its private mount, native-library hash and process
+identity throughout. The owner also cycled mi_ext and mi_product off/on;
+both reported success, and all three final RO views used their original DM
+devices. No data mount, PIN or user-file operation occurred in this round.
+
+A native Windows WPD identity query uniquely bound an endpoint to the
+physical phone through its USB parent and container. No WPD content session
+was opened and no file was transferred; this establishes identity binding
+only. Six RAM diagnostic samples totalled 761812 bytes, within 768 KiB,
+with no persistent diagnostic directory found. Original recovery_b and
+normal HyperOS were restored, still on b with DSU off. Full recovery_a,
+recovery_b and boot_b hashes matched, as did the metadata ciphertext hashes.
 
 ## Diagnostic executable name
 

@@ -6,8 +6,12 @@ child-view hash/inode mappings and eSE startup. Its single getConfig failed
 before SELECT because QTI rejected a callback with system Binder stability.
 The f32 revision enabled the standard stable-AIDL build option. It passed
 complete CI and one gated native getConfig: 64 slots, 16-byte keys and
-16-byte values. Credential operations and PIN decryption remain untested;
-the separate storage-key upgrade refusal still keeps data closed.
+16-byte values. Later authorized myron rounds passed correct-PIN/CE access
+and read-only mounting (34fe498), then writable data/sdcard mounting
+(2a586d1). The aa35835 round also passed logical mount switches while
+preserving Weaver's private mount. MTP payload transfer and enforcing-mode
+operation remain unverified; see `devices/myron-validation.json` in the
+complete repository for the separate rounds and their restoration proofs.
 
 It compiles Weaver and a private copy of the direct NXP HAL transport together.
 The Binder boundary uses stable AIDL V1 through `libbinder_ndk` C functions.
@@ -137,8 +141,9 @@ label; verify that the actual service can read and executable-map it without
 changing enforcing policy. The private-bind mapping gate passed in 4ab; its
 single read-only getConfig failed before applet selection. The f32
 callback correction then passed the same mapping gate and one getConfig.
-That result does not authorize or establish a PIN/key operation; enforcing
-SELinux operation also remains unverified. An unconfirmed override must
+That getConfig result alone does not establish a PIN/key operation; later
+authorized PIN acceptance is recorded separately. Enforcing SELinux
+operation remains unverified. An unconfirmed override must
 never proceed to a PIN/key attempt.
 Do not add a security bypass to force loading. Stop
 if service discovery or applet selection fails. Do not probe credentials,

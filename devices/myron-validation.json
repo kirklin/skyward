@@ -1,6 +1,6 @@
 {
   "device": "myron",
-  "status": "experimental; RW mount and PIN unlock path confirmed, brightness/Wi-Fi scan owner-reported; logical mount-toggle interaction fixed in source pending CI/device test; MTP payload test not performed",
+  "status": "experimental; PIN/CE and RW mounts confirmed; brightness/Wi-Fi scan owner-reported; all three logical mount switches passed aa35835 native test; native WPD identity bound, MTP payload test not performed",
   "date": "2026-11-12",
   "stock_version": "OS4.0.6.0.XPMCNXM",
   "framework_api": 37,
@@ -564,9 +564,72 @@
       "owner_reports": {
         "brightness_changes": true,
         "wifi_hotspots_visible": true,
-        "power_keys_wake_touch": "pending clarification; the final return to HyperOS was the controller-requested restoration"
+        "power_keys_wake_touch": "not tested; owner clarified no confirmed key fault; return to HyperOS was the controller-requested restoration"
       },
       "mtp_limit": "USB parent and WPD node uniquely matched, but the Shell identity collector lacked device identity properties; no fixture was created or transferred. This is not proof of MTP driver failure."
+    },
+    "native_aa35835": {
+      "source_commit": "aa35835b0b7288e735805fffa9d3ed0f8ce935eb",
+      "ci_run": 43228377535,
+      "image_sha256": "d55edb08fdf954721e353426455d25e5e633f882897bae75b324b98216b43e3f",
+      "mount_acceptance": {
+        "vendor_dlkm_unmount_remount_user_and_kernel_confirmed": true,
+        "mi_ext_and_mi_product_cycles_user_confirmed": true,
+        "all_three_final_ro_views_use_original_dm_devices": true,
+        "private_service_pid_unchanged": true,
+        "metadata_ciphertext_hashes_unchanged": true,
+        "data_mounted": false,
+        "pin_or_user_file_operation": false,
+        "native_wpd_identity_unique": true,
+        "wpd_content_or_mutation_called": false,
+        "diagnostic_samples": 6,
+        "diagnostic_sample_bytes": 761812,
+        "persistent_trace_directory_found": false
+      },
+      "vendor_dlkm_kernel_evidence": {
+        "parent_view_unmounted": true,
+        "original_ro_dm_retained": true,
+        "remount_same_original_dm_erofs_ro": true,
+        "private_weaver_mount_and_library_unchanged": true,
+        "weaver_process_identity_unchanged": true
+      },
+      "owner_reports": {
+        "vendor_dlkm_off_on": true,
+        "mi_ext_off_on": true,
+        "mi_product_off_on": true,
+        "all_three_left_on": true
+      },
+      "native_wpd_identity": {
+        "unique_physical_usb_parent": true,
+        "unique_wpd_node": true,
+        "native_endpoints_enumerated": 2,
+        "uniquely_bound_endpoint": true,
+        "content_session_opened": false,
+        "payload_transferred": false
+      },
+      "restoration": {
+        "time_utc": "2026-11-12T13:57:20.799327+00:00",
+        "device": "myron",
+        "os": "OS4.0.6.0.XPMCNXM",
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false,
+        "partition_hashes": {
+          "recovery_b": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+          "recovery_a": "586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660",
+          "boot_b": "11a20858d4e68869152baf70db0edb3d279516f9d430154cc6c96ba427940748"
+        },
+        "original_recovery_b_restored": true,
+        "boot_b_and_recovery_a_unchanged": true,
+        "metadata_ciphertext_hashes_unchanged": true,
+        "hyperos_data_mounted": true,
+        "mount_toggle_user_and_kernel_acceptance": true,
+        "data_pin_or_user_file_operation_in_recovery": false,
+        "native_wpd_identity_binding_accepted": true,
+        "wpd_content_or_mutation_called": false,
+        "persistent_trace_directory_found": false
+      },
+      "limits": "Only logical mount switches and native WPD identity were accepted in this round. Data/PIN and MTP payload operations were not performed; power/wake and enforcing-mode acceptance remain pending."
     }
   },
   "scope": {
@@ -587,9 +650,8 @@
     "mtp_payload_mutations_tested": false
   },
   "remaining": [
-    "Verify logical unmount/remount toggles after retaining shared DM mappings and checking reused RO linear/zero targets",
-    "Resolve Windows WPD-to-Shell identity metadata and complete the bounded own-payload MTP test; no payload was created in 2a",
-    "Clarify power/wake owner feedback separately from the explicitly requested restoration reboot",
+    "Complete the bounded own-payload native WPD MTP upload/readback/hash/cleanup test after fresh authorization; native endpoint identity binding passed but no payload was created or transferred",
+    "Verify volume/power/wake and touch after wake separately from the explicitly requested restoration reboot; no confirmed key fault was reported",
     "Enforcing mode and untested destructive recovery operations are not accepted"
   ],
   "temporary_test_candidate": {
@@ -903,6 +965,48 @@
       "system/bin/recovery": {
         "bytes": 8645080,
         "sha256": "d5803eedbc9982a7537d72ffaef992335dd58f391fbafa417d319bdc383d4c22"
+      }
+    },
+    "program_matches_same_run_tools": true,
+    "config_and_scripts_match_source": true,
+    "native_library_matches_same_run_artifact_and_reproducible_builds": true,
+    "native_library_sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e",
+    "callback_vintf_mark_strong_import_verified": true,
+    "callback_create_binder_actual_call_verified": true,
+    "diagnostic_max_log_bytes": 786432,
+    "device_boot_tested": true,
+    "pin_authorized": false
+  },
+  "mount_toggle_candidate": {
+    "source_commit": "aa35835b0b7288e735805fffa9d3ed0f8ce935eb",
+    "ci_run": 43228377535,
+    "ci_conclusion": "success",
+    "image_file": "skyward-aa35835-myron-OS4.0.6.0.XPMCNXM-diagnostic.img",
+    "image_bytes": 104857600,
+    "image_sha256": "d55edb08fdf954721e353426455d25e5e633f882897bae75b324b98216b43e3f",
+    "zip_sha256": "f516f1dd8c97bc9aebb62ffd6fd9bb1ed2a930b0d97321fbe258ce496fdb2612",
+    "header_version": 4,
+    "kernel_bytes": 0,
+    "payloads": {
+      "init.skyward-myron-diagnostics.rc": {
+        "bytes": 229,
+        "sha256": "5504cc2a70fc894207ca7514873af34c1ad265b26630344c919ba4ed0c197a3a"
+      },
+      "skyward/device.toml": {
+        "bytes": 10789,
+        "sha256": "aff151c4234fdfa864ef21d875f6b98c2401d3e09c1d46ce08556b89c6f5d3f6"
+      },
+      "skyward/lib64/ese_weaver.so": {
+        "bytes": 113512,
+        "sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e"
+      },
+      "skyward/myron-diagnostics.sh": {
+        "bytes": 4120,
+        "sha256": "042a5b49fad6a3fda417319cb62e632855fabc2a1145e33e948de3c3fa9dd2ac"
+      },
+      "system/bin/recovery": {
+        "bytes": 8646584,
+        "sha256": "d715fffa089533286b3f18f5b0a0da5d2d9db1452affd2c9d41c257ffbc2e57b"
       }
     },
     "program_matches_same_run_tools": true,

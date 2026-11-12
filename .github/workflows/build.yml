@@ -14,6 +14,11 @@ on:
         description: The codename of the one device to build for; every device when empty
         required: false
         default: ""
+      myron_diagnostics:
+        description: Development-only myron trace image; may write bounded logs on already-mounted metadata
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -36,6 +41,8 @@ jobs:
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --locked --workspace
+      - name: Check the optional myron trace script
+        run: sh -n crates/skyward-pack/src/myron-diagnostics.sh
       - name: Lint what runs on the phone
         run: cargo ndk -t arm64-v8a --platform 30 clippy --locked -p skyward -p skyward-install -p skyward-systems -p skyward-system-init -- -D warnings
 
@@ -124,13 +131,19 @@ jobs:
         env:
           DEVICE: ${{ matrix.device }}
           STOCK: ${{ steps.stock.outputs.version }}
+          MYRON_DIAGNOSTICS: ${{ inputs.myron_diagnostics }}
         run: |
           if [ "$GITHUB_REF_TYPE" = tag ]; then version="$GITHUB_REF_NAME"; else version="${GITHUB_SHA::7}"; fi
           name="skyward-$version-$DEVICE-$STOCK"
+          extra=()
+          if [ "$DEVICE" = myron ] && [ "$MYRON_DIAGNOSTICS" = true ]; then
+            name="$name-diagnostic"
+            extra+=(--myron-diagnostics)
+          fi
           mkdir out
           tools/skyward-pack recovery --stock stock/recovery.img --binary tools/skyward --system-init tools/system-init \
             --config "devices/$DEVICE.toml" --font resources/fonts/MiSansVF.ttf --mono resources/fonts/KirkMono-Regular.ttf \
-            --mono-license resources/fonts/KirkMono-OFL.txt --out "out/$name.img"
+            --mono-license resources/fonts/KirkMono-OFL.txt "${extra[@]}" --out "out/$name.img"
           echo "name=$name" >> "$GITHUB_OUTPUT"
       # The image is the whole partition, flashed as it is, and most of it
       # is the room the recovery leaves empty; it is handed out zipped.

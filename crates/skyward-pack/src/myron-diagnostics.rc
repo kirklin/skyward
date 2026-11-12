@@ -1,0 +1,10 @@
+on post-fs
+    start skyward-myron-diagnostics
+
+service skyward-myron-diagnostics /system/bin/sh /skyward/myron-diagnostics.sh
+    class core
+    user root
+    group root log
+    seclabel u:r:recovery:s0
+    disabled
+    oneshot

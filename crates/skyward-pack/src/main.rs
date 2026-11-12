@@ -67,6 +67,14 @@ enum Cmd {
         /// The monospaced typeface's licence, which goes with it.
         #[arg(long)]
         mono_license: PathBuf,
+        /// Extra service libraries, stored under /skyward/lib64 by basename.
+        /// Only services naming that folder in their library search use them.
+        #[arg(long)]
+        library: Vec<PathBuf>,
+        /// Development-only myron tracing. Writes bounded logs to a new
+        /// directory on metadata only if it is already mounted read/write.
+        #[arg(long)]
+        myron_diagnostics: bool,
         #[arg(long)]
         out: PathBuf,
     },
@@ -105,7 +113,7 @@ fn main() -> Result<()> {
             img.kernel = BootImage::read(&kernel)?.kernel;
             write(&out, &img, &img.to_bytes()?)
         }
-        Cmd::Recovery { stock, binary, system_init, config, font, mono, mono_license, out } => {
+        Cmd::Recovery { stock, binary, system_init, config, font, mono, mono_license, library, myron_diagnostics, out } => {
             let size = partition_size(&stock)?;
             let mut img = BootImage::read(&stock)?;
             let mut rd = Ramdisk::decode(&img.ramdisk)?;
@@ -129,6 +137,20 @@ fn main() -> Result<()> {
             rd.add(paths::FONT, 0o644, read(&font)?)?;
             rd.add(paths::MONO, 0o644, read(&mono)?)?;
             rd.add(paths::MONO_LICENSE, 0o644, read(&mono_license)?)?;
+            for file in library {
+                let name = file.file_name().and_then(|n| n.to_str()).with_context(|| format!("{} has no library filename", file.display()))?;
+                rd.add(&format!("skyward/lib64/{name}"), 0o644, read(&file)?)?;
+            }
+            if myron_diagnostics {
+                ensure!(cfg.device.codename == "myron", "--myron-diagnostics is only for myron");
+                rd.add("skyward/myron-diagnostics.sh", 0o755, include_bytes!("myron-diagnostics.sh").to_vec())?;
+                rd.add("init.skyward-myron-diagnostics.rc", 0o644, include_bytes!("myron-diagnostics.rc").to_vec())?;
+                let init = "system/etc/init/hw/init.rc";
+                let original = &rd.find(init).with_context(|| format!("{init} is not in the ramdisk"))?.data;
+                let mut traced = b"import /init.skyward-myron-diagnostics.rc\n".to_vec();
+                traced.extend_from_slice(original);
+                rd.replace(init, traced)?;
+            }
             // A stock ramdisk may run logd without any scheduling profiles,
             // and logd stops as soon as it cannot find the one it asks for.
             if rd.find(paths::TASK_PROFILES).is_none() {

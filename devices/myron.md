@@ -117,3 +117,21 @@ full workspace tests, ARM64 checks/build and stock recovery extraction/hash
 verification ([run 43151155964](https://github.com/Dingtaiqi/skyward/actions/runs/43151155964)).
 The full path-validation suite is not Windows portable; Linux CI executes
 the complete suite. None of these checks is a recovery boot test.
+
+## Optional development trace image
+
+`skyward-pack recovery --myron-diagnostics` (or the manual workflow's
+matching input) is a separate development image, not the default build.
+It starts a bounded early trace independently of the recovery UI. Only on
+myron/b, with the actual metadata partition already mounted F2FS/rw and
+at least 4 MiB free, it creates a new root-only directory named
+`/metadata/skyward-myron-trace-<boot UUID>`. Otherwise output stays in RAM.
+It does not mount/remount, repair, format, read keys, write /data or reboot.
+The six samples include whitelisted USB properties, process/device lists
+and bounded recovery/kernel/logd output. Raw traces are private diagnostic
+material and must not be published unreviewed.
+
+Booting this variant requires separate authorization for those metadata
+log writes and the chosen boot/installation method. It has not been run
+on the phone. Existing authorization for the completed RAM-only test does
+not authorize flashing it or starting another phone test.

@@ -153,6 +153,7 @@ The six samples include whitelisted USB properties, process/device lists,
 Weaver library identities/maps, capability and AT_SECURE metadata, and
 bounded recovery/kernel/logd output. Raw traces are private diagnostic
 material and must not be published unreviewed.
+Each sample file is capped at 128 KiB; all six logs total at most 768 KiB.
 
 Booting this variant requires separate authorization for those metadata
 log writes and the chosen boot/installation method. It has not been run

@@ -62,7 +62,7 @@ for sample in 0 1 2 3 4 5; do
         tail -c 16384 /skyward/run/recovery.log
         dmesg | tail -c 65536
         timeout 2 logcat -b all -d -t 200 | tail -c 32768
-    } > "$destination/sample-$sample.log" 2>&1
+    } 2>&1 | head -c 131072 > "$destination/sample-$sample.log"
     sync
     [ "$sample" = 5 ] || sleep 5
 done

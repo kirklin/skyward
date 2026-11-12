@@ -234,7 +234,7 @@ remember = true
 [update]
 server = "https://update.miui.com/updates/miotaV3.php"
 
-# 做这个 recovery 所基于的原厂版本：中国版 OS4.0.0.11，小米自家下载服务器上的
+# 做这个 recovery 所基于的原厂版本：中国版 OS4.0.0.11（Android 17），小米自家下载服务器上的
 # 完整包（9.35 GB）里就有这块机子的 recovery 分区。地址已 HEAD 过，返回 200。
 [stock]
 version = "OS4.0.0.11.XOHCNXM"

@@ -15,6 +15,8 @@ use std::fs::File;
 use std::mem::size_of;
 use std::os::unix::fs::FileExt;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use zerocopy::{FromBytes, IntoBytes};
 
 pub const MOUNT_POINT: &str = "/sideload";
@@ -107,6 +109,14 @@ pub(crate) fn file_block(size: u64) -> u32 {
     u32::try_from(fits).map_or(u32::MAX, |b| b.max(FILE_BLOCK))
 }
 
+/// The range of the package that is its update's payload, watched once the
+/// package is known; bytes read from it are the update's progress.
+#[derive(Default)]
+pub(crate) struct Payload {
+    pub(crate) start: AtomicU64,
+    pub(crate) len: AtomicU64,
+}
+
 /// The filesystem's state: the package's blocks as served so far.
 pub struct Server {
     offer: Offer,
@@ -119,6 +129,10 @@ pub struct Server {
     fault: Option<Fault>,
     /// The furthest byte any read reached.
     served: u64,
+    /// The range of the package that is the update's payload, watched by
+    /// the mount, and the bytes of it reads have served.
+    pub(crate) payload: Arc<Payload>,
+    pub(crate) payload_read: u64,
 }
 
 impl Server {
@@ -130,11 +144,18 @@ impl Server {
             block: vec![0; offer.block_size as usize],
             fault: None,
             served: 0,
+            payload: Arc::new(Payload::default()),
+            payload_read: 0,
         }
     }
 
     pub fn served(&self) -> u64 {
         self.served
+    }
+
+    /// How many bytes of the payload reads have served so far.
+    pub fn payload_read(&self) -> u64 {
+        self.payload_read
     }
 
     pub fn fault(&self) -> Option<&Fault> {
@@ -241,7 +262,16 @@ impl Server {
             data.extend_from_slice(&self.block[within..within + take]);
             at += take as u64;
         }
-        self.served = self.served.max(at.min(self.offer.size));
+        let start = offset.min(self.offer.size);
+        let end = at.min(self.offer.size);
+        let base = self.payload.start.load(Ordering::Relaxed);
+        let len = self.payload.len.load(Ordering::Relaxed);
+        let from = start.max(base);
+        let to = end.min(base.saturating_add(len));
+        if to > from {
+            self.payload_read += to - from;
+        }
+        self.served = self.served.max(end);
         reply(unique, &data)
     }
 
@@ -286,7 +316,7 @@ pub use device::{mount, Mount, Mounted};
 
 #[cfg(target_os = "android")]
 mod device {
-    use super::{Fault, Handled, Server, Source, EXIT, MOUNT_POINT};
+    use super::{Fault, Handled, Payload, Server, Source, EXIT, MOUNT_POINT};
     use crate::adb::Offer;
     use anyhow::{Context, Result};
     use std::ffi::CString;
@@ -313,6 +343,8 @@ mod device {
     pub struct Mount<S> {
         thread: JoinHandle<(S, Result<Option<Fault>>)>,
         served: Arc<AtomicU64>,
+        payload: Arc<Payload>,
+        payload_read: Arc<AtomicU64>,
     }
 
     /// Mount the package `offer` describes at /sideload, read-only.
@@ -349,21 +381,26 @@ mod device {
         /// Serve the package from `source`.
         pub fn serve<S: Source + Send + 'static>(self, source: S) -> Mount<S> {
             let served = Arc::new(AtomicU64::new(0));
+            let payload = Arc::new(Payload::default());
+            let watched = payload.clone();
+            let payload_read = Arc::new(AtomicU64::new(0));
             let reach = served.clone();
+            let reading = payload_read.clone();
             let thread = thread::Builder::new()
                 .name("sideload-fuse".into())
                 .spawn(move || {
                     let mut source = source;
                     let mut server = Server::new(self.offer);
-                    let result = serve(&self.dev, &mut server, &mut source, &reach);
+                    server.payload = watched;
+                    let result = serve(&self.dev, &mut server, &mut source, &reach, &reading);
                     (source, result.map(|()| server.fault().cloned()))
                 })
                 .expect("the FUSE thread starts");
-            Mount { thread, served }
+            Mount { thread, served, payload, payload_read }
         }
     }
 
-    fn serve(dev: &File, server: &mut Server, source: &mut impl Source, served: &AtomicU64) -> Result<()> {
+    fn serve(dev: &File, server: &mut Server, source: &mut impl Source, served: &AtomicU64, payload_read: &AtomicU64) -> Result<()> {
         let mut buf = vec![0u8; REQUEST_BUFFER];
         loop {
             let n = match { dev }.read(&mut buf) {
@@ -376,6 +413,7 @@ mod device {
             let mut fetch = |index: u64, out: &mut [u8]| source.read_block(index, out);
             let handled = server.handle(&buf[..n], &mut fetch)?;
             served.store(server.served(), Ordering::Relaxed);
+            payload_read.store(server.payload_read(), Ordering::Relaxed);
             match handled {
                 Handled::Reply(r) => answer(dev, &r)?,
                 Handled::Silent => {}
@@ -398,6 +436,18 @@ mod device {
         /// How far into the package reads have reached.
         pub fn served(&self) -> u64 {
             self.served.load(Ordering::Relaxed)
+        }
+
+        /// Watch the package's payload range, so the bytes read from it can
+        /// be told from the package's directory and metadata.
+        pub fn watch_payload(&self, start: u64, size: u64) {
+            self.payload.start.store(start, Ordering::Relaxed);
+            self.payload.len.store(size, Ordering::Relaxed);
+        }
+
+        /// How many bytes of the payload reads have served.
+        pub fn payload_read(&self) -> u64 {
+            self.payload_read.load(Ordering::Relaxed)
         }
 
         /// Stop serving and unmount. The source always comes back; the
@@ -527,6 +577,20 @@ mod tests {
         assert_eq!(body, vec![0; 100]);
         // Blocks 0, 1 and 2; the block past the end needs no fetch.
         assert_eq!(fetches.get(), 3);
+    }
+
+    #[test]
+    fn only_bytes_of_the_payload_range_count() {
+        let (pkg, fetches) = (package(), Cell::new(0));
+        let (mut server, mut fetch) = (server_for(&pkg), fetch_from(&pkg, &fetches));
+        server.payload.start.store(4096, Ordering::Relaxed);
+        server.payload.len.store(4096, Ordering::Relaxed);
+        server.handle(&read_request(0, 4096), &mut fetch).unwrap();
+        assert_eq!(server.payload_read(), 0, "the package before the payload is not it");
+        server.handle(&read_request(4096, 4096), &mut fetch).unwrap();
+        assert_eq!(server.payload_read(), 4096);
+        server.handle(&read_request(4096, 4096), &mut fetch).unwrap();
+        assert_eq!(server.payload_read(), 8192, "a read again counts again, and the caller clamps");
     }
 
     #[test]

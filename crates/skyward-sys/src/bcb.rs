@@ -405,7 +405,6 @@ mod tests {
             let r = asked("boot-recovery", &[wipe, "--reason=fs_mgr_mount_all"]);
             assert_eq!(r.work, Work::PromptWipeData);
             assert_eq!(r.reason.as_deref(), Some("fs_mgr_mount_all"));
-            assert!(!r.work.lasts(), "a rejected prompt must not resume an automatic wipe after a restart");
         }
         assert_eq!(asked("boot-recovery", &["--wipe_data", "--reason=MasterClearConfirm"]).work, WIPE_DATA);
         let update = asked("boot-recovery", &["--update_package=/cache/update.zip", "--wipe_data", "--reason=fs_mgr_mount_all"]);

@@ -27,10 +27,9 @@ mod readings;
 mod relabel;
 #[cfg(target_os = "android")]
 mod secure;
-// Compile the service ownership tests on Linux too; daemon entry points
-// are unused there and are never run by these tests.
 #[cfg(any(target_os = "android", all(test, target_os = "linux")))]
-#[cfg_attr(all(test, target_os = "linux"), allow(dead_code))]
+mod service_mounts;
+#[cfg(target_os = "android")]
 mod services;
 #[cfg(target_os = "android")]
 mod settings;
@@ -601,14 +600,12 @@ fn hand_over(owners: &[skyward_config::Owners]) -> Result<usize> {
 }
 
 /// The folder the recovery's own programs load their libraries from.
-#[cfg(any(target_os = "android", all(test, target_os = "linux")))]
-#[cfg_attr(all(test, target_os = "linux"), allow(dead_code))]
+#[cfg(target_os = "android")]
 const RECOVERY_LIBRARIES: &str = "/system/lib64";
 
 /// Supply only missing, hash-pinned files to the recovery's RAM library
 /// directory. Never replace an existing library or write an installed partition.
-#[cfg(any(target_os = "android", all(test, target_os = "linux")))]
-#[cfg_attr(all(test, target_os = "linux"), allow(dead_code))]
+#[cfg(target_os = "android")]
 fn provide_recovery_libraries(libraries: &[skyward_config::RecoveryLibrary]) -> Result<()> {
     use anyhow::ensure;
     use std::fs::{self, File, OpenOptions};

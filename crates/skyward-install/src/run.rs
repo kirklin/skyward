@@ -630,17 +630,13 @@ fn update_system<S>(ctx: &mut Context, mount: &Mount<S>, update: &Update) -> Res
 }
 
 /// This recovery, held before an install writes, when the screen asked to
-/// keep it in the recovery partitions; none when it was started without
-/// being flashed.
+/// keep it in the recovery partitions. A requested preservation with no
+/// installed Skyward fails before any partition is detached or written.
 fn hold(ctx: &Context, current: Slot) -> Result<Option<Kept>> {
     if !ctx.options.keep {
         return Ok(None);
     }
-    let kept = Kept::hold(Path::new(skyward_block::BY_NAME), current).context("hold this recovery from its partition")?;
-    if kept.is_none() {
-        let _ = kmsg("install: the recovery partition does not hold Skyward, so there is none to keep");
-    }
-    Ok(kept)
+    Ok(Some(Kept::hold_required(Path::new(skyward_block::BY_NAME), current).context("hold this recovery from its partition")?))
 }
 
 /// Write this recovery back into the recovery partitions the install wrote

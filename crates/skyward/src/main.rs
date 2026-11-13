@@ -576,7 +576,7 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot) -> Result<()> {
     let nodes = skyward_sys::ueventd::apply()?;
     skyward_sys::kmsg(&format!("{nodes} device nodes given the owner their phone describes"))?;
     let props = skyward_info::installed_props(slot)?;
-    adopt_installed_version(&props)?;
+    adopt_installed_version(&props, cfg.decrypt)?;
     // Without logd the phone's own programs still run, and only what they
     // log is lost, so why it did not start goes to the kernel log.
     if let Some(logd) = &cfg.logd {
@@ -732,17 +732,25 @@ fn mount_firmware(partition: &str) -> Result<()> {
 #[cfg(target_os = "android")]
 const BUILD_VERSION: [&str; 3] = ["ro.build.version.release", "ro.build.version.security_patch", "ro.vendor.build.security_patch"];
 
-/// Set each of [`BUILD_VERSION`] to the installed system's value. An earlier
-/// run of the recovery service may have set it already, and init sets such
-/// a property only once.
+/// Use the installed system's version context, with an explicitly
+/// configured recovery-only system patch floor, before HALs start. An
+/// earlier recovery run may have set it already; init sets each only once.
 #[cfg(target_os = "android")]
-fn adopt_installed_version(props: &std::collections::HashMap<String, String>) -> Result<()> {
+fn adopt_installed_version(props: &std::collections::HashMap<String, String>, policy: skyward_config::Decrypt) -> Result<()> {
     for name in BUILD_VERSION {
-        let value = props.get(name).with_context(|| format!("the installed system says no {name}"))?;
-        if skyward_sys::prop(name).as_ref() != Some(value) {
-            skyward_sys::set_prop(name, value)?;
+        let installed = props.get(name).with_context(|| format!("the installed system says no {name}"))?;
+        let value = match name {
+            "ro.build.version.security_patch" => skyward_config::select_system_patchlevel(installed, policy.system_patchlevel_floor)?,
+            _ => installed.clone(),
+        };
+        if skyward_sys::prop(name).as_ref() != Some(&value) {
+            skyward_sys::set_prop(name, &value)?;
         }
-        skyward_sys::kmsg(&format!("{name} is the installed system's {value}"))?;
+        if value != *installed {
+            skyward_sys::kmsg(&format!("{name} is {value} only for recovery decryption; the installed system still reports {installed}"))?;
+        } else {
+            skyward_sys::kmsg(&format!("{name} is the installed system's {value}"))?;
+        }
     }
     Ok(())
 }

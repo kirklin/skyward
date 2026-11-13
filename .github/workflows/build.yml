@@ -14,6 +14,10 @@ on:
         description: The codename of the one device to build for; every device when empty
         required: false
         default: ""
+      system_patchlevel_floor:
+        description: Optional recovery-only KeyMint system patch-date floor (YYYY-MM-DD); requires one device
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -112,7 +116,12 @@ jobs:
       - id: list
         env:
           DEVICE: ${{ inputs.device }}
+          PATCH_FLOOR: ${{ inputs.system_patchlevel_floor }}
         run: |
+          if [ -n "$PATCH_FLOOR" ] && { [ -z "$DEVICE" ] || [ "$GITHUB_REF_TYPE" = tag ]; }; then
+            echo 'A decryption compatibility floor requires one device and a branch build' >&2
+            exit 1
+          fi
           if [ -n "$DEVICE" ]; then
             test -f "devices/$DEVICE.toml"
             echo "devices=$(jq -nc --arg device "$DEVICE" '[$device]')" >> "$GITHUB_OUTPUT"
@@ -163,13 +172,19 @@ jobs:
         env:
           DEVICE: ${{ matrix.device }}
           STOCK: ${{ steps.stock.outputs.version }}
+          PATCH_FLOOR: ${{ inputs.system_patchlevel_floor }}
         run: |
           if [ "$GITHUB_REF_TYPE" = tag ]; then version="$GITHUB_REF_NAME"; else version="${GITHUB_SHA::7}"; fi
           name="skyward-$version-$DEVICE-$STOCK"
+          compat=()
+          if [ -n "$PATCH_FLOOR" ]; then
+            compat+=(--system-patchlevel-floor "$PATCH_FLOOR")
+            name="$name-decrypt${PATCH_FLOOR//-/}"
+          fi
           mkdir out
           tools/skyward-pack recovery --stock stock/recovery.img --binary tools/skyward --system-init tools/system-init \
             --bash-dir bash-runtime \
-            --config "devices/$DEVICE.toml" --font resources/fonts/MiSansVF.ttf --mono resources/fonts/KirkMono-Regular.ttf \
+            --config "devices/$DEVICE.toml" "${compat[@]}" --font resources/fonts/MiSansVF.ttf --mono resources/fonts/KirkMono-Regular.ttf \
             --mono-license resources/fonts/KirkMono-OFL.txt --out "out/$name.img"
           echo "name=$name" >> "$GITHUB_OUTPUT"
       # The image is the whole partition, flashed as it is, and most of it

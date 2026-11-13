@@ -1,7 +1,7 @@
 use anyhow::{ensure, Context, Result};
 use clap::{Parser, Subcommand};
 use sha2::{Digest, Sha256};
-use skyward_config::ramdisk as paths;
+use skyward_config::{ramdisk as paths, PatchLevel};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -63,6 +63,10 @@ enum Cmd {
         /// The device configuration, devices/<codename>.toml.
         #[arg(long)]
         config: PathBuf,
+        /// Optional recovery-only system patch-date floor for existing data
+        /// keys. Does not change the ROM or enable key upgrades.
+        #[arg(long)]
+        system_patchlevel_floor: Option<PatchLevel>,
         /// The UI typeface.
         #[arg(long)]
         font: PathBuf,
@@ -110,7 +114,7 @@ fn main() -> Result<()> {
             img.kernel = BootImage::read(&kernel)?.kernel;
             write(&out, &img, &img.to_bytes()?)
         }
-        Cmd::Recovery { stock, binary, system_init, bash_dir, config, font, mono, mono_license, out } => {
+        Cmd::Recovery { stock, binary, system_init, bash_dir, config, system_patchlevel_floor, font, mono, mono_license, out } => {
             let size = partition_size(&stock)?;
             let mut img = BootImage::read(&stock)?;
             let mut rd = Ramdisk::decode(&img.ramdisk)?;
@@ -120,7 +124,12 @@ fn main() -> Result<()> {
                 anyhow::bail!("{} holds {}, which is not a stock recovery", stock.display(), e.name);
             }
             let read = |p: &PathBuf| std::fs::read(p).with_context(|| format!("read {}", p.display()));
-            let cfg = skyward_config::DeviceConfig::load(&config)?;
+            let text = String::from_utf8(read(&config)?).context("device configuration is not UTF-8")?;
+            let text = match system_patchlevel_floor {
+                Some(floor) => skyward_config::DeviceConfig::with_system_patchlevel_floor(&text, floor)?,
+                None => text,
+            };
+            let cfg = skyward_config::DeviceConfig::parse(&text)?;
             rd.replace(paths::RECOVERY, read(&binary)?)?;
             // Install scripts look for the commands a stock recovery lacks
             // among its programs, and its unzip there too, a link to ziptool
@@ -133,7 +142,7 @@ fn main() -> Result<()> {
             if let Some(dir) = &bash_dir {
                 add_bash(&mut rd, dir)?;
             }
-            rd.add(paths::CONFIG, 0o644, read(&config)?)?;
+            rd.add(paths::CONFIG, 0o644, text.into_bytes())?;
             rd.add(paths::FONT, 0o644, read(&font)?)?;
             rd.add(paths::MONO, 0o644, read(&mono)?)?;
             rd.add(paths::MONO_LICENSE, 0o644, read(&mono_license)?)?;
@@ -336,7 +345,7 @@ mod tests {
         let stock = format!("{DELETE_METADATA_KEYS}=true\nro.vndk.version=33\n");
         let disabled = format!("{DELETE_METADATA_KEYS}=false");
         let enabled = format!("{DELETE_METADATA_KEYS}=true");
-        let policy = skyward_config::Decrypt { read_only: false, auto_repair: false, key_upgrades: false };
+        let policy = skyward_config::Decrypt { read_only: false, auto_repair: false, key_upgrades: false, ..Default::default() };
         let props = String::from_utf8(recovery_properties(stock.as_bytes(), policy.preserves_keys())).unwrap();
         assert!(props.lines().any(|line| line == disabled));
         assert!(!props.lines().any(|line| line == enabled));

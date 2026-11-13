@@ -3,6 +3,9 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
 
+mod patchlevel;
+pub use patchlevel::{select as select_system_patchlevel, PatchLevel};
+
 /// Recovery ramdisk files Skyward reads, adds or changes, as archive paths
 /// (they sit under `/` once the kernel unpacks the ramdisk).
 pub mod ramdisk {
@@ -347,11 +350,16 @@ pub struct Decrypt {
     /// Let KeyMint renew existing blobs if it requires an upgrade. When
     /// disabled, metadata keys are also protected from automatic deletion.
     pub key_upgrades: bool,
+    /// An opt-in minimum system patch date for the recovery's KeyMint
+    /// context when a port reports an older date than the existing data's
+    /// keys. Never changes the installed ROM, lowers a later patch date,
+    /// enables key upgrades, or supplies actual security updates.
+    pub system_patchlevel_floor: Option<PatchLevel>,
 }
 
 impl Default for Decrypt {
     fn default() -> Self {
-        Self { read_only: false, auto_repair: true, key_upgrades: true }
+        Self { read_only: false, auto_repair: true, key_upgrades: true, system_patchlevel_floor: None }
     }
 }
 
@@ -549,6 +557,19 @@ pub fn codename(text: &str) -> Result<String> {
 }
 
 impl DeviceConfig {
+    /// Add an explicit recovery-only compatibility setting when packing a
+    /// device-specific image. Unspecified profiles remain byte-for-byte
+    /// unchanged; all other configuration values are retained.
+    pub fn with_system_patchlevel_floor(text: &str, floor: PatchLevel) -> Result<String> {
+        let mut table: toml::Table = toml::from_str(text).context("parse configuration to add a patch-level floor")?;
+        let decrypt = table.entry("decrypt").or_insert_with(|| toml::Value::Table(toml::Table::new()));
+        decrypt.as_table_mut().context("[decrypt] is not a table")?
+            .insert("system_patchlevel_floor".into(), toml::Value::String(floor.to_string()));
+        let text = toml::to_string(&table).context("write configuration with a patch-level floor")?;
+        Self::parse(&text)?;
+        Ok(text)
+    }
+
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let p = path.as_ref();
         let text = std::fs::read_to_string(p)
@@ -558,6 +579,8 @@ impl DeviceConfig {
 
     pub fn parse(text: &str) -> Result<Self> {
         let cfg: DeviceConfig = toml::from_str(text).context("parse device config")?;
+        ensure!(cfg.decrypt.system_patchlevel_floor.is_none() || !cfg.decrypt.key_upgrades,
+            "[decrypt] system_patchlevel_floor requires key_upgrades = false; a compatibility context must not upgrade existing keys");
         for log in &cfg.wipe.logs {
             let path = Path::new(log);
             let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
@@ -696,9 +719,24 @@ mod tests {
     #[test]
     fn socrates_opens_writable_data_without_automatic_fsck_or_key_upgrades() {
         let cfg: DeviceConfig = toml::from_str(include_str!("../../../devices/socrates.toml")).unwrap();
-        assert_eq!(cfg.decrypt, Decrypt { read_only: false, auto_repair: false, key_upgrades: false });
+        assert_eq!(cfg.decrypt, Decrypt { read_only: false, auto_repair: false, key_upgrades: false, ..Default::default() });
         let other: DeviceConfig = toml::from_str(include_str!("../../../devices/ishtar.toml")).unwrap();
         assert_eq!(other.decrypt, Decrypt::default());
+    }
+
+    #[test]
+    fn a_recovery_patchlevel_hint_preserves_the_device_and_key_restrictions() {
+        let base = include_str!("../../../devices/socrates.toml");
+        let text = DeviceConfig::with_system_patchlevel_floor(base, "2026-09-01".parse().unwrap()).unwrap();
+        let cfg = DeviceConfig::parse(&text).unwrap();
+        assert_eq!(cfg.device.codename, "socrates");
+        assert_eq!(cfg.services.len(), DeviceConfig::parse(base).unwrap().services.len());
+        assert!(!cfg.decrypt.upgrades_keys() && !cfg.decrypt.checks_filesystem());
+        assert!(!cfg.decrypt.read_only);
+        assert_eq!(cfg.decrypt.system_patchlevel_floor.unwrap().to_string(), "2026-09-01");
+        assert_eq!(select_system_patchlevel("2026-10-01", cfg.decrypt.system_patchlevel_floor).unwrap(), "2026-10-01");
+        assert!(DeviceConfig::parse("[device]\ncodename='x'\n[decrypt]\nsystem_patchlevel_floor='2026-02-30'\n").is_err());
+        assert!(DeviceConfig::parse("[device]\ncodename='x'\n[decrypt]\nsystem_patchlevel_floor='2026-09-01'\nkey_upgrades=true\n").is_err());
     }
 
     #[test]

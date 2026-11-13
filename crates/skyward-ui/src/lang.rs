@@ -113,16 +113,25 @@ mod tests {
         }
     }
 
+    /// Read into `texts` what every source file in `folder` writes, those
+    /// in the folders under it too.
+    fn read(texts: &mut Texts, folder: &Path) {
+        for entry in fs::read_dir(folder).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                read(texts, &path);
+                continue;
+            }
+            let file = syn::parse_file(&fs::read_to_string(&path).unwrap()).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
+            texts.visit_file(&file);
+        }
+    }
+
     #[test]
     fn the_typeface_draws_every_text_the_pages_write() {
         let f = crate::font::bundled();
         let mut texts = Texts::default();
-        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        for entry in fs::read_dir(&src).unwrap() {
-            let path = entry.unwrap().path();
-            let file = syn::parse_file(&fs::read_to_string(&path).unwrap()).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
-            texts.visit_file(&file);
-        }
+        read(&mut texts, &Path::new(env!("CARGO_MANIFEST_DIR")).join("src"));
         assert!(texts.0.iter().any(|t| t.contains("簽章")), "the texts in traditional characters are read");
         let missing: BTreeSet<char> = texts.0.iter().flat_map(|t| t.chars()).filter(|&ch| !ch.is_control() && !f.body.has(ch)).collect();
         assert!(missing.is_empty(), "MiSans draws none of {missing:?}");

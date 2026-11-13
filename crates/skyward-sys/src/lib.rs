@@ -226,6 +226,27 @@ pub fn kmsg(text: &str) -> Result<()> {
     kept
 }
 
+/// Why something done over and over last failed, as the log was last told:
+/// a reading taken each second that keeps failing for one reason is told
+/// of once, and again when the reason changes or after it went well.
+#[derive(Debug, Default)]
+pub struct ToldOnce(Option<String>);
+
+impl ToldOnce {
+    /// Nothing told yet.
+    pub const fn new() -> ToldOnce {
+        ToldOnce(None)
+    }
+
+    /// Take in how it went this time, `why` it failed or none where it
+    /// went well: whether that is a failure the log has yet to be told of.
+    pub fn untold(&mut self, why: Option<&str>) -> bool {
+        let untold = why.is_some() && self.0.as_deref() != why;
+        self.0 = why.map(str::to_string);
+        untold
+    }
+}
+
 /// What is written to the kernel log for `text`, a write for each record.
 fn written(text: &str) -> Vec<String> {
     records(text, RECORD_MOST - RECORD_OPENS.len() - 1).into_iter().map(|record| format!("{RECORD_OPENS}{record}\n")).collect()
@@ -344,6 +365,17 @@ mod tests {
         }
         let logged: String = writes.iter().map(|write| &write[RECORD_OPENS.len()..write.len() - 1]).collect();
         assert_eq!(logged, said.replace('\n', ""));
+    }
+
+    #[test]
+    fn a_failure_that_keeps_coming_is_told_of_once() {
+        let mut told = ToldOnce::new();
+        assert!(!told.untold(None), "nothing failed");
+        assert!(told.untold(Some("read status: I/O error")));
+        assert!(!told.untold(Some("read status: I/O error")), "the same a second later");
+        assert!(told.untold(Some("read capacity: no data")), "another reason");
+        assert!(!told.untold(None), "it went well");
+        assert!(told.untold(Some("read capacity: no data")), "the same reason, after it went well in between");
     }
 
     #[test]

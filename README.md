@@ -238,11 +238,21 @@ target/release/skyward-pack stock --config devices/nezha.toml --out target/stock
 
 Then it builds the image on top of it:
 
+CI also builds GNU Bash 5.3.20 statically on an AArch64 Linux runner with
+`musl-tools`, using `.github/scripts/build-bash.sh target/bash`. Copy that
+bundle to the packing computer, or use the workflow's `bash-runtime`
+artifact. `--bash-dir` includes the shell, GPL licence, musl copyright and
+exact source reference; without it, scripts requiring Bash are unsupported.
+The corresponding GNU source, all pinned patches and build instructions
+are in `bash-source.tar.gz`, published alongside tagged releases and as an
+Actions artifact. The stock `/system/bin/sh` stays in place.
+
 ```sh
 target/release/skyward-pack recovery \
   --stock target/stock/nezha/recovery.img \
   --binary target/aarch64-linux-android/release/skyward \
   --system-init target/system-init/aarch64-linux-android/release/system-init \
+  --bash-dir target/bash \
   --config devices/nezha.toml \
   --font resources/fonts/MiSansVF.ttf \
   --mono resources/fonts/KirkMono-Regular.ttf \

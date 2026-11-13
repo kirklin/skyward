@@ -173,11 +173,19 @@ target/release/skyward-pack stock --config devices/nezha.toml --out target/stock
 
 然后在它的基础上构建镜像：
 
+CI 另在原生 ARM64 Linux 上安装 `musl-tools`，运行
+`bash .github/scripts/build-bash.sh target/bash`，从校验过的 GNU 源码与补丁构建
+静态 Bash 5.3.20。把该目录复制到打包电脑，或下载工作流的 `bash-runtime` 产物。
+`--bash-dir` 会加入真正的 Bash、GPL 许可、musl 版权及精确源码说明；省略此选项时
+不支持要求 Bash 的脚本。对应源码、全部固定补丁和构建脚本位于 `bash-source.tar.gz`，
+与标签发布的镜像一同提供，也保存在 Actions 产物中。原厂 `/system/bin/sh` 保留。
+
 ```sh
 target/release/skyward-pack recovery \
   --stock target/stock/nezha/recovery.img \
   --binary target/aarch64-linux-android/release/skyward \
   --system-init target/system-init/aarch64-linux-android/release/system-init \
+  --bash-dir target/bash \
   --config devices/nezha.toml \
   --font resources/fonts/MiSansVF.ttf \
   --mono resources/fonts/KirkMono-Regular.ttf \

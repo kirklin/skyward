@@ -1,0 +1,4 @@
+service eid-default /vendor/bin/hw/vendor.rongcard.eid@1.0-service
+	class hal
+	user  system
+	group system

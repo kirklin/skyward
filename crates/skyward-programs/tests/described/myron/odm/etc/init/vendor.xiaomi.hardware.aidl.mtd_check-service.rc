@@ -1,0 +1,16 @@
+on post-fs-data
+    mkdir /data/vendor/images 0770 system system
+    start vendor.mtd_check
+
+service vendor.mtd_check /odm/bin/mtd_check
+    class hal
+    user root
+    group system
+    disabled
+    oneshot
+
+on property:ro.boot.serialno=*
+    setprop ro.vendor.oem.serialno ${ro.boot.serialno}
+
+on property:sys.boot_completed=1
+    setprop ro.vendor.oem.boot_completed ${sys.boot_completed}

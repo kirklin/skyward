@@ -1,0 +1,12 @@
+service vendor.midevauth /odm/bin/midevauthd
+    interface aidl vendor.xiaomi.hardware.aidl.midevauth.IMidevauthService/default
+    class hal
+    user system
+    group system
+    disabled
+
+on property:vendor.devauth.keyboard_connected=true
+	start vendor.midevauth
+
+on property:ro.boot.factorybuild=1
+	start vendor.midevauth

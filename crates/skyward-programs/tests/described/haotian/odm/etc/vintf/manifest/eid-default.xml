@@ -1,0 +1,10 @@
+<!--
+    Input:
+        vendor/xiaomi/proprietary/eidservice/aidl/default/eid-default.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.rongcard.eid</name>
+        <fqname>IEidDeviceAidl/default</fqname>
+    </hal>
+</manifest>

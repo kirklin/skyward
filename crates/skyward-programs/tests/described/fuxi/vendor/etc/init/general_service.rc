@@ -1,0 +1,7 @@
+#minidump service
+service general_service64 /vendor/bin/general_service64
+  class late_start
+  user root
+  group root log system
+  oneshot
+  seclabel u:r:minidump64:s0

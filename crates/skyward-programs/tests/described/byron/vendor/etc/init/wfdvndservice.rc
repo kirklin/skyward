@@ -1,0 +1,18 @@
+#
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# All Rights Reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+#
+
+service wfdvndservice /vendor/bin/wfdvndservice
+  class main
+  user system
+  group inet
+  disabled
+  oneshot
+
+on property:vendor.qti.wfd.wfdhdcpvndservice=enable
+    start wfdvndservice
+
+on property:vendor.qti.wfd.wfdhdcpvndservice=disable
+    stop wfdvndservice

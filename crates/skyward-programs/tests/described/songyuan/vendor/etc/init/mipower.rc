@@ -1,0 +1,8 @@
+on property:sys.boot_completed=1
+    start mipower_hal
+
+service mipower_hal vendor/bin/mipower_hal
+    class main
+    user root
+    group system
+    socket power_hal_socket stream 0666 root system

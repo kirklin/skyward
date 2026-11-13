@@ -1,0 +1,11 @@
+#Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+#All rights reserved.
+#Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+service vendor.imsvtdaemon /system_ext/bin/imsvtdaemon
+	class main
+	user system
+	group system
+	interface aidl vendor.qti.ImsVtService.IImsVtRequest/ImsVtService
+	oneshot
+	disabled

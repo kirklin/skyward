@@ -1,0 +1,11 @@
+<!-- Copyright (c) 2023 Qualcomm Technologies, Inc.
+     All Rights Reserved.
+     Confidential and Proprietary - Qualcomm Technologies, Inc.
+-->
+<manifest version="1.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.ImsRtpService</name>
+        <version>1</version>
+        <fqname>IRTPService/ImsRtpService</fqname>
+     </hal>
+ </manifest>

@@ -1,0 +1,12 @@
+on boot
+    write /proc/sys/net/ipv4/tcp_rmem "524288 1048576 16777216"
+    write /proc/sys/net/ipv4/tcp_wmem "262144 524288 16777216"
+
+service minetd /vendor/bin/minetd
+    class main
+    user root
+    group root
+    socket minetd stream 0666 root system
+
+on post-fs-data
+    mkdir /data/vendor/minetd 0775 root system

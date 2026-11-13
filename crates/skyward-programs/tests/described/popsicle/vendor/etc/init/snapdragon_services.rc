@@ -1,0 +1,10 @@
+# =============================================================================
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# All rights reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+# =============================================================================
+service vendor.qti.snapdragonServices /vendor/bin/snapdragon_services
+    class hal
+    interface aidl vendor.qti.snapdragonServices.ISnapdragonServices/default
+    user system
+    group system

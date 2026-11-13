@@ -1,0 +1,4 @@
+service vendor.xiaomi.aidl.minet  /vendor/bin/hw/vendor.xiaomi.aidl.minet@1.0-service
+    class hal
+    user root
+    group system

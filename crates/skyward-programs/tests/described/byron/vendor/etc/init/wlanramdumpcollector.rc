@@ -1,0 +1,6 @@
+service wlanramdumpcollector /vendor/bin/wlanramdumpcollector
+    class main
+    user system
+    group system
+    disabled
+    oneshot

@@ -1,0 +1,8 @@
+on property:sys.boot_completed=1
+    start vendor.miface
+
+service vendor.miface /odm/bin/hw/mifaced
+    class hal
+    user system
+    group system
+    disabled

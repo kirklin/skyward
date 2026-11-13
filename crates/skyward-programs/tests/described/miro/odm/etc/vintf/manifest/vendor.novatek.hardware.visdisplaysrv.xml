@@ -1,0 +1,10 @@
+<!--
+    Input:
+        vendor/novatek/vendor_novatek/interfaces/default/vendor.novatek.hardware.visdisplaysrv.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.novatek.hardware.visdisplaysrv</name>
+        <fqname>IVisdisplaysrv/default</fqname>
+    </hal>
+</manifest>

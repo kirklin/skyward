@@ -1,0 +1,23 @@
+<!--
+    Input:
+        vendor/qcom/opensource/audio-hal/primary-hal/hal/core/../../configs/sun/manifest_audio_qti_services.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.ListenSoundModelAidl</name>
+        <fqname>IListenSoundModel/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.qti.hardware.agm</name>
+        <fqname>IAGM/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.qti.hardware.pal</name>
+        <fqname>IPAL/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.qti.hardware.paleventnotifier</name>
+        <version>2</version>
+        <fqname>IPALEventNotifier/default</fqname>
+    </hal>
+</manifest>

@@ -1,0 +1,7 @@
+service vendor.mlipay /odm/bin/mlipayd
+    class hal
+    user system
+    group system
+    disabled
+    oneshot
+    interface aidl vendor.xiaomi.hardware.mlipay.IMlipayService/default

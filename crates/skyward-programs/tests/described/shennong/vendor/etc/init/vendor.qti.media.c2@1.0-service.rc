@@ -1,0 +1,8 @@
+service vendor-qti-media-c2-hal-1-0 /vendor/bin/hw/vendor.qti.media.c2@1.0-service
+    class hal
+    user mediacodec
+    group mediadrm camera drmrpc system
+    ioprio rt 4
+    writepid /dev/cpuset/foreground/tasks
+    # write pid to file for VideoRecovery
+    writepid /data/vendor/video/videohalPid

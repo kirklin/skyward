@@ -1,0 +1,16 @@
+on post-fs-data
+	mkdir /cache/qseelog  0775 system system
+
+service qseelogd /system_ext/bin/qseelogd -num 5 -size 4194304
+	class main
+	user system
+	group system
+	oneshot
+	disabled
+	seclabel u:r:qseelogd:s0
+
+on property:persist.sys.qseelogd=true
+	start qseelogd
+
+on property:persist.sys.qseelogd=false
+	stop qseelogd

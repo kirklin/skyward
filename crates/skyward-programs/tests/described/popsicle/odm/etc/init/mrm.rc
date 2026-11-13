@@ -1,0 +1,10 @@
+service vendor.mrmd /odm/bin/mrmd
+    class hal
+    user system
+    group system shell
+    oneshot
+    disabled
+    interface aidl vendor.xiaomi.hardware.mrm.IMrm/default
+    interface aidl vendor.xiaomi.hardware.mrm.IMiCertificate/default
+    interface aidl vendor.xiaomi.hardware.mrm.IMrmRemoteAuth/default
+    interface aidl vendor.xiaomi.hardware.misauth.IMiSharedAuth/default

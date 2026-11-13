@@ -1,0 +1,17 @@
+service vendor.fbo-hal-1-0 /vendor/bin/hw/vendor.xiaomi.hardware.fbo@1.0-service
+    class hal
+    user root
+    group root
+
+
+on property:persist.sys.stability.snapshot_control=*
+    setprop vendor.snapshot_control ${persist.sys.stability.snapshot_control}
+
+on property:persist.sys.stability.snapshot_freespace.minlimit=*
+    setprop vendor.snapshot_freespace.minlimit ${persist.sys.stability.snapshot_freespace.minlimit}
+
+on property:persist.sys.stability.snapshot_freespace.maxlimit=*
+    setprop vendor.snapshot_freespace.maxlimit ${persist.sys.stability.snapshot_freespace.maxlimit}
+
+on property:persist.sys.stability.snapshot_devicefreeblock=*
+    setprop vendor.snapshot_devicefreeblock ${persist.sys.stability.snapshot_devicefreeblock}

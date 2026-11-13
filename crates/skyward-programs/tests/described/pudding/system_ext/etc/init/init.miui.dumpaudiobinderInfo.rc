@@ -1,0 +1,20 @@
+#
+#**********************************************************************************
+# ** Copyright (C), 2024-2032 Xiaomi Inc
+# ** All rights reserved.
+# **
+# ** File: - init.miui.dumpaudiobinderInfo.rc
+# ** Description:
+# **     for dump_audio_binder_info_log service
+# **
+#***********************************************************************************
+service captureAudioBinderInfo /system_ext/bin/init.dumpaudiobinderInfo.sh "captureAudioBinderInfo"
+  class core
+  user root
+  seclabel u:r:dumpstate:s0
+  group root system shell audioserver
+  disabled
+  oneshot
+
+on property:sys.audio.dump_binderinfo=true
+  start captureAudioBinderInfo

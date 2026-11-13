@@ -1,0 +1,8 @@
+# Copyright (c) 2023 Xiaomi, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Xiaomi, Inc.
+#
+service mediaeventgatherservice-default /odm/bin/hw/vendor.xiaomi.hardware.mediaeventgatherservice-service
+    class main
+    user system
+    group system root radio cache inet misc audio log wakelock

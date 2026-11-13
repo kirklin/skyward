@@ -14,4 +14,7 @@ skyward-config = { path = "../skyward-config" }
 skyward-omapi = { path = "../skyward-omapi" }
 
 [dev-dependencies]
+# Looks the accounts the programs run as up as the recovery does on the
+# phone, in the phone's own lists of them.
+skyward-sys = { path = "../skyward-sys" }
 tempfile = "3.27.0"

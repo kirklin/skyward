@@ -1,0 +1,11 @@
+<!--
+    Input:
+        vendor/xiaomi/proprietary/misys/hypsys/hypsys_ssi/aidl/common/default/manifest_hypsys_system.xml
+-->
+<manifest version="9.0" type="framework">
+    <hal format="aidl">
+        <name>xiaomi.system.hypsys.common</name>
+        <fqname>IHypSysSsi/default</fqname>
+        <fqname>IHypSysSsiIntl/default</fqname>
+    </hal>
+</manifest>

@@ -1,0 +1,62 @@
+on property:sys.boot_completed=1 && property:ro.debuggable=1
+    #increase trace buffer size
+    write /sys/kernel/tracing/buffer_size_kb 20480
+
+    # timer
+    write /sys/kernel/tracing/events/timer/enable 1
+    write /sys/kernel/tracing/events/timer/timer_expire_entry/enable 1
+    write /sys/kernel/tracing/events/timer/timer_expire_exit/enable 1
+    write /sys/kernel/tracing/events/timer/hrtimer_cancel/enable 1
+    write /sys/kernel/tracing/events/timer/hrtimer_expire_entry/enable 1
+    write /sys/kernel/tracing/events/timer/hrtimer_expire_exit/enable 1
+    write /sys/kernel/tracing/events/timer/hrtimer_init/enable 1
+    write /sys/kernel/tracing/events/timer/hrtimer_start/enable 1
+
+    #enble FTRACE for softirq events
+    write /sys/kernel/tracing/events/irq/enable 1
+
+    #enble FTRACE for Workqueue events
+    write /sys/kernel/tracing/events/workqueue/enable 1
+
+    # schedular
+    write /sys/kernel/tracing/events/sched/sched_migrate_task/enable 1
+    write /sys/kernel/tracing/events/sched/sched_pi_setprio/enable 1
+    write /sys/kernel/tracing/events/sched/sched_switch/enable 1
+    write /sys/kernel/tracing/events/sched/sched_wakeup/enable 1
+    write /sys/kernel/tracing/events/sched/sched_wakeup_new/enable 1
+
+    # schedwalt
+    write /sys/kernel/tracing/events/schedwalt/halt_cpus/enable 1
+    write /sys/kernel/tracing/events/schedwalt/halt_cpus_start/enable 1
+
+    # clock
+    write /sys/kernel/tracing/events/power/clock_set_rate/enable 1
+    write /sys/kernel/tracing/events/power/clock_enable/enable 1
+    write /sys/kernel/tracing/events/power/clock_disable/enable 1
+    write /sys/kernel/tracing/events/power/cpu_frequency/enable 1
+
+    # regulator
+    write /sys/kernel/tracing/events/regulator/enable 1
+
+    # modem add
+    write /sys/kernel/tracing/events/interconnect/enable 1
+
+    # fastrpc
+    write /sys/kernel/tracing/events/fastrpc/enable 1
+    #ufs
+
+    #preemptirq_long
+    write /sys/kernel/tracing/events/preemptirq_long/irq_disable_long/enable 1
+    write /sys/kernel/tracing/events/preemptirq_long/preempt_disable_long/enable 1
+
+    write /sys/kernel/tracing/tracing_on 1
+
+# 8850 platform no longer supported dcc via scripts
+
+# enforance user debug
+on property:ro.debuggable=1
+    write /proc/sys/kernel/softlockup_all_cpu_backtrace 1
+    write /proc/sys/kernel/soft_watchdog 1
+    write /proc/sys/kernel/softlockup_panic 1
+    write /proc/sys/kernel/panic_on_rcu_stall 1
+    write /sys/module/workqueue/parameters/panic_on_stall 1

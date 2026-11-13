@@ -1,0 +1,13 @@
+
+on post-fs-data
+      mkdir /data/vendor/qms 0700 radio radio
+      mkdir /data/vendor/qms_logs 0700 radio radio
+      mkdir /data/vendor/qms_logs/main 0700 radio radio
+      mkdir /data/vendor/qms_logs/other 0700 radio radio
+      mkdir /data/vendor/qms_logs/config 0700 radio radio
+
+service vendor.qms /vendor/bin/qms
+     class main
+     user radio
+     group radio wakelock wifi inet net_admin
+     capabilities BLOCK_SUSPEND NET_ADMIN

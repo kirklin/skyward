@@ -1,0 +1,8 @@
+# Copyright (c) 2023 Qualcomm Technologies, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+#
+service vendor.qti.hardware.sensorscalibrate-service  /vendor/bin/hw/vendor.qti.hardware.sensorscalibrate-service
+    class hal
+    user system
+    group system

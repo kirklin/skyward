@@ -1,0 +1,14 @@
+# Copyright (c) 2024 Qualcomm Technologies, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+# Start daemon on early-init
+on early-boot
+    start vendor.minkdaemon
+
+service vendor.minkdaemon /vendor/bin/hlosminkdaemon
+    class late_start
+    user system
+    group system
+    disabled
+    socket hlos_mink_opener stream 0660 system system

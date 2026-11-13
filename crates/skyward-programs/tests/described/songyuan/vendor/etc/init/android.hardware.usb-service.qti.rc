@@ -1,0 +1,12 @@
+# Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+on property:dev.bootcomplete=1
+       chown system  proc/usb_can_use
+       chown system  proc/usb_now_use
+       chown system  proc/usb_ready_use
+
+service vendor.usb-hal /vendor/bin/hw/android.hardware.usb-service.qti
+    class hal
+    user system
+    group system mtp usb

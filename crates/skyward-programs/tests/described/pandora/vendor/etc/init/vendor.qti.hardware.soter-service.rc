@@ -1,0 +1,12 @@
+# Copyright (c) 2023 Qualcomm Technologies, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+#
+
+service vendor.soter /vendor/bin/hw/vendor.qti.hardware.soter-service
+    class hal
+    user system
+    group system drmrpc
+    disabled
+    oneshot
+    interface aidl vendor.qti.hardware.soter.ISoter/default

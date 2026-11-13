@@ -1,0 +1,7 @@
+on fs
+    # if spkcal file owner is root, then give audio r/w permission
+    chmod 666 /mnt/vendor/persist/audio/calib_re
+    chmod 666 /mnt/vendor/persist/audio/calib_re_r
+    chmod 666 /mnt/vendor/persist/audio/amb_temp
+    chmod 666 /mnt/vendor/persist/audio/amb_temp_r
+    chmod 666 /mnt/vendor/persist/audio/ti_calr.bin

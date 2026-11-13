@@ -1,0 +1,13 @@
+#=============================================================================
+#Changes from Qualcomm Innovation Center are provided under the following license:
+#Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+#SPDX-License-Identifier: BSD-3-Clause-Clear
+#=============================================================================
+
+on init
+    setprop ro.hardware.nfc ST_NFC
+
+service nfc_hal_service /odm/bin/hw/android.hardware.nfc-service-st
+    class hal
+    user nfc
+    group nfc oem_2912

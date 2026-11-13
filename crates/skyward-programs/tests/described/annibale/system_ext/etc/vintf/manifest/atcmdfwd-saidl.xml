@@ -1,0 +1,10 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/commonsys/telephony-apps/ATFwd/atcmdfwd-saidl.xml
+-->
+<manifest version="9.0" type="framework">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.radio.atcmdfwd</name>
+        <fqname>IAtCmdFwd/AtCmdFwdAidl</fqname>
+    </hal>
+</manifest>

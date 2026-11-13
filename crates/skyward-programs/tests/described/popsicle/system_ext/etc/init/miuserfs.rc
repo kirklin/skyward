@@ -1,0 +1,20 @@
+# The Storage Manager Service (SystemServer - StorageManagerService) will request
+# the vold reset, causing mifuesfs to restart once
+on late-init && property:ro.debuggable=1
+   mkdir /mnt/miuserfs 0775 root system
+   restorecon_recursive /mnt/miuserfs
+   start miuserfsd
+
+# TODO: support selinux operation
+# on property:sys.miuserfs_mount_completed=1
+#    restorecon_recursive /mnt/miuserfs
+
+# ensure umount miuserfs when miuserfsd start
+on property:sys.miuserfs_mount_completed=0
+    umount /mnt/miuserfs
+
+service miuserfsd /system_ext/bin/miuserfsd
+    user root
+    group system cache log everybody
+    disabled
+    socket miuserfss stream 0660 root system

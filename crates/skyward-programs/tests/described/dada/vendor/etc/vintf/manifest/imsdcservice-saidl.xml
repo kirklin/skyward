@@ -1,0 +1,11 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/ims/modules/imsdataserviced/../imsdcservice/src/imsdcservice-saidl.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.ims.datachannelservice</name>
+        <version>2</version>
+        <fqname>IDataChannelService/default</fqname>
+    </hal>
+</manifest>

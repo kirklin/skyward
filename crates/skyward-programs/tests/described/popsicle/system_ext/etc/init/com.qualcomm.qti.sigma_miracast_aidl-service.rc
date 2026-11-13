@@ -1,0 +1,7 @@
+service sigmahal_aidl /system_ext/bin/sigma_miracasthalservice_aidl
+  interface aidl vendor.qti.hardware.sigma_miracast_aidl.ISigma_miracast/default
+  class main
+  user system
+  group audio
+  oneshot
+  disabled

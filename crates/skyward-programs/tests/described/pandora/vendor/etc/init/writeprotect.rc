@@ -1,0 +1,41 @@
+service writeprotect_get /vendor/bin/writeprotect -g
+    class main
+    user system
+    group system
+    oneshot
+    disabled
+
+service writeprotect_set /vendor/bin/writeprotect -s
+    class main
+    user system
+    group system
+    oneshot
+    disabled
+
+service writeprotect_clear /vendor/bin/writeprotect -c
+    class main
+    user system
+    group system
+    oneshot
+    disabled
+
+on property:sys.memory_writepprotect.get=true
+    start writeprotect_get
+
+on property:sys.memory_writepprotect.set=true
+    start writeprotect_set
+
+on property:sys.memory_writepprotect.clear=true
+    start writeprotect_clear
+
+on property:persist.sys.memory.writepprotect.get=true
+    start writeprotect_get
+
+on property:persist.sys.memory.writepprotect.set=true
+    start writeprotect_set
+
+on property:persist.sys.memory.writepprotect.clear=true
+    start writeprotect_clear
+
+on property:persist.sys.stability.writeprotect_control=*
+    setprop vendor.writeprotect.enable ${persist.sys.stability.writeprotect_control}

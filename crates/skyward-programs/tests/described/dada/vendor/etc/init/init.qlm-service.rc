@@ -1,0 +1,15 @@
+#! /bin/sh
+#
+# Copyright (c) 2023 Qualcomm Technologies, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+service vendor.qlm-service /vendor/bin/qlm-service
+	class main
+	user root
+	group root
+	socket qlm_service seqpacket 0660 root system
+	disabled
+
+on property:sys.boot_completed=1
+	start vendor.qlm-service

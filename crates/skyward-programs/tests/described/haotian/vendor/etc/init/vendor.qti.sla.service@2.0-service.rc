@@ -1,0 +1,6 @@
+service sla-service-hal-2-0 /vendor/bin/hw/vendor.qti.sla.service@2.0-service
+    class hal
+    user system
+    group system
+    #setprop vendor.sla.enabled 1
+

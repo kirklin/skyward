@@ -1,0 +1,10 @@
+<!--
+    Input:
+        vendor/qcom/opensource/audio-hal/st-hal/configs/soundtrigger.qti.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>android.hardware.soundtrigger3</name>
+        <fqname>ISoundTriggerHw/default</fqname>
+    </hal>
+</manifest>

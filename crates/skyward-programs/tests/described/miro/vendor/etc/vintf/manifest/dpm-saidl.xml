@@ -1,0 +1,10 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/dpm/common/framework/src/dpm-saidl.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.dpmaidlservice</name>
+        <fqname>IDpmService/default</fqname>
+    </hal>
+</manifest>

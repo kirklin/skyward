@@ -1,0 +1,11 @@
+# Copyright (c) 2023 Xiaomi, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Xiaomi, Inc.
+#
+service cstransfer-default /odm/bin/hw/vendor.xiaomi.hardware.cstransfer-service
+    interface aidl vendor.xiaomi.hardware.cstransfer.ICSTransfer/default
+    oneshot
+    disabled
+    class main
+    user system
+    group system root radio cache inet misc audio log wakelock

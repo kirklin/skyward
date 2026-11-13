@@ -1,0 +1,10 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/bluetooth/hidl_transport/bluetooth_sar/aidl/default/bluetooth_sar.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.bluetooth_sar</name>
+        <fqname>IBluetoothSar/default</fqname>
+    </hal>
+</manifest>

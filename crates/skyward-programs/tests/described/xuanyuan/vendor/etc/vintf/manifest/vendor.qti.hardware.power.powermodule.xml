@@ -1,0 +1,10 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/android-power/power-service/vendor.qti.hardware.power.powermodule.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.power.powermodule</name>
+        <fqname>IPowerModule/default</fqname>
+    </hal>
+</manifest>

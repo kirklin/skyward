@@ -1,0 +1,33 @@
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# All rights reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+# vendor.secureprocessor service is started on device bootup.
+service vendor.secureprocessor /vendor/bin/hw/vendor.qti.hardware.secureprocessor
+    class hal
+    user system
+    group system
+
+# vendor.secureprocessor_optimized service is started by service manager on service request.
+service vendor.secureprocessor_optimized /vendor/bin/hw/vendor.qti.hardware.secureprocessor
+    class hal
+    interface aidl vendor.qti.hardware.secureprocessor.device.ISecureProcessor/qti-tee
+    interface aidl vendor.qti.hardware.secureprocessor.device.ISecureProcessor/qti-tvm
+    user system
+    group system
+    disabled
+    oneshot
+
+# Service start up is configured based on vendor.secureprocessor.service_start property:
+#     [0]: No optimization, service started on device bootup.
+#     [1]: Service disbaled on device bootup, started after first usecase.
+#     [2]: Service disbaled on device bootup, started on usecase boundary.
+on property:vendor.secureprocessor.service_start=0
+    stop vendor.secureprocessor_optimized
+
+on property:vendor.secureprocessor.service_start=1
+    stop vendor.secureprocessor
+
+on property:vendor.secureprocessor.service_start=2
+    stop vendor.secureprocessor
+

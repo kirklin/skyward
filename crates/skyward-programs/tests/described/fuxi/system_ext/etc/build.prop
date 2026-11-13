@@ -1,0 +1,118 @@
+####################################
+# from generate-common-build-props
+# These properties identify this partition image.
+####################################
+ro.product.system_ext.brand=Xiaomi
+ro.product.system_ext.device=missi
+ro.product.system_ext.manufacturer=QUALCOMM
+ro.product.system_ext.model=missi
+ro.product.system_ext.name=missi
+ro.system_ext.build.date=Wed Aug 26 19:45:40 CST 2026
+ro.system_ext.build.date.utc=1787744740
+ro.system_ext.build.fingerprint=Xiaomi/missi/missi:16/BP2A.250605.031.A3/OS3.0.309.0.WMCCNXM:user/release-keys
+ro.system_ext.build.id=BP2A.250605.031.A3
+ro.system_ext.build.tags=release-keys
+ro.system_ext.build.type=user
+ro.system_ext.build.version.incremental=OS3.0.309.0.WMCCNXM
+ro.system_ext.build.version.release=16
+ro.system_ext.build.version.release_or_codename=16
+ro.system_ext.build.version.sdk=36
+ro.system_ext.build.version.sdk_full=36.0
+####################################
+# from build/make/target/board/gsi_system_ext_user.prop
+####################################
+# GSI always generate dex pre-opt in system image
+ro.cp_system_other_odex=0
+# GSI disables non-AOSP nnapi extensions on product partition
+ro.nnapi.extensions.deny_on_product=true
+# TODO(b/120679683): disable RescueParty before all problem apps solved
+# MIUI DEL: Stability_StabilityEnhance
+# persist.sys.disable_rescue=true
+# END Stability_StabilityEnhance
+# TODO(b/78105955): disable privapp_permissions checking before the bug solved
+ro.control_privapp_permissions=disable
+####################################
+# from variable PRODUCT_SYSTEM_EXT_PROPERTIES
+####################################
+persist.wm.extensions.enabled=true
+persist.wm.extensions.activity_embedding_guard_with_android_15=false
+persist.settings.on_animation_consume.enabled=true
+persist.sys.mcd_config_file=/system_ext/etc/mcd_default.conf
+persist.sys.gps.polaris=true
+persist.sys.gps.fence=true
+persist.sys.sysrqOnAnr_D_state=true
+persist.sys.miui_scout_binder_full_kill_process=true
+persist.sys.stability.enable_sentinel_resource_monitor=true
+persist.sys.stability.enable_rss_monitor=true
+persist.sys.stability.enable_process_exit_monitor=true
+persist.sys.stability.enable_thread_monitor=true
+persist.sys.stability.enable_dmabuf_monitor=true
+persist.sys.stability.enable_fd_monitor=true
+persist.sys.stability.enable_slab_monitor=true
+persist.sys.stability.monitor_third_party_app=true
+persist.sys.stability.get_tpa_hprof=false
+persist.sys.stability.enable_res_leak_abort=true
+persist.sys.stability.enable_pss_leak_abort=true
+persist.sys.stability.enable_fd_leak_abort=true
+persist.sys.stability.enable_thread_leak_abort=true
+persist.sys.stability.pss_highest_line=6291456
+persist.sys.stability.dmabuf_highest_line=3145728
+persist.sys.stability.window_monitor.enabled=true
+persist.sys.stability.window_monitor.kill_when_leak=true
+persist.sys.stability.window_monitor.kill_threshold=500
+persist.sys.stability.nativehang.enable=true
+persist.sys.stability.nativehangII.enable=true
+persist.sys.stability.nativehangII.resume=true
+persist.sys.whole_machine_d_status_enable=false
+persist.sys.stability.report_app_launch.enable=true
+persist.sys.stability.reboot_days=7
+persist.sys.stability.maintain_factory_reboot_days=60
+persist.sys.stability.miui_fbo_enable=true
+ro.secureboot.devicelock=1
+ro.miui.block_device_path=/dev/block/bootdevice/by-name
+ro.miui.has_cust_partition=true
+persist.miui.extm.enable=1
+persist.miui.extm.version=4.0
+ro.miui.pm.install.speedinstall=/data/apk-tmp
+ro.miui.ui.font.mi_font_path=/system/fonts/MiSansVF.ttf
+ro.miui.ui.font.mi_fonts_customization_xml=/product/etc/mi_fonts_customization.xml
+ro.miui.ui.fonttype=mipro
+ro.miui.ui.font.theme_apply=true
+ro.miui.ui.font.animation=disable
+ro.miui.ui.font.version=3
+ro.malloc.impl=jemalloc
+ro.miui.restrict_imei=1
+ro.miui.remove_uri_80_flag=1
+ro.surface_flinger.supports_background_blur=1
+ro.rom.zone=1
+ro.fota.oem=Xiaomi
+ro.support_one_handed_mode=true
+persist.sys.support_view_smoothcorner=true
+persist.sys.support_window_smoothcorner=true
+persist.sys.mi_shadow_supported=true
+persist.sys.support_window_mishadow=true
+persist.sys.support_view_mishadow=true
+ro.multiwin.fulldecor_support=true
+ro.miui.enable_cloud_verify=true
+persist.sys.miui_gnss_dc=true
+ro.config.isolated_compilation_enabled=true
+ro.mi.development=
+ro.audio.ihaladaptervendorextension_enabled=true
+bluetooth.profile.sap.server.enabled=true
+bluetooth.profile.pbap.sim.enabled=true
+bluetooth.hfp.codec_aptx_voice.enabled=true
+ro.bluetooth.leaudio_offload.supported=true
+bluetooth.device.class_of_device=90,2,12
+persist.bluetooth.leaudio_offload.disabled=false
+bluetooth.leaudio.dual_bidirection_swb.supported=true
+persist.bluetooth.leaudio.notify.idle.during.call=true
+persist.vendor.bluetooth.haltest=true
+persist.vendor.dpm.feature=11
+ro.telephony.sim_slots.count=2
+telephony.active_modems.max_count=2
+persist.sys.qseelogd=true
+ro.audio.ihaladaptervendorextension_enabled=true
+ro.mi.os.soc.vendor=qcom
+persist.sys.timezone=Asia/Shanghai
+# end of file
+

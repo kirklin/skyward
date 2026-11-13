@@ -1,0 +1,87 @@
+on post-fs-data
+	mkdir /data/local/log 0771 system system
+	mkdir /data/local/bootlog 0777 system system
+	mkdir /data/vendor/tz_log 0771 root root
+	chown system system /dev/mtd0
+
+
+
+
+on charger
+	mkdir /dev/logfs 0771 system system
+	mount vfat /dev/block/bootdevice/by-name/logfs /dev/logfs noatime umask=006,uid=1000,gid=1000
+	mkdir /dev/rescue 0777 system system
+	mount ext4 /dev/block/bootdevice/by-name/rescue /dev/rescue noatime
+	mkdir /dev/rescue/poweroff_charger_log 0777 system system
+	setprop persist.sys.offlinelog.poweroff_charger_log clean
+
+service logcatkernel /system/bin/sh /system_ext/bin/logcatkernel.sh
+        class main
+        user root
+        group system
+        disabled
+        seclabel u:r:kernellog:s0
+       	writepid  /dev/cpuset/background/tasks
+
+service bootlog /system/bin/sh /system_ext/bin/bootlog.sh
+        class main
+        user system
+        group system
+        disabled
+        oneshot
+        seclabel u:r:kernellog:s0
+       	writepid  /dev/cpuset/background/tasks
+
+service logcatlog /system/bin/sh /system_ext/bin/logcatlog.sh
+	class main
+	user system
+	group system
+	disabled
+	seclabel u:r:kernellog:s0
+	writepid  /dev/cpuset/background/tasks
+
+service poweroff_charger_log /system/bin/sh /system_ext/bin/poweroff_charger_log.sh
+	class main
+	user root
+	group system
+	disabled
+	oneshot
+	seclabel u:r:kernellog:s0
+	writepid  /dev/cpuset/background/tasks
+	
+service mtdoopslog /system/bin/sh /system_ext/bin/mtdoopslog.sh
+	class main
+	user system
+	group system
+	disabled
+	oneshot
+	seclabel u:r:mtdoopslog:s0
+	writepid  /dev/cpuset/background/tasks
+
+on property:persist.sys.offlinelog.bootlog=true
+	start bootlog
+
+on property:persist.sys.offlinelog.bootlog=false
+	stop bootlog
+
+on property:persist.sys.offlinelog.logcatkernel=true
+	write /proc/sys/kernel/printk 8
+        start logcatkernel
+
+on property:persist.sys.offlinelog.logcatkernel=false
+        stop logcatkernel
+
+on property:persist.sys.offlinelog.logcat=true
+	start logcatlog
+
+on property:persist.sys.offlinelog.logcat=false
+	stop logcatlog
+
+on property:persist.sys.offlinelog.poweroff_charger_log=true
+	start poweroff_charger_log
+
+on property:persist.sys.offlinelog.poweroff_charger_log=clean
+	start poweroff_charger_log
+
+on property:persist.sys.offlinelog.poweroff_charger_log=false
+	stop poweroff_charger_log

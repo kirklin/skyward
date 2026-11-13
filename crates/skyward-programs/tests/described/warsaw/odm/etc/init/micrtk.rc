@@ -1,0 +1,11 @@
+service vendor.micrtkd /odm/bin/micrtkd
+    class hal
+    user system
+    group system shell
+    oneshot
+    disabled
+    interface aidl vendor.xiaomi.hardware.micrtk.IMiCertKeyService/default
+
+on property:sys.boot_completed=1
+    setprop ro.vendor.oem.boot_completed ${sys.boot_completed}
+    start vendor.micrtkd

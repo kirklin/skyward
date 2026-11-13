@@ -1,0 +1,34 @@
+# new-build tt_md5sum/md5sum
+on post-fs-data
+    mkdir /data/vendor/tt_md5sum 0777 system system
+    mkdir /mnt/vendor/persist/tt_md5sum 0777 system system
+
+# getprop factorybuild
+on property:persist.radio.factorybuild=*
+    setprop persist.odm.radio.factorybuild ${persist.radio.factorybuild}
+
+# definition service
+service ttftm_dxs702_daemon1 /vendor/bin/sh /vendor/bin/flash_before.sh
+    class core
+    user system
+    group system
+    oneshot
+    disabled
+
+# definition service
+service ttftm_dxs702_daemon2 /vendor/bin/sh /vendor/bin/flash.sh
+    class core
+    user system
+    group system
+    oneshot
+    disabled
+
+# wait for start ttftm_msc06a_daemon
+on early-boot
+    start ttftm_dxs702_daemon1
+
+on property:sys.boot_completed=1
+    setprop persist.vendor.radio.boot_ok 1
+    
+on property:persist.vendor.radio.isflash=1
+    start ttftm_dxs702_daemon2

@@ -1,0 +1,2 @@
+on init
+    write /proc/sys/walt/sched_rt_skip_min_thres 30

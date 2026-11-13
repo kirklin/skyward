@@ -1,0 +1,16 @@
+#  @file    vendor.qti.MemHal-service.rc
+#  @brief   Defination memhal service
+#
+#  DESCRIPTION
+#  ---------------------------------------------------------------------------
+#      Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+#      All rights reserved.
+#      Confidential and Proprietary - Qualcomm Technologies, Inc.
+#  ---------------------------------------------------------------------------
+service MemHal-1-0 /vendor/bin/hw/vendor.qti.MemHal-service
+    class hal
+    user root
+    group root system readproc oem_2907
+    interface aidl vendor.qti.MemHal
+
+

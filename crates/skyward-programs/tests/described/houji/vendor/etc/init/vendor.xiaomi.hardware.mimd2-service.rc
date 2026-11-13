@@ -1,0 +1,25 @@
+service mimd-service2_0 /vendor/bin/hw/vendor.xiaomi.hardware.mimd2-service
+    class hal
+    user root
+    group system wakelock
+    task_profiles ServiceCapacityLow
+
+on post-fs-data
+    # MIUI ADD: Performance_BoostFramework
+    chown system system /sys/module/perf_helper/mimd/mimdtrigger
+    # END Performance_BoostFramework
+    # Create mimd dump dir
+    mkdir /data/vendor/mimd 0770 root system
+    start mimd-service2_0
+
+on init
+    # Create cgroup mount point for mimd(xiaomi memory deamon)
+    mkdir /dev/memcg/mimd 0755 system system
+
+    # Create cgroup for some critical processes to reclaim memory
+    mkdir /dev/memcg/mimd/critical0 0755 system system
+    write /dev/memcg/mimd/critical0/memory.swappiness 100
+    mkdir /dev/memcg/mimd/critical1 0755 system system
+    write /dev/memcg/mimd/critical1/memory.swappiness 100
+    mkdir /dev/memcg/mimd/critical2 0755 system system
+    write /dev/memcg/mimd/critical2/memory.swappiness 100

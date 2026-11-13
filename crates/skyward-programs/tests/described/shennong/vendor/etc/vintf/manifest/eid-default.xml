@@ -1,0 +1,9 @@
+<manifest version="1.0" type="device">
+    <hal format="aidl">
+        <name>vendor.rongcard.eid</name>
+        <interface>
+            <name>IEidDeviceAidl</name>
+            <instance>default</instance>
+        </interface>
+    </hal>
+</manifest>

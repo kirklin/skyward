@@ -1,0 +1,13 @@
+on property:vendor.native_camera.control=1
+    start misensor_camera
+
+on property:vendor.native_camera.control=0
+    stop misensor_camera
+
+service misensor_camera /odm/bin/hw/misensor_camera
+    class hal
+    user system
+    group system
+    interface aidl vendor.xiaomi.sensor.camera.IMiCam/default
+    disabled
+    oneshot

@@ -1,0 +1,12 @@
+<!--
+    Input:
+        vendor/xiaomi/proprietary/misys/hypsys/hypsys_vendor/common/default/vendor.xiaomi.hardware.misys.common.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.xiaomi.hardware.misys.common</name>
+        <version>3</version>
+        <fqname>IHypSysIntl/default</fqname>
+        <fqname>IMiSysImpl/default</fqname>
+    </hal>
+</manifest>

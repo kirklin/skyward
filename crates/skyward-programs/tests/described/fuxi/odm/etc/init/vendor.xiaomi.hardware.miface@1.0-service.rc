@@ -1,0 +1,4 @@
+service vendor.miface-hal-1-0 /odm/bin/mifaced@1.0
+    class hal
+    user system
+    group system

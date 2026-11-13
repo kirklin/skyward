@@ -1,0 +1,2 @@
+on post-fs-data
+    restorecon_recursive /metadata/gptresize

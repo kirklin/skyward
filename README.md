@@ -95,8 +95,11 @@ read and set properties.
 ### 🚧 Under construction
 
 These images are built from each phone's stock firmware and have not been tried
-on the phone. They set up the screen, touch, Wi-Fi and vibration, and do not decrypt
-the data partition.
+on the phone. They set up the screen, touch, Wi-Fi and vibration. The programs that
+decrypting the data partition takes are read on the phone from the installed
+system's own init scripts and service descriptions; what is read has been checked
+against each model's stock firmware, and how those programs run on these models has
+not been verified.
 
 | Device | Codename | Built on |
 | --- | --- | --- |

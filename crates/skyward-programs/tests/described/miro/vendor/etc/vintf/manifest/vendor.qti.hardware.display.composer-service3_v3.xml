@@ -1,0 +1,33 @@
+<!--
+    Input:
+        hardware/qcom/display/composer/vendor.qti.hardware.display.composer-service3_v3.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>android.hardware.graphics.composer3</name>
+        <version>3</version>
+        <fqname>IComposer/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.qti.hardware.display.aiqe</name>
+        <version>2</version>
+        <fqname>IDisplayAiqe/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.qti.hardware.display.color</name>
+        <fqname>IDisplayColor/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.qti.hardware.display.config</name>
+        <version>12</version>
+        <fqname>IDisplayConfig/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.qti.hardware.display.postproc</name>
+        <fqname>IDisplayPostproc/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.xiaomi.hardware.display.mihwcextension</name>
+        <fqname>IMiHwcExtension/default</fqname>
+    </hal>
+</manifest>

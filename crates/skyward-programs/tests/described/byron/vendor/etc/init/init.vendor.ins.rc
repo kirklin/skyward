@@ -1,0 +1,8 @@
+on post-fs-data
+    #sensors log dir
+    mkdir /data/vendor/ins 0764 gps system
+    #aon dum dir
+    mkdir /data/vendor/aon 0764 system system
+    #for Mi_Focus_Ring
+    chown system system /sys/class/focus_ring/mt350x/update_calibrate
+    chmod 0660 /sys/class/focus_ring/mt350x/update_calibrate

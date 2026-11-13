@@ -1,0 +1,11 @@
+service nfc_hal_service /odm/bin/hw/android.hardware.nfc@1.2-service-st
+    class hal
+    user nfc
+    group nfc oem_2912
+
+on boot && property:ro.build.version.sdk=35 && property:ro.product.device=ishtar
+    start nfc_hal_service
+    setprop ro.hardware.nfc ST_NFC
+    setprop ro.vendor.nfc.repair 1
+    setprop ro.vendor.nfc.dispatch_optim 1
+    setprop ro.vendor.nfc.wallet_fusion 1

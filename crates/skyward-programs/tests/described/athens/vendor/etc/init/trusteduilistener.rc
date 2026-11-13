@@ -1,0 +1,31 @@
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# All rights reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+service vendor.trusteduilistener /vendor/bin/trusteduilistener
+     class late_start
+     user system
+     group system
+
+# Service start up is configured based on vendor.trustedui_listener.service_start property:
+#     [0]: No optimization, service started on device bootup.
+#     [1]: Service disbaled on device bootup, started after first usecase.
+#     [2]: Service disbaled on device bootup, started on usecase boundary.
+on boot && property:vendor.trustedui_listener.service_start=0
+    setprop vendor.trustedui_listener.service.enabled true
+
+on boot && property:vendor.trustedui_listener.service_start=1
+    setprop vendor.trustedui_listener.service.enabled false
+
+on boot && property:vendor.trustedui_listener.service_start=2
+    setprop vendor.trustedui_listener.service.enabled false
+
+# trustedui_listener service start/stop is based on vendor.trustedui_listener.service.enabled
+# property:
+#      [true]: Service is started.
+#      [false]: Service is stopped.
+on property:vendor.trustedui_listener.service.enabled=true
+    start vendor.trusteduilistener
+
+on property:vendor.trustedui_listener.service.enabled=false
+    stop vendor.trusteduilistener

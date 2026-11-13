@@ -1,0 +1,11 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/qcril-nr/qcril_qmi/vendor.qti.hardware.radio.lpa.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.radio.lpa</name>
+        <fqname>IUimLpa/UimLpa0</fqname>
+        <fqname>IUimLpa/UimLpa1</fqname>
+    </hal>
+</manifest>

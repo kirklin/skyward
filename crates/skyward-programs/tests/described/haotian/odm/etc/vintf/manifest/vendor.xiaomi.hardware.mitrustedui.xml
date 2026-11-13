@@ -1,0 +1,12 @@
+<!--
+    Input:
+        vendor/xiaomi/proprietary/mitrustedui/aidl/default/vendor.xiaomi.hardware.mitrustedui.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.xiaomi.hardware.mitrustedui</name>
+        <version>2</version>
+        <fqname>IMiTrustedUIListener/default</fqname>
+        <fqname>IMiTrustedUIService/default</fqname>
+    </hal>
+</manifest>

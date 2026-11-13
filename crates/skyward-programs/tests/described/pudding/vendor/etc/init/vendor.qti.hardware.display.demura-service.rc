@@ -1,0 +1,7 @@
+service vendor.qti.hardware.display.demura /vendor/bin/hw/vendor.qti.hardware.display.demura-service
+    interface aidl vendor.qti.hardware.display.demura.IDemuraFileFinder/default
+    class hal
+    oneshot
+    disabled
+    user system
+    group graphics

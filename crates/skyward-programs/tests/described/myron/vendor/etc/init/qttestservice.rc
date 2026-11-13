@@ -1,0 +1,19 @@
+#
+# Copyright (c) 2019 Qualcomm Technologies, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+#
+
+service qttestservice /vendor/bin/qttestservice
+  class main
+  user root
+  group media
+  disabled
+  oneshot
+
+on property:vendor.qttestservice=enable
+    start qttestservice
+
+on property:vendor.qttestservice=disable
+    stop qttestservice
+

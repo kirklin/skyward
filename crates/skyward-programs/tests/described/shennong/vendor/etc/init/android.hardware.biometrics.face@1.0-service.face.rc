@@ -1,0 +1,9 @@
+# Copyright (c) 2021 Qualcomm Technologies, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+service vendor.face-default /vendor/bin/hw/android.hardware.biometrics.face@1.0-service.face
+    class hal
+    user system
+    group camera system
+

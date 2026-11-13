@@ -1,0 +1,15 @@
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# All rights reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+on post-fs-data
+      mkdir /data/vendor/location 0770 gps gps
+      mkdir /data/vendor/location/mq 0770 gps gps
+      mkdir /dev/socket/location 0770 gps gps
+      mkdir /dev/socket/location/mq 0770 gps gps
+
+service lowi-server /vendor/bin/lowi-server
+    class late_start
+    user gps
+    group gps wifi inet oem_2901 logd
+    capabilities NET_ADMIN

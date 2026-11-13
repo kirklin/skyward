@@ -1,0 +1,30 @@
+{
+  "purpose": "Enable the standard stable-AIDL Binder stability path without changing generated code or client identity",
+  "compile_define": "BINDER_STABILITY_SUPPORT",
+  "header": {
+    "path": "platform/frameworks/native/libs/binder/ndk/include_platform/android/binder_stability.h",
+    "repository": "https://github.com/Evolution-X/frameworks_native",
+    "commit": "cb8303a432fc2eb4ea3bf57ec450501e18f2cced",
+    "repository_path": "libs/binder/ndk/include_platform/android/binder_stability.h",
+    "git_blob_sha1": "1b71c6c8e986fb83fb2a474cbda90dc1d28f0716",
+    "sha256": "032326bb327d9f9370b377c5dac584590846591bf045446fad1ac8a92266f38e",
+    "bytes": 5200
+  },
+  "declaration": "AIBinder_markVintfStability is weak only when __ANDROID_MIN_SDK_VERSION__ < 30; the build targets Android API 36",
+  "required_import": {
+    "name": "AIBinder_markVintfStability",
+    "version": "LIBBINDER_NDK30",
+    "binding": "GLOBAL (strong)",
+    "provider": "libbinder_ndk.so"
+  },
+  "callback_gate": "R_AARCH64_CALL26 relocation inside generated BnSecureElementCallback::createBinder targets AIBinder_markVintfStability",
+  "dependency_closure": {
+    "production_cpp_files": 12,
+    "abi_probe": true,
+    "additional_headers": [
+      "platform/frameworks/native/libs/binder/ndk/include_platform/android/binder_stability.h"
+    ],
+    "local_check": "LLVM 18 dependency preprocessing; Linux pinned-Clang production compilation is required"
+  },
+  "runtime_limit": "Static checks do not establish successful eSE callback delivery or Weaver getConfig on a device"
+}

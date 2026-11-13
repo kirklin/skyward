@@ -657,11 +657,11 @@ fn rescue_wipe(app: &mut App) -> Result<Eraser> {
 /// data partition, and the cache partition, made afresh as `reformat`
 /// where the system asked for that filesystem; `logs` are the phone's own
 /// log folders. `asked` when the system asked for it.
-fn parts_wipe(app: &mut App, steps: Vec<Step>, logs: &[String], asked: bool, reformat: Option<String>) -> Result<Eraser> {
+fn parts_wipe(app: &mut App, steps: Vec<Step>, logs: &[String], asked: bool, reformat: Option<String>, policy: skyward_config::Decrypt) -> Result<Eraser> {
     match wipe::parts(steps, logs, reformat) {
         Ok(parts) => {
             app.erase_started(false, asked, parts.steps().into_iter().map(part).collect());
-            Eraser::start(move |tell| parts.carry_out(tell))
+            Eraser::start(move |tell| parts.carry_out(policy, tell))
         }
         Err(stop) => {
             app.erase_started(false, asked, Vec::new());
@@ -1052,6 +1052,12 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     let mut info = skyward_info::collect(cfg)?;
     let fonts = Fonts::load(font, 0, mono)?;
     let mut surface = KmsSurface::open("/dev/dri/card0")?;
+    if cfg.display.reset_on_start {
+        // Restarting the host touch processor while the panel stays lit
+        // can leave it suspended. The first present wakes the panel through
+        // the same path as the power key, including its resume notification.
+        surface.turn_off()?;
+    }
     let (w, h) = surface.size();
     eprintln!("display {}", surface.describe());
     let mut inputs = Inputs::open(w, h, cfg.touch.writes.clone())?;
@@ -1228,7 +1234,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
             erase_leaves = true;
         }
         Work::WipeCache { reformat } => {
-            eraser = Some(parts_wipe(&mut app, vec![Step::Cache], &cfg.wipe.logs, true, reformat.clone())?);
+            eraser = Some(parts_wipe(&mut app, vec![Step::Cache], &cfg.wipe.logs, true, reformat.clone(), cfg.decrypt)?);
             erase_leaves = true;
         }
         Work::Sideload { .. } => {
@@ -1256,7 +1262,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                 match needs {
                     Needs::Data | Needs::User(_) => {
                         app.asked_opening();
-                        decryptor = Some(Decryptor::start(decrypt::Job::Open)?);
+                        decryptor = Some(Decryptor::start(decrypt::Job::Open, cfg.decrypt)?);
                         pending = Some(wanted);
                     }
                     Needs::Nothing | Needs::Cache => installer = Some(install_asked(cfg, &app, wanted)?),
@@ -1265,12 +1271,12 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
         }
         Work::WipeAb { package_size } => {
             app.part_work_started(PartKind::Disable, true);
-            part_worker = Some(partwork::Worker::start(partwork::Task::Disable { package_size: *package_size })?);
+            part_worker = Some(partwork::Worker::start(partwork::Task::Disable { package_size: *package_size }, cfg.decrypt)?);
         }
         Work::UnshareBlocks => {
             let slot = skyward_vab::current_slot()?.context("not an A/B phone")?;
             app.part_work_started(PartKind::Unshare, true);
-            part_worker = Some(partwork::Worker::start(partwork::Task::Unshare { slot })?);
+            part_worker = Some(partwork::Worker::start(partwork::Task::Unshare { slot }, cfg.decrypt)?);
         }
         // The installed system is asked for by a word, and the second by
         // its id.
@@ -1657,7 +1663,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                         erase_leaves = leaves;
                     } else if cache_after && app.state.cache_partition {
                         ensure!(eraser.is_none(), "erasing is under way already");
-                        eraser = Some(parts_wipe(&mut app, vec![Step::Cache], &cfg.wipe.logs, false, None)?);
+                        eraser = Some(parts_wipe(&mut app, vec![Step::Cache], &cfg.wipe.logs, false, None, cfg.decrypt)?);
                         erase_leaves = leaves;
                     } else if leaves {
                         leave_at = Some(now + LEAVE_AFTER_MS);
@@ -2168,7 +2174,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                             app.erase_ended(Err(EraseStop::Erased), now);
                         } else {
                             let steps = chosen.into_iter().map(step).collect();
-                            eraser = Some(parts_wipe(&mut app, steps, &cfg.wipe.logs, false, None)?);
+                            eraser = Some(parts_wipe(&mut app, steps, &cfg.wipe.logs, false, None, cfg.decrypt)?);
                         }
                     }
                     Effect::Install => installer.as_ref().context("no installer holds an update")?.install(),
@@ -2295,12 +2301,12 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     // under way, and takes nothing more until it is done.
                     Effect::OpenData => {
                         ensure!(decryptor.is_none(), "the data partition is being opened already");
-                        decryptor = Some(Decryptor::start(decrypt::Job::Open)?);
+                        decryptor = Some(Decryptor::start(decrypt::Job::Open, cfg.decrypt)?);
                     }
                     Effect::Unlock { user, code } => {
                         ensure!(decryptor.is_none(), "the data partition is being opened already");
                         let job = decrypt::Job::Unlock { closed: closed.clone(), user, credential: code.into_bytes() };
-                        decryptor = Some(Decryptor::start(job)?);
+                        decryptor = Some(Decryptor::start(job, cfg.decrypt)?);
                     }
                     Effect::ReadDir(folder) => list(&mut app, folder)?,
                     Effect::ReadPlace(place, folder) => list_place(&mut app, place, folder)?,
@@ -2389,7 +2395,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                         };
                         skyward_sys::kmsg(&format!("{kind:?} the filesystem of {name}, as the filesystem page asked"))?;
                         app.part_work_started(kind, false);
-                        part_worker = Some(partwork::Worker::start(task)?);
+                        part_worker = Some(partwork::Worker::start(task, cfg.decrypt)?);
                     }
                     // An install still stopping may yet write; a backup or
                     // restore waits for it.

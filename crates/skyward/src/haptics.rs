@@ -63,6 +63,7 @@ pub struct Haptics {
     click: Click,
     ticks: Click,
     strength: Strength,
+    scale_samples: bool,
     /// The click playing, by its slot and its count, until it is taken
     /// away; a click taken away early by the next is not taken away again.
     playing: Arc<Mutex<Option<(i16, u64)>>>,
@@ -97,7 +98,7 @@ impl Haptics {
             }
         };
         let ticks = Click::Samples { data: ticks(hz), rate: TICKS_RATE };
-        Ok(Haptics { dev, click, ticks, strength: cfg.strength, playing: Arc::new(Mutex::new(None)), clicks: 0 })
+        Ok(Haptics { dev, click, ticks, strength: cfg.strength, scale_samples: cfg.scale_samples, playing: Arc::new(Mutex::new(None)), clicks: 0 })
     }
 
     /// One short click at the strength the slider's `position` gives, after
@@ -120,7 +121,7 @@ impl Haptics {
             erase(&self.dev, slot).context("take away the click still playing")?;
         }
         let effect = if ticks { &self.ticks } else { &self.click };
-        let loaded = upload(&self.dev, effect, share).context("load the click")?;
+        let loaded = upload(&self.dev, effect, share, self.scale_samples).context("load the click")?;
         play(&mut self.dev, loaded.slot).context("play the click")?;
         self.clicks += 1;
         let this = (loaded.slot, self.clicks);
@@ -246,8 +247,9 @@ struct Samples {
 
 /// Load `click` at `share` of its full strength as a custom periodic
 /// effect in a slot of its own. The driver drives the motor at the click's
-/// highest voltage times the magnitude.
-fn upload(dev: &File, click: &Click, share: f32) -> Result<Loaded> {
+/// highest voltage times the magnitude, or at full magnitude with its
+/// samples scaled where the device requests it.
+fn upload(dev: &File, click: &Click, share: f32, scale_samples: bool) -> Result<Loaded> {
     // The driver tells the two kinds apart by the length in bytes of what
     // the effect points to, and loads nothing for any other length, though
     // the upload still succeeds. For a waveform it keeps it reads the
@@ -255,6 +257,9 @@ fn upload(dev: &File, click: &Click, share: f32) -> Result<Loaded> {
     // it plays into the other two, in whole seconds and then milliseconds.
     let mut kept: [i16; 3] = [0; 3];
     let mut samples = Samples { index: 0, length: 0, rate: RATE, data: std::ptr::null() };
+    // Keep the owned sample buffer in this scope until EVIOCSFF has copied
+    // the data its descriptor points to.
+    let (scaled, magnitude) = amplitude(click, share, scale_samples);
     let (len, data) = match click {
         Click::Kept(id) => {
             kept[0] = *id;
@@ -263,14 +268,14 @@ fn upload(dev: &File, click: &Click, share: f32) -> Result<Loaded> {
         Click::Samples { data, rate } => {
             samples.length = u32::try_from(data.len())?;
             samples.rate = *rate;
-            samples.data = data.as_ptr();
+            samples.data = scaled.as_deref().unwrap_or(data).as_ptr();
             (std::mem::size_of::<Samples>(), (&mut samples as *mut Samples).cast::<i16>())
         }
     };
     let periodic = libc::ff_periodic_effect {
         waveform: FF_CUSTOM,
         period: 0,
-        magnitude: (share.clamp(0.0, 1.0) * f32::from(i16::MAX)).round() as i16,
+        magnitude,
         offset: 0,
         phase: 0,
         envelope: libc::ff_envelope { attack_length: 0, attack_level: 0, fade_length: 0, fade_level: 0 },
@@ -305,6 +310,27 @@ fn upload(dev: &File, click: &Click, share: f32) -> Result<Loaded> {
         Click::Samples { data, rate } => Duration::from_secs_f64(data.len() as f64 / f64::from(*rate)),
     };
     Ok(Loaded { slot: effect.id, length })
+}
+
+/// The optional scaled samples and the driver's magnitude. Some FIFO
+/// drivers quantize intermediate magnitudes, so those devices keep the
+/// magnitude full and put the share in the signed samples instead.
+fn amplitude(click: &Click, share: f32, scale_samples: bool) -> (Option<Vec<i8>>, i16) {
+    let share = if share.is_nan() {
+        0.0
+    } else {
+        share.clamp(0.0, 1.0)
+    };
+    if scale_samples {
+        if let Click::Samples { data, .. } = click {
+            let scaled = data
+                .iter()
+                .map(|&sample| (f32::from(sample) * share).round() as i8)
+                .collect();
+            return (Some(scaled), i16::MAX);
+        }
+    }
+    (None, (share * f32::from(i16::MAX)).round() as i16)
 }
 
 /// Start the loaded effect in slot `id`.
@@ -365,5 +391,118 @@ mod tests {
         assert!((share(&s, 0.5) - 0.5).abs() < 1e-6);
         assert!((share(&s, 0.25) / share(&s, 0.0) - share(&s, 1.0) / share(&s, 0.75)).abs() < 1e-6, "each step the same factor");
         assert_eq!((share(&s, -1.0), share(&s, 2.0)), (0.25, 1.0), "no further than its ends");
+    }
+
+    #[test]
+    fn sample_scaling_preserves_sign_and_never_increases_any_sample() {
+        let original: Vec<i8> = (i8::MIN..=i8::MAX).collect();
+        let click = Click::Samples {
+            data: original.clone(),
+            rate: RATE,
+        };
+        for factor in [
+            -2.0,
+            0.0,
+            0.15,
+            0.415,
+            0.5,
+            1.0,
+            2.0,
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+        ] {
+            let (scaled, magnitude) = amplitude(&click, factor, true);
+            let scaled = scaled.unwrap();
+            assert_eq!(magnitude, i16::MAX);
+            assert_eq!(scaled.len(), original.len());
+            for (&was, now) in original.iter().zip(scaled) {
+                assert!(
+                    i16::from(now).abs() <= i16::from(was).abs(),
+                    "no sample exceeds its original full amplitude"
+                );
+                assert!(
+                    now == 0 || now.signum() == was.signum(),
+                    "the drive and brake keep their signs"
+                );
+            }
+        }
+        assert_eq!(amplitude(&click, 1.0, true).0.unwrap(), original);
+        assert!(amplitude(&click, 0.0, true)
+            .0
+            .unwrap()
+            .iter()
+            .all(|&v| v == 0));
+        assert!(amplitude(&click, f32::NAN, true)
+            .0
+            .unwrap()
+            .iter()
+            .all(|&v| v == 0));
+        let empty = Click::Samples {
+            data: Vec::new(),
+            rate: RATE,
+        };
+        assert!(amplitude(&empty, 0.5, true).0.unwrap().is_empty());
+    }
+
+    #[test]
+    fn the_sample_slider_changes_waveform_amplitude_at_a_fixed_magnitude() {
+        let click = Click::Samples {
+            data: made(172.4),
+            rate: RATE,
+        };
+        let strength = Strength {
+            lightest: 0.15,
+            strongest: 1.0,
+        };
+        let mut peaks = Vec::new();
+        for position in [0.0, 0.5, 1.0] {
+            let (samples, magnitude) = amplitude(&click, share(&strength, position), true);
+            assert_eq!(magnitude, i16::MAX);
+            peaks.push(*samples.unwrap().iter().max().unwrap());
+        }
+        assert_eq!(peaks, [19, 49, 127]);
+    }
+
+    #[test]
+    fn kept_waveforms_and_default_profiles_retain_magnitude_scaling() {
+        let kept = Click::Kept(0);
+        let made = Click::Samples {
+            data: vec![-127, 0, 127],
+            rate: RATE,
+        };
+        for click in [&kept, &made] {
+            assert_eq!(amplitude(click, 0.5, false), (None, 16384));
+            assert_eq!(amplitude(click, -1.0, false), (None, 0));
+            assert_eq!(amplitude(click, 2.0, false), (None, i16::MAX));
+        }
+        assert_eq!(amplitude(&kept, 0.5, true), (None, 16384));
+    }
+
+    #[test]
+    fn sample_ticks_keep_their_fixed_share_and_sample_timing() {
+        let original = ticks(TICKS_HZ);
+        let click = Click::Samples {
+            data: original.clone(),
+            rate: TICKS_RATE,
+        };
+        let (scaled, magnitude) = amplitude(&click, TICKS_STRENGTH, true);
+        let scaled = scaled.unwrap();
+        assert_eq!(magnitude, i16::MAX);
+        assert_eq!(scaled.len(), original.len());
+        assert_eq!(scaled.iter().min(), Some(&-53));
+        assert_eq!(scaled.iter().max(), Some(&49));
+        assert!(
+            original
+                .iter()
+                .zip(&scaled)
+                .all(|(&was, &now)| was != 0 || now == 0),
+            "the gap between ticks stays silent"
+        );
+        assert_eq!(
+            amplitude(&click, TICKS_STRENGTH, false).1,
+            13598,
+            "other profiles keep their original tick magnitude"
+        );
     }
 }

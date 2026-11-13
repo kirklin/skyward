@@ -1,0 +1,116 @@
+{
+  "inputs": {
+    "repository": "https://github.com/Evolution-X/hardware_interfaces",
+    "commit": "c626eb9ba04891cb0f7248251b84bd7fbd4afcf2",
+    "files": [
+      {
+        "path": "aidl-api-v1/.hash",
+        "repository_path": "secure_element/aidl/aidl_api/android.hardware.secure_element/1/.hash",
+        "git_blob_sha1": "d7ad83f1c99765b2a5b9885d399327527a2b9852",
+        "sha256": "0031df6329fe5e0b40d9ed9a32797228e7395d37d45f25b9d2a9a3acd0083d05"
+      },
+      {
+        "path": "aidl-api-v1/android/hardware/secure_element/ISecureElement.aidl",
+        "repository_path": "secure_element/aidl/aidl_api/android.hardware.secure_element/1/android/hardware/secure_element/ISecureElement.aidl",
+        "git_blob_sha1": "fba29ab8fa7c0627538e11f058c0e5dfdb7a3ba2",
+        "sha256": "ac50d387a2942069ba36071c4e05d05f03aa00f9b9c1b90bdab4b0f741fdd4ec"
+      },
+      {
+        "path": "aidl-api-v1/android/hardware/secure_element/ISecureElementCallback.aidl",
+        "repository_path": "secure_element/aidl/aidl_api/android.hardware.secure_element/1/android/hardware/secure_element/ISecureElementCallback.aidl",
+        "git_blob_sha1": "6c2be2a73ab0535f02eea589b944a81b86b900bd",
+        "sha256": "dafe7eec14bc1b903d219d76d5f6ede0266bdee4b8601d4c80fcdb47e9047f6d"
+      },
+      {
+        "path": "aidl-api-v1/android/hardware/secure_element/LogicalChannelResponse.aidl",
+        "repository_path": "secure_element/aidl/aidl_api/android.hardware.secure_element/1/android/hardware/secure_element/LogicalChannelResponse.aidl",
+        "git_blob_sha1": "f2e7f0423ad201ad42df62b43246e16f265dc75f",
+        "sha256": "6718aa3b2bb1b12edba47096eb8d909e60cdbdb99c90b110c491b1fd022a2c94"
+      }
+    ]
+  },
+  "compiler": {
+    "repository": "https://android.googlesource.com/platform/prebuilts/build-tools",
+    "commit": "9b6c8c6a2f582a9d7817fd8275c8014959c60cc4",
+    "source_path": "linux_musl-x86/bin/aidl",
+    "git_blob_sha1": "2b8e5737d05dea15ee06b32c4e9d4536d2a98b35",
+    "sha256": "154e149159dbaae426c53a9d1068e27fb287b7798d1d72601e3b061c71804279",
+    "bytes": 3192592
+  },
+  "arguments": [
+    "--lang=ndk",
+    "--structured",
+    "--stability=vintf",
+    "--version=1",
+    "--omit_invocation",
+    "-I<aidl-api-v1>",
+    "--out=<generated>",
+    "--header_out=<generated>",
+    "LogicalChannelResponse.aidl, ISecureElement.aidl, ISecureElementCallback.aidl"
+  ],
+  "output_files": [
+    {
+      "path": "generated/aidl/android/hardware/secure_element/BnLogicalChannelResponse.h",
+      "sha256": "cc2515745cb13d364f8794f1401866f4b76cc283575a9c9d513609e2dbee3af2",
+      "bytes": 347
+    },
+    {
+      "path": "generated/aidl/android/hardware/secure_element/BnSecureElement.h",
+      "sha256": "36e7b5b93090be0618813a1adbcb85143a3cb8de745e6ce895f772c879da89fe",
+      "bytes": 2861
+    },
+    {
+      "path": "generated/aidl/android/hardware/secure_element/BnSecureElementCallback.h",
+      "sha256": "e6fe185353961a5088e4d443e54ea6dd913ccbffd9bb4c7d9ac4c49bdae5f395",
+      "bytes": 1852
+    },
+    {
+      "path": "generated/aidl/android/hardware/secure_element/BpLogicalChannelResponse.h",
+      "sha256": "b4eefc854cf8e60647b9414cc4985e35070d15f0ae59af165fea0cf609f76da5",
+      "bytes": 347
+    },
+    {
+      "path": "generated/aidl/android/hardware/secure_element/BpSecureElement.h",
+      "sha256": "b6c883d56003c9703d08c07e1fd6ef68e260fbab3725ac23ab1b948b6116e4da",
+      "bytes": 1709
+    },
+    {
+      "path": "generated/aidl/android/hardware/secure_element/BpSecureElementCallback.h",
+      "sha256": "76a32c9750f74f082ec2f6c9d47653657f6584a8a6c663d9cf2069d35e585481",
+      "bytes": 1014
+    },
+    {
+      "path": "generated/aidl/android/hardware/secure_element/ISecureElement.h",
+      "sha256": "28d6bd818dc32ea93bf6a52d0d72d063152775f109cdbd2cb0f8f6b41363e9f4",
+      "bytes": 4461
+    },
+    {
+      "path": "generated/aidl/android/hardware/secure_element/ISecureElementCallback.h",
+      "sha256": "0c4d217aacd1bd5c4a6bc00a8b76be07178a29ee9fed8c6589f62174223453fb",
+      "bytes": 1959
+    },
+    {
+      "path": "generated/aidl/android/hardware/secure_element/LogicalChannelResponse.h",
+      "sha256": "1359215dfde0b56f1bf23f032a1236d42a6123de5e310f98dc047bbc06717722",
+      "bytes": 2289
+    },
+    {
+      "path": "generated/android/hardware/secure_element/ISecureElement.cpp",
+      "sha256": "b93ab013ab343edad53a1604a7631dcecf61790d19b2d0d18a2a4b1b52a05a50",
+      "bytes": 23440
+    },
+    {
+      "path": "generated/android/hardware/secure_element/ISecureElementCallback.cpp",
+      "sha256": "f2c6d3fd9fcdd595290b8b81a9511d5b0ff484c08615aa499e8615ddc6de1d1f",
+      "bytes": 8750
+    },
+    {
+      "path": "generated/android/hardware/secure_element/LogicalChannelResponse.cpp",
+      "sha256": "969192b5b9fc2df5551f35daab964963ff7409359c7ec4fa717c85357af18d1b",
+      "bytes": 2975
+    }
+  ],
+  "matches_original_generation_except_invocation_comment_and_redundant_includes": true,
+  "binder_wire_interface_version": 1,
+  "interface_hash_flag_set": false
+}

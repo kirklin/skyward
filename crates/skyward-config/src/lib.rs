@@ -51,6 +51,8 @@ pub struct DeviceConfig {
     #[serde(default)]
     pub touch: Touch,
     #[serde(default)]
+    pub decrypt: Decrypt,
+    #[serde(default)]
     pub partitions: Partitions,
     /// Where the firmware the phone's drivers ask for is, on phones whose
     /// recovery leaves it out of their reach.
@@ -161,6 +163,11 @@ pub struct Firmware {
     /// read-only while the file is read.
     #[serde(default)]
     pub partition: Option<String>,
+    /// Some builds leave a separate MAC file absent. Only an absent
+    /// file may be skipped;
+    /// mount failures and other read errors still stop WLAN startup.
+    #[serde(default)]
+    pub optional: bool,
 }
 
 /// The phone maker's update server, which the stock updater asks about the
@@ -215,6 +222,11 @@ pub struct Haptics {
     /// tenths of a hertz whatever its label.
     pub resonance: String,
     pub strength: Strength,
+    /// Scale custom FIFO samples instead of their effect magnitude, for
+    /// drivers whose custom-effect magnitude does not preserve the share.
+    /// Waveforms kept by the driver still use their original magnitude.
+    #[serde(default)]
+    pub scale_samples: bool,
 }
 
 /// How strongly the click plays, each as a share of the most its waveform
@@ -233,6 +245,22 @@ pub struct Logd {
     /// Libraries of the installed system it loads that the recovery's own
     /// library folder lacks, put there before it is started.
     pub libraries: Vec<String>,
+}
+
+/// An installed-system library missing from the recovery's RAM lib64.
+/// Existing files must match this digest and are never replaced.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct RecoveryLibrary {
+    pub source: String,
+    pub sha256: String,
+}
+
+/// A library seen only in one service's private mount namespace.
+/// The original executable, file capabilities and other processes stay intact.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct LibraryOverride {
+    pub source: String,
+    pub target: String,
 }
 
 /// Files the phone's own init hands to one account as it boots, each given
@@ -281,6 +309,10 @@ pub struct Display {
     pub height: u32,
     #[serde(default)]
     pub density: u32,
+    /// Power the display off before the first UI frame. Some host touch
+    /// processors need a new panel resume after their service restarts.
+    #[serde(default)]
+    pub reset_on_start: bool,
     /// Marketed screen diagonal in inches.
     #[serde(default)]
     pub diagonal: Option<f32>,
@@ -319,6 +351,47 @@ pub struct Touch {
     pub writes: Vec<Write>,
 }
 
+/// Access to decrypted data and the automatic work allowed while opening it.
+/// An explicit repair or wipe remains a separate, user-requested operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct Decrypt {
+    pub read_only: bool,
+    /// Run the fstab's pre-mount fsck, which may fix errors automatically.
+    /// This does not govern the kernel's normal writable-mount operations.
+    pub auto_repair: bool,
+    /// Let KeyMint renew existing blobs if it requires an upgrade. When
+    /// disabled, metadata keys are also protected from automatic deletion.
+    pub key_upgrades: bool,
+    /// Permit temporary renewal of an inner hardware-wrapped storage blob
+    /// before conversion, as Android keystore2/vold do. This never enables
+    /// general/credential key upgrades or writes a renewed blob to disk.
+    /// It still calls secure-world upgradeKey; separate from mount access.
+    pub storage_key_renewal: bool,
+}
+
+impl Default for Decrypt {
+    fn default() -> Self {
+        Self { read_only: false, auto_repair: true, key_upgrades: true, storage_key_renewal: false }
+    }
+}
+
+impl Decrypt {
+    pub fn checks_filesystem(self) -> bool {
+        !self.read_only && self.auto_repair
+    }
+
+    pub fn upgrades_keys(self) -> bool {
+        !self.read_only && self.key_upgrades
+    }
+
+    /// Keep on-disk metadata keys protected from automatic initialization
+    /// deletion, including when temporary inner-storage renewal is enabled.
+    pub fn preserves_keys(self) -> bool {
+        !self.upgrades_keys()
+    }
+}
+
 /// Partitions as the phone itself mounts them.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct Partitions {
@@ -342,6 +415,14 @@ pub struct Service {
     /// Directories for LD_LIBRARY_PATH, searched in order.
     #[serde(default)]
     pub libraries: Vec<String>,
+    /// Hash-pinned missing libraries supplied to RAM /system/lib64 before
+    /// this service starts, including where secure exec ignores the env.
+    #[serde(default)]
+    pub recovery_libraries: Vec<RecoveryLibrary>,
+    /// Read-only file binds made in the child before it takes its identity.
+    /// Only that service sees the replacement; disk partitions are unchanged.
+    #[serde(default)]
+    pub library_overrides: Vec<LibraryOverride>,
     /// The program runs once, to its end, as a service of init's marked
     /// oneshot does: it is not started again, the programs after it start
     /// once it has ended, and it has to end well.
@@ -390,6 +471,11 @@ pub struct Service {
     /// names it: it keeps these alone, through its change of user.
     #[serde(default)]
     pub capabilities: Vec<String>,
+    /// Give this program a private mount namespace with a bounded tmpfs
+    /// at /data for its calibration cache. Mounting real userdata later
+    /// in the recovery does not change what this program sees there.
+    #[serde(default)]
+    pub memory_data: bool,
 }
 
 /// The kernel's capabilities, by the names init's capabilities lines give
@@ -455,7 +541,10 @@ impl Service {
     /// Whether the program, or a directory it loads libraries from, is
     /// under `dir`: without what is mounted there it cannot start again.
     pub fn uses(&self, dir: &Path) -> bool {
-        Path::new(&self.path).starts_with(dir) || self.libraries.iter().any(|l| Path::new(l).starts_with(dir))
+        Path::new(&self.path).starts_with(dir)
+            || self.libraries.iter().any(|l| Path::new(l).starts_with(dir))
+            || self.recovery_libraries.iter().any(|l| Path::new(&l.source).starts_with(dir))
+            || self.library_overrides.iter().any(|l| Path::new(&l.source).starts_with(dir) || Path::new(&l.target).starts_with(dir))
     }
 
     /// Whether the program is this phone's to run, by the installed
@@ -537,6 +626,25 @@ impl DeviceConfig {
             for name in &s.capabilities {
                 ensure!(capability(name).is_some(), "[[service]] {}: {name} is not a capability init knows", s.path);
             }
+            let plain_library = |name: &str| {
+                let p = Path::new(name);
+                p.is_absolute() && !name.contains('\0') && p.extension().is_some_and(|e| e == "so")
+                    && p.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)))
+            };
+            let mut supplied = std::collections::HashSet::new();
+            for library in &s.recovery_libraries {
+                ensure!(plain_library(&library.source), "{}: recovery library is not an absolute .so file", s.path);
+                ensure!(library.sha256.len() == 64 && library.sha256.bytes().all(|c| c.is_ascii_hexdigit()), "{}: recovery library needs a SHA256", s.path);
+                ensure!(supplied.insert(Path::new(&library.source).file_name()), "{}: recovery library basename is repeated", s.path);
+            }
+            let mut targets = std::collections::HashSet::new();
+            for library in &s.library_overrides {
+                ensure!(plain_library(&library.source) && plain_library(&library.target), "{}: override must name absolute .so files", s.path);
+                ensure!(Path::new(&library.source).parent() == Some(Path::new("/skyward/lib64")), "{}: override source must be directly in recovery RAM /skyward/lib64", s.path);
+                ensure!(Path::new(&library.target).starts_with("/vendor/lib64") || Path::new(&library.target).starts_with("/odm/lib64"), "{}: override target must be a vendor/odm library", s.path);
+                ensure!(Path::new(&library.source).file_name() == Path::new(&library.target).file_name(), "{}: override must preserve the library basename", s.path);
+                ensure!(targets.insert(&library.target), "{}: override target is repeated", s.path);
+            }
         }
         for folder in &cfg.backup.data_skipped {
             let path = Path::new(folder);
@@ -614,6 +722,49 @@ mod tests {
     use super::*;
 
     #[test]
+    fn decryption_can_be_restricted_to_existing_data() {
+        let base = "[device]\ncodename = \"x\"\n";
+        assert!(!DeviceConfig::parse(base).unwrap().decrypt.read_only);
+        assert!(DeviceConfig::parse(&format!("{base}[decrypt]\nread_only = true\n")).unwrap().decrypt.read_only);
+    }
+
+    #[test]
+    fn writable_decryption_can_preserve_keys_and_skip_automatic_repairs() {
+        let base = "[device]\ncodename = \"x\"\n";
+        let legacy = DeviceConfig::parse(base).unwrap().decrypt;
+        assert!(!legacy.read_only);
+        assert!(legacy.checks_filesystem() && legacy.upgrades_keys());
+        let writable = DeviceConfig::parse(&format!("{base}[decrypt]\nread_only = false\nauto_repair = false\nkey_upgrades = false\n")).unwrap().decrypt;
+        assert!(!writable.read_only && !writable.checks_filesystem());
+        assert!(!writable.upgrades_keys() && writable.preserves_keys());
+        let readonly = Decrypt { read_only: true, ..legacy };
+        assert!(!readonly.checks_filesystem() && !readonly.upgrades_keys());
+        assert!(readonly.preserves_keys(), "read-only remains restrictive regardless of omitted switches");
+        let keys_only = Decrypt { key_upgrades: false, ..legacy };
+        assert!(keys_only.checks_filesystem() && !keys_only.upgrades_keys(), "the restrictions are independent");
+        let fs_only = Decrypt { auto_repair: false, ..legacy };
+        assert!(!fs_only.checks_filesystem() && fs_only.upgrades_keys());
+    }
+
+    #[test]
+    fn temporary_storage_renewal_keeps_general_and_filesystem_restrictions() {
+        let base = "[device]\ncodename = \"x\"\n";
+        assert!(!DeviceConfig::parse(base).unwrap().decrypt.storage_key_renewal);
+        let policy = DeviceConfig::parse(&format!("{base}[decrypt]\nread_only = true\nauto_repair = false\nkey_upgrades = false\nstorage_key_renewal = true\n")).unwrap().decrypt;
+        assert!(policy.storage_key_renewal && policy.read_only);
+        assert!(!policy.upgrades_keys() && !policy.checks_filesystem());
+        assert!(policy.preserves_keys(), "temporary renewal must not permit automatic metadata key deletion");
+    }
+
+    #[test]
+    fn socrates_opens_writable_data_without_automatic_fsck_or_key_upgrades() {
+        let cfg: DeviceConfig = toml::from_str(include_str!("../../../devices/socrates.toml")).unwrap();
+        assert_eq!(cfg.decrypt, Decrypt { read_only: false, auto_repair: false, key_upgrades: false, storage_key_renewal: false });
+        let other: DeviceConfig = toml::from_str(include_str!("../../../devices/ishtar.toml")).unwrap();
+        assert_eq!(other.decrypt, Decrypt::default());
+    }
+
+    #[test]
     fn the_commands_sit_beside_the_recovery_service_binary() {
         let folder = |path: &str| Path::new(path).parent().map(Path::to_path_buf);
         for command in ramdisk::COMMANDS {
@@ -686,6 +837,85 @@ mod tests {
             assert!(with(&format!("user = \"system\"\ngroup = \"system\"\nmode = 0o664\npaths = [\"{bad}\"]")).is_err(), "{bad} is refused");
         }
         assert!(DeviceConfig::parse("[device]\ncodename = \"x\"\n").unwrap().owners.is_empty(), "a phone may need none");
+    }
+
+    #[test]
+    fn myron_bringup_preserves_data_and_uses_its_observed_aidl_services() {
+        let text = include_str!("../../../devices/myron.toml");
+        let cfg: DeviceConfig = toml::from_str(text).unwrap();
+        // Unix path validation is also exercised in Linux/Android CI;
+        // Windows does not consider these Android paths absolute.
+        #[cfg(unix)]
+        DeviceConfig::parse(text).unwrap();
+        assert_eq!(cfg.device.codename, "myron");
+        assert!(cfg.device.ab);
+        assert_eq!(cfg.decrypt, Decrypt { read_only: false, auto_repair: false, key_upgrades: false, storage_key_renewal: true });
+        assert!(!cfg.decrypt.checks_filesystem() && !cfg.decrypt.upgrades_keys());
+        assert!(cfg.decrypt.preserves_keys(), "the packer must disable automatic metadata key deletion");
+        assert!(cfg.touch.writes.is_empty(), "FocalTech's raw=0 workaround is unverified");
+        assert_eq!(cfg.modules.load, ["focaltech_touch_3683", "nxp-nci"]);
+        assert_eq!(cfg.wlan.as_ref().unwrap().modules, ["rfkill", "qca_cld3_peach_v2"]);
+        let service = |path: &str| cfg.services.iter().find(|s| s.path == path).expect("an observed stock service");
+        let post_boot = service("/vendor/bin/sh");
+        let boot = service("/vendor/bin/hw/android.hardware.boot-service.qti");
+        let listeners = service("/vendor/bin/qseecomd");
+        let opener = service("/vendor/bin/hlosminkdaemon");
+        let keymint = service("/vendor/bin/hw/android.hardware.security.onekeymint-service-qti");
+        let gatekeeper = service("/vendor/bin/hw/android.hardware.gatekeeper-rust-service-qti");
+        let weaver = service("/odm/bin/hw/android.hardware.weaver-service.nxp-qti");
+        assert!(post_boot.oneshot);
+        assert_eq!(boot.path, "/vendor/bin/hw/android.hardware.boot-service.qti");
+        assert_eq!(boot.ready_service.as_deref(), Some("android.hardware.boot.IBootControl/default"));
+        assert_eq!((boot.user.as_deref(), &boot.groups[..]), (Some("root"), &["root".to_string()][..]));
+        assert_eq!(listeners.path, "/vendor/bin/qseecomd");
+        assert_eq!(listeners.groups, ["root", "drmrpc"]);
+        assert_eq!(opener.path, "/vendor/bin/hlosminkdaemon");
+        assert_eq!(opener.groups, ["system", "oem_2912", "wakelock"]);
+        assert_eq!(opener.capabilities, ["WAKE_ALARM", "BLOCK_SUSPEND"]);
+        assert_eq!(keymint.path, "/vendor/bin/hw/android.hardware.security.onekeymint-service-qti");
+        assert_eq!(keymint.ready_service.as_deref(), Some("android.hardware.security.keymint.IKeyMintDevice/default"));
+        assert_eq!(gatekeeper.path, "/vendor/bin/hw/android.hardware.gatekeeper-rust-service-qti");
+        assert_eq!(gatekeeper.ready_service.as_deref(), Some("android.hardware.gatekeeper.IGatekeeper/default"));
+        assert_eq!(weaver.path, "/odm/bin/hw/android.hardware.weaver-service.nxp-qti");
+        assert_eq!(weaver.ready_service.as_deref(), Some("android.hardware.weaver.IWeaver/default"));
+        assert_eq!(weaver.description.as_deref(), Some("/odm/etc/vintf/manifest/android.hardware.weaver-service.nxp.xml"));
+        assert_eq!((weaver.user.as_deref(), &weaver.groups[..]), (Some("vendor_nxp_weaver"), &["vendor_nxp_weaver".to_string()][..]));
+        assert!(cfg.services.iter().all(|s| s.ready_hardware_service.is_none()), "these stock HALs use AIDL");
+        assert!(!cfg.services.iter().any(|s| s.path.contains("goodix")), "this phone has NXP, not Goodix");
+        let strongbox = service("/odm/bin/hw/android.hardware.security.keymint3-service.strongbox.nxp");
+        assert_eq!(strongbox.user.as_deref(), Some("vendor_nxp_strongbox"));
+        assert_eq!(strongbox.groups, ["root"], "stock process has GID 0");
+        assert_eq!(strongbox.recovery_libraries.len(), 2);
+        assert_eq!(strongbox.recovery_libraries[0].source, "/mnt/system/system/lib64/libvndksupport.so");
+        assert_eq!(weaver.library_overrides, [LibraryOverride {
+            source: "/skyward/lib64/ese_weaver.so".into(), target: "/odm/lib64/ese_weaver.so".into(),
+        }]);
+        assert!(cfg.services.iter().filter(|s| s.path != weaver.path).all(|s| s.library_overrides.is_empty()), "only Weaver gets the replacement");
+        assert!(strongbox.registers.iter().any(|s| s == "android.hardware.security.sharedsecret.ISharedSecret/strongbox"), "include the stock peer in notes-key agreement");
+        assert_eq!(listeners.ready_property.as_deref(), Some("vendor.sys.listeners.registered"));
+        let touch = service("/odm/bin/hw/vendor.xiaomi.hw.touchfeature-service");
+        assert_eq!(touch.user.as_deref(), Some("system"));
+        assert_eq!(touch.capabilities, ["SYS_NICE"]);
+        assert!(cfg.owners.iter().any(|o| o.user == "system" && o.group == "system" && o.mode == 0o666 && o.paths.iter().any(|p| p == "/dev/xiaomi-touch")));
+        assert!(cfg.owners.iter().any(|o| o.user == "nfc" && o.group == "nfc" && o.mode == 0o660 && o.paths == ["/dev/nq-nci"]));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn private_library_overrides_cannot_target_data_or_escape_ram_sources() {
+        let config = |source: &str, target: &str| format!(
+            "[device]\ncodename = \"test\"\n[[service]]\npath = \"/odm/bin/hw/test\"\nlibrary_overrides = [{{source = \"{source}\", target = \"{target}\"}}]\n"
+        );
+        assert!(DeviceConfig::parse(&config("/skyward/lib64/test.so", "/odm/lib64/test.so")).is_ok());
+        for (source, target) in [
+            ("/data/test.so", "/odm/lib64/test.so"),
+            ("/skyward/lib64/../test.so", "/odm/lib64/test.so"),
+            ("/skyward/lib64/sub/test.so", "/odm/lib64/test.so"),
+            ("/skyward/lib64/test.so", "/data/test.so"),
+            ("/skyward/lib64/test.so", "/odm/lib64/other.so"),
+        ] {
+            assert!(DeviceConfig::parse(&config(source, target)).is_err(), "{source} -> {target}");
+        }
     }
 
     #[test]
@@ -793,6 +1023,7 @@ mod tests {
         let root = DeviceConfig::parse(base).unwrap();
         let s = &root.services[0];
         assert_eq!((s.user.as_ref(), s.groups.len(), s.capabilities.len()), (None, 0, 0), "root, as init runs one that names no user");
+        assert!(!s.memory_data, "services use the recovery's mounts unless they request private RAM data");
         let named = DeviceConfig::parse(&format!("{base}user = \"system\"\ngroups = [\"system\", \"drmrpc\"]\ncapabilities = [\"WAKE_ALARM\"]\n")).unwrap();
         let s = &named.services[0];
         assert_eq!((s.user.as_deref(), &s.groups[..], &s.capabilities[..]), (Some("system"), &["system".to_string(), "drmrpc".to_string()][..], &["WAKE_ALARM".to_string()][..]));
@@ -834,11 +1065,12 @@ mod tests {
             (include_str!("../../../devices/pudding.toml"), "OS4.0.4.0.XPCCNXM"),
             (include_str!("../../../devices/pandora.toml"), "OS4.0.4.0.XBLCNXM"),
             (include_str!("../../../devices/popsicle.toml"), "OS4.0.4.0.XPBCNXM"),
-            (include_str!("../../../devices/myron.toml"), "OS4.0.4.0.XPMCNXM"),
+            (include_str!("../../../devices/myron.toml"), "OS4.0.6.0.XPMCNXM"),
             (include_str!("../../../devices/songyuan.toml"), "OS4.0.4.0.XGNCNXM"),
             (include_str!("../../../devices/athens.toml"), "OS4.0.4.0.XPICNXM"),
             (include_str!("../../../devices/fuxi.toml"), "OS3.0.309.0.WMCCNXM"),
             (include_str!("../../../devices/nuwa.toml"), "OS3.0.312.0.WMBCNXM"),
+            (include_str!("../../../devices/socrates.toml"), "OS3.0.304.0.WMKCNXM"),
             (include_str!("../../../devices/houji.toml"), "OS3.0.307.0.WNCCNXM"),
             (include_str!("../../../devices/shennong.toml"), "OS3.0.309.0.WNBCNXM"),
             (include_str!("../../../devices/aurora.toml"), "OS3.0.308.0.WNACNXM"),
@@ -1015,6 +1247,14 @@ mod tests {
     }
 
     #[test]
+    fn a_firmware_file_is_required_unless_it_explicitly_allows_absence() {
+        let required: Firmware = toml::from_str("name = 'wlan/a.ini'\npath = '/vendor/etc/a.ini'\n").unwrap();
+        assert!(!required.optional);
+        let optional: Firmware = toml::from_str("name = 'wlan/mac.bin'\npath = 'kiwi_v2/wlan_mac.bin'\npartition = 'persist'\noptional = true\n").unwrap();
+        assert!(optional.optional);
+    }
+
+    #[test]
     fn services_use_the_partitions_they_run_from() {
         let cfg = DeviceConfig::parse(include_str!("../../../devices/ishtar.toml")).unwrap();
         let [report, sensor, listeners, ..] = &cfg.services[..] else { panic!("ishtar keeps several programs running") };
@@ -1024,5 +1264,70 @@ mod tests {
         assert!(!sensor.uses(Path::new("/mnt/system")), "its /system/lib64 is the recovery's own");
         assert!(!report.uses(Path::new("/vendor")));
         assert!(listeners.uses(Path::new("/vendor")));
+    }
+
+    #[test]
+    fn socrates_calibration_runs_before_the_wlan_is_enabled_with_private_ram_data() {
+        let cfg = DeviceConfig::parse(include_str!("../../../devices/socrates.toml")).unwrap();
+        assert!(cfg.modules.load.iter().any(|n| n == "qca_cld3_kiwi_v2"), "CNSS's device exists when its daemon starts");
+        let paths: Vec<_> = cfg.services.iter().map(|s| s.path.as_str()).collect();
+        let qrtr = paths.iter().position(|p| *p == "/vendor/bin/qrtr-ns").unwrap();
+        let cnss = paths.iter().position(|p| *p == "/vendor/bin/cnss-daemon").unwrap();
+        assert!(qrtr < cnss);
+        assert_eq!(cfg.services[qrtr].args, ["-f"], "supervise the foreground name service");
+        let calibration = &cfg.services[cnss];
+        assert_eq!(calibration.args, ["-n"]);
+        assert_eq!(calibration.user.as_deref(), Some("system"));
+        assert_eq!(calibration.capabilities, ["NET_ADMIN"]);
+        assert!(calibration.memory_data, "calibration never writes the installed userdata");
+        assert!(cfg.services.iter().enumerate().all(|(i, s)| !s.memory_data || i == cnss), "only CNSS gets its own data tree");
+        let wlan = cfg.wlan.unwrap();
+        assert_eq!(wlan.writes, [Write { path: "/sys/kernel/cnss/fs_ready".into(), value: "1".into() }], "calibration begins when the WLAN is turned on");
+        assert!(!wlan.firmware[0].optional, "the WLAN settings are required");
+        assert!(wlan.firmware[1].optional, "the separate persist MAC file is absent on the tested phone");
+    }
+
+    #[test]
+    fn only_socrates_requests_a_panel_resume_when_the_ui_starts() {
+        let cfg: DeviceConfig = toml::from_str(include_str!("../../../devices/socrates.toml")).unwrap();
+        assert!(cfg.display.reset_on_start);
+        let legacy: DeviceConfig = toml::from_str(include_str!("../../../devices/ishtar.toml")).unwrap();
+        assert!(!legacy.display.reset_on_start, "existing devices keep their startup sequence");
+        assert!(!Display::default().reset_on_start);
+    }
+
+    #[test]
+    fn socrates_starts_its_installed_hidl_boot_control() {
+        let cfg: DeviceConfig = toml::from_str(include_str!("../../../devices/socrates.toml")).unwrap();
+        let service = cfg.services.iter().find(|s| s.path == "/vendor/bin/hw/android.hardware.boot@1.2-service").unwrap();
+        assert_eq!(service.ready_hardware_service.as_deref(), Some("android.hardware.boot@1.2::IBootControl/default"));
+        assert_eq!(service.user.as_deref(), Some("root"));
+        assert_eq!(service.groups, ["root"]);
+    }
+
+    #[test]
+    fn only_socrates_scales_its_made_haptic_samples() {
+        let cfg: DeviceConfig =
+            toml::from_str(include_str!("../../../devices/socrates.toml")).unwrap();
+        let motor = cfg.haptics.unwrap();
+        assert!(motor.scale_samples);
+        assert_eq!(motor.click, None);
+        assert_eq!(
+            motor.strength,
+            Strength {
+                lightest: 0.15,
+                strongest: 1.0
+            }
+        );
+        for source in [
+            include_str!("../../../devices/ishtar.toml"),
+            include_str!("../../../devices/nezha.toml"),
+        ] {
+            let cfg: DeviceConfig = toml::from_str(source).unwrap();
+            assert!(
+                !cfg.haptics.unwrap().scale_samples,
+                "existing profiles retain magnitude scaling"
+            );
+        }
     }
 }

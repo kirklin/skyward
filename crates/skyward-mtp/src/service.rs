@@ -216,6 +216,7 @@ fn attend(port: &mut Port, r: &mut Responder, mail: &mut Mailbox, transaction: u
 /// computer has read are told as they come.
 fn session(port: &mut Port, r: &mut Responder, mail: &mut Mailbox) -> Result<Ended> {
     let mut transaction = 0;
+    let mut trace_followups = 0u8;
     loop {
         let bytes = match port.command(r.fd()) {
             Ok(Next::Command(bytes)) => bytes,
@@ -246,7 +247,16 @@ fn session(port: &mut Port, r: &mut Responder, mail: &mut Mailbox) -> Result<End
             continue;
         };
         transaction = cmd.transaction;
-        match answer(port, r, mail, &cmd) {
+        let trace_delete = cmd.code == op::DELETE_OBJECT && skyward_sys::prop("debug.skyward.mtp_delete_trace").as_deref() == Some("1");
+        let trace = trace_delete || (trace_followups > 0 && matches!(cmd.code,
+            op::GET_NUM_OBJECTS | op::GET_OBJECT_HANDLES | op::GET_OBJECT_INFO | op::GET_OBJECT_PROP_VALUE | op::GET_OBJECT_PROP_LIST));
+        if trace_delete {
+            trace_followups = 16;
+            port.trace_next_commands(16);
+        } else {
+            trace_followups = trace_followups.saturating_sub(1);
+        }
+        match answer(port, r, mail, &cmd, trace) {
             Ok(()) => {}
             Err(Halt::Cancelled) => kmsg(&format!("mtp: the computer cancelled {:#06x}", cmd.code))?,
             Err(Halt::Stopped) => kmsg(&format!("mtp: {:#06x} stopped for the storage", cmd.code))?,
@@ -263,7 +273,31 @@ fn session(port: &mut Port, r: &mut Responder, mail: &mut Mailbox) -> Result<End
 
 /// One transaction: the data that comes with the command, the answer and
 /// its data, and the response.
-fn answer(port: &mut Port, r: &mut Responder, mail: &mut Mailbox, cmd: &Command) -> Result<(), Halt> {
+fn answer(port: &mut Port, r: &mut Responder, mail: &mut Mailbox, cmd: &Command, traced: bool) -> Result<(), Halt> {
+    // Only a bounded window after a diagnostic DeleteObject is traced.
+    // Never log object handles, paths, datasets or error text here.
+    let trace = |stage: &str, code: Option<u16>| {
+        if traced {
+            let code = code.map(|c| format!(" response={c:#06x}")).unwrap_or_default();
+            let _ = kmsg(&format!("mtp: delete op={:#06x} tid={} stage={stage}{code}", cmd.code, cmd.transaction));
+        }
+    };
+    trace("command-received", None);
+    if traced {
+        match cmd.code {
+            op::GET_OBJECT_HANDLES => {
+                if let Some([_, format, parent]) = cmd.take::<3>() {
+                    let _ = kmsg(&format!("mtp: delete op={:#06x} tid={} stage=enumeration-request parent={} format={format:#010x}", cmd.code, cmd.transaction, r.handle_scope(parent)));
+                }
+            }
+            op::GET_OBJECT_PROP_LIST => {
+                if let Some([handle, format, property, group, depth]) = cmd.take::<5>() {
+                    let _ = kmsg(&format!("mtp: delete op={:#06x} tid={} stage=enumeration-request scope={} depth={depth:#010x} format={format:#010x} property={property:#010x} group={group:#010x}", cmd.code, cmd.transaction, r.handle_scope(handle)));
+                }
+            }
+            _ => {}
+        }
+    }
     let mut stop = || {
         mail.collect();
         mail.urgent()
@@ -310,6 +344,17 @@ fn answer(port: &mut Port, r: &mut Responder, mail: &mut Mailbox, cmd: &Command)
             reply
         }
     };
+    trace("reply-ready", Some(reply.code));
+    let count = match &reply.data {
+        Some(Outgoing::Dataset(bytes)) if traced && matches!(cmd.code, op::GET_OBJECT_HANDLES | op::GET_OBJECT_PROP_LIST) => {
+            bytes.get(..4).and_then(|head| head.try_into().ok()).map(u32::from_le_bytes)
+        }
+        _ => None,
+    };
+    if let Some(count) = count {
+        let label = if cmd.code == op::GET_OBJECT_HANDLES { "handleCount" } else { "entryCount" };
+        let _ = kmsg(&format!("mtp: delete op={:#06x} tid={} stage=enumeration-result {label}={count}", cmd.code, cmd.transaction));
+    }
     if let Some(why) = &reply.why {
         kmsg(&format!("mtp: {:#06x} answered {:#06x}: {why}", cmd.code, reply.code)).map_err(|e| Halt::Failed(io::Error::other(e)))?;
     }
@@ -317,9 +362,25 @@ fn answer(port: &mut Port, r: &mut Responder, mail: &mut Mailbox, cmd: &Command)
         kmsg("mtp: the computer opened a session").map_err(|e| Halt::Failed(io::Error::other(e)))?;
     }
     match reply.data {
-        Some(Outgoing::Dataset(bytes)) => port.send_data(cmd.code, cmd.transaction, &bytes, &mut stop)?,
+        Some(Outgoing::Dataset(bytes)) => {
+            trace("dataset-start", Some(reply.code));
+            let sent = port.send_data(cmd.code, cmd.transaction, &bytes, &mut stop);
+            trace(if sent.is_ok() { "dataset-complete" } else { "dataset-failed" }, Some(reply.code));
+            sent?;
+        }
         Some(Outgoing::File { file, offset, length }) => port.send_file(cmd.code, cmd.transaction, &file, offset, length, &mut stop)?,
         None => {}
     }
-    port.send_response(reply.code, cmd.transaction, &reply.params, &mut stop)
+    trace("response-start", Some(reply.code));
+    let sent = port.send_response(reply.code, cmd.transaction, &reply.params, &mut stop);
+    let stage = match &sent {
+        Ok(()) => "response-complete",
+        Err(Halt::Cancelled) => "response-cancelled",
+        Err(Halt::Stopped) => "response-stopped",
+        Err(Halt::Aborted(_)) => "response-aborted",
+        Err(Halt::Disconnected) => "response-disconnected",
+        Err(Halt::Failed(_)) => "response-failed",
+    };
+    trace(stage, Some(reply.code));
+    sent
 }

@@ -473,6 +473,10 @@ pub struct Port {
     /// The command being read, kept while the phone attends to something
     /// else.
     reading: Option<(u64, Box<[u8; COMMAND_MAX]>)>,
+    /// A bounded diagnostic window only; it never changes I/O decisions.
+    trace_reads_left: u8,
+    trace_read: bool,
+    trace_changed: bool,
     events: VecDeque<[u8; 16]>,
     /// The event going, which ends once the computer polls for it.
     event: Option<(u64, Box<[u8; 16]>)>,
@@ -507,6 +511,9 @@ impl Port {
             packet: 512,
             cancelled: false,
             reading: None,
+            trace_reads_left: 0,
+            trace_read: false,
+            trace_changed: false,
             events: VecDeque::new(),
             event: None,
         })
@@ -791,6 +798,11 @@ impl Port {
         self.wait(key, stop)
     }
 
+    /// Trace at most sixteen following command reads, without changing them.
+    pub(crate) fn trace_next_commands(&mut self, count: u8) {
+        self.trace_reads_left = count.min(16);
+    }
+
     /// The next command, or what came before it: the phone waking the
     /// thread, or `watch` having something. The read stays in flight for
     /// the next call. A packet of nothing, which ends the data before it,
@@ -800,6 +812,12 @@ impl Port {
             let key = match &self.reading {
                 Some((key, _)) => *key,
                 None => {
+                    self.trace_read = self.trace_reads_left > 0;
+                    self.trace_reads_left = self.trace_reads_left.saturating_sub(1);
+                    self.trace_changed = false;
+                    if self.trace_read {
+                        note("command-read stage=start");
+                    }
                     let mut buf = Box::new([0u8; COMMAND_MAX]);
                     // Safety: the box is kept with the request until it ends.
                     let key = unsafe { self.start(buf.as_mut_ptr(), COMMAND_MAX, false)? };
@@ -809,6 +827,10 @@ impl Port {
             };
             match self.finish(key, watch) {
                 Ok(Ok(res)) => {
+                    if self.trace_read {
+                        note("command-read stage=completed");
+                    }
+                    self.trace_read = false;
                     let (_, buf) = self.reading.take().expect("the command read was under way");
                     let n = self.moved(res)?;
                     if n > 0 {
@@ -817,7 +839,13 @@ impl Port {
                 }
                 Ok(Err(Interrupted::Cancel)) => {}
                 Ok(Err(Interrupted::Woken)) => return Ok(Next::Woken),
-                Ok(Err(Interrupted::Changed)) => return Ok(Next::Changed),
+                Ok(Err(Interrupted::Changed)) => {
+                    if self.trace_read && !self.trace_changed {
+                        note("command-read stage=changed");
+                        self.trace_changed = true;
+                    }
+                    return Ok(Next::Changed);
+                }
                 Ok(Err(Interrupted::Disconnect)) => {
                     self.stop_reading()?;
                     return Err(Halt::Disconnected);
@@ -1033,6 +1061,9 @@ impl Port {
     /// The connection ended: events waiting go, the one going and the
     /// command being read are given up.
     pub fn disconnected(&mut self) -> io::Result<()> {
+        self.trace_reads_left = 0;
+        self.trace_read = false;
+        self.trace_changed = false;
         self.events.clear();
         if let Some((key, _)) = &self.event {
             let key = *key;

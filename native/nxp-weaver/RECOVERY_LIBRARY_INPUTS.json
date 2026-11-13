@@ -1,0 +1,37 @@
+[
+  {
+    "source_archive_path": "system/lib64/libbase.so",
+    "bytes": 218672,
+    "sha256": "6d4a72e74b9dd812b103dc90d2782e32bf96d7af9abb1d61b903415672902687"
+  },
+  {
+    "source_archive_path": "system/lib64/libbinder_ndk.so",
+    "bytes": 168896,
+    "sha256": "64a052167ee3293943ddb6ef0cd75a5a894a6b502b6a560e2524679d6916863a"
+  },
+  {
+    "source_archive_path": "system/lib64/libc++.so",
+    "bytes": 1049704,
+    "sha256": "2267f93b8b3c9d1967f1833d5f71c7312213c43bb291250cf772800763037fb9"
+  },
+  {
+    "source_archive_path": "system/lib64/libc.so",
+    "bytes": 1226152,
+    "sha256": "62aaee6b74567fcb6c9e604bc3ef5f8b287f15b91fde33a3cbd8a1060a47c970"
+  },
+  {
+    "source_archive_path": "system/lib64/libdl.so",
+    "bytes": 50840,
+    "sha256": "03d80d466a9089872ba8de5949cbb1518ba82e8f946e734c3469a091fff482f0"
+  },
+  {
+    "source_archive_path": "system/lib64/liblog.so",
+    "bytes": 101928,
+    "sha256": "3ad3e11cb56f46584d637fa8b0ac689999b7555d7b339c0de86a94c78b8743d6"
+  },
+  {
+    "source_archive_path": "system/lib64/libm.so",
+    "bytes": 249080,
+    "sha256": "bca3d8347d16b04042dcea5cd6056fc7ea9ba11f1979b07b75c8c7493279a904"
+  }
+]

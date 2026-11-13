@@ -289,10 +289,10 @@ impl Parts {
     /// themselves is deleted under the names it shows without their keys;
     /// the parts found only by name in users' own files wait for every
     /// user's files to be open, and until they are, nothing is erased.
-    pub fn carry_out(self, tell: &mut dyn FnMut(Event)) -> Result<(), Stop> {
+    pub fn carry_out(self, policy: skyward_config::Decrypt, tell: &mut dyn FnMut(Event)) -> Result<(), Stop> {
         let in_data = self.steps.iter().any(|&s| s != Step::Cache);
         if in_data && !mount::is_mount_point(Path::new(DATA)).map_err(|e| Stop::Closed(format!("{e:#}")))? {
-            let opening = crate::decrypt::with_key_service(data::open_without_credential).map_err(Stop::Closed)?;
+            let opening = crate::decrypt::open(policy).map_err(Stop::Closed)?;
             tell(Event::Opened(opening));
         }
         let users = Users::of_the_phone();

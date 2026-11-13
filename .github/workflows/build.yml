@@ -14,6 +14,11 @@ on:
         description: The codename of the one device to build for; every device when empty
         required: false
         default: ""
+      myron_diagnostics:
+        description: Development-only myron trace image; may write bounded logs on already-mounted metadata
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -36,6 +41,19 @@ jobs:
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --locked --workspace
+      - name: Verify private library mounts in real child namespaces
+        run: |
+          binary=$(cargo test --locked -p skyward-sys --test library_mounts --no-run --message-format=json | jq -r 'select(.reason == "compiler-artifact" and .target.name == "library_mounts" and .executable != null) | .executable')
+          test -n "$binary"
+          sudo -- "$binary" --ignored --exact private_bind_mounts_are_isolated --test-threads=1
+      - name: Verify recovery preservation on a disposable read-only block device
+        run: |
+          binary=$(cargo test --locked -p skyward-install --lib --no-run --message-format=json | jq -r 'select(.reason == "compiler-artifact" and .target.name == "skyward_install" and .executable != null) | .executable')
+          test -n "$binary"
+          sudo modprobe loop
+          sudo -- "$binary" --ignored --exact image::block_tests::recovery_write_restores_block_flags_on_success_and_failure --test-threads=1
+      - name: Check the optional myron trace script
+        run: sh -n crates/skyward-pack/src/myron-diagnostics.sh
       - name: Lint what runs on the phone
         run: cargo ndk -t arm64-v8a --platform 30 clippy --locked -p skyward -p skyward-install -p skyward-systems -p skyward-system-init -- -D warnings
 
@@ -47,6 +65,8 @@ jobs:
       - uses: ./.github/actions/setup
       - name: Build the recovery service for the phone
         run: cargo ndk -t arm64-v8a --platform 30 build --locked --release -p skyward
+      - name: Build the recovery preservation retry tool
+        run: cargo ndk -t arm64-v8a --platform 30 build --locked --release -p skyward-install --example keep-recovery
       # It runs as a second system's first program, before any library is
       # there to load.
       - name: Build the second system's first program, static
@@ -59,6 +79,7 @@ jobs:
         run: |
           mkdir tools
           cp target/aarch64-linux-android/release/skyward target/release/skyward-pack tools/
+          cp target/aarch64-linux-android/release/examples/keep-recovery tools/
           cp target/system-init/aarch64-linux-android/release/system-init tools/
       - uses: actions/upload-artifact@v7
         with:
@@ -119,18 +140,55 @@ jobs:
         env:
           RECOVERY: ${{ steps.stock.outputs.recovery }}
         run: echo "$RECOVERY  stock/recovery.img" | sha256sum --check
+      - name: Cache the pinned myron compiler
+        if: matrix.device == 'myron'
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/myron-clang
+          key: myron-clang-${{ hashFiles('native/nxp-weaver/TOOLCHAIN.json') }}
+      - name: Build the native myron Weaver component from source
+        if: matrix.device == 'myron'
+        run: |
+          python3 native/nxp-weaver/fetch_toolchain.py --out "$RUNNER_TEMP/myron-clang"
+          python3 native/nxp-weaver/extract_recovery_libraries.py stock/recovery.img --out "$RUNNER_TEMP/myron-rec-libs"
+          python3 native/nxp-weaver/test_transport.py --out "$RUNNER_TEMP/myron-transport-test"
+          python3 native/nxp-weaver/build.py --toolchain "$RUNNER_TEMP/myron-clang" --libraries "$RUNNER_TEMP/myron-rec-libs" --out "$RUNNER_TEMP/myron-native"
+          python3 native/nxp-weaver/build.py --toolchain "$RUNNER_TEMP/myron-clang" --libraries "$RUNNER_TEMP/myron-rec-libs" --out "$RUNNER_TEMP/myron-native-repro"
+          cmp "$RUNNER_TEMP/myron-native/ese_weaver.so" "$RUNNER_TEMP/myron-native-repro/ese_weaver.so"
+          python3 -c 'import hashlib,json,os; from pathlib import Path; root=Path(os.environ["RUNNER_TEMP"]); first=root/"myron-native"; second=root/"myron-native-repro"; a=hashlib.sha256((first/"ese_weaver.so").read_bytes()).hexdigest(); b=hashlib.sha256((second/"ese_weaver.so").read_bytes()).hexdigest(); (first/"REPRODUCIBILITY.json").write_text(json.dumps({"first_sha256":a,"second_sha256":b,"byte_identical":a==b},indent=2)+"\n"); print("native Weaver reproducible SHA256:",a)'
+      - name: Keep the native component and its build proof
+        if: matrix.device == 'myron'
+        uses: actions/upload-artifact@v7
+        with:
+          name: myron-native-weaver-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/myron-native/ese_weaver.so
+            ${{ runner.temp }}/myron-native/BUILD_PROOF.json
+            ${{ runner.temp }}/myron-native/COMMANDS.json
+            ${{ runner.temp }}/myron-native/REPRODUCIBILITY.json
+            ${{ runner.temp }}/myron-transport-test/*.json
+          if-no-files-found: error
       - name: Pack the recovery
         id: pack
         env:
           DEVICE: ${{ matrix.device }}
           STOCK: ${{ steps.stock.outputs.version }}
+          MYRON_DIAGNOSTICS: ${{ inputs.myron_diagnostics }}
         run: |
           if [ "$GITHUB_REF_TYPE" = tag ]; then version="$GITHUB_REF_NAME"; else version="${GITHUB_SHA::7}"; fi
           name="skyward-$version-$DEVICE-$STOCK"
+          extra=()
+          if [ "$DEVICE" = myron ]; then
+            extra+=(--library "$RUNNER_TEMP/myron-native/ese_weaver.so")
+          fi
+          if [ "$DEVICE" = myron ] && [ "$MYRON_DIAGNOSTICS" = true ]; then
+            name="$name-diagnostic"
+            extra+=(--myron-diagnostics)
+          fi
           mkdir out
           tools/skyward-pack recovery --stock stock/recovery.img --binary tools/skyward --system-init tools/system-init \
             --config "devices/$DEVICE.toml" --font resources/fonts/MiSansVF.ttf --mono resources/fonts/KirkMono-Regular.ttf \
-            --mono-license resources/fonts/KirkMono-OFL.txt --out "out/$name.img"
+            --mono-license resources/fonts/KirkMono-OFL.txt "${extra[@]}" --out "out/$name.img"
           echo "name=$name" >> "$GITHUB_OUTPUT"
       # The image is the whole partition, flashed as it is, and most of it
       # is the room the recovery leaves empty; it is handed out zipped.

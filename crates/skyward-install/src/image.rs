@@ -12,6 +12,14 @@ use std::fs::OpenOptions;
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
+#[cfg(any(target_os = "linux", target_os = "android"))]
+mod protection;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use protection::ReadOnly;
+
+#[cfg(all(test, target_os = "linux"))]
+mod block_tests;
+
 const BOOT_MAGIC: &[u8] = b"ANDROID!";
 const VENDOR_BOOT_MAGIC: &[u8] = b"VNDRBOOT";
 /// A dtbo image starts with this, big-endian.
@@ -202,8 +210,14 @@ pub fn partitions(kind: ImageKind, dir: &Path) -> Result<Vec<&'static str>> {
 /// of all.
 pub fn flash<R: Read + Seek>(image: &mut R, len: u64, devices: &[PathBuf], progress: &mut dyn FnMut(u64, u64)) -> Result<()> {
     ensure!(!devices.is_empty(), "no partition to write");
+    // The OTA verifier can leave its targets read-only. Change only the
+    // selected devices, with guards alive before any fallible write open.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    let mut flags = Vec::with_capacity(devices.len());
     let mut outs = Vec::with_capacity(devices.len());
     for path in devices {
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        flags.push(ReadOnly::clear(path)?);
         let mut f = OpenOptions::new().read(true).write(true).open(path).with_context(|| format!("open {}", path.display()))?;
         let size = f.seek(SeekFrom::End(0)).with_context(|| format!("find the size of {}", path.display()))?;
         f.seek(SeekFrom::Start(0)).with_context(|| format!("rewind {}", path.display()))?;
@@ -258,6 +272,19 @@ pub fn flash<R: Read + Seek>(image: &mut R, len: u64, devices: &[PathBuf], progr
             progress(done, total);
         }
         ensure!(back.finalize() == written, "{} reads back different from what was written", path.display());
+    }
+    drop(outs);
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        let mut failed = None;
+        for flag in &mut flags {
+            if let Err(e) = flag.restore() {
+                failed.get_or_insert(e);
+            }
+        }
+        if let Some(e) = failed {
+            return Err(e);
+        }
     }
     Ok(())
 }

@@ -1,0 +1,1579 @@
+{
+  "device": "myron",
+  "status": "experimental; official full OTA engine success and updated HyperOS a boot/owner original-file acceptance passed; corrected Kept recovery-preservation retry and native recovery a boot verified; normal snapshot OTA and premature GUI progress remain open; MTP investigation paused by owner",
+  "date": "2026-11-13",
+  "stock_version": "OS4.0.6.0.XPMCNXM",
+  "framework_api": 37,
+  "vendor_api": 36,
+  "hardware_slot": "a",
+  "bootloader_unlocked_confirmed_by_fastboot": true,
+  "hyperos_mtp_control_20261113": {
+    "scope": "Normal HyperOS only; one own 65536-byte file in a fresh Download child directory; no reboot, flash, driver changes or other user-file operations",
+    "owner_report": "MTP also hangs under HyperOS when copying or deleting files",
+    "readonly_baseline": {
+      "internal_storage_top_objects": 62,
+      "download_first_batch_objects": 32,
+      "elapsed_seconds": 0.094,
+      "completed": true,
+      "limits": "Initial metadata enumeration only; not a copy/delete test or proof that every device request bypassed Windows caching"
+    },
+    "earlier_fresh_usb_control": {
+      "create_directory_wait_seconds_approx": 30,
+      "hresult": "0x802A0006",
+      "wpd_error": "E_WPD_DEVICE_IS_HUNG",
+      "file_upload_started": false,
+      "own_directory_absent_after_test": true
+    },
+    "latest_file_round": {
+      "one_65536_byte_upload_commit_succeeded": true,
+      "native_mtp_full_readback_verified": true,
+      "adb_raw_and_emulated_view_full_payload_verified": true,
+      "delete_api_getcount_getat_returned_success": true,
+      "before_enumobjects_api_reached": true,
+      "enumobjects_returned": false,
+      "next_method_entered": false,
+      "wrapper_cap_seconds": 75,
+      "native_folder_delete_entered": false,
+      "remaining_empty_own_directory_removed_by_guarded_nonrecursive_adb_rmdir": true,
+      "own_file_and_directory_absent_after_test": true,
+      "hyperos_boot_completed_after_test": true,
+      "owner_reported_usb_port_change": true,
+      "independent_port_change_verified": false,
+      "port_control_limit": "The saved before/after Windows location properties were identical; baseline timing may have followed the reported change. This is not an independently verified different-port control."
+    },
+    "interpretation": "Normal HyperOS reproduced the same host API stall stage observed in recovery: upload/readback and file Delete completed, then EnumObjects blocked before returning. This does not establish a shared cause or localize it to Windows, USB transport, phone firmware or PUID handling. It does not constitute full recovery MTP acceptance.",
+    "privacy": "Only sanitized counts, stages and outcome flags published; no raw logs, identifiers, credentials, filenames or object IDs"
+  },
+  "tests": {
+    "temporary_v4": {
+      "sha256": "ccf04b6afb14b69ca8ad78642d8bd3aba73bdb47bd9de36c5aa11f77e3bdade9",
+      "fastboot_send_and_boot_accepted": true,
+      "observed": "HyperOS boot_completed=1, system_server present, custom /skyward files absent; supplied command-line marker present",
+      "skyward_execution_evidence": false
+    },
+    "temporary_v3": {
+      "sha256": "6fdc65c3b7ac75ea734498f7a47c796b51e8d5f6c53212c80f12c644aaa3bf3b",
+      "fastboot_send_and_boot_accepted": true,
+      "observed": "No ADB/fastboot control; owner reported black-screen-or-fastboot choice; Windows saw VID18D1/PID4E11 WinUSB problem code10",
+      "skyward_execution_evidence": false,
+      "manual_power_restart_required": true
+    },
+    "restore": {
+      "hyperos_boot_completed": true,
+      "slot": "b",
+      "dsu_running": false,
+      "boot_b_full_sha256_unchanged": true,
+      "recovery_a_full_sha256_unchanged": true,
+      "recovery_b_full_sha256_unchanged": true
+    },
+    "native_component_offline": {
+      "ci_run": 43161796967,
+      "public_pinned_sources_and_toolchain": true,
+      "byte_identical_to_offline_build": true,
+      "fake_transport_and_parser_scenarios": 13,
+      "asan_and_ubsan_passed": true,
+      "elf_imports_and_versions_checked": 100,
+      "public_abi_layout_checked": true,
+      "replacement_library_device_execution": false
+    },
+    "native_recovery": {
+      "source_commit": "de63f37ddf98a94206fb240d20899a72218faa47",
+      "only_flashed_partition": "recovery_b",
+      "slot_switch": false,
+      "native_boot_confirmed": true,
+      "program_config_library_files_and_partition_sha256_match": true,
+      "owner_confirmed_skyward_home": true,
+      "adb_shell_available": true,
+      "adb_state": "recovery",
+      "usb_config": "mtp,adb",
+      "mtp_function_configured_and_host_session_opened": true,
+      "mtp_file_transfer_tested": false,
+      "wifi_evidence": "Recovery log records association/DHCP lease and successful external reachability probe; no SSID or password published",
+      "strongbox": "Repeated linker exit: libvndksupport.so needed by vendor libhardware.so not found",
+      "weaver": "Not started after StrongBox readiness timeout; no getConfig or slot operation issued",
+      "later_usb_disconnect": "No USB device remained detected; trace pull could not complete; owner entered bootloader using UI",
+      "data": "Stayed closed; attempted metadata storage-key setup refused error -62 because key upgrades were forbidden",
+      "pin_attempts_issued": false,
+      "trace": "Six bounded diagnostic samples stayed in RAM; no persistent trace directory found in recovery or after restoration; full trace pull failed after USB disconnect",
+      "restoration": {
+        "original_recovery_b_full_sha256_restored": true,
+        "boot_b_full_sha256_unchanged": true,
+        "recovery_a_full_sha256_unchanged": true,
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false
+      },
+      "owner_confirmed_touch_responsive": true
+    },
+    "stock_followup_readonly": {
+      "strongbox_and_weaver_file_capability_present": true,
+      "strongbox_AT_SECURE": 1,
+      "weaver_AT_SECURE": 1,
+      "normal_system_security_patch": "2026-10-05",
+      "recovery_installed_build_prop_security_patch": "2026-10-01",
+      "normal_vendor_security_patch": "2026-10-05",
+      "recovery_installed_vendor_build_prop_security_patch": "2026-10-01",
+      "implication": "Environment-only LD_LIBRARY_PATH cannot provide the service-specific override under secure execution; actual replacement mapping remains unverified"
+    },
+    "native_9f0adfb": {
+      "source_commit": "9f0adfbd30bfd00a1f90404170e84df91e1f5092",
+      "image_sha256": "884f9e57fb9c113efa6a4dca396dad66ca33c7b91512f9aba2becd5e16d513d7",
+      "running_program_config_source_library_and_partition_hashes_match": true,
+      "owner_confirmed_display_and_touch": true,
+      "strongbox": {
+        "startup_ready_passed": true,
+        "uid": 2910,
+        "gid": 0,
+        "cap_eff": "0000000800a00000",
+        "AT_SECURE": 1,
+        "executable_kept_original": true,
+        "missing_ram_libraries_hashes_match": true
+      },
+      "original_weaver_library_preserved_in_host_strongbox_and_native_se_views": true,
+      "weaver_before_ram_change": "Repeated SIGABRT at vendor wrapper service registration; servicemanager reported missing android.hardware.weaver.IWeaver/default in VINTF",
+      "manifest_cause": "Stock AIDL v2 fragment uses interface/name and instance separately; generic fqname substring filter skipped it",
+      "ram_diagnostic_change": {
+        "fragment_source": "/odm/etc/vintf/manifest/android.hardware.weaver-service.nxp.xml",
+        "original_fragment_sha256": "5369c71b2f4245f4c72d788d7c0be43fdee5dd8aa1ec5f1ae48dfcfca6b30b79",
+        "framework_copy_sha256": "e87a7c21dbc4ca611449c20246addeede4eb841e294fd3f27cfa82f750ffb018",
+        "destination": "/system/etc/vintf/manifest/android.hardware.weaver-service.nxp.xml",
+        "only_in_ram": true,
+        "servicemanager_restarted": true,
+        "native_se_sent_SIGTERM_for_supervised_reregistration": true
+      },
+      "weaver_after_ram_change": "PID observed in binder_thread_read after registration retry; complete child-view mapping/auxv gate not collected after another USB loss",
+      "mapped_weaver_replacement_fully_verified": false,
+      "getconfig_attempted": false,
+      "pin_or_slot_operations_issued": false,
+      "usb": {
+        "initial_config": "adb",
+        "file_transfer_config": "mtp,adb",
+        "repeated_disconnect_observed": true,
+        "owner_denied_cable_or_switch_changes_at_first_loss": true,
+        "file_transfer_off_on_restored_connection": true,
+        "owner_clarified_reboot_not_required_for_this_workaround": true,
+        "root_cause_confirmed": false,
+        "diagnostic_entrypoint_error": {
+          "invoked": "/system/bin/recovery service ...",
+          "actual_dispatch": "basename recovery unconditionally enters recovery() regardless of arguments",
+          "usb_side_effect": "recovery startup resets any non-adb USB state through none before requesting adb",
+          "explanatory_status": "These diagnostic calls are a direct software trigger sufficient to explain observed loss; independent USB instability not established",
+          "correction": "Use a RAM symlink with basename skyward-cli, verify --help, then invoke actual CLI diagnostics"
+        },
+        "independent_usb_failure_verified": false
+      },
+      "selinux": "Permissive as observed; no SELinux mode or policy change issued in this round; enforcing operation not validated",
+      "data": "Not mounted in observed snapshots; UI-triggered storage-key setup again refused -62 and key-upgrade policy remained disabled",
+      "trace": "Six RAM samples plus recovery log saved in private tar; no persistent diagnostic trace directory found",
+      "restoration": {
+        "device": "myron",
+        "os": "OS4.0.6.0.XPMCNXM",
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false,
+        "partition_hashes": {
+          "recovery_b": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+          "recovery_a": "586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660",
+          "boot_b": "11a20858d4e68869152baf70db0edb3d279516f9d430154cc6c96ba427940748"
+        },
+        "original_recovery_b_restored": true,
+        "boot_b_and_recovery_a_unchanged": true,
+        "no_trace_directory_found": true,
+        "getconfig_attempted": false,
+        "pin_attempts_issued": false
+      }
+    },
+    "property_provenance_readonly": {
+      "files_collected": 12,
+      "normal_system_and_vendor_patch": "2026-10-05",
+      "raw_property_replay_system_and_vendor_patch": "2026-10-01",
+      "last_system_patch_writer": "/mnt/product/etc/build.prop:40",
+      "last_vendor_patch_writer": "/vendor/build.prop:42",
+      "rec_import_runtime_model": "unknown",
+      "properties_changed": false,
+      "key_operations_issued_by_collector": false
+    },
+    "native_d923c4a": {
+      "source_commit": "d923c4a8a652d6db33676a1da4868771b3df6287",
+      "image_sha256": "ce4874e5234155303f1fb66c86c131621fa805dd2512724fd91b12228188686d",
+      "program_config_scripts_and_partition_hashes_match": true,
+      "cold_start_weaver_ese1_strongbox_described_and_registered": true,
+      "weaver_mapping_gate": {
+        "executable_original": true,
+        "uid": 2911,
+        "gid": 2911,
+        "cap_eff": "0000000800a00000",
+        "AT_SECURE": 1,
+        "private_namespace": true,
+        "child_view_sha256": "09a4095831aae55a4589606da194c0bd7f1369a3195316af643810b4136fc5a2",
+        "host_original_sha256": "556b6eb12522f6e9c306846ab6b8fa65f24be5f9c23e8e5ef19a54b45fcb8e4e",
+        "mapped_inode_matches_child_view_and_bundled_source": true,
+        "all_mapping_lines_verified": 4,
+        "selinux_enforce_as_found": "0",
+        "process_context": "u:r:recovery:s0",
+        "gate_passed_for_readonly_getConfig": true,
+        "pin_authorized": false
+      },
+      "original_library_preserved_in_strongbox_and_native_se_views": true,
+      "readonly_getconfig": {
+        "attempts": 1,
+        "exit_code": 1,
+        "error": "service error 1: Failed to retrieve slots info",
+        "success": false,
+        "slot_or_pin_operation": false
+      },
+      "correct_diagnostic_basename": "RAM skyward-cli alias; --help verified; no recovery UI reentry",
+      "usb": "MTP+ADB and bound a600000.dwc3 remained accessible at uptime 210 seconds without a File Transfer toggle; broader long-term acceptance not claimed",
+      "startup_sharedsecret": "Parameter collection returned -49; error context did not identify default versus strongbox peer",
+      "backend_evidence": "Saved trace sample-1 shows QTI chip detection missing /dev/nq-nci and /dev/st54spi_gpio with retries; registered binder did not establish chip availability",
+      "data": "No /data mount in snapshot; UI storage-key setup remained refused -62 and upgrades disabled",
+      "selinux": "Permissive as found; no policy change issued; enforcing operation untested",
+      "restoration": {
+        "device": "myron",
+        "os": "OS4.0.6.0.XPMCNXM",
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false,
+        "partition_hashes": {
+          "recovery_b": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+          "recovery_a": "586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660",
+          "boot_b": "11a20858d4e68869152baf70db0edb3d279516f9d430154cc6c96ba427940748"
+        },
+        "original_recovery_b_restored": true,
+        "boot_b_and_recovery_a_unchanged": true,
+        "no_trace_directory_found": true,
+        "getconfig_attempts": 1,
+        "getconfig_result": "service error1: Failed to retrieve slots info",
+        "pin_or_slot_operations_issued": false
+      }
+    },
+    "native_4ab21f6": {
+      "source_commit": "4ab21f6dcf9fab4c0700a50999002b9539a1ea98",
+      "image_sha256": "b8d0e9d1b0eb9e5f3f5e804b93e613290bd7a092c69481a7c43aa07b96177827",
+      "program_config_scripts_and_partition_hashes_match": true,
+      "nfc_node_gate": {
+        "loaded_module": "nxp_nci",
+        "source_sha256": "ae9a9fcf262e29ca5be19c5db733174baec47d5978acb2d864bbf05dc2de6735",
+        "node": "/dev/nq-nci",
+        "uid": 1027,
+        "gid": 1027,
+        "mode": "0660",
+        "chip_ready_not_yet_asserted": true
+      },
+      "weaver_mapping_gate": {
+        "executable_original": true,
+        "uid": 2911,
+        "gid": 2911,
+        "cap_eff": "0000000800a00000",
+        "AT_SECURE": 1,
+        "private_namespace": true,
+        "child_view_sha256": "09a4095831aae55a4589606da194c0bd7f1369a3195316af643810b4136fc5a2",
+        "host_original_sha256": "556b6eb12522f6e9c306846ab6b8fa65f24be5f9c23e8e5ef19a54b45fcb8e4e",
+        "mapped_inode_matches_child_view_and_bundled_source": true,
+        "all_mapping_lines_verified": 4,
+        "selinux_enforce_as_found": "0",
+        "process_context": "u:r:recovery:s0",
+        "gate_passed_for_readonly_getConfig": true,
+        "pin_authorized": false
+      },
+      "sharedsecret_two_peers_agreed": true,
+      "previous_sharedsecret_minus49_resolved_in_this_round": true,
+      "weaver_and_ese1_described_registered": true,
+      "readonly_getconfig": {
+        "attempts": 1,
+        "exit_code": 1,
+        "error": "Failed to retrieve slots info",
+        "success": false,
+        "pin_or_slot_operation": false
+      },
+      "failure_leaf": "QTI rejected ISecureElementCallback as system-stability binder in vendor context; AppletConnection initialization failed before any Weaver SELECT/GETSLOTS APDU",
+      "missing_compile_flag": "Generated callback createBinder marks VINTF only with BINDER_STABILITY_SUPPORT; existing build omitted it",
+      "data": "No /data mount; UI storage-key setup still rejected -62 with key upgrades forbidden",
+      "usb": "Proper skyward-cli invocation retained MTP/ADB; no erroneous recovery-entrypoint diagnostic calls",
+      "restoration": {
+        "device": "myron",
+        "os": "OS4.0.6.0.XPMCNXM",
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false,
+        "partition_hashes": {
+          "recovery_b": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+          "recovery_a": "586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660",
+          "boot_b": "11a20858d4e68869152baf70db0edb3d279516f9d430154cc6c96ba427940748"
+        },
+        "original_recovery_b_restored": true,
+        "boot_b_and_recovery_a_unchanged": true,
+        "no_trace_directory_found": true,
+        "getconfig_attempts": 1,
+        "getconfig_result": "service error1: Failed to retrieve slots info",
+        "pin_or_slot_operations_issued": false
+      }
+    },
+    "native_f32dee0": {
+      "source_commit": "f32dee018d60373db91f3cf45a3157df6952f9b3",
+      "ci_run": 43194221841,
+      "image_sha256": "d2eb776210ce4a12d54495ef665cebb304a4c7817c96f1be5275932c796a7045",
+      "native_library_sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e",
+      "program_config_scripts_and_partition_hashes_match": true,
+      "native_build_checks": {
+        "independent_output_builds_byte_identical": true,
+        "callback_createBinder_calls_markVintfStability": true,
+        "strong_import_and_exact_REC_symbol_version_checked": true,
+        "transport_sanitizer_tests_passed": 13
+      },
+      "nfc_node_gate": {
+        "loaded_module": "nxp_nci",
+        "source_sha256": "ae9a9fcf262e29ca5be19c5db733174baec47d5978acb2d864bbf05dc2de6735",
+        "node": "/dev/nq-nci",
+        "uid": 1027,
+        "gid": 1027,
+        "mode": "0660",
+        "chip_ready_not_yet_asserted": true
+      },
+      "weaver_mapping_gate": {
+        "executable_original": true,
+        "uid": 2911,
+        "gid": 2911,
+        "cap_eff": "0000000800a00000",
+        "AT_SECURE": 1,
+        "private_namespace": true,
+        "child_view_sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e",
+        "host_original_sha256": "556b6eb12522f6e9c306846ab6b8fa65f24be5f9c23e8e5ef19a54b45fcb8e4e",
+        "mapped_inode_matches_child_view_and_bundled_source": true,
+        "all_mapping_lines_verified": 4,
+        "selinux_enforce_as_found": "0",
+        "process_context": "u:r:recovery:s0",
+        "gate_passed_for_readonly_getConfig": true,
+        "pin_authorized": false
+      },
+      "sharedsecret_two_peers_agreed": true,
+      "readonly_getconfig": {
+        "attempts": 1,
+        "exit_code": 0,
+        "success": true,
+        "slots": 64,
+        "key_bytes": 16,
+        "value_bytes": 16,
+        "pin_or_slot_operation": false
+      },
+      "runtime_path": "QTI callback onStateChange connected=true; transmit completed; ParseSlotInfo returned 64; channel subsequently closed",
+      "data": "Not mounted; existing storage key still requires forbidden upgrade (-62); no PIN or key-upgrade operation issued",
+      "usb": "MTP/ADB available throughout observed recovery interval; host initially reported state=recovery, which is a valid ADB transport state",
+      "selinux_limit": "Observed permissive as found; enforcing-mode operation not accepted",
+      "diagnostic_samples": {
+        "count": 6,
+        "total_sample_bytes": 764850,
+        "limit_bytes": 786432,
+        "location": "RAM"
+      },
+      "restoration": {
+        "time_utc": "2026-11-12T09:56:57.065784+00:00",
+        "device": "myron",
+        "os": "OS4.0.6.0.XPMCNXM",
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false,
+        "partition_hashes": {
+          "recovery_b": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+          "recovery_a": "586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660",
+          "boot_b": "11a20858d4e68869152baf70db0edb3d279516f9d430154cc6c96ba427940748"
+        },
+        "original_recovery_b_restored": true,
+        "boot_b_and_recovery_a_unchanged": true,
+        "no_trace_directory_found": true,
+        "getconfig_attempts": 1,
+        "getconfig_result": "64 slots; key16 bytes; value16 bytes",
+        "pin_or_slot_operations_issued": false
+      }
+    },
+    "native_759d4d2": {
+      "source_commit": "759d4d2960077ab3c035a9fff2f47d540b6685cc",
+      "ci_run": 43213140526,
+      "image_sha256": "88cfd4eda496c811dd80953f1b06ad10d74d25a8b017e7b22b6e618cdd4bc904",
+      "program_config_and_partition_hashes_match": true,
+      "mapping_gate": {
+        "executable_original": true,
+        "uid": 2911,
+        "gid": 2911,
+        "cap_eff": "0000000800a00000",
+        "AT_SECURE": 1,
+        "private_namespace": true,
+        "child_view_sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e",
+        "host_original_sha256": "556b6eb12522f6e9c306846ab6b8fa65f24be5f9c23e8e5ef19a54b45fcb8e4e",
+        "mapped_inode_matches_child_view_and_bundled_source": true,
+        "all_mapping_lines_verified": 4,
+        "selinux_enforce_as_found": "0",
+        "process_context": "u:r:recovery:s0",
+        "mapping_gate_passed_for_authorized_storage_conversion": true,
+        "pin_authorized": false
+      },
+      "qti_keymint_gate": {
+        "executable_sha256": "df1f4330a65a96a7f673087542b8cf5eda7b3356c7bcc664ff336ad6420bfb2c",
+        "uid": 1000,
+        "gid": 1000,
+        "cap_eff": 0,
+        "hardware_info": "keymint OneKeymint version 1 at security level 1 by Qualcomm"
+      },
+      "storage_conversion": {
+        "invocations": 1,
+        "exit_code": 0,
+        "inner_renewal_performed": true,
+        "ephemeral_result_bytes": 100,
+        "data_mounted_in_recovery": false,
+        "pin_or_weaver_slot_operation": false,
+        "metadata_blob_hashes_unchanged": true
+      },
+      "diagnostics": {
+        "ram_samples": 5,
+        "sample_bytes": 655360,
+        "limit_bytes": 786432,
+        "persistent_directory_found": false
+      },
+      "restoration": {
+        "time_utc": "2026-11-12T12:06:18.664765+00:00",
+        "device": "myron",
+        "os": "OS4.0.6.0.XPMCNXM",
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false,
+        "partition_hashes": {
+          "recovery_b": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+          "recovery_a": "586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660",
+          "boot_b": "11a20858d4e68869152baf70db0edb3d279516f9d430154cc6c96ba427940748"
+        },
+        "original_recovery_b_restored": true,
+        "boot_b_and_recovery_a_unchanged": true,
+        "metadata_blob_hashes_match_normal_preflight_and_recovery_before_after": true,
+        "hyperos_data_mounted": true,
+        "no_persistent_trace_directory_found_in_recovery": true,
+        "storage_conversion_invocations": 1,
+        "inner_storage_renewal_performed": true,
+        "ephemeral_result_bytes": 100,
+        "pin_or_weaver_slot_operations_issued": false,
+        "data_mount_requested_in_recovery": false,
+        "hyperos_unlock_and_original_files_user_confirmed": true
+      },
+      "limits": "This validates one inner storage conversion and successful subsequent HyperOS use, not recovery data mounting, PIN decryption or enforcing-mode operation."
+    },
+    "native_34fe498": {
+      "source_commit": "34fe498bd5304da020752dc4a1c6780bb8d4d065",
+      "ci_run": 43215964584,
+      "image_sha256": "e9430d23020dec053d003535a058a425726dd8c2f20886de45bafc24622f8313",
+      "payloads_and_partition_match": true,
+      "readonly_ui": {
+        "candidate": "34fe498bd5304da020752dc4a1c6780bb8d4d065",
+        "readonly_ui_probe_completed": true,
+        "data_mounted_read_only": true,
+        "metadata_ciphertext_hashes_match_preflight": true,
+        "general_upgrades_enabled": false,
+        "inner_renewal_scope": "at most one renewal per conversion; automatic UI metadata/DE/shared opening",
+        "manual_conversion_or_data_cli_invoked": false,
+        "credential_or_weaver_operation_issued_by_probe": false,
+        "hardware_info_only": true,
+        "spblob_header_count": 3,
+        "pin_authorized_by_probe": false
+      },
+      "pin_acceptance": {
+        "pin_entry_requested_once": true,
+        "owner_reported_pin_success_and_original_folders_visible": true,
+        "recovery_reports_no_users_remaining_closed": true,
+        "data_and_sdcard_verified_read_only": true,
+        "metadata_blob_hashes_unchanged": true,
+        "probe_or_controller_supplied_credentials": false,
+        "diagnostic_samples": 6,
+        "diagnostic_sample_bytes": 764469
+      },
+      "supported_spblob_format": {
+        "version": 3,
+        "kind": 0
+      },
+      "runtime_evidence": "UI Open left owner/profile closed; one owner-entered correct PIN later left closed=[]; /data and /sdcard both f2fs ro,norecovery; metadata ciphertext hashes unchanged",
+      "initial_probe": "Stopped while home UI had not opened data. Owner then pressed Decrypt once; evidence collection repeated without issuing a decryption command.",
+      "host_credential_argument_or_guess": false,
+      "restoration": {
+        "time_utc": "2026-11-12T12:38:51.922716+00:00",
+        "device": "myron",
+        "os": "OS4.0.6.0.XPMCNXM",
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false,
+        "partition_hashes": {
+          "recovery_b": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+          "recovery_a": "586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660",
+          "boot_b": "11a20858d4e68869152baf70db0edb3d279516f9d430154cc6c96ba427940748"
+        },
+        "original_recovery_b_restored": true,
+        "boot_b_and_recovery_a_unchanged": true,
+        "metadata_blob_hashes_unchanged_through_postrestore": true,
+        "hyperos_data_mounted": true,
+        "no_persistent_trace_directory_found_in_recovery": true,
+        "readonly_recovery_pin_unlock_user_confirmed": true,
+        "readonly_data_and_sdcard_verified": true,
+        "owner_files_visible_in_recovery_user_confirmed": true,
+        "credential_or_slot_commands_issued_by_probe_or_controller": false,
+        "hyperos_unlock_and_original_files_user_confirmed": true
+      },
+      "limits": "Read-only data and PIN/CE accepted. Writable data, MTP payload mutations, enforcing mode and other untested recovery functions are not established."
+    },
+    "native_2a586d1": {
+      "source_commit": "2a586d1dc692549f45619f297e139f35c0d64035",
+      "ci_run": 43220845766,
+      "image_sha256": "42fe51b4fa10e1ba1583938f4f02610534c58df1590ec4d5b677470715b29fad",
+      "writable_ui_probe": {
+        "candidate": "2a586d1dc692549f45619f297e139f35c0d64035",
+        "writable_ui_probe_completed": true,
+        "data_mounted_writable": true,
+        "metadata_ciphertext_hashes_match_preflight": true,
+        "general_upgrades_enabled": false,
+        "inner_renewal_scope": "at most one renewal per conversion; automatic UI metadata/DE/shared opening",
+        "manual_conversion_or_data_cli_invoked": false,
+        "credential_or_weaver_operation_issued_by_probe": false,
+        "hardware_info_only": true,
+        "spblob_header_count": 3,
+        "pin_authorized_by_probe": false
+      },
+      "limited_acceptance": {
+        "writable_data_and_sdcard_verified": true,
+        "recovery_reports_all_users_unlocked": true,
+        "host_supplied_credential": false,
+        "metadata_ciphertext_hashes_unchanged": true,
+        "mtp_fixture_created": false,
+        "mtp_payload_transfer_tested": false,
+        "mount_toggle_bug_observed": true,
+        "original_erofs_mount_views_restored": true,
+        "diagnostic_samples": 6,
+        "diagnostic_sample_bytes": 759752,
+        "persistent_trace_directory_found": false
+      },
+      "temporary_mount_view_restoration": {
+        "restored": [
+          {
+            "partition": "mi_ext_b",
+            "mount_point": "/mnt/mi_ext",
+            "same_original_child_device": true,
+            "filesystem": "erofs",
+            "read_only": true,
+            "mapping_recreated_or_reloaded": false
+          },
+          {
+            "partition": "mi_product_b",
+            "mount_point": "/mnt/mi_product",
+            "same_original_child_device": true,
+            "filesystem": "erofs",
+            "read_only": true,
+            "mapping_recreated_or_reloaded": false
+          },
+          {
+            "partition": "vendor_dlkm_b",
+            "mount_point": "/vendor_dlkm",
+            "same_original_child_device": true,
+            "filesystem": "erofs",
+            "read_only": true,
+            "mapping_recreated_or_reloaded": false
+          }
+        ],
+        "block_or_user_files_written": false,
+        "service_or_library_identity_changed": false
+      },
+      "restoration": {
+        "time_utc": "2026-11-12T13:25:00.836484+00:00",
+        "device": "myron",
+        "os": "OS4.0.6.0.XPMCNXM",
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false,
+        "partition_hashes": {
+          "recovery_b": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+          "recovery_a": "586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660",
+          "boot_b": "11a20858d4e68869152baf70db0edb3d279516f9d430154cc6c96ba427940748"
+        },
+        "original_recovery_b_restored": true,
+        "boot_b_and_recovery_a_unchanged": true,
+        "metadata_blob_hashes_unchanged_through_postrestore": true,
+        "hyperos_data_mounted": true,
+        "no_persistent_trace_directory_found_in_recovery": true,
+        "writable_recovery_mounts_verified": true,
+        "recovery_all_users_unlocked_log_confirmed": true,
+        "mtp_fixture_created": false,
+        "mtp_payload_readwrite_not_tested": true,
+        "host_supplied_credential": false
+      },
+      "owner_reports": {
+        "brightness_changes": true,
+        "wifi_hotspots_visible": true,
+        "power_keys_wake_touch": "not tested; owner clarified no confirmed key fault; return to HyperOS was the controller-requested restoration"
+      },
+      "mtp_limit": "USB parent and WPD node uniquely matched, but the Shell identity collector lacked device identity properties; no fixture was created or transferred. This is not proof of MTP driver failure."
+    },
+    "native_aa35835": {
+      "source_commit": "aa35835b0b7288e735805fffa9d3ed0f8ce935eb",
+      "ci_run": 43228377535,
+      "image_sha256": "d55edb08fdf954721e353426455d25e5e633f882897bae75b324b98216b43e3f",
+      "mount_acceptance": {
+        "vendor_dlkm_unmount_remount_user_and_kernel_confirmed": true,
+        "mi_ext_and_mi_product_cycles_user_confirmed": true,
+        "all_three_final_ro_views_use_original_dm_devices": true,
+        "private_service_pid_unchanged": true,
+        "metadata_ciphertext_hashes_unchanged": true,
+        "data_mounted": false,
+        "pin_or_user_file_operation": false,
+        "native_wpd_identity_unique": true,
+        "wpd_content_or_mutation_called": false,
+        "diagnostic_samples": 6,
+        "diagnostic_sample_bytes": 761812,
+        "persistent_trace_directory_found": false
+      },
+      "vendor_dlkm_kernel_evidence": {
+        "parent_view_unmounted": true,
+        "original_ro_dm_retained": true,
+        "remount_same_original_dm_erofs_ro": true,
+        "private_weaver_mount_and_library_unchanged": true,
+        "weaver_process_identity_unchanged": true
+      },
+      "owner_reports": {
+        "vendor_dlkm_off_on": true,
+        "mi_ext_off_on": true,
+        "mi_product_off_on": true,
+        "all_three_left_on": true
+      },
+      "native_wpd_identity": {
+        "unique_physical_usb_parent": true,
+        "unique_wpd_node": true,
+        "native_endpoints_enumerated": 2,
+        "uniquely_bound_endpoint": true,
+        "content_session_opened": false,
+        "payload_transferred": false
+      },
+      "restoration": {
+        "time_utc": "2026-11-12T13:57:20.799327+00:00",
+        "device": "myron",
+        "os": "OS4.0.6.0.XPMCNXM",
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false,
+        "partition_hashes": {
+          "recovery_b": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+          "recovery_a": "586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660",
+          "boot_b": "11a20858d4e68869152baf70db0edb3d279516f9d430154cc6c96ba427940748"
+        },
+        "original_recovery_b_restored": true,
+        "boot_b_and_recovery_a_unchanged": true,
+        "metadata_ciphertext_hashes_unchanged": true,
+        "hyperos_data_mounted": true,
+        "mount_toggle_user_and_kernel_acceptance": true,
+        "data_pin_or_user_file_operation_in_recovery": false,
+        "native_wpd_identity_binding_accepted": true,
+        "wpd_content_or_mutation_called": false,
+        "persistent_trace_directory_found": false
+      },
+      "limits": "Only logical mount switches and native WPD identity were accepted in this round. Data/PIN and MTP payload operations were not performed; power/wake and enforcing-mode acceptance remain pending."
+    },
+    "native_aa35835_rw_mtp": {
+      "source_commit": "aa35835b0b7288e735805fffa9d3ed0f8ce935eb",
+      "ci_run": 43228377535,
+      "image_sha256": "d55edb08fdf954721e353426455d25e5e633f882897bae75b324b98216b43e3f",
+      "separate_native_boot_from_mount_switch_test": true,
+      "data": {
+        "startup_service_and_payload_gates_passed": true,
+        "one_correct_pin_entered_only_on_phone": true,
+        "owner_reported_original_folders_visible": true,
+        "data_and_sdcard_rw_verified": true,
+        "latest_closed_users_empty": true,
+        "host_credential_or_decrypt_retry": false,
+        "general_key_upgrades_and_auto_repair_disabled": true
+      },
+      "native_wpd": {
+        "unique_physical_usb_parent": true,
+        "unique_wpd_node": true,
+        "native_endpoints": 2,
+        "uniquely_bound_endpoint": true,
+        "bin_type_unspecified_was_host_expectation_mismatch": true
+      },
+      "mtp_limited_acceptance": {
+        "candidate": "aa35835b0b7288e735805fffa9d3ed0f8ce935eb",
+        "one_native_mtp_upload_committed": true,
+        "native_mtp_readback_full_sha_and_marker_verified": true,
+        "mtp_file_delete_reached_filesystem": true,
+        "native_cleanup_journal_stages": [
+          "before-delete-owned-file",
+          "deleted-owned-file",
+          "before-delete-empty-owned-directory"
+        ],
+        "no_second_upload": true,
+        "remaining_empty_own_directory_removed_by_guarded_adb_rmdir": true,
+        "original_gate_directory_inode_matched_before_rmdir": true,
+        "own_alias_raw_directory_and_file_absent": true,
+        "mtp_complete_pass_claimed": false,
+        "credential_or_decrypt_retry": false,
+        "native_file_delete_acknowledged": true,
+        "native_empty_directory_cleanup_stage_entered": true,
+        "native_empty_directory_cleanup_stage_timed_out": true,
+        "exact_blocked_com_call_identified": false,
+        "device_protocol_defect_or_event_race_proven": false
+      },
+      "owner_physical_reports": {
+        "candidate": "aa35835b0b7288e735805fffa9d3ed0f8ce935eb",
+        "volume_keys_move_menu_focus": true,
+        "power_short_press_screen_off_and_wake": true,
+        "touch_after_wake": true,
+        "vibration_present": true,
+        "vibration_strength_change_clearly_felt": true,
+        "source": "Owner confirmed both physical acceptance questions on this recovery boot"
+      },
+      "bootcontrol": {
+        "query_only": true,
+        "current_and_active_slot": "b",
+        "slot_changed": false
+      },
+      "trace": {
+        "samples": 6,
+        "sample_bytes": 764553,
+        "persistent_directory_found": false
+      },
+      "restoration": {
+        "time_utc": "2026-11-12T15:00:34.621519+00:00",
+        "device": "myron",
+        "source_commit": "aa35835b0b7288e735805fffa9d3ed0f8ce935eb",
+        "os": "OS4.0.6.0.XPMCNXM",
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false,
+        "partition_hashes": {
+          "recovery_b": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+          "recovery_a": "586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660",
+          "boot_b": "11a20858d4e68869152baf70db0edb3d279516f9d430154cc6c96ba427940748"
+        },
+        "original_recovery_b_restored": true,
+        "boot_b_and_recovery_a_unchanged": true,
+        "metadata_ciphertext_hashes_unchanged": true,
+        "hyperos_data_mounted": true,
+        "persistent_trace_directory_found": false,
+        "normal_os_unlock_and_original_files_user_confirmed": true
+      },
+      "limits": "Native upload/readback/file deletion accepted. Empty-directory cleanup stage timed out; exact COM call and device/host cause are not established. Remaining empty own folder was removed with canonical/inode-guarded nonrecursive rmdir. Full WPD cleanup, enforcing mode and destructive operations are not accepted."
+    },
+    "native_af568ba_enumeration_trace": {
+      "source_commit": "af568ba7000601f2beb1324f0355b658a8dcd219",
+      "ci_run": 43245275620,
+      "image_sha256": "64ded45807a106677323f647b7b8ac3371b0d027fcf0c1c685a6f27e20ddc7e9",
+      "startup_payload_service_and_actual_trace_property_verified": true,
+      "owner_correct_pin_and_original_folders_confirmed": true,
+      "data_and_sdcard_rw_verified": true,
+      "one_own_file_bytes": 65536,
+      "mtp_acceptance": {
+        "source_commit": "af568ba7000601f2beb1324f0355b658a8dcd219",
+        "native_upload_and_readback_full_sha_marker_verified": true,
+        "file_delete_api_and_results_getcount_getat_returned": true,
+        "post_file_delete_empty_directory_enumeration_blocked": true,
+        "directory_delete_stage_entered": false,
+        "device_file_delete_response_completed": true,
+        "second_upload_or_pin_retry": false,
+        "remaining_original_empty_directory_removed_by_canonical_inode_guarded_rmdir": true,
+        "alias_raw_paths_absent": true,
+        "host_stages": [
+          "before-content-open",
+          "selected-storage",
+          "selected-download",
+          "before-create-owned-directory",
+          "created-owned-directory",
+          "before-create-owned-file",
+          "before-upload-commit",
+          "uploaded-owned-file",
+          "native-readback-verified",
+          "waiting-for-wrapper-canonical-inode-proof",
+          "before-delete-owned-file",
+          "file-cleanup-current-gate-passed",
+          "before-delete-api",
+          "delete-api-returned",
+          "before-delete-results-getcount",
+          "delete-results-getcount-returned",
+          "before-delete-results-getat",
+          "delete-results-getat-returned",
+          "delete-result-verified",
+          "before-enumerate-after-file-delete"
+        ],
+        "full_mtp_flow_accepted": false
+      },
+      "device_trace": {
+        "delete_commands_observed": 1,
+        "reply_code": "0x2001",
+        "command_reply_and_response_send_completed": true,
+        "scope_limit": "This image traced DeleteObject only; arrival/handling/data transfer of the later enumeration request was not instrumented."
+      },
+      "restoration": {
+        "time_utc": "2026-11-12T15:32:39.510498+00:00",
+        "device": "myron",
+        "source_commit": "af568ba7000601f2beb1324f0355b658a8dcd219",
+        "os": "OS4.0.6.0.XPMCNXM",
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false,
+        "partition_hashes": {
+          "recovery_b": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+          "recovery_a": "586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660",
+          "boot_b": "11a20858d4e68869152baf70db0edb3d279516f9d430154cc6c96ba427940748"
+        },
+        "original_recovery_b_restored": true,
+        "boot_b_and_recovery_a_unchanged": true,
+        "metadata_ciphertext_hashes_unchanged": true,
+        "hyperos_data_mounted": true,
+        "persistent_trace_directory_found": false,
+        "normal_os_unlock_and_original_files_user_confirmed": true
+      },
+      "trace_capture": {
+        "live_delete_trace_preserved": true,
+        "recovery_log_tail_preserved": true,
+        "ram_sample_archive_retrieved": false,
+        "script_sample_cap_bytes": 786432,
+        "persistent_trace_directory_found_after_restore": false
+      },
+      "limits": "The SDK file Delete API, GetCount and GetAt returned and verified success. It then blocked in EnumObjects/Next while enumerating the now-empty folder. No folder-delete stage was entered. Device/host cause is not established; no full MTP pass claimed."
+    },
+    "native_0df9431_enumobjects_trace": {
+      "source_commit": "0df9431945f49fc8d40b60be4323d47244d45d48",
+      "ci_run": 43250797489,
+      "image_sha256": "01120977f6ce7794ecbd66e7b4cb7982587edbbcbeffe7f923dc2e4f7e63909c",
+      "startup": {
+        "initial_readonly_probe_stopped_before_credentials": true,
+        "early_failure_evidence_retained": true,
+        "service_readiness_and_all_payload_mapping_gates_later_passed": true,
+        "actual_trace_property_verified": true
+      },
+      "owner_one_correct_pin_and_original_folders_confirmed": true,
+      "data_and_sdcard_rw_verified": true,
+      "mtp_observations": {
+        "source_commit": "0df9431945f49fc8d40b60be4323d47244d45d48",
+        "native_upload_readback_sha_marker_verified": true,
+        "file_delete_api_and_results_verified": true,
+        "host_enumobjects_call_did_not_return": true,
+        "host_enum_next_not_entered": true,
+        "directory_delete_not_entered": true,
+        "device_delete_and_get_handles_data_response_completed": true,
+        "device_property_list_replies_completed_in_bounded_trace": 12,
+        "watch_spin_or_stuck_bulk_send_demonstrated": false,
+        "second_upload_or_pin_retry": false,
+        "original_empty_dir_removed_by_canonical_inode_guarded_rmdir": true,
+        "alias_raw_paths_absent": true,
+        "host_stages": [
+          "before-content-open",
+          "selected-storage",
+          "selected-download",
+          "before-create-owned-directory",
+          "created-owned-directory",
+          "before-create-owned-file",
+          "before-upload-commit",
+          "uploaded-owned-file",
+          "native-readback-verified",
+          "waiting-for-wrapper-canonical-inode-proof",
+          "before-delete-owned-file",
+          "file-cleanup-current-gate-passed",
+          "before-delete-api",
+          "delete-api-returned",
+          "before-delete-results-getcount",
+          "delete-results-getcount-returned",
+          "before-delete-results-getat",
+          "delete-results-getat-returned",
+          "delete-result-verified",
+          "before-enumerate-after-file-delete",
+          "before-enumobjects-api"
+        ],
+        "full_mtp_flow_accepted": false
+      },
+      "trace_limits": "GetObjectHandles and 12 GetObjectPropList follow-up replies completed in the bounded trace. Request scope, depth and dataset counts were not logged, so it is unknown whether WPD was refreshing a broader cache. No host-only or device-only cause established.",
+      "trace": {
+        "ram_samples_retrieved": 6,
+        "ram_sample_bytes": 763306,
+        "persistent_directory_found_after_restore": false
+      },
+      "restoration": {
+        "time_utc": "2026-11-12T16:04:22.681273+00:00",
+        "device": "myron",
+        "source_commit": "0df9431945f49fc8d40b60be4323d47244d45d48",
+        "os": "OS4.0.6.0.XPMCNXM",
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false,
+        "partition_hashes": {
+          "recovery_b": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+          "recovery_a": "586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660",
+          "boot_b": "11a20858d4e68869152baf70db0edb3d279516f9d430154cc6c96ba427940748"
+        },
+        "original_recovery_b_restored": true,
+        "boot_b_and_recovery_a_unchanged": true,
+        "metadata_ciphertext_hashes_unchanged": true,
+        "hyperos_data_mounted": true,
+        "persistent_trace_directory_found": false,
+        "normal_os_unlock_and_original_files_user_confirmed": true
+      }
+    },
+    "native_aa0d84e_scope_count": {
+      "source_commit": "aa0d84e55ccaff9a7c7f6047aac706c41da39c47",
+      "ci_run": 43258199965,
+      "image_sha256": "0eb24beb709d6bd2c523460a5a115e54d9d4d3f46a25f24826cf53fd176a4901",
+      "startup_service_and_payload_gates_passed": true,
+      "owner_one_correct_pin_and_original_folders_confirmed": true,
+      "data_and_sdcard_rw_verified": true,
+      "mtp_observations": {
+        "source_commit": "aa0d84e55ccaff9a7c7f6047aac706c41da39c47",
+        "native_upload_and_readback_verified": true,
+        "file_delete_results_verified": true,
+        "host_last_stage": "before-enumobjects-api",
+        "host_enumobjects_returned": false,
+        "host_enum_next_entered": false,
+        "directory_delete_entered": false,
+        "host_stages": [
+          "before-content-open",
+          "selected-storage",
+          "selected-download",
+          "before-create-owned-directory",
+          "created-owned-directory",
+          "before-create-owned-file",
+          "before-upload-commit",
+          "uploaded-owned-file",
+          "native-readback-verified",
+          "waiting-for-wrapper-canonical-inode-proof",
+          "before-delete-owned-file",
+          "file-cleanup-current-gate-passed",
+          "before-delete-api",
+          "delete-api-returned",
+          "before-delete-results-getcount",
+          "delete-results-getcount-returned",
+          "before-delete-results-getat",
+          "delete-results-getat-returned",
+          "delete-result-verified",
+          "before-enumerate-after-file-delete",
+          "before-enumobjects-api"
+        ],
+        "scope_count_trace_preserved": true,
+        "samples": 6,
+        "sample_bytes": 761729,
+        "original_empty_dir_removed_by_canonical_inode_guarded_rmdir": true,
+        "alias_raw_paths_absent": true,
+        "second_upload_or_pin_retry": false,
+        "full_mtp_flow_accepted": false
+      },
+      "scope_counts": {
+        "get_handles_parent_category": "known",
+        "get_handles_format": 0,
+        "handle_count": 10,
+        "property_query_scope": "known",
+        "property_query_depth": 0,
+        "property_query_format": 0,
+        "property_query_group": 0,
+        "observed_property_selectors": [
+          "0xDC02 ObjectFormat",
+          "0xDC41 PersistentUniqueObjectIdentifier"
+        ],
+        "property_entry_count": 1,
+        "exact_parent_or_object_identity_logged": false
+      },
+      "trace_limits": "A known parent returned10 handles and subsequent known single depth0 format/PUID queries returned1 entry each. The exact parent was not logged, so this does not prove the device listed the wrong directory or establish a PUID/cache root cause. The own probe directory was verified empty at guarded cleanup.",
+      "restoration": {
+        "time_utc": "2026-11-12T16:44:58.530731+00:00",
+        "device": "myron",
+        "source_commit": "aa0d84e55ccaff9a7c7f6047aac706c41da39c47",
+        "os": "OS4.0.6.0.XPMCNXM",
+        "hyperos_boot_completed": true,
+        "slot": "b",
+        "dsu_running": false,
+        "partition_hashes": {
+          "recovery_b": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+          "recovery_a": "586abf2b0388087cd0f1a8c86244b6ca2ee4ed8e7e72428927d0e93d98964660",
+          "boot_b": "11a20858d4e68869152baf70db0edb3d279516f9d430154cc6c96ba427940748"
+        },
+        "original_recovery_b_restored": true,
+        "boot_b_and_recovery_a_unchanged": true,
+        "metadata_ciphertext_hashes_unchanged": true,
+        "hyperos_data_mounted": true,
+        "persistent_trace_directory_found": false,
+        "normal_os_unlock_and_original_files_user_confirmed": true
+      }
+    }
+  },
+  "scope": {
+    "partition_flash_commands": [
+      "recovery_b candidate",
+      "recovery_b original restoration"
+    ],
+    "slot_switch_commands": false,
+    "pin_or_weaver_slot_attempts": true,
+    "app_data_inspected": false,
+    "writable_data_tested": true,
+    "pin_decryption_pass_claimed": true,
+    "device_wide_no_writes_claimed": false,
+    "credential_or_guess_supplied_from_host": false,
+    "weaver_slot_write_commands": false,
+    "writable_mount_accepted": true,
+    "writable_file_payload_tested": true,
+    "mtp_payload_mutations_tested": true,
+    "mtp_complete_workflow_accepted": false
+  },
+  "remaining": [
+    "Investigate WPD EnumObjects identity/cache resolution: observed parent enumeration and ObjectFormat/PUID property queries completed; folder lifetime PUID stability has an independent verified contract concern, not yet established as timeout cause",
+    "Enforcing mode and untested destructive recovery operations are not accepted",
+    "Normal snapshot OTA path: resolve retained metadata mount EBUSY instead of relying on engine overwrite fallback",
+    "OTA writing UI progress must not reach 100% from ZIP-tail identification reads"
+  ],
+  "temporary_test_candidate": {
+    "source_commit": "79dec9edc91ce3f47b0fabe615a1d89b36ab996e",
+    "ci_run": 43151155964,
+    "ci_conclusion": "success",
+    "image_sha256": "958f955ea248d696cdb4fd4333ec819108e7f358aa9f4567a618c9e9aba7db83",
+    "program_sha256": "d349e2e478d965b2aa243ba30d6444fc13c5a3f20e827362c586a4fd33129f1e",
+    "config_sha256": "88f37d1434f162c6028044777a1c37c19ec860cda35ec87d99a5c3724397c130"
+  },
+  "candidate": {
+    "source_commit": "de63f37ddf98a94206fb240d20899a72218faa47",
+    "ci_run": 43161796967,
+    "ci_conclusion": "success",
+    "image_sha256": "37eb708f04eaab1ad76e31d23cac22345a64199e0c747deedc2e88d3564a88c0",
+    "image_bytes": 104857600,
+    "header_version": 4,
+    "kernel_bytes": 0,
+    "payloads": {
+      "system/bin/recovery": {
+        "bytes": 8601840,
+        "sha256": "d349e2e478d965b2aa243ba30d6444fc13c5a3f20e827362c586a4fd33129f1e"
+      },
+      "skyward/device.toml": {
+        "bytes": 9151,
+        "sha256": "d2a107132f40d1358822e88018ae5dcfe4fa99bd20a0fba518eb22001a6f31ab"
+      },
+      "skyward/lib64/ese_weaver.so": {
+        "bytes": 113360,
+        "sha256": "09a4095831aae55a4589606da194c0bd7f1369a3195316af643810b4136fc5a2"
+      },
+      "skyward/myron-diagnostics.sh": {
+        "bytes": 3067,
+        "sha256": "d171f21d97b057fecac2d2e57932b7f27c47336ec45d47405f80ae4ce0ca3aeb"
+      },
+      "init.skyward-myron-diagnostics.rc": {
+        "bytes": 229,
+        "sha256": "5504cc2a70fc894207ca7514873af34c1ad265b26630344c919ba4ed0c197a3a"
+      }
+    }
+  },
+  "followup_candidate": {
+    "source_commit": "9f0adfbd30bfd00a1f90404170e84df91e1f5092",
+    "ci_run": 43171699583,
+    "ci_conclusion": "success",
+    "image_file": "skyward-9f0adfb-myron-OS4.0.6.0.XPMCNXM-diagnostic.img",
+    "image_bytes": 104857600,
+    "image_sha256": "884f9e57fb9c113efa6a4dca396dad66ca33c7b91512f9aba2becd5e16d513d7",
+    "zip_sha256": "3adfefb56f154ea70f871598f47be707146a0efd752a93a83ff531ecb7e5ad55",
+    "kernel_bytes": 0,
+    "header_version": 4,
+    "payloads": {
+      "system/bin/recovery": {
+        "bytes": 8642120,
+        "sha256": "7b63b6006d26f7d4cce1d746077383c834f6b67267f94c3c82ef60c83f1e7d48"
+      },
+      "init.skyward-myron-diagnostics.rc": {
+        "bytes": 229,
+        "sha256": "5504cc2a70fc894207ca7514873af34c1ad265b26630344c919ba4ed0c197a3a"
+      },
+      "skyward/device.toml": {
+        "bytes": 9846,
+        "sha256": "9954a301b1b330824277e76f884ea46a11fbc8c61c0472efa76ca22ecbd4437d"
+      },
+      "skyward/lib64/ese_weaver.so": {
+        "bytes": 113360,
+        "sha256": "09a4095831aae55a4589606da194c0bd7f1369a3195316af643810b4136fc5a2"
+      },
+      "skyward/myron-diagnostics.sh": {
+        "bytes": 3624,
+        "sha256": "389c99e0f447beb6f2e9420219c71e4c2473556e7b423199c4dbc9b2e1e9f4a9"
+      }
+    },
+    "program_matches_same_run_tools_artifact": true,
+    "private_library_mounts_and_hash_pinned_recovery_dependencies": true,
+    "host_and_real_root_namespace_tests_passed": true,
+    "diagnostic_log_max_bytes": 786432,
+    "device_boot_tested": true,
+    "pin_tests_authorized": false,
+    "original_recovery_b_backup_sha256": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc"
+  },
+  "manifest_fixed_candidate": {
+    "source_commit": "d923c4a8a652d6db33676a1da4868771b3df6287",
+    "ci_run": 43183345626,
+    "ci_conclusion": "success",
+    "image_file": "skyward-d923c4a-myron-OS4.0.6.0.XPMCNXM-diagnostic.img",
+    "image_bytes": 104857600,
+    "image_sha256": "ce4874e5234155303f1fb66c86c131621fa805dd2512724fd91b12228188686d",
+    "zip_sha256": "f493f38cde868b260eaf528f45b56db258f9dce374f70e1ec8119b2228358ac0",
+    "header_version": 4,
+    "kernel_bytes": 0,
+    "payloads": {
+      "init.skyward-myron-diagnostics.rc": {
+        "bytes": 229,
+        "sha256": "5504cc2a70fc894207ca7514873af34c1ad265b26630344c919ba4ed0c197a3a"
+      },
+      "skyward/device.toml": {
+        "bytes": 10152,
+        "sha256": "decb532d0a32698521bc6990a7190c601c27246cb9eebd1f9b5af589b7d8e587"
+      },
+      "skyward/lib64/ese_weaver.so": {
+        "bytes": 113360,
+        "sha256": "09a4095831aae55a4589606da194c0bd7f1369a3195316af643810b4136fc5a2"
+      },
+      "skyward/myron-diagnostics.sh": {
+        "bytes": 4120,
+        "sha256": "042a5b49fad6a3fda417319cb62e632855fabc2a1145e33e948de3c3fa9dd2ac"
+      },
+      "system/bin/recovery": {
+        "bytes": 8642120,
+        "sha256": "7b63b6006d26f7d4cce1d746077383c834f6b67267f94c3c82ef60c83f1e7d48"
+      }
+    },
+    "program_matches_same_run_tools": true,
+    "config_and_scripts_match_source": true,
+    "diagnostic_max_log_bytes": 786432,
+    "device_boot_tested": true,
+    "pin_authorized": false
+  },
+  "nfc_candidate": {
+    "source_commit": "4ab21f6dcf9fab4c0700a50999002b9539a1ea98",
+    "ci_run": 43188698396,
+    "ci_conclusion": "success",
+    "image_file": "skyward-4ab21f6-myron-OS4.0.6.0.XPMCNXM-diagnostic.img",
+    "image_bytes": 104857600,
+    "image_sha256": "b8d0e9d1b0eb9e5f3f5e804b93e613290bd7a092c69481a7c43aa07b96177827",
+    "zip_sha256": "b6e88ca8101faf24138a6f4022d62f2eead5ef144182e0623ac44b79e6fe505e",
+    "header_version": 4,
+    "kernel_bytes": 0,
+    "payloads": {
+      "init.skyward-myron-diagnostics.rc": {
+        "bytes": 229,
+        "sha256": "5504cc2a70fc894207ca7514873af34c1ad265b26630344c919ba4ed0c197a3a"
+      },
+      "skyward/device.toml": {
+        "bytes": 10528,
+        "sha256": "ae547cf947e0d421b85c91638191269b7584044ae5a7c97eab8e0bc67b29a91f"
+      },
+      "skyward/lib64/ese_weaver.so": {
+        "bytes": 113360,
+        "sha256": "09a4095831aae55a4589606da194c0bd7f1369a3195316af643810b4136fc5a2"
+      },
+      "skyward/myron-diagnostics.sh": {
+        "bytes": 4120,
+        "sha256": "042a5b49fad6a3fda417319cb62e632855fabc2a1145e33e948de3c3fa9dd2ac"
+      },
+      "system/bin/recovery": {
+        "bytes": 8642120,
+        "sha256": "7b63b6006d26f7d4cce1d746077383c834f6b67267f94c3c82ef60c83f1e7d48"
+      }
+    },
+    "program_matches_same_run_tools": true,
+    "config_and_scripts_match_source": true,
+    "diagnostic_max_log_bytes": 786432,
+    "device_boot_tested": true,
+    "pin_authorized": false
+  },
+  "binder_stability_candidate": {
+    "source_commit": "f32dee018d60373db91f3cf45a3157df6952f9b3",
+    "ci_run": 43194221841,
+    "ci_conclusion": "success",
+    "image_file": "skyward-f32dee0-myron-OS4.0.6.0.XPMCNXM-diagnostic.img",
+    "image_bytes": 104857600,
+    "image_sha256": "d2eb776210ce4a12d54495ef665cebb304a4c7817c96f1be5275932c796a7045",
+    "zip_sha256": "1608e7b2ac57214045e370eaaaec1e41f4fb812b345d6584dc7c5a6930543d2a",
+    "header_version": 4,
+    "kernel_bytes": 0,
+    "payloads": {
+      "init.skyward-myron-diagnostics.rc": {
+        "bytes": 229,
+        "sha256": "5504cc2a70fc894207ca7514873af34c1ad265b26630344c919ba4ed0c197a3a"
+      },
+      "skyward/device.toml": {
+        "bytes": 10528,
+        "sha256": "ae547cf947e0d421b85c91638191269b7584044ae5a7c97eab8e0bc67b29a91f"
+      },
+      "skyward/lib64/ese_weaver.so": {
+        "bytes": 113512,
+        "sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e"
+      },
+      "skyward/myron-diagnostics.sh": {
+        "bytes": 4120,
+        "sha256": "042a5b49fad6a3fda417319cb62e632855fabc2a1145e33e948de3c3fa9dd2ac"
+      },
+      "system/bin/recovery": {
+        "bytes": 8642120,
+        "sha256": "7b63b6006d26f7d4cce1d746077383c834f6b67267f94c3c82ef60c83f1e7d48"
+      }
+    },
+    "program_matches_same_run_tools": true,
+    "config_and_scripts_match_source": true,
+    "native_library_matches_same_run_artifact_and_reproducible_builds": true,
+    "native_library_sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e",
+    "callback_vintf_mark_strong_import_verified": true,
+    "callback_create_binder_actual_call_verified": true,
+    "diagnostic_max_log_bytes": 786432,
+    "device_boot_tested": true,
+    "pin_authorized": false
+  },
+  "storage_conversion_candidate": {
+    "source_commit": "759d4d2960077ab3c035a9fff2f47d540b6685cc",
+    "ci_run": 43213140526,
+    "ci_conclusion": "success",
+    "image_file": "skyward-759d4d2-myron-OS4.0.6.0.XPMCNXM-diagnostic.img",
+    "image_bytes": 104857600,
+    "image_sha256": "88cfd4eda496c811dd80953f1b06ad10d74d25a8b017e7b22b6e618cdd4bc904",
+    "zip_sha256": "88b54f60a48937b6dbe38f472b51b4878319ce1303b89638950f5d9f4fe86f53",
+    "header_version": 4,
+    "kernel_bytes": 0,
+    "payloads": {
+      "init.skyward-myron-diagnostics.rc": {
+        "bytes": 229,
+        "sha256": "5504cc2a70fc894207ca7514873af34c1ad265b26630344c919ba4ed0c197a3a"
+      },
+      "skyward/device.toml": {
+        "bytes": 10578,
+        "sha256": "ef398a5fd481d0e248ca5fd424a8aebe4a2247bcfecfca54fe7b75f79cd02ffa"
+      },
+      "skyward/lib64/ese_weaver.so": {
+        "bytes": 113512,
+        "sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e"
+      },
+      "skyward/myron-diagnostics.sh": {
+        "bytes": 4120,
+        "sha256": "042a5b49fad6a3fda417319cb62e632855fabc2a1145e33e948de3c3fa9dd2ac"
+      },
+      "system/bin/recovery": {
+        "bytes": 8644296,
+        "sha256": "177d91f10ae955d687a9a882445fb147bcd819c16b3c6053167f35cb249b6533"
+      }
+    },
+    "program_matches_same_run_tools": true,
+    "config_and_scripts_match_source": true,
+    "native_library_matches_same_run_artifact_and_reproducible_builds": true,
+    "native_library_sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e",
+    "callback_vintf_mark_strong_import_verified": true,
+    "callback_create_binder_actual_call_verified": true,
+    "diagnostic_max_log_bytes": 786432,
+    "device_boot_tested": true,
+    "pin_authorized": false
+  },
+  "readonly_pin_candidate": {
+    "source_commit": "34fe498bd5304da020752dc4a1c6780bb8d4d065",
+    "ci_run": 43215964584,
+    "ci_conclusion": "success",
+    "image_file": "skyward-34fe498-myron-OS4.0.6.0.XPMCNXM-diagnostic.img",
+    "image_bytes": 104857600,
+    "image_sha256": "e9430d23020dec053d003535a058a425726dd8c2f20886de45bafc24622f8313",
+    "zip_sha256": "1c04559790ab24ab9d982730732ca4c4399ff95934ea2a37d8d71ecd8f2935d0",
+    "header_version": 4,
+    "kernel_bytes": 0,
+    "payloads": {
+      "init.skyward-myron-diagnostics.rc": {
+        "bytes": 229,
+        "sha256": "5504cc2a70fc894207ca7514873af34c1ad265b26630344c919ba4ed0c197a3a"
+      },
+      "skyward/device.toml": {
+        "bytes": 10761,
+        "sha256": "559aa4273a21d1e94b730f9a8092b8a21bfd7a0267415e7e2f7de4efd2260c3f"
+      },
+      "skyward/lib64/ese_weaver.so": {
+        "bytes": 113512,
+        "sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e"
+      },
+      "skyward/myron-diagnostics.sh": {
+        "bytes": 4120,
+        "sha256": "042a5b49fad6a3fda417319cb62e632855fabc2a1145e33e948de3c3fa9dd2ac"
+      },
+      "system/bin/recovery": {
+        "bytes": 8645080,
+        "sha256": "d5803eedbc9982a7537d72ffaef992335dd58f391fbafa417d319bdc383d4c22"
+      }
+    },
+    "program_matches_same_run_tools": true,
+    "config_and_scripts_match_source": true,
+    "native_library_matches_same_run_artifact_and_reproducible_builds": true,
+    "native_library_sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e",
+    "callback_vintf_mark_strong_import_verified": true,
+    "callback_create_binder_actual_call_verified": true,
+    "diagnostic_max_log_bytes": 786432,
+    "device_boot_tested": true,
+    "pin_authorized": true
+  },
+  "writable_mount_candidate": {
+    "source_commit": "2a586d1dc692549f45619f297e139f35c0d64035",
+    "ci_run": 43220845766,
+    "ci_conclusion": "success",
+    "image_file": "skyward-2a586d1-myron-OS4.0.6.0.XPMCNXM-diagnostic.img",
+    "image_bytes": 104857600,
+    "image_sha256": "42fe51b4fa10e1ba1583938f4f02610534c58df1590ec4d5b677470715b29fad",
+    "zip_sha256": "37ef3f8f331b5539d0c13a29c132b4ec68e46d0dfeef1202ea61f646abe585c6",
+    "header_version": 4,
+    "kernel_bytes": 0,
+    "payloads": {
+      "init.skyward-myron-diagnostics.rc": {
+        "bytes": 229,
+        "sha256": "5504cc2a70fc894207ca7514873af34c1ad265b26630344c919ba4ed0c197a3a"
+      },
+      "skyward/device.toml": {
+        "bytes": 10789,
+        "sha256": "aff151c4234fdfa864ef21d875f6b98c2401d3e09c1d46ce08556b89c6f5d3f6"
+      },
+      "skyward/lib64/ese_weaver.so": {
+        "bytes": 113512,
+        "sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e"
+      },
+      "skyward/myron-diagnostics.sh": {
+        "bytes": 4120,
+        "sha256": "042a5b49fad6a3fda417319cb62e632855fabc2a1145e33e948de3c3fa9dd2ac"
+      },
+      "system/bin/recovery": {
+        "bytes": 8645080,
+        "sha256": "d5803eedbc9982a7537d72ffaef992335dd58f391fbafa417d319bdc383d4c22"
+      }
+    },
+    "program_matches_same_run_tools": true,
+    "config_and_scripts_match_source": true,
+    "native_library_matches_same_run_artifact_and_reproducible_builds": true,
+    "native_library_sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e",
+    "callback_vintf_mark_strong_import_verified": true,
+    "callback_create_binder_actual_call_verified": true,
+    "diagnostic_max_log_bytes": 786432,
+    "device_boot_tested": true,
+    "pin_authorized": false
+  },
+  "mount_toggle_candidate": {
+    "source_commit": "aa35835b0b7288e735805fffa9d3ed0f8ce935eb",
+    "ci_run": 43228377535,
+    "ci_conclusion": "success",
+    "image_file": "skyward-aa35835-myron-OS4.0.6.0.XPMCNXM-diagnostic.img",
+    "image_bytes": 104857600,
+    "image_sha256": "d55edb08fdf954721e353426455d25e5e633f882897bae75b324b98216b43e3f",
+    "zip_sha256": "f516f1dd8c97bc9aebb62ffd6fd9bb1ed2a930b0d97321fbe258ce496fdb2612",
+    "header_version": 4,
+    "kernel_bytes": 0,
+    "payloads": {
+      "init.skyward-myron-diagnostics.rc": {
+        "bytes": 229,
+        "sha256": "5504cc2a70fc894207ca7514873af34c1ad265b26630344c919ba4ed0c197a3a"
+      },
+      "skyward/device.toml": {
+        "bytes": 10789,
+        "sha256": "aff151c4234fdfa864ef21d875f6b98c2401d3e09c1d46ce08556b89c6f5d3f6"
+      },
+      "skyward/lib64/ese_weaver.so": {
+        "bytes": 113512,
+        "sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e"
+      },
+      "skyward/myron-diagnostics.sh": {
+        "bytes": 4120,
+        "sha256": "042a5b49fad6a3fda417319cb62e632855fabc2a1145e33e948de3c3fa9dd2ac"
+      },
+      "system/bin/recovery": {
+        "bytes": 8646584,
+        "sha256": "d715fffa089533286b3f18f5b0a0da5d2d9db1452affd2c9d41c257ffbc2e57b"
+      }
+    },
+    "program_matches_same_run_tools": true,
+    "config_and_scripts_match_source": true,
+    "native_library_matches_same_run_artifact_and_reproducible_builds": true,
+    "native_library_sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e",
+    "callback_vintf_mark_strong_import_verified": true,
+    "callback_create_binder_actual_call_verified": true,
+    "diagnostic_max_log_bytes": 786432,
+    "device_boot_tested": true,
+    "pin_authorized": false
+  },
+  "mtp_delete_trace_candidate": {
+    "source_commit": "af568ba7000601f2beb1324f0355b658a8dcd219",
+    "ci_run": 43245275620,
+    "ci_conclusion": "success",
+    "image_file": "skyward-af568ba-myron-OS4.0.6.0.XPMCNXM-diagnostic.img",
+    "image_bytes": 104857600,
+    "image_sha256": "64ded45807a106677323f647b7b8ac3371b0d027fcf0c1c685a6f27e20ddc7e9",
+    "zip_sha256": "77e224c693cdee6d765bb7482104c355f70ff37341542aa1c9963b60bfbd40c1",
+    "header_version": 4,
+    "kernel_bytes": 0,
+    "payloads": {
+      "init.skyward-myron-diagnostics.rc": {
+        "bytes": 229,
+        "sha256": "5504cc2a70fc894207ca7514873af34c1ad265b26630344c919ba4ed0c197a3a"
+      },
+      "skyward/device.toml": {
+        "bytes": 10789,
+        "sha256": "aff151c4234fdfa864ef21d875f6b98c2401d3e09c1d46ce08556b89c6f5d3f6"
+      },
+      "skyward/lib64/ese_weaver.so": {
+        "bytes": 113512,
+        "sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e"
+      },
+      "skyward/myron-diagnostics.sh": {
+        "bytes": 4297,
+        "sha256": "50533210ae05cb1f2a68488aabcd48f7f0bb63420aadeaa0adf055685bf05a09"
+      },
+      "system/bin/recovery": {
+        "bytes": 8647384,
+        "sha256": "1af0b74c0dea0391f01bd3722dbf32f428dd53608590bdb66604c13dc9e34b47"
+      }
+    },
+    "program_matches_same_run_tools": true,
+    "config_and_scripts_match_source": true,
+    "native_library_matches_same_run_artifact_and_reproducible_builds": true,
+    "native_library_sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e",
+    "callback_vintf_mark_strong_import_verified": true,
+    "callback_create_binder_actual_call_verified": true,
+    "diagnostic_max_log_bytes": 786432,
+    "device_boot_tested": true,
+    "pin_authorized": true
+  },
+  "mtp_delete_trace_preparation": {
+    "ci_run": 43245275620,
+    "ci_conclusion": "success",
+    "responder_regression_tests_added": 2,
+    "normal_image_trace_default": "disabled",
+    "diagnostic_scope": "DeleteObject operation/transaction ID/response code/send-stage only; no handles, paths or datasets",
+    "host_sdk_v2_offline_cases_passed": 66,
+    "device_tested": true,
+    "new_phone_authorization_recorded": true,
+    "limits": "Diagnostic instrumentation only; no change to deletion semantics and no claimed fix or hardware acceptance."
+  },
+  "mtp_enumeration_trace_candidate": {
+    "source_commit": "0df9431945f49fc8d40b60be4323d47244d45d48",
+    "ci_run": 43250797489,
+    "ci_conclusion": "success",
+    "image_file": "skyward-0df9431-myron-OS4.0.6.0.XPMCNXM-diagnostic.img",
+    "image_bytes": 104857600,
+    "image_sha256": "01120977f6ce7794ecbd66e7b4cb7982587edbbcbeffe7f923dc2e4f7e63909c",
+    "zip_sha256": "422146a6da284d55e983acf9243ea12d7fd72ce216654eae48ce3e2a36308fac",
+    "header_version": 4,
+    "kernel_bytes": 0,
+    "payloads": {
+      "init.skyward-myron-diagnostics.rc": {
+        "bytes": 229,
+        "sha256": "5504cc2a70fc894207ca7514873af34c1ad265b26630344c919ba4ed0c197a3a"
+      },
+      "skyward/device.toml": {
+        "bytes": 10789,
+        "sha256": "aff151c4234fdfa864ef21d875f6b98c2401d3e09c1d46ce08556b89c6f5d3f6"
+      },
+      "skyward/lib64/ese_weaver.so": {
+        "bytes": 113512,
+        "sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e"
+      },
+      "skyward/myron-diagnostics.sh": {
+        "bytes": 4297,
+        "sha256": "50533210ae05cb1f2a68488aabcd48f7f0bb63420aadeaa0adf055685bf05a09"
+      },
+      "system/bin/recovery": {
+        "bytes": 8647768,
+        "sha256": "c7e9119ff94ded56a04e8fd26dc88e060c260fac70574ceea2140a392f8cf364"
+      }
+    },
+    "program_matches_same_run_tools": true,
+    "config_and_scripts_match_source": true,
+    "native_library_matches_same_run_artifact_and_reproducible_builds": true,
+    "native_library_sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e",
+    "callback_vintf_mark_strong_import_verified": true,
+    "callback_create_binder_actual_call_verified": true,
+    "diagnostic_max_log_bytes": 786432,
+    "device_boot_tested": true,
+    "pin_authorized": true
+  },
+  "mtp_enumeration_trace_preparation": {
+    "ci_run": 43250797489,
+    "ci_conclusion": "success",
+    "real_inotify_fd_drain_assertions_passed": true,
+    "diagnostic_scope": "Opt-in DeleteObject and at most 16 following transactions/command reads; related enumeration and dataset/response phases, Changed deduplicated per read; no handles, paths or datasets logged",
+    "host_sdk_v3_offline_cases_passed": 66,
+    "host_sdk_enumobjects_next_hresult_count_timing_added": true,
+    "device_tested": true,
+    "new_phone_authorization_recorded": true,
+    "limits": "Instrumentation and regression coverage only. No protocol-semantic fix or hardware pass claimed."
+  },
+  "mtp_scope_count_candidate": {
+    "source_commit": "aa0d84e55ccaff9a7c7f6047aac706c41da39c47",
+    "ci_run": 43258199965,
+    "ci_conclusion": "success",
+    "image_file": "skyward-aa0d84e-myron-OS4.0.6.0.XPMCNXM-diagnostic.img",
+    "image_bytes": 104857600,
+    "image_sha256": "0eb24beb709d6bd2c523460a5a115e54d9d4d3f46a25f24826cf53fd176a4901",
+    "zip_sha256": "dece0a22d4c7decdaa2d3cb19f193c3fd587f93dae05108f1f2af20ab6ab1af6",
+    "header_version": 4,
+    "kernel_bytes": 0,
+    "payloads": {
+      "init.skyward-myron-diagnostics.rc": {
+        "bytes": 229,
+        "sha256": "5504cc2a70fc894207ca7514873af34c1ad265b26630344c919ba4ed0c197a3a"
+      },
+      "skyward/device.toml": {
+        "bytes": 10789,
+        "sha256": "aff151c4234fdfa864ef21d875f6b98c2401d3e09c1d46ce08556b89c6f5d3f6"
+      },
+      "skyward/lib64/ese_weaver.so": {
+        "bytes": 113512,
+        "sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e"
+      },
+      "skyward/myron-diagnostics.sh": {
+        "bytes": 4297,
+        "sha256": "50533210ae05cb1f2a68488aabcd48f7f0bb63420aadeaa0adf055685bf05a09"
+      },
+      "system/bin/recovery": {
+        "bytes": 8648664,
+        "sha256": "5c861144478fed8f2dd3c8839c536b0ac898142bf81fde584153c439a97dc0af"
+      }
+    },
+    "program_matches_same_run_tools": true,
+    "config_and_scripts_match_source": true,
+    "native_library_matches_same_run_artifact_and_reproducible_builds": true,
+    "native_library_sha256": "534d1bf2fb65cdd131bddb41f477e687791ea1da4cc9bbac3e46a71c3370a62e",
+    "callback_vintf_mark_strong_import_verified": true,
+    "callback_create_binder_actual_call_verified": true,
+    "diagnostic_max_log_bytes": 786432,
+    "device_boot_tested": true,
+    "pin_authorized": true
+  },
+  "mtp_scope_count_preparation": {
+    "ci_run": 43258199965,
+    "ci_conclusion": "success",
+    "previous_failed_run": 43257192342,
+    "previous_failure": "Android diagnostic counter used Rust2024 let-chain syntax in an edition2021 workspace; fixed with match/if let without protocol-semantic change",
+    "unknown_and_deleted_single_property_query_contract_tests_passed": true,
+    "diagnostic_scope": "Existing bounded window plus zero/all-ones/known/unknown selectors, protocol depth/format/property/group and dataset first-count only; no handles/paths/property values/file contents",
+    "host_v4_native_binary_byte_identical_to_v3": true,
+    "host_v4_local_binding_and_guard_checks_passed": true,
+    "device_tested": true,
+    "new_phone_authorization_recorded": true,
+    "limits": "Still diagnostic only; no host/device cause or MTP complete pass established."
+  },
+  "initial_test_hardware_slot": "b",
+  "ota_install_and_preservation_20261113": {
+    "scope": "Owner requested matching official full OTA installation and persistent Skyward; no wipe or downgrade bypass. Earlier limited recovery_b-only test scopes describe their historical rounds, not this official OTA.",
+    "official_version": "OS4.0.6.0.XPMCNXM",
+    "source_slot": "b",
+    "engine_selected_next_slot": "a",
+    "manual_slot_selection_commands": false,
+    "payload_hash_verified_on_phone": true,
+    "engine_payload_signature_verified": true,
+    "engine_exit_success": true,
+    "wipe": false,
+    "snapshot_path": "metadata remount EBUSY; engine used overwrite fallback; normal snapshot update not accepted",
+    "original_preservation_failure": "EPERM writing recovery_a; BLKROGET and sysfs ro both 1, recovery_b ro 0",
+    "repair_source_commit": "eeb24123fa7c1d341fd9c96deb99f0f94e699794",
+    "repair_ci_run": 43362542783,
+    "all_ci_jobs_success": true,
+    "disposable_readonly_block_regression_actually_executed_and_passed": true,
+    "image_sha256": "e5a50649935babcda4e7710feab978e912e468118748ab1f057f54c63c745439",
+    "same_kept_api_phone_retry": {
+      "source_recovery_b_updated_to_verified_candidate": true,
+      "original_target_read_only_flag_1_preserved_for_repro": true,
+      "selected_only_next_recovery_a": true,
+      "write_and_readback_passed": true,
+      "recovery_a_and_b_match_verified_image_before_reboot": true,
+      "original_readonly_flags_restored": true,
+      "boot_init_boot_vendor_boot_unchanged_during_repair": true
+    },
+    "full_ota_replayed_with_corrected_callback": false,
+    "native_target_recovery_a_booted_and_program_config_weaver_hashes_matched": true,
+    "updated_android_release": "17",
+    "updated_hyperos_a_boot_completed": true,
+    "owner_normal_unlock_desktop_and_original_files_confirmed": true,
+    "normal_os_raw_partition_readback": "Not performed: ordinary ADB uid 2000 has no read access; no additional root or reboot requested",
+    "remaining_gui_progress": "First-stage 100% used highest FUSE read offset, not engine completion; unresolved",
+    "privacy": "Sanitized outcomes and public artifact hashes only; no credentials, serials, raw logs, private paths or user filenames"
+  }
+}

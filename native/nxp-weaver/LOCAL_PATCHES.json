@@ -1,0 +1,29 @@
+{
+  "files": [
+    {
+      "original": "weaver/libese_weaver/inc/TransportFactory.h",
+      "replacement": "recovery-patch/inc/TransportFactory.h",
+      "original_sha256": "48f5950a8e6947fb177b13ab57ee0b2aed6a93c36b9878d508caad8645a268f5",
+      "replacement_sha256": "405f4c4f25d2eb7de1725b9c2c1b699fecd035a89ebf1c177eb83edea1670845"
+    },
+    {
+      "original": "weaver/libese_weaver/src/weaver-transport-impl.cpp",
+      "replacement": "recovery-patch/src/weaver-transport-impl.cpp",
+      "original_sha256": "9d41340f595541ad10b6958cb1616e4f1c2939313513d6ea83a74a2bbf338a4c",
+      "replacement_sha256": "0532af7935ad3c3422e9d95079ae68620606b972c447d11bf55b5ef731c86735"
+    },
+    {
+      "original": "weaver/libese_weaver/src/weaver-parser-impl.cpp",
+      "replacement": "recovery-patch/src/weaver-parser-impl.cpp",
+      "original_sha256": "98cb6a0a35ab3ffbc60680f9cb807dabb323a3fbee33325709447b804d1e6667",
+      "replacement_sha256": "88b34fcae5a28385e18a994fbf4866183a17b6145c60b69bc0783c090aad8350"
+    },
+    {
+      "original": "keymint/transport/EseTransportUtils.cpp",
+      "replacement": "recovery-patch/src/EseTransportUtils.cpp",
+      "original_sha256": "83b643df20ca2a5b50561772f859f0194b262ff0e87550d2891ee7371890055a",
+      "replacement_sha256": "02e402266e2b6c889c2bab643011456b048e60a7ddb279f4fead3a8764b1bc3a"
+    }
+  ],
+  "patch_sha256": "2c332e672f9ae7bd5f986af0fbce025be61e3f822437fb20b8f87e90b5d50b43"
+}

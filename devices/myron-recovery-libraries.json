@@ -1,0 +1,190 @@
+{
+  "inputs": {
+    "libc++.so": "2267f93b8b3c9d1967f1833d5f71c7312213c43bb291250cf772800763037fb9",
+    "libc.so": "62aaee6b74567fcb6c9e604bc3ef5f8b287f15b91fde33a3cbd8a1060a47c970",
+    "libdl.so": "03d80d466a9089872ba8de5949cbb1518ba82e8f946e734c3469a091fff482f0",
+    "libdl_android.so": "6ad8ee8bc0a67a2582f9a9bcc37a40af4aa21236b968a08a895099058066305a",
+    "liblog.so": "3ad3e11cb56f46584d637fa8b0ac689999b7555d7b339c0de86a94c78b8743d6",
+    "libm.so": "bca3d8347d16b04042dcea5cd6056fc7ea9ba11f1979b07b75c8c7493279a904",
+    "libvndksupport.so": "24a35b4ca97ebb2fd8cab02baf8d4e3af49ceb7309c93268e5670eda3930d112",
+    "linker64": "88cc8d3ecc34f9eb6e9d40cd27102524eeeb5c37f8bca10316f388bae6ea879e"
+  },
+  "gnu_version_global_indices": "VER_NDX_LOCAL/GLOBAL (0/1) are unversioned; named versions >=2 match exactly",
+  "libraries": [
+    {
+      "file": "libvndksupport.so",
+      "sha256": "24a35b4ca97ebb2fd8cab02baf8d4e3af49ceb7309c93268e5670eda3930d112",
+      "needed": [
+        "libdl_android.so",
+        "liblog.so",
+        "libc++.so",
+        "libc.so",
+        "libm.so",
+        "libdl.so"
+      ],
+      "strong_unresolved": [],
+      "imports": [
+        {
+          "name": "__cxa_finalize",
+          "version": "LIBC",
+          "providers": [
+            "libc.so"
+          ]
+        },
+        {
+          "name": "getpid",
+          "version": "LIBC",
+          "providers": [
+            "libc.so"
+          ]
+        },
+        {
+          "name": "android_get_exported_namespace",
+          "version": "LIBDL_ANDROID",
+          "providers": [
+            "libdl_android.so"
+          ]
+        },
+        {
+          "name": "android_dlopen_ext",
+          "version": "LIBC",
+          "providers": [
+            "libdl.so"
+          ]
+        },
+        {
+          "name": "__android_log_print",
+          "version": "LIBLOG",
+          "providers": [
+            "liblog.so"
+          ]
+        },
+        {
+          "name": "dlerror",
+          "version": "LIBC",
+          "providers": [
+            "libdl.so"
+          ]
+        },
+        {
+          "name": "dlopen",
+          "version": "LIBC",
+          "providers": [
+            "libdl.so"
+          ]
+        },
+        {
+          "name": "dlclose",
+          "version": "LIBC",
+          "providers": [
+            "libdl.so"
+          ]
+        },
+        {
+          "name": "__cxa_guard_acquire",
+          "version": null,
+          "providers": [
+            "libc++.so"
+          ]
+        },
+        {
+          "name": "__cxa_guard_release",
+          "version": null,
+          "providers": [
+            "libc++.so"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "libdl_android.so",
+      "sha256": "6ad8ee8bc0a67a2582f9a9bcc37a40af4aa21236b968a08a895099058066305a",
+      "needed": [
+        "ld-android.so"
+      ],
+      "strong_unresolved": [],
+      "imports": [
+        {
+          "name": "__loader_android_get_LD_LIBRARY_PATH",
+          "version": null,
+          "providers": [
+            "linker64"
+          ]
+        },
+        {
+          "name": "__loader_android_update_LD_LIBRARY_PATH",
+          "version": null,
+          "providers": [
+            "linker64"
+          ]
+        },
+        {
+          "name": "__loader_android_set_application_target_sdk_version",
+          "version": null,
+          "providers": [
+            "linker64"
+          ]
+        },
+        {
+          "name": "__loader_android_init_anonymous_namespace",
+          "version": null,
+          "providers": [
+            "linker64"
+          ]
+        },
+        {
+          "name": "__loader_android_create_namespace",
+          "version": null,
+          "providers": [
+            "linker64"
+          ]
+        },
+        {
+          "name": "__loader_android_link_namespaces",
+          "version": null,
+          "providers": [
+            "linker64"
+          ]
+        },
+        {
+          "name": "__loader_android_dlwarning",
+          "version": null,
+          "providers": [
+            "linker64"
+          ]
+        },
+        {
+          "name": "__loader_android_get_exported_namespace",
+          "version": null,
+          "providers": [
+            "linker64"
+          ]
+        },
+        {
+          "name": "__loader_android_set_16kb_appcompat_mode",
+          "version": null,
+          "providers": [
+            "linker64"
+          ]
+        }
+      ]
+    }
+  ],
+  "stock_version": "OS4.0.6.0.XPMCNXM",
+  "source": "Two libraries read from the normally booted phone; hashes verified before saving. No ELF bytes are included in Git.",
+  "recovery_sha256": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+  "library_sources": [
+    {
+      "source": "/system/lib64/libvndksupport.so",
+      "bytes": 51504,
+      "sha256": "24a35b4ca97ebb2fd8cab02baf8d4e3af49ceb7309c93268e5670eda3930d112"
+    },
+    {
+      "source": "/system/lib64/bootstrap/libdl_android.so",
+      "bytes": 34848,
+      "sha256": "6ad8ee8bc0a67a2582f9a9bcc37a40af4aa21236b968a08a895099058066305a"
+    }
+  ],
+  "runtime_in_recovery_verified": false,
+  "limits": "Checks strong import names and GNU versions against exact REC libraries/linker; does not prove runtime namespace, SELinux or service behavior."
+}

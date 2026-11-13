@@ -1,0 +1,80 @@
+{
+  "device": "myron",
+  "stock_version": "OS4.0.6.0.XPMCNXM",
+  "baseline_tested_commit": "f32dee018d60373db91f3cf45a3157df6952f9b3",
+  "failure": {
+    "stage": "IKeyMintDevice/default convertStorageKeyToEphemeral after successful outer StoredKey.unwrap",
+    "service_error": -62,
+    "transaction": 13,
+    "argument": "one byte array",
+    "pin_or_weaver_slot_operation": false
+  },
+  "normal_readonly_inspection": {
+    "date": "2026-11-12",
+    "hyperos_booted": true,
+    "slot": "b",
+    "dsu_running": false,
+    "keymint_executable": "/vendor/bin/hw/android.hardware.security.onekeymint-service-qti",
+    "android_release": "17",
+    "system_patch_property": "2026-10-05",
+    "vendor_patch_property": "2026-10-05",
+    "key_operation_issued": false,
+    "phone_files_written": false
+  },
+  "actual_f32_recovery_properties": {
+    "android_release": "17",
+    "system_patch_property": "2026-10-01",
+    "vendor_patch_property": "2026-10-01",
+    "source": "actual recovery startup log, not a counterfactual import replay",
+    "property_difference_is_proven_cause": false
+  },
+  "upstream": {
+    "keystore2": "https://android.googlesource.com/platform/system/security/+/d43c1b9db3510dd5c25d35a34b926389bfeb2d33/keystore2/src/security_level.rs",
+    "vold": "https://android.googlesource.com/platform/system/vold.git/+/03a059177ec42321e2c54f9fbe2b5c6706752217/Keystore.cpp",
+    "aidl": "https://android.googlesource.com/platform/hardware/interfaces/+/a742007dfaf46b6e23022ff1ff92c0983b2c2b98/security/keymint/aidl/android/hardware/security/keymint/IKeyMintDevice.aidl",
+    "behavior": "one conversion; on -62 only, one upgradeKey with empty parameters then one conversion; vold retains the original inner storage blob"
+  },
+  "manual_diagnostic": {
+    "command": "skyward-cli storage-key",
+    "explicit_opt_in": "--renew-inner",
+    "general_key_upgrades_disabled": true,
+    "requires_wrapped_storage_fstab": true,
+    "automatic_ui_policy_unchanged": true,
+    "mounts_data_or_creates_dm": false,
+    "writes_or_deletes_blob_files": false,
+    "prints_key_material": false,
+    "hardware_accepted": true,
+    "runtime_limits": "upgradeKey is not read-only secure-world evidence; separate explicit authorization is required. RAM-only handling does not guarantee a vendor has no key-version state changes.",
+    "acceptance_source_commit": "759d4d2960077ab3c035a9fff2f47d540b6685cc",
+    "inner_renewal_performed": true,
+    "ephemeral_result_bytes": 100,
+    "metadata_blob_hashes_unchanged_through_hyperos_restore": true,
+    "hyperos_user_unlock_and_files_confirmed": true
+  },
+  "restricted_policy_followup": {
+    "field": "decrypt.storage_key_renewal",
+    "default": false,
+    "myron": true,
+    "general_key_upgrades": false,
+    "read_only": true,
+    "auto_repair": false,
+    "metadata_auto_delete_keys": false,
+    "hardware_accepted": true,
+    "acceptance_source_commit": "34fe498bd5304da020752dc4a1c6780bb8d4d065",
+    "readonly_data_and_sdcard_verified": true,
+    "correct_pin_ce_user_and_log_confirmed": true,
+    "metadata_ciphertext_unchanged": true,
+    "hyperos_unlock_after_restore_user_confirmed": true
+  },
+  "writable_followup": {
+    "general_key_upgrades": false,
+    "auto_repair": false,
+    "storage_key_renewal": true,
+    "read_only": false,
+    "hardware_accepted": false,
+    "mount_and_pin_path_hardware_accepted": true,
+    "acceptance_source_commit": "2a586d1dc692549f45619f297e139f35c0d64035",
+    "payload_io_tested": false,
+    "mtp_payload_tested": false
+  }
+}

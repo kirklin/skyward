@@ -1,5 +1,5 @@
 use super::*;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::fs::FileExt;
 
 /// A folder of its own for a test, empty, under `TMPDIR`.
@@ -171,6 +171,138 @@ fn a_session_opens_once_and_the_storage_needs_one() {
 }
 
 #[test]
+fn an_offered_root_alias_works_but_its_symbolic_links_are_not_exposed() {
+    let at = scratch("offered-root-links");
+    let (root, outside) = (at.join("storage"), at.join("outside"));
+    fs::create_dir_all(root.join("folder")).unwrap();
+    fs::create_dir(&outside).unwrap();
+    fs::write(root.join("plain.txt"), b"inside").unwrap();
+    fs::write(outside.join("canary.txt"), b"outside").unwrap();
+    std::os::unix::fs::symlink(&outside, root.join("escape-dir")).unwrap();
+    std::os::unix::fs::symlink(outside.join("canary.txt"), root.join("escape-file")).unwrap();
+    std::os::unix::fs::symlink(root.join("plain.txt"), root.join("inside-link")).unwrap();
+    let alias = at.join("sdcard");
+    std::os::unix::fs::symlink(&root, &alias).unwrap();
+    let mut r = open(&alias);
+    let all = handles(&mut r, PARENT_ROOT, 0);
+    let mut names: Vec<_> = all.into_iter().map(|h| info(&mut r, h).name).collect();
+    names.sort();
+    assert_eq!(names, ["folder", "plain.txt"], "MTP does not expose POSIX symbolic links");
+    let h = find(&mut r, PARENT_ROOT, "plain.txt");
+    assert_eq!(r.answer(&cmd(op::GET_OBJECT, &[h]), None).code, response::OK);
+    fs::remove_dir_all(&at).unwrap();
+}
+
+#[test]
+fn cached_handles_cannot_read_or_mutate_through_a_replaced_parent_link() {
+    let at = scratch("cached-root-escape");
+    let (root, outside) = (at.join("storage"), at.join("outside"));
+    fs::create_dir_all(root.join("folder")).unwrap();
+    fs::create_dir(&outside).unwrap();
+    fs::write(root.join("folder/canary.txt"), b"inside").unwrap();
+    fs::write(root.join("source.txt"), b"inside source").unwrap();
+    fs::write(outside.join("canary.txt"), b"protected outside bytes").unwrap();
+    let mut r = open(&root);
+    let folder = find(&mut r, PARENT_ROOT, "folder");
+    let cached = find(&mut r, folder, "canary.txt");
+    let source = find(&mut r, PARENT_ROOT, "source.txt");
+    fs::remove_dir_all(root.join("folder")).unwrap();
+    std::os::unix::fs::symlink(&outside, root.join("folder")).unwrap();
+    for command in [cmd(op::GET_OBJECT, &[cached]), cmd(op::GET_OBJECT_INFO, &[cached]),
+                    cmd(op::GET_OBJECT_HANDLES, &[STORAGE_ID, 0, folder]), cmd(op::DELETE_OBJECT, &[cached]),
+                    cmd(op::BEGIN_EDIT_OBJECT, &[cached]), cmd(op::COPY_OBJECT, &[source, STORAGE_ID, folder]),
+                    cmd(op::MOVE_OBJECT, &[source, STORAGE_ID, folder]), cmd(op::COPY_OBJECT, &[cached, STORAGE_ID, 0]),
+                    cmd(op::MOVE_OBJECT, &[cached, STORAGE_ID, 0])] {
+        let reply = r.answer(&command, None);
+        assert_eq!(reply.code, response::ACCESS_DENIED, "{:#06x}: {:?}", command.code, reply.why);
+        assert!(reply.data.is_none(), "no outside data is sent");
+    }
+    for (format, size, name) in [(format::TEXT, 3, "new.txt"), (format::ASSOCIATION, 0, "new-folder")] {
+        let reply = r.answer(&cmd(op::SEND_OBJECT_INFO, &[STORAGE_ID, folder]), Some(&object_info(format, size, name, "")));
+        assert_eq!(reply.code, response::ACCESS_DENIED, "{name}: {:?}", reply.why);
+    }
+    let mut rename = Writer::new();
+    rename.string("renamed.txt");
+    assert_eq!(r.answer(&cmd(op::SET_OBJECT_PROP_VALUE, &[cached, u32::from(prop::OBJECT_FILE_NAME)]), Some(&rename.into_bytes())).code, response::ACCESS_DENIED);
+    assert_eq!(fs::read(outside.join("canary.txt")).unwrap(), b"protected outside bytes");
+    assert_eq!(fs::read_dir(&outside).unwrap().count(), 1, "nothing is created, removed or moved outside");
+    assert_eq!(fs::read(root.join("source.txt")).unwrap(), b"inside source");
+    assert!(!root.join("canary.txt").exists(), "the outside object is not copied into the offered storage either");
+    fs::remove_dir_all(&at).unwrap();
+}
+
+#[test]
+fn read_only_io_keeps_its_reason_through_wrappers_and_transfer_responses() {
+    let direct = io::Error::from_raw_os_error(libc::EROFS);
+    assert_eq!(access_failed(&direct), response::STORE_READ_ONLY);
+    let wrapped = anyhow::Error::from(direct).context("write an MTP object");
+    assert_eq!(write_failed(&wrapped, response::PARTIAL_DELETION), response::STORE_READ_ONLY);
+    assert_eq!(access_failed(&io::Error::from_raw_os_error(libc::EACCES)), response::ACCESS_DENIED);
+    assert_eq!(write_failed(&anyhow::anyhow!("not an I/O failure"), response::PARTIAL_DELETION), response::PARTIAL_DELETION);
+
+    let at = scratch("read-only-response");
+    let mut r = open(&at);
+    let info_cmd = cmd(op::SEND_OBJECT_INFO, &[STORAGE_ID, PARENT_ROOT]);
+    assert_eq!(r.answer(&info_cmd, Some(&object_info(format::TEXT, 1, "partial.txt", ""))).code, response::OK);
+    let reply = r.received(&cmd(op::SEND_OBJECT, &[]), Received::Failed(io::Error::from_raw_os_error(libc::EROFS))).unwrap();
+    assert_eq!(reply.code, response::STORE_READ_ONLY);
+    assert!(!at.join("partial.txt").exists(), "the incomplete upload is cleaned up");
+    let partial = cmd(op::SEND_PARTIAL_OBJECT, &[1, 0, 0, 1]);
+    let reply = r.received(&partial, Received::Failed(io::Error::from_raw_os_error(libc::EROFS))).unwrap();
+    assert_eq!((reply.code, reply.params), (response::STORE_READ_ONLY, vec![0]));
+    fs::remove_dir_all(&at).unwrap();
+}
+
+/// Run explicitly inside an isolated real read-only mount, seeded with
+/// plain.txt, 中文文件.txt and an empty destination/ directory. Neither
+/// chmod nor a fake stat result is accepted as a read-only filesystem.
+#[test]
+#[ignore = "requires SKYWARD_MTP_RO_ROOT on an isolated read-only mount"]
+fn a_read_only_mount_is_reported_and_writes_are_refused_without_changing_files() {
+    let top = PathBuf::from(std::env::var_os("SKYWARD_MTP_RO_ROOT").expect("isolated fixture mount path"));
+    assert!(space(&top).unwrap().2, "the fixture must really be mounted read-only");
+    assert_eq!(fs::write(top.join("must-not-be-created"), b"x").unwrap_err().raw_os_error(), Some(libc::EROFS));
+    let plain = b"immutable MTP fixture\n";
+    let chinese = "只读传输测试\n".as_bytes();
+    assert_eq!(fs::read(top.join("plain.txt")).unwrap(), plain);
+    assert_eq!(fs::read(top.join("中文文件.txt")).unwrap(), chinese);
+    let mut r = open(&top);
+    let bytes = dataset(r.answer(&cmd(op::GET_STORAGE_INFO, &[STORAGE_ID]), None));
+    let mut rd = Reader::new(&bytes);
+    assert_eq!((rd.u16(), rd.u16(), rd.u16()), (Some(storage::FIXED_RAM), Some(storage::HIERARCHICAL), Some(storage::READ_ONLY_WITHOUT_DELETE)));
+    for (name, expected) in [("plain.txt", plain.as_slice()), ("中文文件.txt", chinese)] {
+        let handle = find(&mut r, PARENT_ROOT, name);
+        let reply = r.answer(&cmd(op::GET_OBJECT, &[handle]), None);
+        assert_eq!(reply.code, response::OK);
+        let Some(Outgoing::File { mut file, offset, length }) = reply.data else { panic!("download is a file") };
+        assert_eq!((offset, length), (0, expected.len() as u64));
+        let mut got = Vec::new();
+        file.read_to_end(&mut got).unwrap();
+        assert_eq!(got, expected);
+    }
+    for (format, size, name) in [(format::TEXT, 3, "new.txt"), (format::TEXT, u32::MAX, "large.txt"), (format::ASSOCIATION, 0, "new-folder")] {
+        let reply = r.answer(&cmd(op::SEND_OBJECT_INFO, &[STORAGE_ID, PARENT_ROOT]), Some(&object_info(format, size, name, "")));
+        assert_eq!(reply.code, response::STORE_READ_ONLY, "upload {name}: {:?}", reply.why);
+        assert!(!top.join(name).exists());
+    }
+    let file = find(&mut r, PARENT_ROOT, "plain.txt");
+    let folder = find(&mut r, PARENT_ROOT, "destination");
+    let mut rename = Writer::new();
+    rename.string("renamed.txt");
+    let reply = r.answer(&cmd(op::SET_OBJECT_PROP_VALUE, &[file, u32::from(prop::OBJECT_FILE_NAME)]), Some(&rename.into_bytes()));
+    assert_eq!(reply.code, response::STORE_READ_ONLY, "rename: {:?}", reply.why);
+    for command in [cmd(op::DELETE_OBJECT, &[file]), cmd(op::MOVE_OBJECT, &[file, STORAGE_ID, folder]),
+                    cmd(op::COPY_OBJECT, &[file, STORAGE_ID, folder]), cmd(op::BEGIN_EDIT_OBJECT, &[file])] {
+        let reply = r.answer(&command, None);
+        assert_eq!(reply.code, response::STORE_READ_ONLY, "{:#06x}: {:?}", command.code, reply.why);
+    }
+    assert_eq!(fs::read(top.join("plain.txt")).unwrap(), plain);
+    assert_eq!(fs::read(top.join("中文文件.txt")).unwrap(), chinese);
+    assert!(!top.join("renamed.txt").exists());
+    assert_eq!(fs::read_dir(top.join("destination")).unwrap().count(), 0);
+}
+
+#[test]
 fn entries_keep_their_handles_from_one_session_and_connection_to_the_next() {
     let at = scratch("sessions");
     fs::write(at.join("a.txt"), b"a").unwrap();
@@ -289,6 +421,27 @@ fn property_lists_go_as_deep_as_the_stock_system_s() {
     let supported = dataset(r.answer(&cmd(op::GET_OBJECT_PROPS_SUPPORTED, &[u32::from(format::UNDEFINED)]), None));
     assert_eq!(u32::from_le_bytes(supported[..4].try_into().unwrap()) as usize, OBJECT_PROPERTIES.len());
     fs::remove_dir_all(&at).unwrap();
+}
+
+#[test]
+fn property_lists_reject_unknown_and_deleted_single_handles() {
+    let at = scratch("props-invalid-single");
+    fs::write(at.join("own.bin"), b"own").unwrap();
+    let mut r = open(&at);
+    let file = find(&mut r, PARENT_ROOT, "own.bin");
+    for handle in [file + 1, 0xFFFF_FFFE] {
+        let reply = r.answer(&cmd(op::GET_OBJECT_PROP_LIST, &[handle, 0, 0xFFFF_FFFF, 0, 0]), None);
+        assert_eq!(reply.code, response::INVALID_OBJECT_HANDLE);
+        assert!(reply.data.is_none(), "an unknown single handle is an error, not an empty successful dataset");
+    }
+    let listed = prop_list(&dataset(r.answer(&cmd(op::GET_OBJECT_PROP_LIST, &[file, 0, 0xFFFF_FFFF, 0, 0]), None)));
+    assert_eq!(listed.len(), OBJECT_PROPERTIES.len(), "the single object existed before DeleteObject");
+    assert_eq!(r.answer(&cmd(op::DELETE_OBJECT, &[file, 0]), None).code, response::OK);
+    assert!(!at.join("own.bin").exists());
+    let reply = r.answer(&cmd(op::GET_OBJECT_PROP_LIST, &[file, 0, 0xFFFF_FFFF, 0, 0]), None);
+    assert_eq!(reply.code, response::INVALID_OBJECT_HANDLE);
+    assert!(reply.data.is_none(), "a handle deleted in this session cannot become an empty successful property list");
+    fs::remove_dir_all(at).unwrap();
 }
 
 #[test]
@@ -457,6 +610,86 @@ fn objects_are_renamed_moved_copied_and_deleted() {
     assert_eq!(r.answer(&cmd(op::GET_OBJECT_INFO, &[a]), None).code, response::INVALID_OBJECT_HANDLE);
     assert_eq!(r.answer(&cmd(op::DELETE_OBJECT, &[into]), None).code, response::INVALID_OBJECT_HANDLE);
     fs::remove_dir_all(&at).unwrap();
+}
+
+#[test]
+fn deleting_a_file_then_its_empty_folder_leaves_the_next_transaction_usable() {
+    let at = scratch("delete-sequence");
+    fs::create_dir(at.join("Download")).unwrap();
+    let mut r = open(&at);
+    let download = find(&mut r, PARENT_ROOT, "Download");
+    let made = r.answer(
+        &cmd(op::SEND_OBJECT_INFO, &[STORAGE_ID, download]),
+        Some(&object_info(format::ASSOCIATION, 0, "fixture", "")),
+    );
+    assert_eq!(made.code, response::OK);
+    let folder = made.params[2];
+    assert_eq!(r.answer(&cmd(op::SEND_OBJECT, &[]), Some(&[])).code, response::OK);
+    let (file, sent) = send(&mut r, folder, "fixture.bin", &[42; 65536], 65536);
+    assert_eq!(sent.code, response::OK);
+    assert_eq!(handles(&mut r, folder, 0), [file]);
+
+    for (transaction, handle) in [(41, file), (43, folder)] {
+        let delete = Command { code: op::DELETE_OBJECT, transaction, params: vec![handle, 0] };
+        assert!(matches!(r.incoming(&delete), Incoming::None));
+        let reply = r.answer(&delete, None);
+        assert_eq!(reply.code, response::OK, "{:?}", reply.why);
+        assert!(reply.data.is_none() && reply.params.is_empty(), "DeleteObject has no data phase or response parameters");
+        let wire = crate::dataset::short(crate::codes::container::RESPONSE, reply.code, delete.transaction, &reply.params);
+        assert_eq!(wire.len(), 12);
+        let header = crate::dataset::Header::read(&wire).unwrap();
+        assert_eq!((header.kind, header.code, header.transaction), (crate::codes::container::RESPONSE, response::OK, transaction));
+        let parent = if handle == file { folder } else { download };
+        let enumerate = Command { code: op::GET_OBJECT_HANDLES, transaction: transaction + 1, params: vec![STORAGE_ID, 0, parent] };
+        assert_eq!(dataset(r.answer(&enumerate, None)), 0u32.to_le_bytes());
+    }
+    assert!(!at.join("Download/fixture").exists());
+    let next = Command { code: op::GET_STORAGE_IDS, transaction: 45, params: vec![] };
+    let bytes = dataset(r.answer(&next, None));
+    let mut reader = Reader::new(&bytes);
+    assert_eq!((reader.u32(), reader.u32()), (Some(1), Some(STORAGE_ID)));
+    assert!(reader.rest().is_empty());
+    assert_eq!(r.answer(&cmd(op::GET_OBJECT_INFO, &[file]), None).code, response::INVALID_OBJECT_HANDLE);
+    assert_eq!(r.answer(&cmd(op::GET_OBJECT_INFO, &[folder]), None).code, response::INVALID_OBJECT_HANDLE);
+    fs::remove_dir_all(at).unwrap();
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+#[test]
+fn deleting_watched_objects_does_not_repeat_removed_events_for_the_same_session() {
+    let at = scratch("delete-events");
+    fs::create_dir(at.join("fixture")).unwrap();
+    fs::write(at.join("fixture/own.bin"), b"own").unwrap();
+    let mut r = open(&at);
+    let folder = find(&mut r, PARENT_ROOT, "fixture");
+    let file = find(&mut r, folder, "own.bin");
+    assert!(r.fd().is_some(), "exercise the real inotify backend");
+    let readable = |r: &Responder| {
+        let mut fd = libc::pollfd { fd: r.fd().unwrap(), events: libc::POLLIN, revents: 0 };
+        let n = unsafe { libc::poll(&mut fd, 1, 0) };
+        assert!(n >= 0, "poll the real watch descriptor");
+        n == 1 && fd.revents & libc::POLLIN != 0
+    };
+    assert!(r.changes().is_empty());
+    // An external change proves the watches really deliver removals.
+    fs::write(at.join("fixture/external.bin"), b"external").unwrap();
+    let added = r.changes();
+    let external = added.iter().find(|e| e.code == event::OBJECT_ADDED).expect("the external file was noticed").param;
+    fs::remove_file(at.join("fixture/external.bin")).unwrap();
+    assert_eq!(r.changes(), [Event { code: event::OBJECT_REMOVED, param: external }]);
+
+    assert_eq!(r.answer(&cmd(op::DELETE_OBJECT, &[file, 0]), None).code, response::OK);
+    assert!(readable(&r), "the kernel queued this session's file deletion");
+    assert!(r.changes().is_empty(), "the command already removed this file's handle");
+    assert!(!readable(&r), "an empty changes result must still drain the watch fd");
+    assert!(handles(&mut r, folder, 0).is_empty());
+    assert_eq!(r.answer(&cmd(op::DELETE_OBJECT, &[folder, 0]), None).code, response::OK);
+    assert!(readable(&r), "the folder deletion and watch removal queued events");
+    assert!(r.changes().is_empty(), "IN_DELETE and IN_IGNORED must not repeat the session's removal");
+    assert!(!readable(&r), "drain IN_DELETE/IN_IGNORED before waiting for the next command");
+    assert!(r.changes().is_empty(), "draining again must not replay removals");
+    assert!(handles(&mut r, PARENT_ROOT, 0).is_empty());
+    fs::remove_dir_all(at).unwrap();
 }
 
 #[test]

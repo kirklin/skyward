@@ -1,0 +1,1465 @@
+{
+  "bytes": 113360,
+  "sha256": "09a4095831aae55a4589606da194c0bd7f1369a3195316af643810b4136fc5a2",
+  "needed": [
+    "libc++.so",
+    "libbase.so",
+    "liblog.so",
+    "libbinder_ndk.so",
+    "libc.so",
+    "libm.so",
+    "libdl.so"
+  ],
+  "all_strong_import_names_and_versions_provided": true,
+  "unresolved_strong_imports": [],
+  "weak_unresolved_imports": [],
+  "exports": [
+    {
+      "name": "_ZN10WeaverImpl11getInstanceEv",
+      "version": null,
+      "version_hidden": false,
+      "defined": true,
+      "binding": 1,
+      "visibility": 0,
+      "size": 108,
+      "address": 42644
+    },
+    {
+      "name": "_ZN10WeaverImpl14s_instanceFlagE",
+      "version": null,
+      "version_hidden": false,
+      "defined": true,
+      "binding": 1,
+      "visibility": 0,
+      "size": 8,
+      "address": 123816
+    },
+    {
+      "name": "_ZN10WeaverImpl4InitEv",
+      "version": null,
+      "version_hidden": false,
+      "defined": true,
+      "binding": 1,
+      "visibility": 0,
+      "size": 588,
+      "address": 42848
+    },
+    {
+      "name": "_ZN10WeaverImpl8GetSlotsER8SlotInfo",
+      "version": null,
+      "version_hidden": false,
+      "defined": true,
+      "binding": 1,
+      "visibility": 0,
+      "size": 652,
+      "address": 43436
+    },
+    {
+      "name": "_ZN10WeaverImpl5closeEv",
+      "version": null,
+      "version_hidden": false,
+      "defined": true,
+      "binding": 1,
+      "visibility": 0,
+      "size": 176,
+      "address": 44088
+    },
+    {
+      "name": "_ZN10WeaverImpl14createInstanceEv",
+      "version": null,
+      "version_hidden": false,
+      "defined": true,
+      "binding": 1,
+      "visibility": 0,
+      "size": 96,
+      "address": 42752
+    },
+    {
+      "name": "_ZN10WeaverImpl10s_instanceE",
+      "version": null,
+      "version_hidden": false,
+      "defined": true,
+      "binding": 1,
+      "visibility": 0,
+      "size": 8,
+      "address": 123808
+    },
+    {
+      "name": "_ZTV10WeaverImpl",
+      "version": null,
+      "version_hidden": false,
+      "defined": true,
+      "binding": 1,
+      "visibility": 0,
+      "size": 72,
+      "address": 103736
+    },
+    {
+      "name": "_ZN10WeaverImpl4ReadEjRKNSt3__16vectorIhNS0_9allocatorIhEEEER12ReadRespInfo",
+      "version": null,
+      "version_hidden": false,
+      "defined": true,
+      "binding": 1,
+      "visibility": 0,
+      "size": 976,
+      "address": 44264
+    },
+    {
+      "name": "_ZN10WeaverImpl5WriteEjRKNSt3__16vectorIhNS0_9allocatorIhEEEES6_",
+      "version": null,
+      "version_hidden": false,
+      "defined": true,
+      "binding": 1,
+      "visibility": 0,
+      "size": 596,
+      "address": 45240
+    },
+    {
+      "name": "_ZN10WeaverImpl6DeInitEv",
+      "version": null,
+      "version_hidden": false,
+      "defined": true,
+      "binding": 1,
+      "visibility": 0,
+      "size": 140,
+      "address": 45836
+    },
+    {
+      "name": "_ZN10WeaverImplD0Ev",
+      "version": null,
+      "version_hidden": false,
+      "defined": true,
+      "binding": 2,
+      "visibility": 0,
+      "size": 8,
+      "address": 45980
+    }
+  ],
+  "imports": [
+    {
+      "name": "__cxa_finalize",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "__cxa_atexit",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "__register_atfork",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "_ZNSt3__111__call_onceERVmPvPFvS2_E",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "__android_log_print",
+      "version": "LIBLOG",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "liblog.so"
+      ]
+    },
+    {
+      "name": "_Znwm",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "_ZdlPvm",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "memcpy",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "_ZNSt3__122__libcpp_verbose_abortEPKcz",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "memmove",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "_ZNSt3__119__shared_weak_count14__release_weakEv",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "_ZNSt3__119__shared_weak_countD2Ev",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "_ZNKSt3__119__shared_weak_count13__get_deleterERKSt9type_info",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "_ZN7android4base9ShouldLogENS0_11LogSeverityEPKc",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbase.so"
+      ]
+    },
+    {
+      "name": "AStatus_delete",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "__errno",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "_ZN7android4base10LogMessageC1EPKcjNS0_11LogSeverityES3_i",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbase.so"
+      ]
+    },
+    {
+      "name": "_ZN7android4base10LogMessage6streamEv",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbase.so"
+      ]
+    },
+    {
+      "name": "_ZN7android4base10LogMessageD1Ev",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbase.so"
+      ]
+    },
+    {
+      "name": "memcmp",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "AIBinder_DeathRecipient_new",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AIBinder_DeathRecipient_delete",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AServiceManager_waitForService",
+      "version": "LIBBINDER_NDK31",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AStatus_isOk",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AIBinder_decStrong",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "__assert",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "calloc",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "_ZNSt3__119__shared_weak_count4lockEv",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "AStatus_getServiceSpecificError",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "_ZNSt3__15mutex4lockEv",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "_ZNSt3__15mutex6unlockEv",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "usleep",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "_ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEi",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "_ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEE6sentryC1ERS3_",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "_ZNKSt3__18ios_base6getlocEv",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "_ZNSt3__15ctypeIcE2idE",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "_ZNKSt3__16locale9use_facetERNS0_2idE",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "_ZNSt3__16localeD1Ev",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "_ZNSt3__18ios_base5clearEj",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "_ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEE6sentryD1Ev",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "memset",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "free",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "AIBinder_Weak_promote",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AIBinder_incStrong",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AIBinder_Weak_new",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AIBinder_Weak_delete",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AStatus_newOk",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "_ZNSt3__15mutexD1Ev",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "timer_delete",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "timer_settime",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "_ZN7android4base12StringPrintfEPKcz",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbase.so"
+      ]
+    },
+    {
+      "name": "timer_create",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "__cxa_guard_acquire",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "__cxa_guard_release",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "_ZNSt3__19to_stringEi",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "signal",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "raise",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "sigaction",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "sigemptyset",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "sigaddset",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "sigprocmask",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "AIBinder_prepareTransaction",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AParcel_writeByte",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AIBinder_transact",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AParcel_readStatusHeader",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AStatus_fromStatus",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AParcel_delete",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AParcel_readByteArray",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AParcel_readBool",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AParcel_writeByteArray",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AParcel_readInt32",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AIBinder_new",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AIBinder_associateClass",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AIBinder_getUserData",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AIBinder_getClass",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AIBinder_Class_getDescriptor",
+      "version": "LIBBINDER_NDK31",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "strcmp",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "malloc",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "AParcel_writeStrongBinder",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AParcel_readStrongBinder",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AIBinder_isRemote",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AIBinder_dump",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AIBinder_Class_define",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AIBinder_Class_setOnDump",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AIBinder_Class_setHandleShellCommand",
+      "version": "LIBBINDER_NDK30",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 2,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AIBinder_Class_setTransactionCodeToFunctionNameMap",
+      "version": "LIBBINDER_NDK36",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AParcel_writeStatusHeader",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AParcel_writeInt32",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AParcel_writeBool",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AParcel_readByte",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "__cxa_pure_virtual",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "AParcel_writeString",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AParcel_readString",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6resizeEmc",
+      "version": null,
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc++.so"
+      ]
+    },
+    {
+      "name": "AParcel_getDataPosition",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "AParcel_setDataPosition",
+      "version": "LIBBINDER_NDK",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libbinder_ndk.so"
+      ]
+    },
+    {
+      "name": "getauxval",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "strncmp",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "__system_property_get",
+      "version": "LIBC",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 1,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    },
+    {
+      "name": "memfd_create",
+      "version": "LIBC_R",
+      "version_hidden": false,
+      "defined": false,
+      "binding": 2,
+      "visibility": 0,
+      "size": 0,
+      "address": 0,
+      "providers": [
+        "libc.so"
+      ]
+    }
+  ],
+  "library_inputs": {
+    "libbase.so": "6d4a72e74b9dd812b103dc90d2782e32bf96d7af9abb1d61b903415672902687",
+    "libbinder_ndk.so": "64a052167ee3293943ddb6ef0cd75a5a894a6b502b6a560e2524679d6916863a",
+    "libc++.so": "2267f93b8b3c9d1967f1833d5f71c7312213c43bb291250cf772800763037fb9",
+    "libc.so": "62aaee6b74567fcb6c9e604bc3ef5f8b287f15b91fde33a3cbd8a1060a47c970",
+    "libdl.so": "03d80d466a9089872ba8de5949cbb1518ba82e8f946e734c3469a091fff482f0",
+    "liblog.so": "3ad3e11cb56f46584d637fa8b0ac689999b7555d7b339c0de86a94c78b8743d6",
+    "libm.so": "bca3d8347d16b04042dcea5cd6056fc7ea9ba11f1979b07b75c8c7493279a904"
+  },
+  "device_executed": false,
+  "public_vtable_bytes": 72,
+  "public_vtable_first_five_methods": [
+    "_ZN10WeaverImpl4InitEv",
+    "_ZN10WeaverImpl8GetSlotsER8SlotInfo",
+    "_ZN10WeaverImpl4ReadEjRKNSt3__16vectorIhNS0_9allocatorIhEEEER12ReadRespInfo",
+    "_ZN10WeaverImpl5WriteEjRKNSt3__16vectorIhNS0_9allocatorIhEEEES6_",
+    "_ZN10WeaverImpl6DeInitEv"
+  ],
+  "source_compiled": true,
+  "strict_link": true,
+  "platform_tree_required": false,
+  "platform_header_dependencies": 773,
+  "compiler_version": "Android (15071444, +pgo, +bolt, +lto, +mlgo, based on r596125) clang version 22.0.2 (https://android.googlesource.com/toolchain/llvm-project de03d430485c884861198b25459851f429cbdbad)\nTarget: x86_64-unknown-linux-gnu\nThread model: posix\nInstalledDir: <TOOLCHAIN>/bin\n",
+  "crt_objects_built_from_bundled_pinned_source": true,
+  "relocated_rebuild_byte_identical": true
+}

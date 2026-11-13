@@ -1,0 +1,38 @@
+{
+  "source": "/vendor_dlkm/lib/modules/nxp-nci.ko",
+  "bytes": 85288,
+  "sha256": "ae9a9fcf262e29ca5be19c5db733174baec47d5978acb2d864bbf05dc2de6735",
+  "modinfo": [
+    "description=NXP NFC I2C driver",
+    "license=GPL",
+    "built_with=DDK",
+    "name=nxp_nci",
+    "depends=smcinvoke_dlkm,qcom_ipc_logging,pinctrl-msm",
+    "alias=of:N*T*Cqcom,sn-nci",
+    "alias=of:N*T*Cqcom,sn-nciC*",
+    "vermagic=6.12.69-android16-6-4k SMP preempt mod_unload modversions aarch64"
+  ],
+  "no_module_loaded_or_node_changed": true,
+  "normal_kernel_module_name": "nxp_nci",
+  "normal_node_mode": "0660",
+  "normal_node_user": "nfc",
+  "normal_node_group": "nfc",
+  "uevent_rule_source": "/vendor/etc/ueventd.rc:411",
+  "loaded_nxp_nci_build_id_matches_module_file": true,
+  "nfc_protocol_module_is_distinct": true,
+  "modules_dep": [
+    "smcinvoke_dlkm.ko"
+  ],
+  "stock_version": "OS4.0.6.0.XPMCNXM",
+  "uevent_rule": "/dev/nq-nci 0660 nfc nfc",
+  "recovery_before_fix": "QTI reported missing device node; profile only loaded touch module",
+  "source_followup": {
+    "load_by_filename": "nxp-nci",
+    "node_owner": "nfc:nfc",
+    "node_mode": "0660",
+    "device_boot_tested": true,
+    "node_created_with_expected_owner_mode": true,
+    "sharedsecret_two_peers_agreed": true
+  },
+  "limits": "Static module/read-only normal-system evidence; no module loaded or node changed during collection. Generic nfc protocol module is distinct from nxp_nci driver. No driver ELF bytes are included in Git."
+}

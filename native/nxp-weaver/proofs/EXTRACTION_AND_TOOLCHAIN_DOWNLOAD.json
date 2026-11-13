@@ -1,0 +1,10 @@
+{
+  "stock_recovery_full_sha256": "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc",
+  "seven_extracted_libraries_match_recorded_sha256": true,
+  "toolchain_download_script_tested_public_files": [
+    "bin/clang-22",
+    "lib/clang/22/lib/linux/libclang_rt.builtins-aarch64-android.a"
+  ],
+  "other_four_toolchain_files_match_pinned_git_objects": true,
+  "device_executed": false
+}

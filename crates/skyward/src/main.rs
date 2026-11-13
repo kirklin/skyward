@@ -27,6 +27,8 @@ mod readings;
 mod relabel;
 #[cfg(target_os = "android")]
 mod secure;
+#[cfg(any(target_os = "android", all(test, target_os = "linux")))]
+mod service_mounts;
 #[cfg(target_os = "android")]
 mod services;
 #[cfg(target_os = "android")]
@@ -162,12 +164,25 @@ enum Cmd {
     /// wrote, unwrap the key it holds and say how long it is.
     #[cfg(target_os = "android")]
     Keymint {
+        /// Read the service's hardware information without opening any key.
+        #[arg(long, conflicts_with = "alias")]
+        info_only: bool,
         #[arg(long, default_value = "/metadata/vold/metadata_encryption/key")]
         key: PathBuf,
         /// Report instead what the key service keeps under this name, such
         /// as profile_key_name_decrypt_999.
         #[arg(long)]
         alias: Option<String>,
+    },
+    /// Test wrapped metadata-key conversion without mounting data, asking
+    /// for a credential, writing blobs or printing any key material.
+    #[cfg(target_os = "android")]
+    StorageKey {
+        /// Permit one secure-world upgradeKey of the inner storage blob
+        /// only if conversion returns -62. Requires separate authorization;
+        /// this is not a read-only operation inside the secure world.
+        #[arg(long)]
+        renew_inner: bool,
     },
     /// Say what the phone's credential service answers, which takes no
     /// credential and changes nothing.
@@ -177,11 +192,14 @@ enum Cmd {
     /// changes nothing.
     #[cfg(target_os = "android")]
     Weaver,
-    /// Open the data partition with the key the phone keeps for it, check
-    /// it and mount it writable as the phone does, and open each user's
-    /// files that open; the owner's shared storage then shows at /sdcard.
+    /// Open the data partition with its existing key under the device's
+    /// decryption restrictions, and open each user's files that open;
+    /// the owner's shared storage then shows at /sdcard.
     #[cfg(target_os = "android")]
     Data {
+        /// Device decryption restrictions, also used by the on-screen unlock.
+        #[arg(long, default_value = "/skyward/device.toml")]
+        config: PathBuf,
         /// What a user would type at their screen lock, where one is set.
         /// A wrong one is counted against that user by the phone's secure
         /// world, the same as a wrong try on the screen itself.
@@ -324,11 +342,14 @@ fn main() -> Result<()> {
             Ok(())
         }
         #[cfg(target_os = "android")]
-        Cmd::Keymint { key, alias } => {
+        Cmd::Keymint { key, alias, info_only } => {
             let binder = skyward_binder::driver::Binder::open()?;
-            let service = skyward_crypto::keymint::KeyMint::open(&binder)?;
+            let service = skyward_crypto::keymint::KeyMint::open(&binder)?.without_upgrades();
             let hw = service.hardware()?;
             println!("keymint {} version {} at security level {} by {}", hw.name, hw.version, hw.security_level, hw.author);
+            if info_only {
+                return Ok(());
+            }
             if let Some(alias) = alias {
                 let held = skyward_crypto::keystore2::key_blob(Path::new(skyward_crypto::keystore2::DATABASE), &alias)?;
                 println!("{alias} is a key of {} bytes", held.len());
@@ -350,6 +371,24 @@ fn main() -> Result<()> {
             Ok(())
         }
         #[cfg(target_os = "android")]
+        Cmd::StorageKey { renew_inner } => {
+            use skyward_crypto::{data, keystore};
+            let entries = skyward_block::fstab::read(data::MOUNT)?;
+            let entry = entries.first().context("the phone's table has no data partition")?;
+            anyhow::ensure!(data::Encryption::of(entry)?.wrapped, "this diagnostic requires a hardware-wrapped storage key");
+            let binder = skyward_binder::driver::Binder::open()?;
+            let service = skyward_crypto::keymint::KeyMint::open(&binder)?.without_upgrades();
+            let stored = keystore::StoredKey::load(&data::key_dir(entry)?)?;
+            let inner = stored.unwrap(keystore::Unwrap::Hardware(&service))?;
+            let (ephemeral, renewed) = if renew_inner {
+                service.ephemeral_storage_key_with_renewal(&inner)?
+            } else {
+                (service.ephemeral_storage_key(&inner)?, false)
+            };
+            println!("wrapped storage key converted: {} bytes, inner_renewal_performed={renewed}; no data mount or disk-blob update", ephemeral.len());
+            Ok(())
+        }
+        #[cfg(target_os = "android")]
         Cmd::Gatekeeper => {
             let (binder, hardware) = (skyward_binder::driver::Binder::open()?, skyward_binder::driver::Binder::hardware()?);
             let gatekeeper = skyward_crypto::gatekeeper::Gatekeeper::open(&binder, &hardware)?;
@@ -358,14 +397,6 @@ fn main() -> Result<()> {
                 Ok(Some(version)) => println!("it serves version {version} of that interface"),
                 Ok(None) => println!("it numbers its version in its own name"),
                 Err(e) => println!("it will not say which version it serves: {e:#}"),
-            }
-            // A credential belonging to no one, which the secure world
-            // cannot recognise and counts against nobody. What comes back
-            // says whether the service takes a check at all, apart from
-            // whether it recognises what it is given.
-            match gatekeeper.verify(NOBODY, &[], &[]) {
-                Ok(_) => println!("it took a credential belonging to no one"),
-                Err(e) => println!("asked about a credential belonging to no one it says: {e:#}"),
             }
             Ok(())
         }
@@ -383,36 +414,39 @@ fn main() -> Result<()> {
             Ok(())
         }
         #[cfg(target_os = "android")]
-        Cmd::Data { credential, close: false } => {
+        Cmd::Data { credential, config, close: false } => {
             use skyward_crypto::data;
-            let binder = skyward_binder::driver::Binder::open()?;
-            let service = skyward_crypto::keymint::KeyMint::open(&binder)?;
-            let opening = data::open_without_credential(&service)?;
-            match &opening.mounted {
-                Some(mounted) => {
-                    if let Some(checked) = &mounted.checked {
-                        print!("{}", checked.said);
-                        println!("the check of {} ended with {}", mounted.mapped.display(), checked.status);
+            let policy = DeviceConfig::load(&config)?.decrypt;
+            println!("decryption policy: read_only={}, auto_fsck={}, key_upgrades={}, storage_key_renewal={}",
+                policy.read_only, policy.checks_filesystem(), policy.upgrades_keys(), policy.storage_key_renewal);
+            decrypt::with_key_service(policy, |service| {
+                let opening = data::open_with_options(service, decrypt::options(policy))?;
+                match &opening.mounted {
+                    Some(mounted) => {
+                        if let Some(checked) = &mounted.checked {
+                            print!("{}", checked.said);
+                            println!("the check of {} ended with {}", mounted.mapped.display(), checked.status);
+                        }
+                        println!("{} holds {} at {}", mounted.mapped.display(), mounted.filesystem, data::MOUNT);
                     }
-                    println!("{} holds {} at {}", mounted.mapped.display(), mounted.filesystem, data::MOUNT);
+                    None => println!("{} is mounted already", data::MOUNT),
                 }
-                None => println!("{} is mounted already", data::MOUNT),
-            }
-            let mut closed = opening.closed;
-            let asked = closed.iter().find(|c| !c.made_up).map(|c| c.user);
-            if let (Some(credential), Some(user)) = (&credential, asked) {
-                closed = data::unlock(&service, &closed, user, credential.as_bytes())?;
-            }
-            for c in &closed {
-                match &c.why {
-                    Some(why) => println!("user {}'s own files stay closed: {why}", c.user),
-                    None => println!("user {}'s own files stay closed", c.user),
+                let mut closed = opening.closed;
+                let asked = closed.iter().find(|c| !c.made_up).map(|c| c.user);
+                if let (Some(credential), Some(user)) = (&credential, asked) {
+                    closed = data::unlock(service, &closed, user, credential.as_bytes())?;
                 }
-            }
-            if closed.is_empty() {
-                println!("every user's own files can be read");
-            }
-            Ok(())
+                for c in &closed {
+                    match &c.why {
+                        Some(why) => println!("user {}'s own files stay closed: {why}", c.user),
+                        None => println!("user {}'s own files stay closed", c.user),
+                    }
+                }
+                if closed.is_empty() {
+                    println!("every user's own files can be read");
+                }
+                Ok(())
+            }).map_err(anyhow::Error::msg)
         }
         #[cfg(target_os = "android")]
         Cmd::Ui { config, font, mono, unlock, dump } => {
@@ -569,6 +603,74 @@ fn hand_over(owners: &[skyward_config::Owners]) -> Result<usize> {
 #[cfg(target_os = "android")]
 const RECOVERY_LIBRARIES: &str = "/system/lib64";
 
+/// Supply only missing, hash-pinned files to the recovery's RAM library
+/// directory. Never replace an existing library or write an installed partition.
+#[cfg(target_os = "android")]
+fn provide_recovery_libraries(libraries: &[skyward_config::RecoveryLibrary]) -> Result<()> {
+    use anyhow::ensure;
+    use std::fs::{self, File, OpenOptions};
+    use std::io::Seek;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    if libraries.is_empty() {
+        return Ok(());
+    }
+    ensure!(ramdisk::in_recovery(), "missing libraries may only be supplied in the recovery ramdisk");
+    let check = |file: &mut File, expected: &str| -> Result<()> {
+        let stat = file.metadata()?;
+        ensure!(stat.is_file(), "a recovery library is not a regular file");
+        file.rewind()?;
+        let actual = skyward_backup::store::digest(&mut *file, stat.len(), &mut |_| {})?;
+        ensure!(actual.eq_ignore_ascii_case(expected), "recovery library SHA256 differs: {actual}");
+        file.rewind()?;
+        Ok(())
+    };
+    let existing = |path: &Path, expected: &str| -> Result<bool> {
+        match fs::symlink_metadata(path) {
+            Ok(stat) => {
+                ensure!(stat.is_file(), "{} is not a regular RAM library", path.display());
+                check(&mut File::open(path)?, expected)?;
+                Ok(true)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(e) => Err(e).with_context(|| format!("stat {}", path.display())),
+        }
+    };
+    for library in libraries {
+        let source = Path::new(&library.source);
+        let mut from = File::open(source).with_context(|| format!("open {}", source.display()))?;
+        check(&mut from, &library.sha256).with_context(|| format!("verify {}", source.display()))?;
+        let name = source.file_name().context("a recovery library needs a basename")?;
+        let to = Path::new(RECOVERY_LIBRARIES).join(name);
+        if existing(&to, &library.sha256)? {
+            continue;
+        }
+        let part = to.with_file_name(format!(".{}.{}.skyward-part", name.to_string_lossy(), std::process::id()));
+        let mut temp = OpenOptions::new().read(true).write(true).create_new(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC).mode(0o600).open(&part)
+            .with_context(|| format!("create {}", part.display()))?;
+        let result = (|| -> Result<()> {
+            std::io::copy(&mut from, &mut temp)?;
+            check(&mut temp, &library.sha256)?;
+            temp.set_permissions(fs::Permissions::from_mode(0o644))?;
+            // link is atomic and cannot replace a file another caller installed.
+            match fs::hard_link(&part, &to) {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    ensure!(existing(&to, &library.sha256)?, "RAM library disappeared during installation");
+                    Ok(())
+                }
+                Err(e) => Err(e).with_context(|| format!("supply {}", to.display())),
+            }
+        })();
+        let cleanup = fs::remove_file(&part);
+        result?;
+        cleanup.with_context(|| format!("remove our RAM temporary file {}", part.display()))?;
+        skyward_sys::kmsg(&format!("supplied missing RAM library {} with SHA256 {}", to.display(), library.sha256))?;
+    }
+    Ok(())
+}
+
 /// How long logd may take to say it is ready once started.
 #[cfg(target_os = "android")]
 const LOGD_READY: std::time::Duration = std::time::Duration::from_secs(5);
@@ -610,11 +712,6 @@ fn agree_on_the_notes_key(registered: &[String]) -> Result<()> {
     let agreed = skyward_crypto::sharedsecret::agree(&binder, &names)?;
     skyward_sys::kmsg(&format!("{agreed} of the secure world agreed on the key it signs its notes with"))
 }
-
-/// A slot of the credential service that belongs to no user, which the
-/// phone numbers its own from nothing upwards.
-#[cfg(target_os = "android")]
-const NOBODY: u32 = u32::MAX;
 
 /// The switch that has the kernel pass the firmware requests it cannot
 /// answer itself on to ueventd.

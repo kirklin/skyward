@@ -1,15 +1,18 @@
+use crate::service_mounts::{kept_mounted, retained_mounts};
 use anyhow::{bail, ensure, Context, Result};
 use procfs::process::{FDTarget, MMapPath, Process};
 use skyward_config::Service;
-use skyward_sys::ueventd;
+use skyward_sys::{library_mounts::{self, LibraryMounts}, ueventd};
 use skyward_vab::Mounted;
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::io;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -44,21 +47,28 @@ pub fn start(services: &[Service], libraries: Option<&Path>) -> Result<()> {
         if !Path::new(&s.path).is_file() {
             bail!("{} is missing; is its partition mounted?", s.path);
         }
+        crate::provide_recovery_libraries(&s.recovery_libraries)?;
         let mut s = s.clone();
         if let Some(dir) = libraries {
             s.libraries.push(dir.to_string_lossy().into_owned());
         }
         let who = Credentials::of(&s, &known)?;
+        let mounts = Arc::new(LibraryMounts::prepare(s.library_overrides.iter().map(|m| (&m.source, &m.target)))
+            .with_context(|| format!("prepare library overrides for {}", s.path))?);
         if s.oneshot {
-            let status = command(&s, &who).status().with_context(|| format!("run {}", s.path))?;
+            let status = command(&s, &who, &mounts).status().with_context(|| format!("run {}", s.path))?;
             ensure!(status.success(), "{} {} ended: {status}", s.path, s.args.join(" "));
             skyward_sys::kmsg(&format!("ran {} {}", s.path, s.args.join(" ")))?;
             continue;
         }
+        // An old instance must have the same library view before it can
+        // satisfy readiness or be adopted by the supervising thread.
+        running_instance(&s, &mounts)?;
         let waiting = s.clone();
+        let waiting_mounts = Arc::clone(&mounts);
         let name = Path::new(&s.path).file_name().map_or_else(|| s.path.clone(), |n| n.to_string_lossy().into_owned());
-        thread::Builder::new().name(name).spawn(move || supervise(&s, &who)).context("start a supervising thread")?;
-        ready(&waiting)?;
+        thread::Builder::new().name(name).spawn(move || supervise(&s, &who, &mounts)).context("start a supervising thread")?;
+        ready(&waiting, &waiting_mounts)?;
     }
     Ok(())
 }
@@ -156,7 +166,7 @@ fn set_capabilities(mask: u64) -> io::Result<()> {
 }
 
 /// Wait until the program has what it says it will be ready with.
-fn ready(s: &Service) -> Result<()> {
+fn ready(s: &Service, mounts: &LibraryMounts) -> Result<()> {
     let waited_on = match (&s.ready_property, &s.ready_service, &s.ready_hardware_service) {
         (Some(p), _, _) => format!("set no {p}"),
         (_, Some(n), _) => format!("registered no {n}"),
@@ -165,20 +175,23 @@ fn ready(s: &Service) -> Result<()> {
     };
     let until = Instant::now() + READY_TIMEOUT;
     loop {
+        // A registered name alone may belong to an older process. Verify
+        // the executable and its per-process library view as well.
+        let running = mounts.is_empty() || running_instance(s, mounts)?.is_some();
         if let Some(name) = &s.ready_property {
-            if skyward_sys::prop(name).is_some_and(|v| !v.is_empty()) {
+            if running && skyward_sys::prop(name).is_some_and(|v| !v.is_empty()) {
                 return Ok(());
             }
         }
         // Either directory may itself be starting again, and until it
         // answers nothing can be looked up in it.
         if let Some(name) = &s.ready_service {
-            if registered(name) {
+            if running && registered(name) {
                 return Ok(());
             }
         }
         if let Some(name) = &s.ready_hardware_service {
-            if registered_hardware(name) {
+            if running && registered_hardware(name) {
                 return Ok(());
             }
         }
@@ -189,12 +202,13 @@ fn ready(s: &Service) -> Result<()> {
     }
 }
 
-fn supervise(s: &Service, who: &Credentials) -> ! {
+fn supervise(s: &Service, who: &Credentials, mounts: &Arc<LibraryMounts>) -> ! {
     loop {
         let started = Instant::now();
-        let ended = match running(&s.path) {
-            Some(pid) => wait_for(pid).map(|()| format!("pid {pid}, left by an earlier recovery service, exited")),
-            None => run(s, who),
+        let ended = match running_instance(s, mounts) {
+            Ok(Some(pid)) => wait_for(pid).map(|()| format!("pid {pid}, left by an earlier recovery service, exited")),
+            Ok(None) => run(s, who, mounts),
+            Err(e) => Err(e),
         };
         let line = match ended {
             Ok(how) => format!("{}: {how}", s.path),
@@ -208,8 +222,8 @@ fn supervise(s: &Service, who: &Credentials) -> ! {
 }
 
 /// Start the program and wait for it to end.
-fn run(s: &Service, who: &Credentials) -> Result<String> {
-    let mut child = command(s, who).spawn().with_context(|| format!("start {}", s.path))?;
+fn run(s: &Service, who: &Credentials, mounts: &Arc<LibraryMounts>) -> Result<String> {
+    let mut child = command(s, who, mounts).spawn().with_context(|| format!("start {}", s.path))?;
     let status = child.wait().context("wait for it")?;
     Ok(format!("pid {} ended: {status}", child.id()))
 }
@@ -217,51 +231,127 @@ fn run(s: &Service, who: &Credentials) -> Result<String> {
 /// The program as it is started: with what it is given, from the top of the
 /// tree, reading and writing nothing of the recovery's, finding its
 /// libraries where it names them, and as `who`.
-fn command(s: &Service, who: &Credentials) -> Command {
+fn command(s: &Service, who: &Credentials, mounts: &Arc<LibraryMounts>) -> Command {
     let mut cmd = Command::new(&s.path);
     cmd.args(&s.args).current_dir("/").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     if !s.libraries.is_empty() {
         cmd.env("LD_LIBRARY_PATH", s.libraries.join(":"));
     }
     let who = who.clone();
+    let memory_data = s.memory_data;
+    let mounts = Arc::clone(mounts);
     // Only system calls run between the fork and the exec, on what was
     // worked out before it.
-    unsafe { cmd.pre_exec(move || who.take_on()) };
+    unsafe {
+        cmd.pre_exec(move || {
+            if memory_data || !mounts.is_empty() {
+                library_mounts::private_namespace()?;
+            }
+            if memory_data {
+                private_memory_data(who.uid, who.gid)?;
+            }
+            mounts.apply()?;
+            who.take_on()
+        })
+    };
     cmd
+}
+
+/// A calibration daemon uses fixed paths below /data while that partition
+/// is still closed. Give only the child a bounded RAM data tree. Private
+/// mount propagation keeps a later data mount in the recovery from
+/// covering this tree. Only system calls and fixed strings run between
+/// fork and exec, after the shared private namespace has been established
+/// and before the child takes on its configured account.
+fn private_memory_data(uid: libc::uid_t, gid: libc::gid_t) -> io::Result<()> {
+    let done = |result| if result == 0 { Ok(()) } else { Err(io::Error::last_os_error()) };
+    let c = |bytes: &'static [u8]| bytes.as_ptr().cast::<libc::c_char>();
+    done(unsafe {
+        libc::mount(
+            c(b"skyward-service-data\0"),
+            c(b"/data\0"),
+            c(b"tmpfs\0"),
+            libc::MS_NODEV | libc::MS_NOSUID | libc::MS_NOEXEC,
+            c(b"size=16m,nr_inodes=512,mode=0755\0").cast(),
+        )
+    })?;
+    done(unsafe { libc::mkdir(c(b"/data/vendor\0"), 0o755) })?;
+    // Recovery runs with umask 0077. The daemon must still be able to
+    // traverse the root-owned parent after it gives up root.
+    done(unsafe { libc::chmod(c(b"/data/vendor\0"), 0o755) })?;
+    for path in [b"/data/vendor/wifi\0".as_slice(), b"/data/vendor/wifi/sockets\0", b"/data/vendor/wlan_logs\0"] {
+        done(unsafe { libc::mkdir(c(path), 0o770) })?;
+        done(unsafe { libc::chown(c(path), uid, gid) })?;
+        done(unsafe { libc::chmod(c(path), 0o770) })?;
+    }
+    Ok(())
 }
 
 /// Lock in memory every file the running programs have mapped or open on
 /// the `mounted` partitions, so they keep working once those partitions
-/// are written over, and give the mount points the files are on. The
-/// locked mappings stay for the rest of the recovery's life.
+/// are written over. Return mount points whose devices must stay mapped,
+/// including mounts retained in a service's private namespace even when
+/// no file on them is open. Locked mappings stay for the recovery's life.
 pub fn pin(services: &[Service], mounted: &[Mounted]) -> Result<Vec<PathBuf>> {
     let mut files = BTreeSet::new();
+    let mut devices = BTreeSet::new();
+    let ours = fs::read_link("/proc/self/ns/mnt").context("read the recovery's mount namespace")?;
     // A program run once has ended, and one between restarts has nothing in
     // memory to keep either.
     for s in services.iter().filter(|s| !s.oneshot) {
-        let Some(pid) = running(&s.path) else { continue };
+        let mounts = LibraryMounts::prepare(s.library_overrides.iter().map(|m| (&m.source, &m.target)))
+            .with_context(|| format!("prepare library overrides for {}", s.path))?;
+        let Some(pid) = running_instance(s, &mounts)? else { continue };
         let process = Process::new(pid as i32).with_context(|| format!("open process {pid}"))?;
         for map in process.maps().with_context(|| format!("read the mappings of {}", s.path))? {
             if let MMapPath::Path(p) = map.pathname {
-                files.insert(p);
+                let identity = (libc::makedev(map.dev.0 as _, map.dev.1 as _), map.inode);
+                files.insert((pid, p, Some(identity)));
             }
         }
         for fd in process.fd().with_context(|| format!("read the files {} has open", s.path))? {
             if let FDTarget::Path(p) = fd.with_context(|| format!("read a file {} has open", s.path))?.target {
-                files.insert(p);
+                files.insert((pid, p, None));
             }
         }
+        devices.extend(kept_mounted(
+            fs::read_link(format!("/proc/{pid}/ns/mnt")),
+            &ours,
+            || process.mountinfo().with_context(|| format!("read the mount table of {} (pid {pid})", s.path)),
+        ).with_context(|| format!("inspect mounts retained by {} (pid {pid})", s.path))?);
     }
     let mut busy: Vec<PathBuf> = Vec::new();
-    for file in files {
-        let Some(m) = mounted.iter().find(|m| file.starts_with(&m.mount_point)) else { continue };
-        if !fs::metadata(&file).with_context(|| format!("stat {}", file.display()))?.is_file() {
+    let mut locked = BTreeSet::new();
+    for (pid, logical, mapped_identity) in files {
+        let Some(m) = mounted.iter().find(|m| logical.starts_with(&m.mount_point)) else { continue };
+        let path = library_mounts::process_path(pid, &logical)?;
+        let file = fs::OpenOptions::new().read(true).custom_flags(libc::O_CLOEXEC | libc::O_NONBLOCK)
+            .open(&path).with_context(|| format!("open {} in pid {pid}'s mount view", logical.display()))?;
+        let meta = file.metadata().with_context(|| format!("stat {} in pid {pid}'s mount view", logical.display()))?;
+        if !meta.is_file() {
             continue;
         }
-        lock(&file)?;
-        let _ = skyward_sys::kmsg(&format!("kept {} in memory", file.display()));
+        let identity = (meta.dev(), meta.ino());
+        ensure!(mapped_identity.is_none_or(|expected| expected == identity), "{} in pid {pid}'s mount view no longer names its mapped inode", logical.display());
+        if locked.insert(identity) {
+            lock(&file, &logical)?;
+            let _ = skyward_sys::kmsg(&format!("kept {} from pid {pid}'s mount view in memory", logical.display()));
+        }
         if !busy.contains(&m.mount_point) {
             busy.push(m.mount_point.clone());
+        }
+    }
+    let partitions: Vec<(u64, PathBuf)> = mounted
+        .iter()
+        .map(|m| {
+            let device = fs::metadata(&m.device).with_context(|| format!("stat {}", m.device.display()))?;
+            Ok((device.rdev(), m.mount_point.clone()))
+        })
+        .collect::<Result<_>>()?;
+    for kept in retained_mounts(&devices, &partitions) {
+        if !busy.contains(&kept) {
+            let _ = skyward_sys::kmsg(&format!("retaining {} mapping for a private service namespace", kept.display()));
+            busy.push(kept);
         }
     }
     Ok(busy)
@@ -269,8 +359,7 @@ pub fn pin(services: &[Service], mounted: &[Mounted]) -> Result<Vec<PathBuf>> {
 
 /// Map `path` whole and lock the mapping: its pages then stay in memory
 /// for every process that maps the file.
-fn lock(path: &Path) -> Result<()> {
-    let file = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
+fn lock(file: &fs::File, path: &Path) -> Result<()> {
     let len = file.metadata().with_context(|| format!("stat {}", path.display()))?.len() as usize;
     if len == 0 {
         return Ok(());
@@ -280,7 +369,9 @@ fn lock(path: &Path) -> Result<()> {
         return Err(io::Error::last_os_error()).with_context(|| format!("map {}", path.display()));
     }
     if unsafe { libc::mlock(at, len) } != 0 {
-        return Err(io::Error::last_os_error()).with_context(|| format!("lock {} in memory", path.display()));
+        let error = io::Error::last_os_error();
+        unsafe { libc::munmap(at, len) };
+        return Err(error).with_context(|| format!("lock {} in memory", path.display()));
     }
     Ok(())
 }
@@ -317,10 +408,28 @@ pub fn reachable() -> bool {
 
 /// A process already running `path`.
 pub fn running(path: &str) -> Option<u32> {
-    fs::read_dir("/proc").ok()?.flatten().find_map(|e| {
+    running_pids(path).into_iter().next()
+}
+
+fn running_pids(path: &str) -> Vec<u32> {
+    let Ok(entries) = fs::read_dir("/proc") else { return Vec::new() };
+    entries.flatten().filter_map(|e| {
         let pid: u32 = e.file_name().to_str()?.parse().ok()?;
         (fs::read_link(e.path().join("exe")).ok()? == Path::new(path)).then_some(pid)
-    })
+    }).collect()
+}
+
+fn running_instance(s: &Service, mounts: &LibraryMounts) -> Result<Option<u32>> {
+    if mounts.is_empty() {
+        return Ok(running(&s.path));
+    }
+    let mut found = None;
+    for pid in running_pids(&s.path) {
+        mounts.verify_process(pid).with_context(|| format!("{} already runs as pid {pid} with an incompatible library view", s.path))?;
+        ensure!(found.is_none(), "{} has more than one running instance; refusing to adopt or start another", s.path);
+        found = Some(pid);
+    }
+    Ok(found)
 }
 
 /// Wait for a process that is not our child to exit.

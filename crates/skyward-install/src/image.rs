@@ -12,6 +12,14 @@ use std::fs::OpenOptions;
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
+#[cfg(any(target_os = "linux", target_os = "android"))]
+mod protection;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use protection::ReadOnly;
+
+#[cfg(all(test, target_os = "linux"))]
+mod block_tests;
+
 const BOOT_MAGIC: &[u8] = b"ANDROID!";
 const VENDOR_BOOT_MAGIC: &[u8] = b"VNDRBOOT";
 /// A dtbo image starts with this, big-endian.
@@ -119,7 +127,9 @@ fn holds(packed: impl Read, wanted: impl Fn(&str) -> bool) -> Result<bool> {
 fn find<T>(packed: impl Read, wanted: impl Fn(&str) -> bool, take: impl FnOnce(&mut dyn Read) -> Result<T>) -> Result<Option<T>> {
     let mut packed = BufReader::new(packed);
     let start = packed.fill_buf().context("read the ramdisk's first bytes")?;
-    let mut rest: Box<dyn Read + '_> = if start.starts_with(LZ4_LEGACY) || start.starts_with(LZ4_FRAME) {
+    let mut rest: Box<dyn Read + '_> = if start.starts_with(LZ4_LEGACY) {
+        Box::new(skyward_bootimg::LegacyDecoder::new(packed))
+    } else if start.starts_with(LZ4_FRAME) {
         Box::new(lz4_flex::frame::FrameDecoder::new(packed))
     } else if start.starts_with(GZIP) {
         Box::new(flate2::bufread::MultiGzDecoder::new(packed))
@@ -202,8 +212,14 @@ pub fn partitions(kind: ImageKind, dir: &Path) -> Result<Vec<&'static str>> {
 /// of all.
 pub fn flash<R: Read + Seek>(image: &mut R, len: u64, devices: &[PathBuf], progress: &mut dyn FnMut(u64, u64)) -> Result<()> {
     ensure!(!devices.is_empty(), "no partition to write");
+    // The OTA verifier can leave its targets read-only. Change only the
+    // selected devices, with guards alive before any fallible write open.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    let mut flags = Vec::with_capacity(devices.len());
     let mut outs = Vec::with_capacity(devices.len());
     for path in devices {
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        flags.push(ReadOnly::clear(path)?);
         let mut f = OpenOptions::new().read(true).write(true).open(path).with_context(|| format!("open {}", path.display()))?;
         let size = f.seek(SeekFrom::End(0)).with_context(|| format!("find the size of {}", path.display()))?;
         f.seek(SeekFrom::Start(0)).with_context(|| format!("rewind {}", path.display()))?;
@@ -258,6 +274,19 @@ pub fn flash<R: Read + Seek>(image: &mut R, len: u64, devices: &[PathBuf], progr
             progress(done, total);
         }
         ensure!(back.finalize() == written, "{} reads back different from what was written", path.display());
+    }
+    drop(outs);
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        let mut failed = None;
+        for flag in &mut flags {
+            if let Err(e) = flag.restore() {
+                failed.get_or_insert(e);
+            }
+        }
+        if let Some(e) = failed {
+            return Err(e);
+        }
     }
     Ok(())
 }
@@ -379,6 +408,52 @@ mod tests {
         assert_eq!(config, b"[device]\ncodename = \"ishtar\"\n");
         assert!(is_skyward(&mut Cursor::new(skyward_for("ishtar"))).unwrap());
         assert_eq!(device_config(&mut Cursor::new(recovery(false))).unwrap(), None);
+    }
+
+    #[test]
+    fn incompressible_legacy_blocks_do_not_prevent_stock_or_skyward_identification() {
+        for skyward in [false, true] {
+            let content = vec![0x5a; 8 << 20];
+            let mut first = cpio::NewcBuilder::new("opaque.bin").mode(0o100644).write(Vec::new(), content.len() as u32);
+            first.write_all(&content).unwrap();
+            let mut cpio = first.finish().unwrap();
+            if skyward {
+                let mut config = cpio::NewcBuilder::new("skyward/device.toml").mode(0o100644).write(cpio, 7);
+                config.write_all(b"profile").unwrap();
+                cpio = config.finish().unwrap();
+            }
+            cpio = cpio::newc::trailer(cpio).unwrap();
+            let mut packed = LZ4_LEGACY.to_vec();
+            for data in cpio.chunks(8 << 20) {
+                // A valid literals-only block models an incompressible
+                // legacy ramdisk without committing any stock image data.
+                let mut block = vec![0xf0];
+                let mut len = data.len() - 15;
+                while len >= 255 {
+                    block.push(255);
+                    len -= 255;
+                }
+                block.push(len as u8);
+                block.extend_from_slice(data);
+                packed.extend_from_slice(&(block.len() as u32).to_le_bytes());
+                packed.extend(block);
+            }
+            assert!(u32::from_le_bytes(packed[4..8].try_into().unwrap()) > 8 << 20);
+            let decoded = skyward_bootimg::Ramdisk::decode(&packed).unwrap();
+            assert_eq!(decoded.find("skyward/device.toml").is_some(), skyward);
+            let image = boot_image(0, &packed);
+            assert_eq!(is_skyward(&mut Cursor::new(&image)).unwrap(), skyward);
+            assert_eq!(device_config(&mut Cursor::new(image)).unwrap(), skyward.then(|| b"profile".to_vec()));
+        }
+    }
+
+    #[test]
+    fn modern_lz4_framing_still_identifies_a_recovery() {
+        let data = archive(&["system/bin/recovery", "skyward/device.toml"]);
+        let mut encoder = lz4_flex::frame::FrameEncoder::new(Vec::new());
+        encoder.write_all(&data).unwrap();
+        let packed = encoder.finish().unwrap();
+        assert!(is_skyward(&mut Cursor::new(boot_image(0, &packed))).unwrap());
     }
 
     #[test]

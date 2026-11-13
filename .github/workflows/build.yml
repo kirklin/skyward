@@ -36,6 +36,12 @@ jobs:
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --locked --workspace
+      - name: Verify recovery preservation on a disposable read-only block device
+        run: |
+          binary=$(cargo test --locked -p skyward-install --lib --no-run --message-format=json | jq -r 'select(.reason == "compiler-artifact" and .target.name == "skyward_install" and .executable != null) | .executable')
+          test -n "$binary"
+          sudo modprobe loop
+          sudo -- "$binary" --ignored --exact image::block_tests::recovery_write_restores_block_flags_on_success_and_failure --test-threads=1
       - name: Lint what runs on the phone
         run: cargo ndk -t arm64-v8a --platform 30 clippy --locked -p skyward -p skyward-install -p skyward-systems -p skyward-system-init -- -D warnings
 
@@ -47,6 +53,8 @@ jobs:
       - uses: ./.github/actions/setup
       - name: Build the recovery service for the phone
         run: cargo ndk -t arm64-v8a --platform 30 build --locked --release -p skyward
+      - name: Build the recovery preservation retry tool
+        run: cargo ndk -t arm64-v8a --platform 30 build --locked --release -p skyward-install --example keep-recovery
       # It runs as a second system's first program, before any library is
       # there to load.
       - name: Build the second system's first program, static
@@ -59,6 +67,7 @@ jobs:
         run: |
           mkdir tools
           cp target/aarch64-linux-android/release/skyward target/release/skyward-pack tools/
+          cp target/aarch64-linux-android/release/examples/keep-recovery tools/
           cp target/system-init/aarch64-linux-android/release/system-init tools/
       - uses: actions/upload-artifact@v7
         with:

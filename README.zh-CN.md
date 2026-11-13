@@ -152,6 +152,28 @@ Skyward 可以在手机自身分区中的系统旁边安装第二系统，主系
 
 ## 构建
 
+对于系统声明的安全补丁日期早于原数据密钥绑定日期的移植 ROM，可以给单台设备的
+REC 显式设置 `system_patchlevel_floor`。它只在启动安全服务前选择恢复环境的版本
+上下文，保留 ROM 中较新的日期；不修改 system/product 文件或磁盘密钥，也不补齐
+实际安全更新。日期必须来自已核实的原密钥上下文，且要求 `key_upgrades = false`。
+通用设备配置默认不设置此值。例如已确认密钥绑定 2026 年 9 月的设备可使用：
+
+```toml
+[decrypt]
+read_only = false
+auto_repair = false
+key_upgrades = false
+system_patchlevel_floor = "2026-09-01"
+```
+
+打包器的 `--system-patchlevel-floor 2026-09-01` 或 Actions 的同名输入可以生成这种
+专用变体。Actions 要求明确选择单个设备和分支，产物名附加 `decrypt20260901`。
+
+“自动重新刷入 Skyward”保留的是 recovery 分区内已安装的完整 Skyward 镜像，
+包含上述配置。临时内存启动且分区中没有 Skyward 时，开启该选项会在安装前明确
+报错；需要先安装 Skyward，或由用户选择关闭保留。系统因 `fs_mgr_mount_all` 请求
+清除 data 时，REC 会先显示确认界面，不把挂载失败直接当作用户的清除许可。
+
 Skyward 使用 `rust-toolchain.toml` 指定的稳定版 Rust 和它的 `aarch64-linux-android` 目标、Android NDK r29 和 [cargo-ndk](https://github.com/bbqsrc/cargo-ndk) 构建。recovery 服务针对手机构建，打包工具针对电脑构建：
 
 ```sh

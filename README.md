@@ -211,6 +211,21 @@ at the next start and brings Skyward up before anything else.
 
 ## Building
 
+A port that reports an older system patch date than its existing data keys
+may use an explicit recovery-only `decrypt.system_patchlevel_floor`. It
+selects the KeyMint context before HAL startup, never lowers a later ROM
+date, changes no ROM file or disk key, and supplies no actual security
+updates. Use only a verified key context, with `key_upgrades = false`.
+Profiles without it keep their existing behavior. The packer's optional
+`--system-patchlevel-floor YYYY-MM-DD` and the workflow input build a variant
+named with `decryptYYYYMMDD`; the workflow requires one device and a branch.
+
+Recovery preservation holds the complete installed Skyward image, including
+its configuration. A temporary boot with no installed source now refuses
+requested preservation before the install: install Skyward first or choose
+to turn preservation off. A `--wipe_data` request from `fs_mgr_mount_all`
+requires on-screen confirmation; a failed mount is not consent to erase.
+
 Skyward builds with the stable Rust that `rust-toolchain.toml` names, with its
 `aarch64-linux-android` target, the Android NDK r29 and
 [cargo-ndk](https://github.com/bbqsrc/cargo-ndk). The recovery service is built for

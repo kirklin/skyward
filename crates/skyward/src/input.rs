@@ -309,10 +309,10 @@ impl Inputs {
                     // The kernel's own repeats of a key held are left out;
                     // the UI times its own.
                     for e in events {
-                        if let EventSummary::Key(_, code, value @ (0 | 1)) = e.destructure() {
-                            if let Some(k) = key_of(code) {
-                                out.push(Event::Key(k, value == 1));
-                            }
+                        if let EventSummary::Key(_, code, value @ (0 | 1)) = e.destructure()
+                            && let Some(k) = key_of(code)
+                        {
+                            out.push(Event::Key(k, value == 1));
                         }
                     }
                 }

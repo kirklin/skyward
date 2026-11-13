@@ -150,10 +150,10 @@ pub fn check(update: &Update, phone: &Phone) -> Result<(), Refusal> {
     if !listed(&phone.device, devices) {
         return Err(Refusal::OtherDevice(devices.to_string()));
     }
-    if let Some(serials) = m.get("serialno") {
-        if !listed(&phone.serial, serials) {
-            return Err(Refusal::OtherSerial);
-        }
+    if let Some(serials) = m.get("serialno")
+        && !listed(&phone.serial, serials)
+    {
+        return Err(Refusal::OtherSerial);
     }
     if m.get("pre-build").is_some() || m.get("pre-build-incremental").is_some() {
         return Err(Refusal::Incremental);

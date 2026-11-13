@@ -1357,11 +1357,13 @@ pub fn run(cfg: &DeviceConfig, programs: &[Service], font: &Path, mono: &Path, r
     }
     // The port came up with adb alone; at rest it offers file transfer
     // beside it.
-    if transfer.is_some() && !fastboot && !sideloading {
-        if let Err(e) = skyward_sys::usb::switch(skyward_sys::usb::resting(), USB_TIMEOUT) {
-            skyward_sys::kmsg(&format!("the port did not take file transfer: {e:#}"))?;
-            app.report(&format!("{e:#}"), monotonic_ms());
-        }
+    if transfer.is_some()
+        && !fastboot
+        && !sideloading
+        && let Err(e) = skyward_sys::usb::switch(skyward_sys::usb::resting(), USB_TIMEOUT)
+    {
+        skyward_sys::kmsg(&format!("the port did not take file transfer: {e:#}"))?;
+        app.report(&format!("{e:#}"), monotonic_ms());
     }
     // Once the work the system asked for is done, the page shows it for a
     // moment; then the phone starts the system, or powers off where the
@@ -1465,12 +1467,12 @@ pub fn run(cfg: &DeviceConfig, programs: &[Service], font: &Path, mono: &Path, r
                         asked = None;
                     }
                     untaken(&mut unread.battery, "the battery", battery.as_ref().err())?;
-                    if let Ok(battery) = battery {
-                        if battery != info.battery {
-                            plug(&mut app, &info.battery, &battery, now)?;
-                            info.battery = battery;
-                            app.refresh();
-                        }
+                    if let Ok(battery) = battery
+                        && battery != info.battery
+                    {
+                        plug(&mut app, &info.battery, &battery, now)?;
+                        info.battery = battery;
+                        app.refresh();
                     }
                 }
                 Reading::All(all, at) => {
@@ -1478,12 +1480,13 @@ pub fn run(cfg: &DeviceConfig, programs: &[Service], font: &Path, mono: &Path, r
                         asked = None;
                     }
                     untaken(&mut unread.details, "the phone's details", all.as_ref().as_ref().err())?;
-                    if let Ok(all) = *all {
-                        if at >= read_at && all != info {
-                            plug(&mut app, &info.battery, &all.battery, now)?;
-                            info = all;
-                            app.refresh();
-                        }
+                    if let Ok(all) = *all
+                        && at >= read_at
+                        && all != info
+                    {
+                        plug(&mut app, &info.battery, &all.battery, now)?;
+                        info = all;
+                        app.refresh();
                     }
                 }
             }
@@ -1986,17 +1989,17 @@ pub fn run(cfg: &DeviceConfig, programs: &[Service], font: &Path, mono: &Path, r
             || backuper.is_some()
             || part_worker.is_some()
             || systems_worker.as_ref().is_some_and(systems::Worker::busy);
-        if !metadata_busy {
-            if let Some(due) = keeper.due(app.settings(), now) {
-                match settings::write(&due) {
-                    Ok(()) => {
-                        skyward_sys::kmsg("the settings are kept")?;
-                        keeper.written(due);
-                    }
-                    Err(e) => {
-                        skyward_sys::kmsg(&format!("the settings were not kept: {e:#}"))?;
-                        keeper.failed();
-                    }
+        if !metadata_busy
+            && let Some(due) = keeper.due(app.settings(), now)
+        {
+            match settings::write(&due) {
+                Ok(()) => {
+                    skyward_sys::kmsg("the settings are kept")?;
+                    keeper.written(due);
+                }
+                Err(e) => {
+                    skyward_sys::kmsg(&format!("the settings were not kept: {e:#}"))?;
+                    keeper.failed();
                 }
             }
         }
@@ -2116,12 +2119,12 @@ pub fn run(cfg: &DeviceConfig, programs: &[Service], font: &Path, mono: &Path, r
             }
             // Screenshots taken while internal storage was closed go into
             // the gallery's once it opens.
-            if app.state.place_open(Place::Storage) {
-                if let Err(e) = keep_held_screenshots() {
-                    let why = format!("{e:#}");
-                    skyward_sys::kmsg(&format!("the screenshots held did not go into the gallery's: {why}"))?;
-                    app.screenshots_not_kept(&why, now);
-                }
+            if app.state.place_open(Place::Storage)
+                && let Err(e) = keep_held_screenshots()
+            {
+                let why = format!("{e:#}");
+                skyward_sys::kmsg(&format!("the screenshots held did not go into the gallery's: {why}"))?;
+                app.screenshots_not_kept(&why, now);
             }
             // The update the system asked for starts once what holds it is
             // open; until the user whose own files hold it unlocks them,
@@ -2649,11 +2652,11 @@ pub fn run(cfg: &DeviceConfig, programs: &[Service], font: &Path, mono: &Path, r
                             (true, None) => match Transfer::start(cfg, &info, app.state.time_zone) {
                                 Ok(t) => {
                                     transfer = Some(t);
-                                    if rests {
-                                        if let Err(e) = skyward_sys::usb::switch(skyward_sys::usb::resting(), USB_TIMEOUT) {
-                                            skyward_sys::kmsg(&format!("the port did not take file transfer: {e:#}"))?;
-                                            app.report(&format!("{e:#}"), now);
-                                        }
+                                    if rests
+                                        && let Err(e) = skyward_sys::usb::switch(skyward_sys::usb::resting(), USB_TIMEOUT)
+                                    {
+                                        skyward_sys::kmsg(&format!("the port did not take file transfer: {e:#}"))?;
+                                        app.report(&format!("{e:#}"), now);
                                     }
                                 }
                                 Err(e) => {

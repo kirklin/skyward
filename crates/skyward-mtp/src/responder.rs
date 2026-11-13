@@ -435,10 +435,10 @@ impl Responder {
             Received::Stopped => None,
         };
         // A file not sent whole is not left behind.
-        if let Err(e) = fs::remove_file(&sending.path) {
-            if let Some(reply) = &mut failed {
-                reply.why = Some(format!("{}; then delete {}: {e}", reply.why.take().unwrap_or_default(), sending.path.display()));
-            }
+        if let Err(e) = fs::remove_file(&sending.path)
+            && let Some(reply) = &mut failed
+        {
+            reply.why = Some(format!("{}; then delete {}: {e}", reply.why.take().unwrap_or_default(), sending.path.display()));
         }
         if let Some(store) = &mut self.store {
             store.remove(sending.handle);

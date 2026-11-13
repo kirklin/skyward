@@ -242,10 +242,10 @@ impl Terminal {
     /// sent down it again.
     fn close(&self, binder: &Binder, number: u8) {
         let mut state = self.state();
-        if self.connected.load(Ordering::SeqCst) {
-            if let Err(e) = self.element(binder).and_then(|e| e.close(number)) {
-                let _ = skyward_sys::kmsg(&format!("omapi: channel {number} of {} did not close: {e:#}", self.name));
-            }
+        if self.connected.load(Ordering::SeqCst)
+            && let Err(e) = self.element(binder).and_then(|e| e.close(number))
+        {
+            let _ = skyward_sys::kmsg(&format!("omapi: channel {number} of {} did not close: {e:#}", self.name));
         }
         state.channels.remove(&number);
     }
@@ -480,10 +480,10 @@ impl Channel {
         // The basic channel is never closed on the secure element, so the
         // applet it selects by itself is put back on it; one that will not
         // be selected leaves the channel as it is.
-        if self.number == BASIC {
-            if let Some(select) = apdu::select(&[], BASIC, false) {
-                let _ = self.terminal.transmit(binder, &select);
-            }
+        if self.number == BASIC
+            && let Some(select) = apdu::select(&[], BASIC, false)
+        {
+            let _ = self.terminal.transmit(binder, &select);
         }
         self.terminal.close(binder, self.number);
         if let Some(session) = self.session.upgrade() {

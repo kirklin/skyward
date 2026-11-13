@@ -343,10 +343,11 @@ impl Phone {
         let mut put = HashMap::new();
         for action in self.actions.iter().filter(|a| self.holds(&a.triggers) == Happens::Yes) {
             for command in &action.commands {
-                if let [mount, _, from, onto, options @ ..] = &command[..] {
-                    if mount == "mount" && options.iter().any(|o| o == "bind") {
-                        put.insert(onto.clone(), from.clone());
-                    }
+                if let [mount, _, from, onto, options @ ..] = &command[..]
+                    && mount == "mount"
+                    && options.iter().any(|o| o == "bind")
+                {
+                    put.insert(onto.clone(), from.clone());
                 }
             }
         }

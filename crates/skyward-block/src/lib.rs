@@ -51,12 +51,12 @@ fn find_kv(haystack: &str, key: &str) -> Option<String> {
     }
     // bootconfig form: one `key = "value"` per line.
     for line in haystack.lines() {
-        if let Some((k, v)) = line.split_once('=') {
-            if k.trim() == key {
-                let val = v.trim().trim_matches('"').trim_end_matches(',').trim_matches('"');
-                if !val.is_empty() {
-                    return Some(val.to_string());
-                }
+        if let Some((k, v)) = line.split_once('=')
+            && k.trim() == key
+        {
+            let val = v.trim().trim_matches('"').trim_end_matches(',').trim_matches('"');
+            if !val.is_empty() {
+                return Some(val.to_string());
             }
         }
     }

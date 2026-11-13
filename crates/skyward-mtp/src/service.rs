@@ -96,10 +96,10 @@ impl Service {
                     // The port loses the function with its descriptors, and
                     // with it adb, unless it offers adb alone first.
                     skyward_sys::usb::set_mtp(false);
-                    if skyward_sys::prop("sys.usb.state").as_deref() == Some("mtp,adb") {
-                        if let Err(e) = skyward_sys::usb::switch("adb", PORT_SWITCH) {
-                            let _ = kmsg(&format!("mtp: the port kept file transfer: {e:#}"));
-                        }
+                    if skyward_sys::prop("sys.usb.state").as_deref() == Some("mtp,adb")
+                        && let Err(e) = skyward_sys::usb::switch("adb", PORT_SWITCH)
+                    {
+                        let _ = kmsg(&format!("mtp: the port kept file transfer: {e:#}"));
                     }
                 }
                 drop(port);

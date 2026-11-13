@@ -145,10 +145,12 @@ impl Named {
                 let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
                 let script = skyward_programs::script::read(&text).with_context(|| format!("read {}", path.display()))?;
                 for command in script.actions.iter().flat_map(|a| &a.commands) {
-                    if let [mount, _, from, _, options @ ..] = &command[..] {
-                        if mount == "mount" && options.iter().any(|o| o == "bind") && !self.put.contains(from) {
-                            self.put.push(from.clone());
-                        }
+                    if let [mount, _, from, _, options @ ..] = &command[..]
+                        && mount == "mount"
+                        && options.iter().any(|o| o == "bind")
+                        && !self.put.contains(from)
+                    {
+                        self.put.push(from.clone());
                     }
                 }
                 for program in script.programs {

@@ -1,12 +1,49 @@
 {
   "device": "myron",
-  "status": "experimental; core decryption/RW/logical mounts/physical controls and native MTP upload/readback/file Delete accepted; WPD EnumObjects stalls before returning while initial device enumeration/property replies complete; original recovery/HyperOS and normal files confirmed",
-  "date": "2026-11-12",
+  "status": "experimental; core decryption/RW/logical mounts/physical controls and native MTP upload/readback/file Delete accepted; post-Delete WPD EnumObjects stall also reproduced under normal HyperOS; shared root cause not established; original recovery/HyperOS and normal files confirmed",
+  "date": "2026-11-13",
   "stock_version": "OS4.0.6.0.XPMCNXM",
   "framework_api": 37,
   "vendor_api": 36,
   "hardware_slot": "b",
   "bootloader_unlocked_confirmed_by_fastboot": true,
+  "hyperos_mtp_control_20261113": {
+    "scope": "Normal HyperOS only; one own 65536-byte file in a fresh Download child directory; no reboot, flash, driver changes or other user-file operations",
+    "owner_report": "MTP also hangs under HyperOS when copying or deleting files",
+    "readonly_baseline": {
+      "internal_storage_top_objects": 62,
+      "download_first_batch_objects": 32,
+      "elapsed_seconds": 0.094,
+      "completed": true,
+      "limits": "Initial metadata enumeration only; not a copy/delete test or proof that every device request bypassed Windows caching"
+    },
+    "earlier_fresh_usb_control": {
+      "create_directory_wait_seconds_approx": 30,
+      "hresult": "0x802A0006",
+      "wpd_error": "E_WPD_DEVICE_IS_HUNG",
+      "file_upload_started": false,
+      "own_directory_absent_after_test": true
+    },
+    "latest_file_round": {
+      "one_65536_byte_upload_commit_succeeded": true,
+      "native_mtp_full_readback_verified": true,
+      "adb_raw_and_emulated_view_full_payload_verified": true,
+      "delete_api_getcount_getat_returned_success": true,
+      "before_enumobjects_api_reached": true,
+      "enumobjects_returned": false,
+      "next_method_entered": false,
+      "wrapper_cap_seconds": 75,
+      "native_folder_delete_entered": false,
+      "remaining_empty_own_directory_removed_by_guarded_nonrecursive_adb_rmdir": true,
+      "own_file_and_directory_absent_after_test": true,
+      "hyperos_boot_completed_after_test": true,
+      "owner_reported_usb_port_change": true,
+      "independent_port_change_verified": false,
+      "port_control_limit": "The saved before/after Windows location properties were identical; baseline timing may have followed the reported change. This is not an independently verified different-port control."
+    },
+    "interpretation": "Normal HyperOS reproduced the same host API stall stage observed in recovery: upload/readback and file Delete completed, then EnumObjects blocked before returning. This does not establish a shared cause or localize it to Windows, USB transport, phone firmware or PUID handling. It does not constitute full recovery MTP acceptance.",
+    "privacy": "Only sanitized counts, stages and outcome flags published; no raw logs, identifiers, credentials, filenames or object IDs"
+  },
   "tests": {
     "temporary_v4": {
       "sha256": "ccf04b6afb14b69ca8ad78642d8bd3aba73bdb47bd9de36c5aa11f77e3bdade9",

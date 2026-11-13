@@ -660,3 +660,33 @@ Booting this variant requires separate authorization for those metadata
 log writes and the chosen boot/installation method. The separately authorized native test above ran this variant. That test
 has ended and the original recovery is restored; further reboot/flash or
 credential tests require their own agreed scope.
+
+## Normal HyperOS MTP comparison, 2026-11-13
+
+The owner reports that MTP also hangs during copying/deletion in normal
+HyperOS. A bounded read-only Windows WPD check listed 62 internal-storage
+top-level objects and the first 32 Download objects in about 0.094 seconds.
+That baseline did not exercise writes or exclude Windows caching.
+
+A separately authorized single-file comparison used the same native WPD
+transfer/deletion sequence as the recovery fixture. One 64 KiB upload
+committed, full native readback and raw/emulated-view payload checks passed,
+and the file Delete API plus its GetCount/GetAt results returned success.
+The subsequent EnumObjects call on the containing folder then blocked
+before returning; Next and the folder-delete operation were never entered.
+The PC wrapper stopped its own client at the 75-second cap. A canonical,
+inode and emptiness guard allowed nonrecursive ADB rmdir of the remaining
+own empty directory. The file and directory are absent; HyperOS remained
+normally booted. No reboot, flash or driver change occurred in this round.
+
+An earlier fresh-connection control failed directory creation after about
+30 seconds with WPD error E_WPD_DEVICE_IS_HUNG (0x802A0006), before upload.
+For the latest file round, the owner confirmed changing USB ports, but the
+saved Windows location snapshots were identical. It must not be presented
+as an independently verified different-port control.
+
+The normal-system test reproduces the recovery test's host API stall stage.
+It does not prove a shared root cause or distinguish Windows/provider
+caching, USB transport, phone firmware or PUID handling. Full recovery MTP
+acceptance remains open; no recovery-specific fix follows from this alone.
+See the sanitized control record in `myron-validation.json`.

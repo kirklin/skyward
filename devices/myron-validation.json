@@ -1,11 +1,11 @@
 {
   "device": "myron",
-  "status": "experimental; core decryption/RW/logical mounts/physical controls and native MTP upload/readback/file Delete accepted; post-Delete WPD EnumObjects stall also reproduced under normal HyperOS; shared root cause not established; original recovery/HyperOS and normal files confirmed",
+  "status": "experimental; official full OTA engine success and updated HyperOS a boot/owner original-file acceptance passed; corrected Kept recovery-preservation retry and native recovery a boot verified; normal snapshot OTA and premature GUI progress remain open; MTP investigation paused by owner",
   "date": "2026-11-13",
   "stock_version": "OS4.0.6.0.XPMCNXM",
   "framework_api": 37,
   "vendor_api": 36,
-  "hardware_slot": "b",
+  "hardware_slot": "a",
   "bootloader_unlocked_confirmed_by_fastboot": true,
   "hyperos_mtp_control_20261113": {
     "scope": "Normal HyperOS only; one own 65536-byte file in a fresh Download child directory; no reboot, flash, driver changes or other user-file operations",
@@ -1010,7 +1010,9 @@
   },
   "remaining": [
     "Investigate WPD EnumObjects identity/cache resolution: observed parent enumeration and ObjectFormat/PUID property queries completed; folder lifetime PUID stability has an independent verified contract concern, not yet established as timeout cause",
-    "Enforcing mode and untested destructive recovery operations are not accepted"
+    "Enforcing mode and untested destructive recovery operations are not accepted",
+    "Normal snapshot OTA path: resolve retained metadata mount EBUSY instead of relying on engine overwrite fallback",
+    "OTA writing UI progress must not reach 100% from ZIP-tail identification reads"
   ],
   "temporary_test_candidate": {
     "source_commit": "79dec9edc91ce3f47b0fabe615a1d89b36ab996e",
@@ -1537,5 +1539,41 @@
     "device_tested": true,
     "new_phone_authorization_recorded": true,
     "limits": "Still diagnostic only; no host/device cause or MTP complete pass established."
+  },
+  "initial_test_hardware_slot": "b",
+  "ota_install_and_preservation_20261113": {
+    "scope": "Owner requested matching official full OTA installation and persistent Skyward; no wipe or downgrade bypass. Earlier limited recovery_b-only test scopes describe their historical rounds, not this official OTA.",
+    "official_version": "OS4.0.6.0.XPMCNXM",
+    "source_slot": "b",
+    "engine_selected_next_slot": "a",
+    "manual_slot_selection_commands": false,
+    "payload_hash_verified_on_phone": true,
+    "engine_payload_signature_verified": true,
+    "engine_exit_success": true,
+    "wipe": false,
+    "snapshot_path": "metadata remount EBUSY; engine used overwrite fallback; normal snapshot update not accepted",
+    "original_preservation_failure": "EPERM writing recovery_a; BLKROGET and sysfs ro both 1, recovery_b ro 0",
+    "repair_source_commit": "eeb24123fa7c1d341fd9c96deb99f0f94e699794",
+    "repair_ci_run": 43362542783,
+    "all_ci_jobs_success": true,
+    "disposable_readonly_block_regression_actually_executed_and_passed": true,
+    "image_sha256": "e5a50649935babcda4e7710feab978e912e468118748ab1f057f54c63c745439",
+    "same_kept_api_phone_retry": {
+      "source_recovery_b_updated_to_verified_candidate": true,
+      "original_target_read_only_flag_1_preserved_for_repro": true,
+      "selected_only_next_recovery_a": true,
+      "write_and_readback_passed": true,
+      "recovery_a_and_b_match_verified_image_before_reboot": true,
+      "original_readonly_flags_restored": true,
+      "boot_init_boot_vendor_boot_unchanged_during_repair": true
+    },
+    "full_ota_replayed_with_corrected_callback": false,
+    "native_target_recovery_a_booted_and_program_config_weaver_hashes_matched": true,
+    "updated_android_release": "17",
+    "updated_hyperos_a_boot_completed": true,
+    "owner_normal_unlock_desktop_and_original_files_confirmed": true,
+    "normal_os_raw_partition_readback": "Not performed: ordinary ADB uid 2000 has no read access; no additional root or reboot requested",
+    "remaining_gui_progress": "First-stage 100% used highest FUSE read offset, not engine completion; unresolved",
+    "privacy": "Sanitized outcomes and public artifact hashes only; no credentials, serials, raw logs, private paths or user filenames"
   }
 }

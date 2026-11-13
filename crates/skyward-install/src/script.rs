@@ -4,6 +4,39 @@
 
 use std::time::Duration;
 
+/// The kernel's shebang interpreter, without its optional argument.
+/// Spaces and tabs delimit it; a carriage return is part of its name,
+/// so a CRLF script must not appear to name a different interpreter.
+pub fn interpreter(prefix: &[u8]) -> anyhow::Result<Option<&[u8]>> {
+    let Some(rest) = prefix.strip_prefix(b"#!") else { return Ok(None) };
+    let rest = &rest[rest.iter().take_while(|b| matches!(b, b' ' | b'\t')).count()..];
+    let end = rest.iter().position(|b| matches!(b, b' ' | b'\t' | b'\n' | 0));
+    let name = &rest[..end.unwrap_or(rest.len())];
+    anyhow::ensure!(!name.is_empty(), "install script names no interpreter");
+    anyhow::ensure!(end.is_some() || prefix.len() < 256, "install script interpreter name is too long");
+    Ok(Some(name))
+}
+
+#[cfg(test)]
+mod interpreter_tests {
+    use super::interpreter;
+
+    #[test]
+    fn bash_and_optional_arguments_are_not_confused_with_sh() {
+        assert_eq!(interpreter(b"#!/sbin/bash\nprintf ok\n").unwrap(), Some(&b"/sbin/bash"[..]));
+        assert_eq!(interpreter(b"#! \t/system/bin/sh -e\nprintf ok").unwrap(), Some(&b"/system/bin/sh"[..]));
+        assert_eq!(interpreter(b"#!/sbin/bash\r\n").unwrap(), Some(&b"/sbin/bash\r"[..]));
+        assert_eq!(interpreter(b"\x7fELF").unwrap(), None);
+    }
+
+    #[test]
+    fn missing_and_truncated_interpreters_are_refused() {
+        assert!(interpreter(b"#!\n").is_err());
+        assert!(interpreter(b"#!\nthis is not an interpreter").is_err());
+        assert!(interpreter(&[b"#!".as_slice(), &[b'x'; 254]].concat()).is_err());
+    }
+}
+
 /// What a line the script wrote asks for.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Request {

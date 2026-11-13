@@ -55,6 +55,11 @@ enum Cmd {
         /// statically.
         #[arg(long)]
         system_init: PathBuf,
+        /// Static AArch64 Bash bundle made by .github/scripts/build-bash.sh:
+        /// bash, COPYING, musl-COPYRIGHT and SOURCE. Omit only when building
+        /// without support for scripts that require Bash.
+        #[arg(long)]
+        bash_dir: Option<PathBuf>,
         /// The device configuration, devices/<codename>.toml.
         #[arg(long)]
         config: PathBuf,
@@ -105,7 +110,7 @@ fn main() -> Result<()> {
             img.kernel = BootImage::read(&kernel)?.kernel;
             write(&out, &img, &img.to_bytes()?)
         }
-        Cmd::Recovery { stock, binary, system_init, config, font, mono, mono_license, out } => {
+        Cmd::Recovery { stock, binary, system_init, bash_dir, config, font, mono, mono_license, out } => {
             let size = partition_size(&stock)?;
             let mut img = BootImage::read(&stock)?;
             let mut rd = Ramdisk::decode(&img.ramdisk)?;
@@ -125,6 +130,9 @@ fn main() -> Result<()> {
                 rd.link(command, recovery)?;
             }
             rd.add(paths::SYSTEM_INIT, 0o755, read(&system_init)?)?;
+            if let Some(dir) = &bash_dir {
+                add_bash(&mut rd, dir)?;
+            }
             rd.add(paths::CONFIG, 0o644, read(&config)?)?;
             rd.add(paths::FONT, 0o644, read(&font)?)?;
             rd.add(paths::MONO, 0o644, read(&mono)?)?;
@@ -160,6 +168,23 @@ fn main() -> Result<()> {
             }
         }
     }
+}
+
+/// Keep the shell, its licences and the exact source/build reference
+/// together. A stock ramdisk's shell at /system/bin/sh is never replaced.
+fn add_bash(rd: &mut Ramdisk, dir: &Path) -> Result<()> {
+    for (source, target, mode) in [
+        ("bash", "system/bin/bash", 0o755),
+        ("COPYING", "skyward/licenses/bash-COPYING", 0o644),
+        ("musl-COPYRIGHT", "skyward/licenses/musl-COPYRIGHT", 0o644),
+        ("SOURCE", "skyward/licenses/bash-SOURCE", 0o644),
+    ] {
+        let path = dir.join(source);
+        let bytes = std::fs::read(&path).with_context(|| format!("read {}", path.display()))?;
+        ensure!(!bytes.is_empty(), "{} is empty", path.display());
+        rd.add(target, mode, bytes)?;
+    }
+    Ok(())
 }
 
 /// The partition a recovery is made on, as a full update package names it.

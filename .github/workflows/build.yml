@@ -26,6 +26,32 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  shell:
+    name: Build static Bash and test its installer interface
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the native musl compiler
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y musl-tools
+      - name: Build Bash from verified GNU source
+        run: bash .github/scripts/build-bash.sh "$GITHUB_WORKSPACE/bash-out"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bash-runtime
+          path: |
+            bash-out/bash
+            bash-out/COPYING
+            bash-out/musl-COPYRIGHT
+            bash-out/SOURCE
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        with:
+          path: bash-out/bash-source.tar.gz
+          archive: false
+          if-no-files-found: error
+          retention-days: 7
+
   check:
     name: Lint and test
     runs-on: ubuntu-24.04
@@ -96,7 +122,7 @@ jobs:
 
   recovery:
     name: Recovery for ${{ matrix.device }}
-    needs: [tools, devices]
+    needs: [tools, shell, devices]
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -108,6 +134,10 @@ jobs:
         with:
           name: tools
           path: tools
+      - uses: actions/download-artifact@v8
+        with:
+          name: bash-runtime
+          path: bash-runtime
       - name: Make the tools runnable
         run: chmod +x tools/skyward tools/skyward-pack
       - name: Read the stock build the recovery is made on
@@ -138,6 +168,7 @@ jobs:
           name="skyward-$version-$DEVICE-$STOCK"
           mkdir out
           tools/skyward-pack recovery --stock stock/recovery.img --binary tools/skyward --system-init tools/system-init \
+            --bash-dir bash-runtime \
             --config "devices/$DEVICE.toml" --font resources/fonts/MiSansVF.ttf --mono resources/fonts/KirkMono-Regular.ttf \
             --mono-license resources/fonts/KirkMono-OFL.txt --out "out/$name.img"
           echo "name=$name" >> "$GITHUB_OUTPUT"
@@ -177,6 +208,11 @@ jobs:
       - name: Sum the zips
         working-directory: images
         run: sha256sum -- *.zip > SHA256SUMS
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: bash-source.tar.gz
+          path: sources
+          skip-decompress: true
       # Each zip shows on the release as the phone it is for, its model and
       # then its codename, which is how people look for theirs; a device
       # whose zip is missing stops the release.
@@ -192,4 +228,4 @@ jobs:
             zip=$(ls images/skyward-"$GITHUB_REF_NAME"-"$device"-*.zip)
             zips+=("$zip#$model ($device)")
           done
-          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes "${zips[@]}" images/SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes "${zips[@]}" images/SHA256SUMS sources/bash-source.tar.gz

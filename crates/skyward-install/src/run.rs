@@ -23,6 +23,7 @@ use std::collections::HashSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, ErrorKind, Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{symlink, PermissionsExt};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
@@ -863,6 +864,7 @@ fn run_script(ctx: &mut Context, size: u64) -> Result<Done> {
     let slot = skyward_vab::current_slot()?.context("not an A/B phone")?;
     extract_script()?;
     shell_at_sbin()?;
+    check_interpreter()?;
     let kept = hold(ctx, slot)?;
     installed_boot_set()?;
     detach_once(ctx)?;
@@ -926,15 +928,39 @@ fn extract_script() -> Result<()> {
 
 /// Give scripts written for other recoveries the shell they start with.
 fn shell_at_sbin() -> Result<()> {
-    let link = Path::new(SBIN_SHELL);
-    match fs::symlink_metadata(link) {
-        Ok(_) => return Ok(()),
-        Err(e) if e.kind() == ErrorKind::NotFound => {}
-        Err(e) => return Err(e).with_context(|| format!("look at {SBIN_SHELL}")),
+    for (link, source) in [(SBIN_SHELL, SHELL), ("/sbin/bash", "/system/bin/bash")] {
+        if !Path::new(source).is_file() {
+            continue;
+        }
+        let link = Path::new(link);
+        match fs::symlink_metadata(link) {
+            Ok(_) => continue,
+            Err(e) if e.kind() == ErrorKind::NotFound => {}
+            Err(e) => return Err(e).with_context(|| format!("look at {}", link.display())),
+        }
+        let dir = link.parent().expect("the link is in a folder");
+        fs::create_dir_all(dir).with_context(|| format!("make {}", dir.display()))?;
+        symlink(source, link).with_context(|| format!("link {} to {source}", link.display()))?;
     }
-    let dir = link.parent().expect("the link is in a folder");
-    fs::create_dir_all(dir).with_context(|| format!("make {}", dir.display()))?;
-    symlink(SHELL, link).with_context(|| format!("link {SBIN_SHELL} to {SHELL}"))
+    Ok(())
+}
+
+/// A missing interpreter is reported before detaching or opening writable
+/// partition mappings, rather than as a misleading missing update-binary.
+fn check_interpreter() -> Result<()> {
+    let mut prefix = Vec::new();
+    File::open(BINARY)?.take(256).read_to_end(&mut prefix)?;
+    if let Some(name) = script::interpreter(&prefix)? {
+        let path = Path::new(std::ffi::OsStr::from_bytes(name));
+        let info = fs::metadata(path)
+            .with_context(|| format!("install script needs interpreter {}, unavailable in this recovery", path.display()))?;
+        ensure!(
+            info.is_file() && info.permissions().mode() & 0o111 != 0,
+            "install script interpreter {} is not executable",
+            path.display()
+        );
+    }
+    Ok(())
 }
 
 /// A line one of the install script's outputs gave.

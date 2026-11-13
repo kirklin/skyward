@@ -36,6 +36,10 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 | 小米 17 Ultra | `nezha` | OS4.0.4.0.XPACNXM（Android 17） |
 | 小米 13 Ultra | `ishtar` | OS3.0.308.0.WMACNXM（Android 16） |
 
+### Redmi K60 测试适配
+
+Redmi K60（`mondrian`）的 v0.1.6 测试镜像已在非官方 HyperOS `OS4.0.6.0.XPCCNXM` 官改包上完成启动与整分区哈希校验。中文更新日志、下载入口、测试环境及尚未复测的功能见 [K60 适配说明](docs/mondrian.zh-CN.md)。
+
 ### 🚧 施工中
 
 这些机型的镜像按照各自的原厂固件构建，还没有在真机上试过。屏幕、触摸、WLAN 和振动已经配置好，不会解密 data 分区。

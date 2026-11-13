@@ -1,5 +1,6 @@
 pub mod hidl;
 pub mod parcel;
+pub mod serve;
 pub mod service;
 pub mod status;
 

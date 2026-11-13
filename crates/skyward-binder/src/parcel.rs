@@ -12,8 +12,27 @@ const STRICT_MODE_PENALTY_GATHER: i32 = i32::MIN;
 /// The work source a caller passes on when it has none to pass on.
 const UNSET_WORK_SOURCE: i32 = -1;
 
-/// An object in the sending process, as a transaction carries it.
+/// An object in the sending process, as a transaction carries it to the
+/// process it is sent to, and one of the sending process's own, as it
+/// writes it.
 const BINDER_TYPE_HANDLE: u32 = u32::from_be_bytes([b's', b'h', b'*', 0x85]);
+const BINDER_TYPE_BINDER: u32 = u32::from_be_bytes([b's', b'b', b'*', 0x85]);
+
+/// What libbinder says of every object of its own it hands over: that
+/// calls on it may carry file descriptors, and that they run at the
+/// ordinary scheduling policy's lowest priority unless the caller's is
+/// higher.
+const OBJECT_FLAGS: u32 = 0x100 | 19;
+
+/// How far an object's interface is meant to travel, written after the
+/// object: one the phone's own partitions and the system both keep to,
+/// which is the only kind a service the phone describes may be, and what
+/// is written after an object left out.
+const STABILITY_VINTF: i32 = 0b11_1111;
+const STABILITY_UNDECLARED: i32 = 0;
+
+/// The room an object takes among the values, before how far it travels.
+const OBJECT_BYTES: usize = 24;
 
 /// What a call carries. The values themselves are most of it; a call that
 /// hands over an address says where among the values that address sits, and
@@ -35,11 +54,18 @@ pub trait Payload {
 #[derive(Default)]
 pub struct Parcel {
     data: Vec<u8>,
+    /// Where among the values each object sits, which the driver is told
+    /// so that it can turn an object into what the other side holds it by.
+    objects: Vec<u64>,
 }
 
 impl Payload for Parcel {
     fn values(&self) -> &[u8] {
         self.bytes()
+    }
+
+    fn addresses(&self) -> &[u64] {
+        &self.objects
     }
 }
 
@@ -91,6 +117,33 @@ impl Parcel {
     /// there; nothing follows when it is not.
     pub fn none(&mut self) {
         self.i32(0);
+    }
+
+    /// One of this program's own objects, by the number it serves it
+    /// under: the driver gives the other side something to call it by.
+    pub fn object(&mut self, number: u64) {
+        self.objects.push(self.data.len() as u64);
+        self.data.extend_from_slice(&BINDER_TYPE_BINDER.to_le_bytes());
+        self.data.extend_from_slice(&OBJECT_FLAGS.to_le_bytes());
+        self.data.extend_from_slice(&number.to_le_bytes());
+        self.data.extend_from_slice(&number.to_le_bytes());
+        self.i32(STABILITY_VINTF);
+    }
+
+    /// An object left out where one may be: libbinder writes it as one of
+    /// its own that is nowhere, which the driver passes on as it is.
+    pub fn no_object(&mut self) {
+        self.data.extend_from_slice(&BINDER_TYPE_BINDER.to_le_bytes());
+        self.data.extend_from_slice(&[0; OBJECT_BYTES - 4]);
+        self.i32(STABILITY_UNDECLARED);
+    }
+
+    /// Several texts: how many, then each.
+    pub fn strings(&mut self, all: &[&str]) {
+        self.i32(all.len() as i32);
+        for s in all {
+            self.string(s);
+        }
     }
 
     /// Text, as the count of UTF-16 units, those units, a terminator, and
@@ -171,13 +224,36 @@ impl<'a> Reader<'a> {
     }
 
     pub fn blob(&mut self) -> Result<Vec<u8>> {
+        match self.opt_blob()? {
+            Some(out) => Ok(out),
+            None => bail!("a byte array was left out where one was expected"),
+        }
+    }
+
+    /// A byte array that may be left out, which is written as a length of
+    /// -1.
+    pub fn opt_blob(&mut self) -> Result<Option<Vec<u8>>> {
         let len = self.i32()?;
+        if len == -1 {
+            return Ok(None);
+        }
         if len < 0 {
-            bail!("a byte array of length {len} was read where one was expected");
+            bail!("a byte array of length {len} was read");
         }
         let out = self.take(len as usize)?.to_vec();
         self.skip_padding();
-        Ok(out)
+        Ok(Some(out))
+    }
+
+    /// The header a call opens with, which libbinder writes before what the
+    /// method takes, and the interface it names. The mark in it tells apart
+    /// the copies of libbinder a phone carries, and a caller may be built
+    /// from any of them, so it is read past.
+    pub fn call(&mut self) -> Result<String> {
+        self.i32().context("read the caller's strict mode")?;
+        self.i32().context("read the caller's work source")?;
+        self.i32().context("read the mark of the caller's libbinder")?;
+        self.string().context("read the interface called")
     }
 
     pub fn string(&mut self) -> Result<String> {
@@ -239,6 +315,60 @@ mod tests {
         assert_eq!(r.i32().unwrap(), 0x5245_434f, "the recovery's mark, RECO");
         assert_eq!(r.string().unwrap(), "a.b.IC");
         assert_eq!(r.here(), p.bytes().len(), "the header is all of it");
+    }
+
+    #[test]
+    fn the_header_of_a_call_gives_its_interface_whichever_libbinder_wrote_it() {
+        let mut ours = Parcel::call("a.b.IC");
+        ours.i32(7);
+        let mut read = Reader::new(ours.bytes());
+        assert_eq!(read.call().unwrap(), "a.b.IC");
+        assert_eq!(read.i32().unwrap(), 7, "what the method takes comes next");
+        let mut vendor = Parcel::default();
+        vendor.i32(i32::MIN);
+        vendor.i32(-1);
+        vendor.i32(i32::from_be_bytes(*b"VNDR"));
+        vendor.string("a.b.IC");
+        assert_eq!(Reader::new(vendor.bytes()).call().unwrap(), "a.b.IC", "the vendor partition's copy");
+        assert!(Reader::new(&[0; 8]).call().is_err(), "a call cut short");
+    }
+
+    #[test]
+    fn an_object_of_ones_own_is_written_where_the_driver_is_told_it_is() {
+        let mut p = Parcel::default();
+        p.i32(0);
+        p.object(0x1234);
+        p.no_object();
+        p.strings(&["eSE1", "SIM1"]);
+        assert_eq!(p.addresses(), [4], "one object, after the first value; one left out is none");
+        let mut r = Reader::new(p.bytes());
+        r.i32().unwrap();
+        let raw = &p.bytes()[4..32];
+        assert_eq!(&raw[0..4], b"\x85*bs", "one of the sender's own");
+        assert_eq!(u32::from_le_bytes(raw[4..8].try_into().unwrap()), 0x113, "takes file descriptors, at the lowest ordinary priority");
+        assert_eq!(u64::from_le_bytes(raw[8..16].try_into().unwrap()), 0x1234);
+        assert_eq!(u64::from_le_bytes(raw[16..24].try_into().unwrap()), 0x1234);
+        assert_eq!(i32::from_le_bytes(raw[24..28].try_into().unwrap()), 63, "an interface the phone and the system both keep to");
+        assert_eq!(r.object().unwrap(), None, "the sender's own is no handle to the reader");
+        assert_eq!(r.object().unwrap(), None, "and neither is one left out");
+        assert_eq!(r.i32().unwrap(), 2);
+        assert_eq!((r.string().unwrap(), r.string().unwrap()), ("eSE1".to_string(), "SIM1".to_string()));
+        assert_eq!(r.here(), p.bytes().len());
+    }
+
+    #[test]
+    fn a_byte_array_left_out_is_told_from_an_empty_one() {
+        let mut p = Parcel::default();
+        p.opt_blob(None);
+        p.blob(&[]);
+        p.blob(&[9]);
+        let mut r = Reader::new(p.bytes());
+        assert_eq!(r.opt_blob().unwrap(), None);
+        assert_eq!(r.opt_blob().unwrap(), Some(Vec::new()));
+        assert_eq!(r.opt_blob().unwrap(), Some(vec![9]));
+        let mut left_out = Parcel::default();
+        left_out.opt_blob(None);
+        assert!(Reader::new(left_out.bytes()).blob().is_err(), "where one has to be there");
     }
 
     #[test]

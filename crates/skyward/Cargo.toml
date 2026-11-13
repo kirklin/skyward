@@ -27,6 +27,7 @@ zstd = { version = "0.14.3", default-features = false }
 
 [target.'cfg(target_os = "android")'.dependencies]
 evdev = "0.13.2"
+hex = { workspace = true }
 skyward-backup = { path = "../skyward-backup" }
 skyward-binder = { path = "../skyward-binder" }
 skyward-crypto = { path = "../skyward-crypto" }

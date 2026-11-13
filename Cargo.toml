@@ -34,7 +34,8 @@ license = "GPL-3.0-or-later"
 [workspace.dependencies]
 libc = "0.2.175"
 anyhow = "1.0.100"
-serde = { version = "1.0.228", features = ["derive"] }
+hex = "0.4.3"
+serde ={ version = "1.0.228", features = ["derive"] }
 toml = "0.9.8"
 
 [profile.release]

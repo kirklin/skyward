@@ -2367,6 +2367,7 @@ dependencies = [
  "anyhow",
  "clap",
  "evdev",
+ "hex",
  "libc",
  "procfs",
  "skyward-backup",
@@ -2398,6 +2399,7 @@ name = "skyward-backup"
 version = "0.3.0"
 dependencies = [
  "anyhow",
+ "hex",
  "libc",
  "lz4_flex 0.14.0",
  "serde",
@@ -2421,6 +2423,7 @@ name = "skyward-block"
 version = "0.3.0"
 dependencies = [
  "anyhow",
+ "hex",
  "libc",
  "procfs",
  "serde",
@@ -2454,6 +2457,7 @@ version = "0.3.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
+ "hex",
  "hmac",
  "libc",
  "rusqlite",
@@ -2540,6 +2544,7 @@ dependencies = [
  "anyhow",
  "jiff",
  "libc",
+ "skyward-block",
  "skyward-files",
  "skyward-sys",
  "zerocopy",
@@ -2554,6 +2559,7 @@ dependencies = [
  "base64 0.22.1",
  "cbc",
  "dhcproto",
+ "hex",
  "hickory-proto",
  "httparse",
  "libc",
@@ -2562,6 +2568,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "skyward-block",
  "ureq",
 ]
 
@@ -2580,6 +2587,7 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
+ "hex",
  "rust-fs-core",
  "rust-fs-erofs",
  "serde_json",
@@ -2648,6 +2656,7 @@ version = "0.3.0"
 dependencies = [
  "abootimg-oxide",
  "anyhow",
+ "hex",
  "libc",
  "serde",
  "sha2 0.10.9",

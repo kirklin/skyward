@@ -3,7 +3,7 @@ use skyward_config::DeviceConfig;
 use skyward_sys::{prop, ToldOnce};
 use skyward_vab::{Slot, SnapshotState};
 use std::collections::HashMap;
-use std::ffi::{CStr, CString};
+use std::ffi::CStr;
 use std::fs;
 use std::io::ErrorKind;
 use std::os::unix::fs::MetadataExt;
@@ -341,7 +341,8 @@ fn storage() -> Result<Storage> {
     let dev = fs::canonicalize(&link).with_context(|| format!("resolve {}", link.display()))?;
     let name = dev.file_name().ok_or_else(|| anyhow!("{} has no device name", dev.display()))?;
     let sectors: u64 = parse(&read(Path::new(SYS_BLOCK).join(name).join("size"))?, "block size")?;
-    let free = if is_mountpoint(Path::new("/data"))? { Some(free_bytes("/data")?) } else { None };
+    let data = Path::new("/data");
+    let free = if is_mountpoint(data)? { Some(skyward_block::mount::space(data).context("read the room in /data")?.free) } else { None };
     Ok(Storage { total: sectors * 512, free })
 }
 
@@ -352,18 +353,6 @@ fn is_mountpoint(path: &Path) -> Result<bool> {
     let here = fs::metadata(path).with_context(|| format!("stat {}", path.display()))?;
     let up = fs::metadata(parent).with_context(|| format!("stat {}", parent.display()))?;
     Ok(here.dev() != up.dev())
-}
-
-fn free_bytes(path: &str) -> Result<u64> {
-    let c = CString::new(path)?;
-    let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
-    if unsafe { libc::statvfs(c.as_ptr(), &mut s) } != 0 {
-        return Err(std::io::Error::last_os_error()).with_context(|| format!("statvfs {path}"));
-    }
-    // `fsblkcnt_t` is 32 bits on some hosts and 64 bits on Android.
-    #[allow(clippy::useless_conversion)]
-    let blocks = u64::from(s.f_bfree);
-    Ok(blocks * s.f_frsize)
 }
 
 /// The battery as it is now.

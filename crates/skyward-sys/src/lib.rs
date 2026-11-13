@@ -15,6 +15,7 @@ pub mod sleep;
 pub mod uevent;
 pub mod ueventd;
 pub mod usb;
+pub mod worker;
 
 /// A system property, or `None` when it is unset.
 #[cfg(target_os = "android")]

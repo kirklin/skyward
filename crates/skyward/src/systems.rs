@@ -6,9 +6,8 @@
 use anyhow::{Context, Result};
 use skyward_systems::{install, Overview, State, Who};
 use skyward_vab::Slot;
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::thread::{self, JoinHandle};
+use std::os::fd::RawFd;
+use std::sync::mpsc::{self, Sender};
 
 pub enum Task {
     /// Read the systems.
@@ -105,54 +104,38 @@ fn named(name: &str) -> Result<Who> {
 
 /// The work on the systems, from a thread of its own.
 pub struct Worker {
+    /// The thread ends once it has no more tasks to take: this end goes
+    /// before the thread is waited for, being the field before it.
     tasks: Sender<Task>,
-    events: Receiver<Event>,
-    /// Readable while events wait.
-    wake: OwnedFd,
     /// The tasks sent and not yet ended.
     pending: usize,
-    thread: Option<JoinHandle<()>>,
+    worker: skyward_sys::worker::Worker<Event>,
 }
 
 impl Worker {
     /// Start the thread; `version_prop` is the build property naming the
     /// installed system's version, as the phone's configuration says.
     pub fn start(version_prop: String) -> Result<Worker> {
-        let mut fds = [0; 2];
-        if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) } != 0 {
-            return Err(std::io::Error::last_os_error()).context("make the systems' wake pipe");
-        }
-        let (wake, signal) = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
         let (tasks, todo) = mpsc::channel::<Task>();
-        let (tx, events) = mpsc::channel();
-        let thread = thread::Builder::new()
-            .name("systems".into())
-            .spawn(move || {
-                let tell = |event: Event| {
-                    // The screen only stops listening once it has let the
-                    // worker go.
-                    let _ = tx.send(event);
-                    unsafe { libc::write(signal.as_raw_fd(), [1u8].as_ptr().cast(), 1) };
+        let worker = skyward_sys::worker::Worker::start("systems", move |tell| {
+            for task in todo {
+                let told = match task {
+                    Task::Read => None,
+                    Task::Resume => match resume() {
+                        Ok(resumed) => resumed.map(Event::Resumed),
+                        Err(e) => Some(Event::NotResumed(format!("{e:#}"))),
+                    },
+                    Task::Switch(to) => Some(switched(switch(to).map(|()| to))),
+                    Task::SwitchNamed(name) => Some(switched(named(&name).and_then(|to| switch(to).map(|()| to)))),
+                    Task::Remove => install::remove().err().map(|e| Event::Failed(format!("{e:#}"))),
                 };
-                for task in todo {
-                    let told = match task {
-                        Task::Read => None,
-                        Task::Resume => match resume() {
-                            Ok(resumed) => resumed.map(Event::Resumed),
-                            Err(e) => Some(Event::NotResumed(format!("{e:#}"))),
-                        },
-                        Task::Switch(to) => Some(switched(switch(to).map(|()| to))),
-                        Task::SwitchNamed(name) => Some(switched(named(&name).and_then(|to| switch(to).map(|()| to)))),
-                        Task::Remove => install::remove().err().map(|e| Event::Failed(format!("{e:#}"))),
-                    };
-                    if let Some(event) = told {
-                        tell(event);
-                    }
-                    tell(Event::Read(read(&version_prop).map_err(|e| format!("{e:#}"))));
+                if let Some(event) = told {
+                    tell.tell(event);
                 }
-            })
-            .context("start the systems' worker")?;
-        Ok(Worker { tasks, events, wake, pending: 0, thread: Some(thread) })
+                tell.tell(Event::Read(read(&version_prop).map_err(|e| format!("{e:#}"))));
+            }
+        })?;
+        Ok(Worker { tasks, pending: 0, worker })
     }
 
     pub fn send(&mut self, task: Task) {
@@ -160,8 +143,9 @@ impl Worker {
         self.pending += 1;
     }
 
+    /// Readable while events wait.
     pub fn fd(&self) -> RawFd {
-        self.wake.as_raw_fd()
+        self.worker.fd()
     }
 
     /// Whether a task is under way or waiting.
@@ -171,21 +155,8 @@ impl Worker {
 
     /// The events since the last call.
     pub fn events(&mut self) -> Vec<Event> {
-        let mut drain = [0u8; 64];
-        while unsafe { libc::read(self.wake.as_raw_fd(), drain.as_mut_ptr().cast(), drain.len()) } > 0 {}
-        let events: Vec<Event> = self.events.try_iter().collect();
+        let events = self.worker.events();
         self.pending -= events.iter().filter(|e| matches!(e, Event::Read(_))).count();
         events
-    }
-}
-
-impl Drop for Worker {
-    /// The thread ends once it has no more tasks to take.
-    fn drop(&mut self) {
-        let (tasks, _) = mpsc::channel();
-        drop(std::mem::replace(&mut self.tasks, tasks));
-        if let Some(thread) = self.thread.take() {
-            thread.join().expect("the systems' worker does not panic");
-        }
     }
 }

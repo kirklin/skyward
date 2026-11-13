@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+hex = { workspace = true }
 libc = { workspace = true }
 serde = { workspace = true }
 sha2 = "0.10.9"

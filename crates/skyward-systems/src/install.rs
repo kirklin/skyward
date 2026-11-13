@@ -97,19 +97,15 @@ mod sys {
     }
 
     /// Where the data partition is mounted.
-    const DATA: &std::ffi::CStr = c"/data";
+    const DATA: &str = "/data";
 
     fn data() -> &'static Path {
-        Path::new(DATA.to_str().expect("the data partition's mount point is written in ASCII"))
+        Path::new(DATA)
     }
 
     /// The bytes free in the data partition's filesystem.
     pub fn free() -> Result<u64> {
-        let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
-        if unsafe { libc::statvfs(DATA.as_ptr(), &mut s) } != 0 {
-            return Err(std::io::Error::last_os_error()).context("look at the room in the data partition");
-        }
-        Ok(s.f_bavail as u64 * s.f_frsize as u64)
+        Ok(skyward_block::mount::space(data()).context("look at the room in the data partition")?.available)
     }
 
     /// The room for a root, in the data partition as it is now.
@@ -237,7 +233,7 @@ mod sys {
             }
             sum.update(&buf[..n]);
         }
-        Ok(sum.finalize().iter().map(|b| format!("{b:02x}")).collect())
+        Ok(hex::encode(sum.finalize()))
     }
 
     /// Whether the installed system's vendor_boot or dtbo in `slot` differ

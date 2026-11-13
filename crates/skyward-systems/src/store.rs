@@ -46,10 +46,6 @@ pub fn partition(dir: &Path, name: &str, slot: Slot) -> PathBuf {
     dir.join(format!("{name}{}", slot.suffix()))
 }
 
-fn hex(digest: impl AsRef<[u8]>) -> String {
-    digest.as_ref().iter().map(|b| format!("{b:02x}")).collect()
-}
-
 /// Copy `len` bytes from `from` to `to` where it stands, returning their
 /// SHA-256.
 fn copy(from: &mut dyn Read, to: &mut File, len: u64) -> Result<String> {
@@ -63,7 +59,7 @@ fn copy(from: &mut dyn Read, to: &mut File, len: u64) -> Result<String> {
         sum.update(&buf[..n]);
         left -= n as u64;
     }
-    Ok(hex(sum.finalize()))
+    Ok(hex::encode(sum.finalize()))
 }
 
 /// The SHA-256 of `len` bytes of `f` from `at`, read past any pages cached
@@ -80,7 +76,7 @@ fn sum(f: &mut File, at: u64, len: u64) -> Result<String> {
         sum.update(&buf[..n]);
         left -= n as u64;
     }
-    Ok(hex(sum.finalize()))
+    Ok(hex::encode(sum.finalize()))
 }
 
 fn open(path: &Path, write: bool) -> Result<File> {
@@ -134,7 +130,7 @@ pub fn init_boot(store: &Store, device: &Path, saved: &Saved) -> Result<Vec<u8>>
     f.seek(SeekFrom::Start(store.offset(saved.entry) + store.boot))?;
     let mut image = vec![0u8; store.init_boot as usize];
     f.read_exact(&mut image).with_context(|| format!("read {}", device.display()))?;
-    ensure!(hex(Sha256::digest(&image)) == saved.init_boot, "the store's entry {} holds another init_boot image than was saved", saved.entry);
+    ensure!(hex::encode(Sha256::digest(&image)) == saved.init_boot, "the store's entry {} holds another init_boot image than was saved", saved.entry);
     Ok(image)
 }
 

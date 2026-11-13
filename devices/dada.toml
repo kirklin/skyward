@@ -17,7 +17,7 @@ density = 520
 sources = ["vendor_boot", "vendor_dlkm", "vendor", "system_dlkm"]
 # The touchscreen: Synaptics TouchComm over SPI behind Xiaomi's touch
 # layer, the one touch driver the phone's own modules.load lists.
-load = ["synaptics_tcm2"]
+load = ["synaptics_tcm2", "stm_st54se_gpio"]
 
 # As on the 17 Ultra, no init script of the phone's starts touch_report:
 # the touch feature service turns the controller's raw frames into
@@ -55,7 +55,7 @@ groups = ["root", "system", "wakelock", "graphics"]
 # wpa_supplicant runs on the recovery's own libraries before the vendor
 # partition's, as on the 17 Ultra.
 [wlan]
-modules = ["rfkill", "qca_cld3_peach", "qca_cld3_peach_v2"]
+modules = ["rfkill", "qca_cld3_peach_v2"]
 writes = [{ path = "/sys/kernel/cnss/fs_ready", value = "1" }]
 firmware = [
     { name = "wlan/qca_cld/peach/WCNSS_qcom_cfg.ini", path = "/vendor/etc/wifi/peach/WCNSS_qcom_cfg.ini" },

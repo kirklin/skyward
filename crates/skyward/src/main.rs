@@ -288,7 +288,8 @@ fn main() -> Result<()> {
             let slot = booted_slot()?;
             let props = skyward_info::installed_props(slot)?;
             let services: Vec<Started> = DeviceConfig::load(&config)?.services.into_iter().filter(|s| s.runs_on(&props)).map(Started::from).collect();
-            let libraries = secure::libraries()?;
+            secure::prepare_services()?;
+    let libraries = secure::libraries()?;
             services::start(&services, libraries.as_deref())?;
             keys::start(&keys::found(slot, libraries.as_deref())?.steps?, libraries.as_deref())?;
             loop {
@@ -585,6 +586,7 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
         secure::publish_descriptions(&told)?;
         skyward_sys::kmsg(&format!("the service directory is told of {} of the phone's own services", told.len()))?;
     }
+    secure::prepare_services()?;
     let libraries = secure::libraries()?;
     if let Some(dir) = &libraries {
         skyward_sys::kmsg(&format!("the phone's own libraries are at {}", dir.display()))?;

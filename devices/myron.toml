@@ -2,7 +2,8 @@
 # OS4.0.6.0.XPMCNXM, framework 17/API37, vendor 16/API36.
 # Native recovery boot/touch and StrongBox startup were tested on myron.
 # Native Weaver getConfig passed (64 slots, 16-byte keys/values).
-# Read-only PIN/CE decryption passed in 34fe498; writable-data acceptance pending.
+# Read-only PIN/CE passed in 34fe498; later native rounds passed writable
+# data/sdcard, mount switches and physical controls. See myron-validation.json.
 # See myron.md, including the Java OMAPI dependency of stock Weaver.
 [device]
 codename = "myron"
@@ -18,8 +19,8 @@ width = 1200
 height = 2608
 density = 480
 
-# Read-only PIN/CE passed. Enable ordinary filesystem access for the next
-# bounded test, keeping fsck, general upgrades and automatic key deletion off.
+# PIN/CE and writable filesystem access passed bounded native tests.
+# Keep fsck, general key upgrades and automatic key deletion off.
 [decrypt]
 read_only = false
 auto_repair = false
@@ -206,8 +207,8 @@ user = "vendor_nxp_weaver"
 groups = ["vendor_nxp_weaver"]
 
 # Stock actually loads qca_cld3_peach_v2, has a qcom,cnss-peach sysfs
-# device, and carries /vendor/etc/wifi/peach_v2. Recovery bring-up and any
-# userspace calibration requirements have not yet been checked.
+# device, and carries /vendor/etc/wifi/peach_v2. Native hotspot scanning
+# passed; an earlier recovery log also recorded DHCP and reachability.
 [wlan]
 modules = ["rfkill", "qca_cld3_peach_v2"]
 writes = [{ path = "/sys/kernel/cnss/fs_ready", value = "1" }]

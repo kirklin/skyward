@@ -90,9 +90,11 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 
 ### 🚧 施工中
 
-这些适配仍在施工中。REDMI K60 Pro（`socrates`）已实刷 `recovery_a`，验证 PIN 可写 data 解密、Wi-Fi、Windows MTP 文件操作，以及专用共享存储和应用私有 CE 目录中的生产代码备份恢复；此前的显示、触摸、USB ADB、按键、亮度、振动和槽位查询验证也已记录。原生 ext4/F2FS 格式化、挂载和擦除在一次性 loop 镜像上通过。测试后已恢复原 recovery、卸载测试包并清理测试文件。具体构建与未验证范围见[实机验证记录](devices/socrates-validation.json)。下表其余机型的镜像按照原厂固件构建，还没有在真机上试过，不会解密 data 分区。
+这些适配仍在施工中。REDMI K60 Pro（`socrates`）已实刷 `recovery_a`，验证 PIN 可写 data 解密、Wi-Fi、Windows MTP 文件操作，以及专用共享存储和应用私有 CE 目录中的生产代码备份恢复；此前的显示、触摸、USB ADB、按键、亮度、振动和槽位查询验证也已记录。原生 ext4/F2FS 格式化、挂载和擦除在一次性 loop 镜像上通过。测试后已恢复原 recovery、卸载测试包并清理测试文件。具体构建与未验证范围见[实机验证记录](devices/socrates-validation.json)。
 
 机主确认 K60 Pro 当前移植系统的底包为 **OS3.0.303.0.WMKCNXM**。宿主框架实测为 **Android 17／API 37**；当前 vendor/odm 属性自报 **OS3.0.304.0.WMKCNXM、Android 13／API 33（VNDK 33）**。recovery 的构建输入另为官方 **Android 16 OTA OS3.0.304.0.WMKCNXM**。底包、框架、厂商层自报属性和打包来源分别记录，不把属性或构建输入当作整机底包版本；其他组合尚未验证。
+
+REDMI K90 Pro Max（`myron`）实测基准为 **OS4.0.6.0.XPMCNXM，Android 17／API 37 框架、Android 16／API 36 厂商层**。原生 recovery 启动、触摸、正确 PIN／CE 与可写 data、逻辑分区挂载开关、热点扫描及物理控制均已通过。官方整包安装及修正后的 recovery 保留接口重试通过，返回 HyperOS 后机主确认正常解锁及原文件正常。MTP 删除后 Windows WPD 枚举阻塞、metadata 快照回退和 OTA 进度提前显示仍待修；详见 [myron 验证记录](devices/myron.md)。除上述两款外，下表其余机型尚未实机验证，不会解密 data。
 
 | 机型 | 代号 | 构建所用的系统版本 |
 | --- | --- | --- |
@@ -112,7 +114,7 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 | 🚧 REDMI K80 | `zorn` | OS3.0.309.0.WOKCNXM（Android 16） |
 | 🚧 REDMI K80 Pro | `miro` | OS3.0.305.0.WOMCNXM（Android 16） |
 | 🚧 REDMI K90 | `annibale` | OS3.0.307.0.WPKCNXM（Android 16） |
-| 🚧 REDMI K90 Pro Max | `myron` | OS4.0.4.0.XPMCNXM（Android 17） |
+| 🚧 REDMI K90 Pro Max | `myron` | OS4.0.6.0.XPMCNXM（Android 17） |
 | 🚧 REDMI K90 Ultra | `warsaw` | OS3.0.309.0.WHPCNXM（Android 16） |
 | 🚧 REDMI K100 Pro | `athens` | OS4.0.4.0.XPICNXM（Android 17） |
 | 🚧 REDMI K100 Pro Max | `songyuan` | OS4.0.4.0.XGNCNXM（Android 17） |

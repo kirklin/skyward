@@ -12,8 +12,23 @@ data/sdcard mounts, and aa35835 passed all three available logical mount
 switches. A later aa35835 round passed native MTP upload/readback/file deletion,
 volume/power/wake/touch, vibration-strength changes and BootControl reads.
 Empty-directory cleanup through Windows WPD and enforcing-mode acceptance
-remain incomplete.
-The original recovery was restored and verified. No myron PR is submitted.
+remain incomplete. The same post-delete Windows WPD stall was also observed
+under normal HyperOS; this does not establish a shared root cause.
+
+The latest native candidate, eeb2412, passed complete CI and the corrected
+recovery-preservation path on the phone. An official OS4.0.6.0 full OTA
+completed from b to a; the new recovery then booted natively from a with
+matching running hashes. Updated HyperOS booted on a and the owner confirmed
+normal unlock, desktop and original files. Skyward was retained in both
+recovery partitions before returning to HyperOS. This was a same-Kept-API
+retry after the original preservation failure, not a second full OTA using
+the corrected callback. Metadata EBUSY/overwrite fallback and premature
+100% UI progress remain open; see the final section for the exact scope.
+
+The dated sections below retain the earlier test stages and restorations;
+they are historical evidence, not the latest phone state. Compatibility is
+tested on OS4.0.6.0.XPMCNXM (framework Android 17/API 37, vendor API 36).
+Other firmware versions have not been accepted.
 
 Read-only inspection on 2026-11-12 identified REDMI K90 Pro Max
 `25102RKBEC`, SM8850/canoe, OS4.0.6.0.XPMCNXM, framework Android 17/API 37

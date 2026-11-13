@@ -102,8 +102,7 @@ brightness, vibration and boot-slot checks are also recorded. Native ext4/F2FS
 format, mount and discard passed on disposable loop images. The original recovery
 was restored, the test APK uninstalled and all fixture files removed. See its
 [device validation record](devices/socrates-validation.json) for the exact builds
-and remaining limits. The other images below are built from stock firmware, have
-not been tried on the phone, and do not decrypt the data partition.
+and remaining limits.
 
 The owner identifies the K60 Pro port's base firmware as **OS3.0.303.0.WMKCNXM**.
 The tested host framework reports **Android 17 / API 37**; current vendor/odm
@@ -111,6 +110,15 @@ properties report **OS3.0.304.0.WMKCNXM, Android 13 / API 33 (VNDK 33)**.
 Recovery packaging separately uses the official **Android 16 OTA
 OS3.0.304.0.WMKCNXM**. Base firmware, framework, reported vendor properties and
 packaging inputs are distinct evidence; other combinations remain unverified.
+
+REDMI K90 Pro Max (`myron`) was tested on **OS4.0.6.0.XPMCNXM, Android 17/API 37
+framework and Android 16/API 36 vendor**. Native recovery boot, touch, correct-PIN
+CE/writable data, logical mount switches, hotspot scanning and physical controls
+passed. An official full OTA and a corrected recovery-preservation API retry
+passed; the owner confirmed normal HyperOS unlock and original files afterwards.
+MTP post-delete Windows WPD enumeration, metadata snapshot fallback and premature
+OTA progress remain open. See the [myron validation notes](devices/myron.md).
+The other profiles below are untested on-device and do not decrypt data.
 
 | Device | Codename | Built on |
 | --- | --- | --- |
@@ -130,7 +138,7 @@ packaging inputs are distinct evidence; other combinations remain unverified.
 | 🚧 REDMI K80 | `zorn` | OS3.0.309.0.WOKCNXM (Android 16) |
 | 🚧 REDMI K80 Pro | `miro` | OS3.0.305.0.WOMCNXM (Android 16) |
 | 🚧 REDMI K90 | `annibale` | OS3.0.307.0.WPKCNXM (Android 16) |
-| 🚧 REDMI K90 Pro Max | `myron` | OS4.0.4.0.XPMCNXM (Android 17) |
+| 🚧 REDMI K90 Pro Max | `myron` | OS4.0.6.0.XPMCNXM (Android 17) |
 | 🚧 REDMI K90 Ultra | `warsaw` | OS3.0.309.0.WHPCNXM (Android 16) |
 | 🚧 REDMI K100 Pro | `athens` | OS4.0.4.0.XPICNXM (Android 17) |
 | 🚧 REDMI K100 Pro Max | `songyuan` | OS4.0.4.0.XGNCNXM (Android 17) |

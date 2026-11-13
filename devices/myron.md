@@ -690,3 +690,25 @@ It does not prove a shared root cause or distinguish Windows/provider
 caching, USB transport, phone firmware or PUID handling. Full recovery MTP
 acceptance remains open; no recovery-specific fix follows from this alone.
 See the sanitized control record in `myron-validation.json`.
+
+## 官方整包安装与 recovery 保留，2026-11-13
+
+实机从 b 槽安装 `OS4.0.6.0.XPMCNXM` 官方完整 OTA，payload 签名验证和
+update_engine 执行成功，下一启动槽由更新程序设置为 a，未清除用户数据。
+这尚不等于更新后系统启动与原文件可用性已验收。
+
+本次发现“安装后保留 Skyward”在写回 recovery_a 时返回 EPERM：更新程序
+校验后将目标块设备留为只读，实测 BLKROGET 与 sysfs ro 均为 1。
+写入修正仅临时解除明确选中的块设备的只读标志，保留原有写入、同步、读回
+摘要验证，并在成功或出错时恢复原标志；普通文件不接收块设备 ioctl。
+CI 的独立 root 用例只分配临时文件支持的 loop 设备，覆盖实际只读写入失败、
+修正后写回、超长／短输入、后续输出打开失败、原本可写以及 Kept 保留路径。
+新版代码的实机复测结果另行记录，不能据补丁本身声称自动回刷已通过。
+
+供开发者重试失败回刷的 `keep-recovery` 工具默认只报告当前与下次槽及目标；
+写入必须显式提供 `--write` 与当前槽 recovery 的预期 SHA-256，且更新程序
+必须已退出。它复用自动保留的 Kept 路径，不重新安装 OTA，不改变启动槽。
+
+另外，本次 `/metadata` 的重新挂载遇到 EBUSY，更新程序采用覆盖分区回退路径；
+不能将本次记录标为正常 Virtual A/B 快照安装通过。界面第一阶段提前显示
+100% 的进度计算问题也仍需修正，判断完成以更新程序最终状态为准。

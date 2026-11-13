@@ -1,0 +1,12 @@
+[package]
+name = "skyward-omapi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+skyward-binder = { path = "../skyward-binder" }
+
+[target.'cfg(target_os = "android")'.dependencies]
+skyward-sys = { path = "../skyward-sys" }

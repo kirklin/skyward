@@ -8,6 +8,7 @@ members = [
     "crates/skyward-block",
     "crates/skyward-vab",
     "crates/skyward-modules",
+    "crates/skyward-omapi",
     "crates/skyward-ui",
     "crates/skyward-crypto",
     "crates/skyward-files",

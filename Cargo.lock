@@ -2440,6 +2440,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "skyward-omapi"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "skyward-binder",
+ "skyward-sys",
+]
+
+[[package]]
 name = "skyward-pack"
 version = "0.2.0"
 dependencies = [

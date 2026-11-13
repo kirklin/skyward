@@ -94,13 +94,64 @@ fn finish(places: &Places, state: &mut State, init_boot: Option<Vec<u8>>) -> Res
         Who::Installed => state.saved.clone().context("the installed system's boot set was never saved")?,
         Who::Other => state.system.as_ref().context("no other system is installed")?.set.clone(),
     };
-    store::restore(&store, places.store, &set, places.by_name, slot, init_boot.as_deref()).with_context(|| format!("write the {:?} system's boot set", switching.to))?;
-    state.occupied = match switching.to {
-        Who::Other => Some(switching.slot.clone()),
-        Who::Installed => None,
+    let written = store::restore(&store, places.store, &set, places.by_name, slot, init_boot.as_deref()).with_context(|| format!("write the {:?} system's boot set", switching.to))?;
+    (state.occupied, state.written) = match switching.to {
+        Who::Other => (Some(switching.slot.clone()), Some(written)),
+        Who::Installed => (None, None),
     };
     state.switching = None;
     state.save(places.state)
+}
+
+/// What a slot's boot partitions hold, set against what the state says is
+/// in them. Skyward is not the only one that writes them: a computer does
+/// over fastboot, and erasing /metadata there takes the state away while
+/// the partitions stay as they are.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Held {
+    /// What the state says.
+    Recorded,
+    /// The other system's boot set by the state, and something another
+    /// hand wrote since in fact: the installed system's saved boot set is
+    /// not written over that unasked.
+    Rewritten,
+    /// The installed system's boot set by the state, and in fact an
+    /// init_boot image that starts a system from the data partition: the
+    /// state that said so is gone, and the installed system's saved boot
+    /// set with it where the data partition was erased as well.
+    Unrecorded,
+}
+
+/// What the boot partitions hold, among the links in `by_name`: those of
+/// the slot the state says the other system's boot set is in, or, where it
+/// says of none, those of `starts`, the slot the bootloader starts. A
+/// switch begun and not done is one the partitions are part way through,
+/// which is as the state says.
+pub fn held(state: &State, by_name: &Path, starts: Slot) -> Result<Held> {
+    if state.switching.is_some() {
+        return Ok(Held::Recorded);
+    }
+    let Some(occupied) = &state.occupied else {
+        let init_boot = store::partition(by_name, store::INIT_BOOT, starts);
+        return Ok(match fs::read(&init_boot) {
+            Ok(image) if boot::starts_from_data(&image) => Held::Unrecorded,
+            Ok(_) => Held::Recorded,
+            // A phone without an init_boot partition holds none to tell by.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Held::Recorded,
+            Err(e) => return Err(e).with_context(|| format!("read {}", init_boot.display())),
+        });
+    };
+    let slot = Slot::from_suffix(occupied).with_context(|| format!("the other system is in slot {occupied:?}"))?;
+    let store = state.store.as_ref().context("no store holds the boot sets")?;
+    let system = state.system.as_ref().context("no other system is installed")?;
+    let held = store::held(store, by_name, slot)?;
+    // A state kept before what was written was kept tells of the boot
+    // image alone, which goes in as the store holds it.
+    let as_written = match &state.written {
+        Some(written) => held == *written,
+        None => held.boot == system.set.boot,
+    };
+    Ok(if as_written { Held::Recorded } else { Held::Rewritten })
 }
 
 #[cfg(test)]
@@ -243,6 +294,53 @@ mod tests {
         assert_eq!(s.occupied.as_deref(), Some("_b"));
         switch(&b.places(), Slot::A, Who::Installed).unwrap();
         assert_eq!(b.read("boot_b"), vec![0xb1; 8192], "the save was of slot B's own");
+    }
+
+    #[test]
+    fn what_the_partitions_hold_is_set_against_what_the_state_says() {
+        let b = installed();
+        let load = || State::load(&b.state).unwrap();
+        assert_eq!(held(&load(), &b.dir, Slot::A).unwrap(), Held::Recorded, "the installed system's, as the state says");
+        switch(&b.places(), Slot::A, Who::Other).unwrap();
+        let written = load().written.expect("what went into the partitions is kept");
+        assert_eq!(written, store::held(&load().store.unwrap(), &b.dir, Slot::A).unwrap());
+        assert_eq!(held(&load(), &b.dir, Slot::B).unwrap(), Held::Recorded, "whichever slot starts, the slot looked at is the one written");
+
+        // A computer writes another boot image over fastboot.
+        let ours = b.read("boot_a");
+        std::fs::write(b.dir.join("boot_a"), vec![0xf1; 8192]).unwrap();
+        assert_eq!(held(&load(), &b.dir, Slot::A).unwrap(), Held::Rewritten);
+        std::fs::write(b.dir.join("boot_a"), &ours).unwrap();
+        assert_eq!(held(&load(), &b.dir, Slot::A).unwrap(), Held::Recorded);
+        // Or another init_boot image.
+        let ours = b.read("init_boot_a");
+        std::fs::write(b.dir.join("init_boot_a"), vec![0xf2; 16384]).unwrap();
+        assert_eq!(held(&load(), &b.dir, Slot::A).unwrap(), Held::Rewritten);
+        // A state from before what was written was kept tells by the boot
+        // image alone.
+        let earlier = State { written: None, ..load() };
+        assert_eq!(held(&earlier, &b.dir, Slot::A).unwrap(), Held::Recorded);
+        std::fs::write(b.dir.join("boot_a"), vec![0xf1; 8192]).unwrap();
+        assert_eq!(held(&earlier, &b.dir, Slot::A).unwrap(), Held::Rewritten);
+        std::fs::write(b.dir.join("boot_a"), vec![0x5a; 8192]).unwrap();
+        std::fs::write(b.dir.join("init_boot_a"), &ours).unwrap();
+
+        // /metadata erased: the state is gone and the partitions stay.
+        assert_eq!(held(&State::default(), &b.dir, Slot::A).unwrap(), Held::Unrecorded);
+        assert_eq!(held(&State::default(), &b.dir, Slot::B).unwrap(), Held::Recorded, "the other slot holds its own");
+
+        switch(&b.places(), Slot::A, Who::Installed).unwrap();
+        assert_eq!((load().written, held(&load(), &b.dir, Slot::A).unwrap()), (None, Held::Recorded));
+    }
+
+    #[test]
+    fn a_switch_part_way_is_as_the_state_says() {
+        let b = installed();
+        switch(&b.places(), Slot::A, Who::Other).unwrap();
+        std::fs::write(b.dir.join("boot_a"), [vec![0xa1; 4096], vec![0x5a; 4096]].concat()).unwrap();
+        let mut s = State::load(&b.state).unwrap();
+        s.switching = Some(Switching { to: Who::Installed, slot: "_a".into(), saved: false });
+        assert_eq!(held(&s, &b.dir, Slot::A).unwrap(), Held::Recorded);
     }
 
     #[test]

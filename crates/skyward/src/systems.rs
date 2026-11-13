@@ -47,9 +47,10 @@ pub fn next_slot() -> Result<Slot> {
 }
 
 /// The systems as they are now: the installed one named by its build's
-/// properties, its version by `version_prop`, and whether its vendor_boot
-/// or dtbo in the slot that starts next changed since the second system
-/// was installed.
+/// properties, its version by `version_prop`, whether its vendor_boot or
+/// dtbo in the slot that starts next changed since the second system was
+/// installed, and what the boot partitions hold, which are those of the
+/// slot the phone started from where nothing is kept of them.
 fn read(version_prop: &str) -> Result<Overview> {
     let current = skyward_vab::current_slot()?.context("not an A/B phone")?;
     let props = skyward_info::installed_props(current)?;
@@ -58,7 +59,8 @@ fn read(version_prop: &str) -> Result<Overview> {
         Some(_) => install::changed(&state, next_slot()?)?,
         None => false,
     };
-    Ok(install::overview(&state, skyward_systems::installed_name(&props, version_prop), changed))
+    let held = install::held(&state, current)?;
+    Ok(install::overview(&state, skyward_systems::installed_name(&props, version_prop), changed, held))
 }
 
 /// The system whose boot set is in the boot partitions.

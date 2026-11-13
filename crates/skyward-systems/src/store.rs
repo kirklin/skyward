@@ -3,7 +3,7 @@
 //! system's saves take turns between the first two, so that the last whole
 //! one stays while the next is written; the other system's is the third.
 
-use crate::state::{Saved, Store};
+use crate::state::{Saved, Store, Written};
 use anyhow::{ensure, Context, Result};
 use sha2::{Digest, Sha256};
 use skyward_block::area::HEADER;
@@ -138,16 +138,28 @@ pub fn init_boot(store: &Store, device: &Path, saved: &Saved) -> Result<Vec<u8>>
     Ok(image)
 }
 
+/// What the boot partitions of `slot`, among the links in `dir`, hold now:
+/// the SHA-256 of each, whole.
+pub fn held(store: &Store, dir: &Path, slot: Slot) -> Result<Written> {
+    let mut sums = Vec::new();
+    for (_, path, len, _) in parts(store, dir, slot) {
+        sums.push(sum(&mut open(&path, false)?, 0, len).with_context(|| format!("read {}", path.display()))?);
+    }
+    Ok(Written { boot: sums[0].clone(), init_boot: sums.get(1).cloned().unwrap_or_default() })
+}
+
 /// Write the boot set `saved` names into the partitions of `slot`, once the
 /// store is found to hold it whole, and read each back; with `init_boot`,
 /// that image goes into the init_boot partition in place of the one stored.
-pub fn restore(store: &Store, device: &Path, saved: &Saved, dir: &Path, slot: Slot, init_boot: Option<&[u8]>) -> Result<()> {
+/// Gives what the partitions hold once written.
+pub fn restore(store: &Store, device: &Path, saved: &Saved, dir: &Path, slot: Slot, init_boot: Option<&[u8]>) -> Result<Written> {
     check(store, device, saved)?;
     if let Some(image) = init_boot {
         ensure!(store.init_boot > 0, "the phone has no init_boot partition for an init_boot image");
         ensure!(image.len() as u64 <= store.init_boot, "the init_boot image takes {} bytes, more than the {} of the init_boot partition", image.len(), store.init_boot);
     }
     let mut from = open(device, false)?;
+    let mut sums = Vec::new();
     for ((name, path, len, within), want) in parts(store, dir, slot).into_iter().zip([&saved.boot, &saved.init_boot]) {
         let mut out = open(&path, true)?;
         let written = match init_boot.filter(|_| name == INIT_BOOT) {
@@ -163,8 +175,9 @@ pub fn restore(store: &Store, device: &Path, saved: &Saved, dir: &Path, slot: Sl
         };
         out.sync_all().with_context(|| format!("sync {}", path.display()))?;
         ensure!(sum(&mut out, 0, len)? == written, "{} reads back different from what was written", path.display());
+        sums.push(written);
     }
-    Ok(())
+    Ok(Written { boot: sums[0].clone(), init_boot: sums.get(1).cloned().unwrap_or_default() })
 }
 
 /// Write a boot set made up of `boot`, `boot_len` bytes, and `init_boot`

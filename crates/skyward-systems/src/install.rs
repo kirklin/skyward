@@ -2,7 +2,7 @@
 //! systems on the phone, and taking the other system away again.
 
 use crate::state::{State, Store};
-use crate::{Named, Other, Overview};
+use crate::{Held, Named, Other, Overview};
 use skyward_block::area::HEADER;
 
 /// Where the areas' files are, in the data partition.
@@ -45,13 +45,15 @@ pub fn sizes(least: u64, room: u64) -> Vec<u64> {
 
 /// What the pages show of the systems, from the state and the installed
 /// system's name; `changed` says whether its vendor_boot or dtbo differ
-/// from when the other system was installed.
-pub fn overview(state: &State, installed: Named, changed: bool) -> Overview {
+/// from when the other system was installed, and `held` what the boot
+/// partitions hold.
+pub fn overview(state: &State, installed: Named, changed: bool, held: Held) -> Overview {
     Overview {
         installed,
         other: state.system.as_ref().map(|s| Other { id: s.id.clone(), name: s.name.clone(), version: s.version.clone(), size: s.root.size - HEADER }),
         other_starts: state.occupied.is_some(),
         changed,
+        held,
     }
 }
 
@@ -195,15 +197,29 @@ mod sys {
         writable(|| with_store(&state, |device| switch::resume(&Places { state: path, by_name: by_name(), store: device, program: &program })))
     }
 
+    /// What the boot partitions hold, set against the state as kept now;
+    /// `starts` is the slot the bootloader starts.
+    pub fn held(state: &State, starts: Slot) -> Result<Held> {
+        switch::held(state, by_name(), starts)
+    }
+
     /// Put the installed system's boot set back where the other system's
     /// is, as everything that writes or erases the installed system first
-    /// does; says whether it had to.
+    /// does; says whether it had to. Where something else was written into
+    /// those partitions since, nobody asked for it to be written over, and
+    /// nothing is: the one who switches to the installed system on the
+    /// systems page, told of it there, asks for that.
     pub fn ensure_installed() -> Result<bool> {
         resume()?;
         let state = state()?;
         let Some(slot) = state.occupied.as_deref().map(|s| Slot::from_suffix(s).with_context(|| format!("the other system is in slot {s:?}"))).transpose()? else {
             return Ok(false);
         };
+        ensure!(
+            held(&state, slot)? != Held::Rewritten,
+            "the boot partitions of slot {} no longer hold the second system's boot set as Skyward wrote it, and the main system's is not written over what is there unasked: switch to the main system in Dual boot first",
+            slot.suffix()
+        );
         switch_to(slot, Who::Installed)?;
         Ok(true)
     }

@@ -63,6 +63,29 @@ pub fn with_start(own: &[u8], program: &[u8], start: &Start) -> Result<(Vec<u8>,
     Ok((image.to_bytes()?, own_ramdisk))
 }
 
+/// What an LZ4 archive in the legacy framing opens with, as Skyward's
+/// archive does.
+const LZ4_LEGACY: [u8; 4] = [0x02, 0x21, 0x4c, 0x18];
+
+/// Whether `image` is an init_boot image that starts a system from the
+/// data partition: one whose ramdisk ends in Skyward's archive, which says
+/// in [`START`] what to start. The archive comes last in the ramdisk,
+/// after the system's own where it brings one, so it is looked for from
+/// each place an archive may open, the last first. Anything else an
+/// init_boot partition may hold, an image that does not read among it, is
+/// none of Skyward's.
+pub fn starts_from_data(image: &[u8]) -> bool {
+    let Ok(image) = BootImage::parse(image) else { return false };
+    let mut before = image.ramdisk.len();
+    while let Some(at) = image.ramdisk[..before].windows(LZ4_LEGACY.len()).rposition(|opening| opening == LZ4_LEGACY) {
+        if Ramdisk::decode(&image.ramdisk[at..]).is_ok_and(|archive| archive.find(START).is_some()) {
+            return true;
+        }
+        before = at;
+    }
+    false
+}
+
 /// The init_boot image `image`, as [`init_boot`] made it or, for a system
 /// whose own ramdisk of `own_ramdisk` bytes comes first in it, as
 /// [`with_start`] did, made again with `program` and `start`.
@@ -132,6 +155,23 @@ pub(crate) mod tests {
         assert_eq!(theirs, b"its own archive", "its archive first");
         let names: Vec<String> = entries(ours).into_iter().map(|(n, _)| n).collect();
         assert_eq!(names, ["skyward", MAP, START], "and no first program of Skyward's");
+    }
+
+    #[test]
+    fn an_image_that_starts_a_system_from_the_data_partition_is_told_from_any_other() {
+        let mut ours = init_boot(&template(b"stock"), b"program", &start()).unwrap();
+        // As a partition holds it: zeros to the partition's end.
+        ours.resize(1 << 20, 0);
+        assert!(starts_from_data(&ours));
+        // A system's own archive is an LZ4 archive too, and Skyward's
+        // comes after it.
+        let its_own = lz4_legacy(&Ramdisk { entries: Vec::new() }.archive().unwrap());
+        let (after_its_own, _) = with_start(&template(&its_own), b"program", &start()).unwrap();
+        assert!(starts_from_data(&after_its_own));
+        assert!(!starts_from_data(&template(&its_own)), "the installed system's own image");
+        assert!(!starts_from_data(&template(b"stock")), "a ramdisk that is no archive");
+        assert!(!starts_from_data(&vec![0u8; 1 << 20]), "a partition erased");
+        assert!(!starts_from_data(b""));
     }
 
     #[test]

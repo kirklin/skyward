@@ -9609,6 +9609,7 @@ mod tests {
             other: Some(skyward_systems::Other { id: "ubuntu".into(), name: "Ubuntu Touch".into(), version: "24.04".into(), size: 16 << 30 }),
             other_starts: false,
             changed: false,
+            held: skyward_systems::Held::Recorded,
         }
     }
 
@@ -9665,6 +9666,48 @@ mod tests {
         tap(&mut app, &f, &i, Action::PickSystem(Who::Other));
         app.key(Key::Back, 0);
         assert_eq!((app.screen(), app.state.system_pick), (Screen::Home, None), "a pick left unswitched is put down");
+    }
+
+    /// The page as drawn for `systems`, top to bottom.
+    fn systems_drawn(f: &Fonts, i: &DeviceInfo, systems: Overview) -> Vec<u8> {
+        let mut app = App::new(Screen::Systems, W, H, PPD);
+        (app.state.dual_boot, app.state.systems) = (true, Some(Ok(systems)));
+        let t = app.theme();
+        let cx = Ctx { t: &t, f, info: i, state: &app.state, term: None, band: None };
+        pages::render(Screen::Systems, &cx).canvas.data.clone()
+    }
+
+    /// A computer wrote the boot partitions over fastboot while they held
+    /// the second system's boot images: the page says so, and the main
+    /// system's saved images go over what is there only once it is picked
+    /// and swiped.
+    #[test]
+    fn boot_partitions_written_by_another_hand_are_told_of_and_written_over_once_swiped() {
+        use skyward_systems::Held;
+        let (f, i) = (fonts(), info());
+        let second_starts = Overview { other_starts: true, ..two_systems() };
+        let rewritten = Overview { held: Held::Rewritten, ..second_starts.clone() };
+        assert!(systems_drawn(&f, &i, rewritten.clone()) != systems_drawn(&f, &i, second_starts), "the page says they were written since");
+        let mut app = systems_page(&f, &i, rewritten);
+        assert!(!swipes(&mut app, &f, &i), "nothing is written until the main system is picked");
+        tap(&mut app, &f, &i, Action::PickSystem(Who::Installed));
+        assert_eq!(swipe(&mut app, &f, &i, Confirm::SwitchSystem), vec![Effect::SwitchSystem(Who::Installed)]);
+    }
+
+    /// /metadata was erased while the boot partitions held a second
+    /// system's boot images: nothing is kept of a second system, and the
+    /// page neither shows the main system as the one that starts nor has
+    /// anything to switch.
+    #[test]
+    fn boot_partitions_nothing_is_kept_of_are_not_shown_as_the_main_systems() {
+        use skyward_systems::Held;
+        let (f, i) = (fonts(), info());
+        let none_kept = Overview { other: None, ..two_systems() };
+        let unrecorded = Overview { held: Held::Unrecorded, ..none_kept.clone() };
+        assert!(systems_drawn(&f, &i, unrecorded.clone()) != systems_drawn(&f, &i, none_kept), "the page says what the partitions hold");
+        let mut app = systems_page(&f, &i, unrecorded);
+        tap(&mut app, &f, &i, Action::PickSystem(Who::Installed));
+        assert!(!swipes(&mut app, &f, &i), "nothing Skyward keeps could be written back");
     }
 
     #[test]

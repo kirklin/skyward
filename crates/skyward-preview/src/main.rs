@@ -110,6 +110,7 @@ fn two_systems() -> Overview {
         other: Some(Other { id: "ubuntu-touch".into(), name: "Ubuntu Touch".into(), version: "24.04-1.x".into(), size: 32_000_000_000 }),
         other_starts: false,
         changed: false,
+        held: skyward_systems::Held::Recorded,
     }
 }
 

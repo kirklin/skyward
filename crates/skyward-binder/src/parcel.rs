@@ -4,6 +4,7 @@ use anyhow::{bail, Context, Result};
 /// on it: it tells apart the copies of libbinder a phone carries, and the one
 /// the recovery's own programs are built from is the recovery copy.
 const HEADER: i32 = i32::from_be_bytes(*b"RECO");
+const SYSTEM_HEADER: i32 = i32::from_be_bytes(*b"SYST");
 
 /// Strict mode gathers violations rather than acting on them; a caller with
 /// no policy of its own still sets that bit.
@@ -50,7 +51,12 @@ impl Parcel {
         let mut p = Parcel::default();
         p.i32(STRICT_MODE_PENALTY_GATHER);
         p.i32(UNSET_WORK_SOURCE);
-        p.i32(HEADER);
+        // A stock recovery's libbinder speaks RECO. When its AIDL services
+        // come from the installed system instead, that libbinder expects
+        // SYST and rejects RECO with BAD_TYPE.
+        let installed_directory = std::path::Path::new("/mnt/system/system/bin/servicemanager").is_file()
+            && !std::path::Path::new("/system/bin/servicemanager").is_file();
+        p.i32(if installed_directory { SYSTEM_HEADER } else { HEADER });
         p.string(interface);
         p
     }

@@ -1,0 +1,10 @@
+# The stock K60 recovery predates the installed system's AIDL service
+# directory. Skyward starts this only after mounting the installed system
+# and publishing the descriptions its own services need.
+service skyward-servicemanager /mnt/system/system/bin/servicemanager
+    class core
+    disabled
+    user system
+    group system readproc
+    capabilities SYS_NICE
+    setenv LD_LIBRARY_PATH /mnt/system/system/lib64/bootstrap:/mnt/system/system/lib64:/mnt/system_ext/lib64

@@ -471,10 +471,30 @@ fn lp(super_dev: &Path, slot: Option<u32>) -> Result<()> {
     Ok(())
 }
 
-/// Load `names` from the module sources the configuration lists.
+/// Load `names` from the module sources the configuration lists. Those the
+/// configuration says the recovery's own init loaded too early are taken out
+/// first, so that they go back in after the modules they register with.
 fn load_modules(cfg: &DeviceConfig, names: &[String]) -> Result<Vec<PathBuf>> {
+    #[cfg(target_os = "android")]
+    for name in &cfg.modules.reload {
+        unload_module(name);
+    }
     let dirs = cfg.modules.sources.iter().map(|s| skyward_modules::source_dir(s)).collect::<Result<Vec<_>>>()?;
     skyward_modules::load(&dirs, names)
+}
+
+/// Take a module out of the kernel; one that is not in, or is in use, is left
+/// alone, which is not a failure of the load that follows.
+#[cfg(target_os = "android")]
+fn unload_module(name: &str) {
+    let Ok(name) = std::ffi::CString::new(name) else { return };
+    // _IOC(_IOC_NONE, 0, 0, 0) with the name the module was made with.
+    let rc = unsafe { libc::syscall(libc::SYS_delete_module, name.as_ptr(), 0u32) };
+    let _ = skyward_sys::kmsg(&format!(
+        "unload {}: {rc} {}",
+        name.to_string_lossy(),
+        std::io::Error::last_os_error()
+    ));
 }
 
 /// Start the recovery's own logd where it needs libraries of the installed

@@ -41,9 +41,17 @@ fn methods_of(sdk: u32) -> Methods {
 
 /// The recovery's own version, which its property files give.
 const SDK: &str = "ro.build.version.sdk";
+const INSTALLED_BUILD_PROP: &str = "/mnt/system/system/build.prop";
 
 fn methods() -> Result<Methods> {
-    let sdk = skyward_sys::prop(SDK).with_context(|| format!("the recovery says no {SDK}"))?;
+    // When the recovery has no directory of its own, its installed-system
+    // replacement uses the installed system's AIDL method numbers.
+    let using_installed = std::path::Path::new("/mnt/system/system/bin/servicemanager").is_file()
+        && !std::path::Path::new("/system/bin/servicemanager").is_file();
+    let installed = using_installed.then(|| std::fs::read_to_string(INSTALLED_BUILD_PROP).ok()).flatten().and_then(|text| {
+        text.lines().find_map(|line| line.strip_prefix("ro.build.version.sdk=").map(str::to_owned))
+    });
+    let sdk = installed.or_else(|| skyward_sys::prop(SDK)).with_context(|| format!("the recovery says no {SDK}"))?;
     Ok(methods_of(sdk.parse().with_context(|| format!("{SDK} is {sdk:?}"))?))
 }
 

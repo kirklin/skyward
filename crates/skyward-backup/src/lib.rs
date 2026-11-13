@@ -77,6 +77,7 @@ impl Manifest {
         let text = std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
         let manifest: Manifest = toml::from_str(&text).with_context(|| format!("read {}", path.display()))?;
         ensure!(manifest.format == FORMAT, "{} is in layout {}, which this recovery does not read", path.display(), manifest.format);
+        ensure!(!manifest.items.is_empty(), "{} lists no backup items", path.display());
         Ok(manifest)
     }
 

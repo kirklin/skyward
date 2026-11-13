@@ -33,6 +33,8 @@ const RECOVERY_DESCRIPTIONS: &str = "/system/etc/vintf/manifest";
 /// The name init knows the service directory by, and the program it runs.
 const DIRECTORY_SERVICE: &str = "servicemanager";
 const DIRECTORY_PROGRAM: &str = "/system/bin/servicemanager";
+const INSTALLED_DIRECTORY_PROGRAM: &str = "/mnt/system/system/bin/servicemanager";
+const RECOVERY_DIRECTORY_SERVICE: &str = "skyward-servicemanager";
 
 /// Where init says which process each of its services runs as, one
 /// property per service, the service's name following this.
@@ -55,6 +57,7 @@ const BUNDLE_LOADER: &str = "bin/linker64";
 /// directory for those services looks for that.
 const SERVICE_LABELS: &str = "/mnt/system/system/etc/selinux/plat_hwservice_contexts";
 const RECOVERY_LABELS: &str = "/system/etc/selinux";
+const AIDL_SERVICE_LABELS: &str = "/mnt/system/system/etc/selinux/plat_service_contexts";
 
 /// The driver the phone's hardware services talk over, as they expect to
 /// find it and as a recovery has it.
@@ -124,6 +127,12 @@ pub fn prepare_hardware_directory(wanted: &[String]) -> Result<()> {
     fs::set_permissions(RECOVERY_LABELS, std::os::unix::fs::PermissionsExt::from_mode(0o755))
         .with_context(|| format!("open {RECOVERY_LABELS} to every user"))?;
     fs::copy(from, &into).with_context(|| format!("copy {} to {}", from.display(), into.display()))?;
+    // A recovery's own folders may not hold one for this yet.
+    if let Some(dir) = Path::new(RECOVERY_MANIFEST).parent() {
+        fs::create_dir_all(dir).with_context(|| format!("make {}", dir.display()))?;
+        fs::set_permissions(dir, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .with_context(|| format!("let every user reach {}", dir.display()))?;
+    }
     fs::write(RECOVERY_MANIFEST, describe_hardware(wanted)?).with_context(|| format!("write {RECOVERY_MANIFEST}"))?;
     fs::set_permissions(RECOVERY_MANIFEST, std::os::unix::fs::PermissionsExt::from_mode(0o644))
         .with_context(|| format!("let every user read {RECOVERY_MANIFEST}"))?;
@@ -242,14 +251,29 @@ pub fn publish_descriptions(wanted: &[String], files: &[String]) -> Result<usize
     }
     let rewritten = say_framework(into)?;
     if copied > 0 || rewritten > 0 {
+        // A stock recovery need not carry the installed system's AIDL
+        // directory. Its servicemanager cannot register itself without the
+        // service labels from the system that supplied its binary.
+        if skyward_sys::prop(&format!("init.svc.{DIRECTORY_SERVICE}")).is_none() {
+            fs::create_dir_all(RECOVERY_LABELS).with_context(|| format!("make {RECOVERY_LABELS}"))?;
+            fs::set_permissions(RECOVERY_LABELS, std::os::unix::fs::PermissionsExt::from_mode(0o755))?;
+            let labels = Path::new(RECOVERY_LABELS).join("plat_service_contexts");
+            fs::copy(AIDL_SERVICE_LABELS, &labels).with_context(|| format!("copy {AIDL_SERVICE_LABELS}"))?;
+            fs::set_permissions(&labels, std::os::unix::fs::PermissionsExt::from_mode(0o644))?;
+        }
         // The directory reads the descriptions once and keeps to them, so
         // it has to start again to see these. It comes back knowing nothing
         // of what had registered with it, and nothing registers again by
         // itself, so init starts each of those services again, as the
         // installed system's init does whenever its directory restarts.
         let registered = registered()?;
-        let was = crate::services::running(DIRECTORY_PROGRAM);
-        skyward_sys::set_prop("ctl.restart", DIRECTORY_SERVICE).context("have the service directory start again")?;
+        let was = directory_running();
+        let (action, service) = if skyward_sys::prop(&format!("init.svc.{DIRECTORY_SERVICE}")).is_some() {
+            ("ctl.restart", DIRECTORY_SERVICE)
+        } else {
+            ("ctl.start", RECOVERY_DIRECTORY_SERVICE)
+        };
+        skyward_sys::set_prop(action, service).with_context(|| format!("have the service directory {service} start"))?;
         answering_again(was)?;
         register_again(&registered)?;
     }
@@ -259,7 +283,7 @@ pub fn publish_descriptions(wanted: &[String], files: &[String]) -> Result<usize
 /// What has registered with the service directory, each with the init
 /// service whose process serves it; the directory's own entry is left out.
 fn registered() -> Result<Vec<(String, String)>> {
-    let Some(directory) = crate::services::running(DIRECTORY_PROGRAM) else { return Ok(Vec::new()) };
+    let Some(directory) = directory_running() else { return Ok(Vec::new()) };
     let binder = skyward_binder::driver::Binder::open()?;
     let started = skyward_sys::props(SERVICE_PIDS);
     let mut out = Vec::new();
@@ -346,15 +370,23 @@ fn describes(text: &str, name: &str) -> bool {
 fn answering_again(was: Option<u32>) -> Result<()> {
     let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
-        let now = crate::services::running(DIRECTORY_PROGRAM);
+        let now = directory_running();
         // Looking the directory up in itself answers nothing, and that it
         // answers at all is the whole question.
         if now.is_some() && now != was && crate::services::reachable() {
             return Ok(());
         }
         if std::time::Instant::now() >= until {
+            let probe = skyward_binder::driver::Binder::open().and_then(|binder| {
+                skyward_binder::service::find(&binder, "android.os.IServiceManager").map(|_| ())
+            });
+            skyward_sys::kmsg(&format!("service directory probe: {probe:?}"))?;
             anyhow::bail!("the service directory did not come back");
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
+}
+
+fn directory_running() -> Option<u32> {
+    crate::services::running(DIRECTORY_PROGRAM).or_else(|| crate::services::running(INSTALLED_DIRECTORY_PROGRAM))
 }

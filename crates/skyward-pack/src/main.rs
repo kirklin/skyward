@@ -135,6 +135,8 @@ fn main() -> Result<()> {
                 rd.add(paths::TASK_PROFILES, 0o644, TASK_PROFILES.to_vec())?;
             }
             rd.add(paths::MTP_RC, 0o644, MTP_RC.to_vec())?;
+            rd.add(BINDER_RC_PATH, 0o644, BINDER_RC.to_vec())?;
+        rd.add(SERVICE_MANAGER_RC_PATH, 0o644, SERVICE_MANAGER_RC.to_vec())?;
             // On an unlocked device adbd keeps root when ro.secure is 0 and
             // lets any computer in without authorization when ro.adb.secure is
             // 0; init lets a later line of a property file override an earlier
@@ -229,6 +231,15 @@ const TASK_PROFILES: &[u8] = include_bytes!("task_profiles.json");
 /// The init rules that give the USB port file transfer beside adb, which a
 /// stock recovery does not offer.
 const MTP_RC: &[u8] = include_bytes!("mtp.rc");
+
+/// The init rules that mount the binder filesystem the phone's services are
+/// reached through, which a stock recovery's own init never mounts.
+const BINDER_RC: &[u8] = include_bytes!("binder.rc");
+
+/// Where those rules go: the folder init reads a recovery's own rules from.
+const BINDER_RC_PATH: &str = "system/etc/init/skyward-binder.rc";
+const SERVICE_MANAGER_RC: &[u8] = include_bytes!("servicemanager.rc");
+const SERVICE_MANAGER_RC_PATH: &str = "system/etc/init/skyward-servicemanager.rc";
 
 /// A property file without the lines that set any of `names`.
 fn without(props: &[u8], names: &[&str]) -> Vec<u8> {

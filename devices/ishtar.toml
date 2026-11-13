@@ -96,55 +96,6 @@ libraries = ["/odm/lib64", "/system/lib64"]
 user = "system"
 groups = ["system", "uhid", "input"]
 
-# The secure world reaches back into Android through the listeners this
-# daemon registers; without them the key service cannot use any key.
-[[service]]
-path = "/vendor/bin/qseecomd"
-libraries = ["/system/lib64", "/vendor/lib64"]
-ready_property = "vendor.sys.listeners.registered"
-user = "root"
-groups = ["root", "drmrpc"]
-
-# The key service, which is the only thing that can use the keys the phone
-# wrapped in hardware.
-[[service]]
-path = "/vendor/bin/hw/android.hardware.security.keymint-service-qti"
-libraries = ["/system/lib64", "/vendor/lib64"]
-ready_service = "android.hardware.security.keymint.IKeyMintDevice/default"
-user = "system"
-groups = ["system", "drmrpc"]
-
-# The directory the phone's hardware services of the older kind register
-# with. A recovery carries none of it, so it is the installed system's own
-# program, running against the installed system's own libraries. It says it
-# is up by the property the services themselves wait on.
-[[service]]
-path = "/mnt/system_ext/bin/hwservicemanager"
-libraries = ["/mnt/system/system/lib64/bootstrap", "/mnt/system/system/lib64", "/mnt/system_ext/lib64"]
-ready_property = "hwservicemanager.ready"
-user = "system"
-groups = ["system", "readproc"]
-
-# The credential service: it is what the secure world has check a screen
-# lock, and the only thing that can hand out the note the key service wants
-# before it will use a key a screen lock guards.
-[[service]]
-path = "/vendor/bin/hw/android.hardware.gatekeeper@1.0-service-qti"
-libraries = ["/system/lib64", "/vendor/lib64"]
-ready_hardware_service = "android.hardware.gatekeeper@1.0::IGatekeeper/default"
-user = "system"
-groups = ["system"]
-
-# The boot control, which says which slot the bootloader starts next and
-# switches it, writing where the bootloader reads it. It comes last: the
-# phone is usable without it.
-[[service]]
-path = "/vendor/bin/hw/android.hardware.boot@1.2-service"
-libraries = ["/system/lib64", "/vendor/lib64"]
-ready_hardware_service = "android.hardware.boot@1.2::IBootControl/default"
-user = "root"
-groups = ["root"]
-
 # WLAN: the WCN7850 on PCIe, driven by qca_cld3_kiwi_v2 over the cnss2
 # platform driver. Once fs_ready is written, cnss2 powers the chip up and
 # loads its firmware, and wlan0 appears. The driver reads its settings and

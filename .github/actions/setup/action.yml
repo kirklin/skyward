@@ -9,9 +9,7 @@ runs:
   steps:
     - name: Install the toolchain rust-toolchain.toml names
       shell: bash
-      run: |
-        rustup toolchain install
-        rustup component add clippy
+      run: rustup toolchain install
     - uses: Swatinem/rust-cache@v2
     - name: Install the Android NDK
       id: ndk

@@ -199,7 +199,7 @@ at the next start and brings Skyward up before anything else.
 
 ## Building
 
-Skyward builds with the stable Rust that `rust-toolchain.toml` names, with its
+Skyward builds with the version of Rust that `rust-toolchain.toml` names, with its
 `aarch64-linux-android` target, the Android NDK r29 and
 [cargo-ndk](https://github.com/bbqsrc/cargo-ndk). The recovery service is built for
 the phone, and the packer for the computer:

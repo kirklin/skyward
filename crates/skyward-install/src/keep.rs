@@ -30,6 +30,16 @@ pub struct Kept {
 }
 
 impl Kept {
+    /// Preservation selected in the UI must not silently turn into an
+    /// install that leaves another recovery behind after a temporary boot.
+    /// Checking the source happens before the installer writes anything.
+    pub fn hold_required(dir: &Path, current: Slot) -> Result<Kept> {
+        Self::hold(dir, current)?.with_context(|| format!(
+            "automatic Skyward preservation requires Skyward installed in recovery{}; this partition holds another recovery. Install Skyward first, or turn off 'Flash Skyward again' before installing the package",
+            current.suffix()
+        ))
+    }
+
     /// Hold this recovery from the recovery partitions among the links in
     /// `dir`, before an install; none when the partition of the `current`
     /// slot does not hold Skyward, as when it was started without being
@@ -158,5 +168,18 @@ mod tests {
         let erased = partitions(&recovery(true), &[], 1 << 20);
         assert!(Kept::hold(erased.path(), Slot::B).unwrap().is_none(), "an erased partition");
         assert!(Kept::hold(erased.path(), Slot::A).unwrap().is_some());
+    }
+
+    #[test]
+    fn requested_preservation_refuses_a_temporary_boot_without_changing_either_partition() {
+        let dir = partitions(&recovery(false), &recovery(false), 1 << 20);
+        let before_a = std::fs::read(dir.path().join("recovery_a")).unwrap();
+        let before_b = std::fs::read(dir.path().join("recovery_b")).unwrap();
+        let error = Kept::hold_required(dir.path(), Slot::A).err().unwrap().to_string();
+        assert!(error.contains("recovery_a") && error.contains("Install Skyward first"));
+        assert_eq!(std::fs::read(dir.path().join("recovery_a")).unwrap(), before_a);
+        assert_eq!(std::fs::read(dir.path().join("recovery_b")).unwrap(), before_b);
+        let installed = partitions(&recovery(true), &recovery(false), 1 << 20);
+        assert!(Kept::hold_required(installed.path(), Slot::A).is_ok());
     }
 }

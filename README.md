@@ -94,14 +94,29 @@ read and set properties.
 
 ### 🚧 Under construction
 
-These images are built from each phone's stock firmware and have not been tried
-on the phone. They set up the screen, touch, Wi-Fi and vibration, and do not decrypt
-the data partition.
+These profiles are still being brought up. REDMI K60 Pro (`socrates`) has been
+tested after installation in `recovery_a`: PIN-protected writable data, Wi-Fi,
+Windows MTP file operations, and production backup/restore in dedicated shared
+and app-private CE directories passed. The earlier display, touch, USB ADB, keys,
+brightness, vibration and boot-slot checks are also recorded. Native ext4/F2FS
+format, mount and discard passed on disposable loop images. The original recovery
+was restored, the test APK uninstalled and all fixture files removed. See its
+[device validation record](devices/socrates-validation.json) for the exact builds
+and remaining limits. The other images below are built from stock firmware, have
+not been tried on the phone, and do not decrypt the data partition.
+
+The owner identifies the K60 Pro port's base firmware as **OS3.0.303.0.WMKCNXM**.
+The tested host framework reports **Android 17 / API 37**; current vendor/odm
+properties report **OS3.0.304.0.WMKCNXM, Android 13 / API 33 (VNDK 33)**.
+Recovery packaging separately uses the official **Android 16 OTA
+OS3.0.304.0.WMKCNXM**. Base firmware, framework, reported vendor properties and
+packaging inputs are distinct evidence; other combinations remain unverified.
 
 | Device | Codename | Built on |
 | --- | --- | --- |
 | 🚧 Xiaomi 13 | `fuxi` | OS3.0.309.0.WMCCNXM (Android 16) |
 | 🚧 Xiaomi 13 Pro | `nuwa` | OS3.0.312.0.WMBCNXM (Android 16) |
+| 🚧 REDMI K60 Pro | `socrates` | OS3.0.304.0.WMKCNXM (Android 16) |
 | 🚧 Xiaomi 14 | `houji` | OS3.0.307.0.WNCCNXM (Android 16) |
 | 🚧 Xiaomi 14 Pro | `shennong` | OS3.0.309.0.WNBCNXM (Android 16) |
 | 🚧 Xiaomi 14 Ultra | `aurora` | OS3.0.308.0.WNACNXM (Android 16) |
@@ -196,6 +211,21 @@ at the next start and brings Skyward up before anything else.
 
 ## Building
 
+A port that reports an older system patch date than its existing data keys
+may use an explicit recovery-only `decrypt.system_patchlevel_floor`. It
+selects the KeyMint context before HAL startup, never lowers a later ROM
+date, changes no ROM file or disk key, and supplies no actual security
+updates. Use only a verified key context, with `key_upgrades = false`.
+Profiles without it keep their existing behavior. The packer's optional
+`--system-patchlevel-floor YYYY-MM-DD` and the workflow input build a variant
+named with `decryptYYYYMMDD`; the workflow requires one device and a branch.
+
+Recovery preservation holds the complete installed Skyward image, including
+its configuration. A temporary boot with no installed source now refuses
+requested preservation before the install: install Skyward first or choose
+to turn preservation off. A `--wipe_data` request from `fs_mgr_mount_all`
+requires on-screen confirmation; a failed mount is not consent to erase.
+
 Skyward builds with the stable Rust that `rust-toolchain.toml` names, with its
 `aarch64-linux-android` target, the Android NDK r29 and
 [cargo-ndk](https://github.com/bbqsrc/cargo-ndk). The recovery service is built for
@@ -223,11 +253,21 @@ target/release/skyward-pack stock --config devices/nezha.toml --out target/stock
 
 Then it builds the image on top of it:
 
+CI also builds GNU Bash 5.3.20 statically on an AArch64 Linux runner with
+`musl-tools`, using `.github/scripts/build-bash.sh target/bash`. Copy that
+bundle to the packing computer, or use the workflow's `bash-runtime`
+artifact. `--bash-dir` includes the shell, GPL licence, musl copyright and
+exact source reference; without it, scripts requiring Bash are unsupported.
+The corresponding GNU source, all pinned patches and build instructions
+are in `bash-source.tar.gz`, published alongside tagged releases and as an
+Actions artifact. The stock `/system/bin/sh` stays in place.
+
 ```sh
 target/release/skyward-pack recovery \
   --stock target/stock/nezha/recovery.img \
   --binary target/aarch64-linux-android/release/skyward \
   --system-init target/system-init/aarch64-linux-android/release/system-init \
+  --bash-dir target/bash \
   --config devices/nezha.toml \
   --font resources/fonts/MiSansVF.ttf \
   --mono resources/fonts/KirkMono-Regular.ttf \

@@ -679,13 +679,25 @@ fn bring_up(cfg: &Config, modules: &[PathBuf]) -> Result<()> {
         for w in &cfg.writes {
             fs::write(&w.path, &w.value).with_context(|| format!("write {} to {}", w.value, w.path))?;
         }
-        let until = Instant::now() + INTERFACE_WAIT;
-        while !net.exists() {
-            ensure!(Instant::now() < until, "the driver made no {} in {} seconds", cfg.interface, INTERFACE_WAIT.as_secs());
-            thread::sleep(Duration::from_millis(100));
-        }
     }
-    iface::set_up(&cfg.interface, true)
+    let until = Instant::now() + INTERFACE_WAIT;
+    loop {
+        if net.exists() {
+            match iface::set_up(&cfg.interface, true) {
+                Ok(()) => return Ok(()),
+                // Qualcomm publishes wlan0 before its probe releases the
+                // initialization lock. Retry that temporary refusal within
+                // the same deadline used to wait for the interface.
+                Err(error)
+                    if error.downcast_ref::<std::io::Error>().and_then(std::io::Error::raw_os_error) == Some(libc::EBUSY)
+                        && Instant::now() < until => {}
+                Err(error) => return Err(error),
+            }
+        } else {
+            ensure!(Instant::now() < until, "the driver made no {} in {} seconds", cfg.interface, INTERFACE_WAIT.as_secs());
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
 }
 
 /// Put a file the driver asks for where the firmware loader looks.
@@ -694,17 +706,28 @@ fn place(file: &Firmware) -> Result<()> {
     let dir = to.parent().expect("a firmware file is in a folder");
     fs::create_dir_all(dir).with_context(|| format!("make {}", dir.display()))?;
     let bytes = match &file.partition {
-        None => fs::read(&file.path).with_context(|| format!("read {}", file.path))?,
+        None => read_firmware(Path::new(&file.path), file.optional).with_context(|| format!("read {}", file.path))?,
         Some(partition) => {
             let at = Path::new(PARTITIONS).join(partition);
             fs::create_dir_all(&at).with_context(|| format!("make {}", at.display()))?;
             skyward_block::mount::mount_ro(&Path::new(skyward_block::BY_NAME).join(partition), &at)?;
-            let read = fs::read(at.join(&file.path)).with_context(|| format!("read {} on {partition}", file.path));
+            let read = read_firmware(&at.join(&file.path), file.optional).with_context(|| format!("read {} on {partition}", file.path));
             skyward_block::mount::umount(&at)?;
             read?
         }
     };
-    fs::write(&to, bytes).with_context(|| format!("write {}", to.display()))
+    match bytes {
+        Some(bytes) => fs::write(&to, bytes).with_context(|| format!("write {}", to.display())),
+        None => skyward_sys::kmsg(&format!("optional firmware {} is absent", file.name)),
+    }
+}
+
+fn read_firmware(path: &Path, optional: bool) -> std::io::Result<Option<Vec<u8>>> {
+    match fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if optional && error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 /// Start the supplicant on the interface, and wait for its control socket.

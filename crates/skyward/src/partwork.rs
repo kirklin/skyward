@@ -97,7 +97,7 @@ pub struct Worker {
 }
 
 impl Worker {
-    pub fn start(task: Task) -> Result<Worker> {
+    pub fn start(task: Task, policy: skyward_config::Decrypt) -> Result<Worker> {
         let mut fds = [0; 2];
         if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) } != 0 {
             return Err(std::io::Error::last_os_error()).context("make the partition worker's wake pipe");
@@ -116,7 +116,7 @@ impl Worker {
                 let done = match task {
                     Task::Disable { package_size } => disable(package_size, &mut tell),
                     Task::Unshare { slot } => unshare(slot, &mut tell),
-                    Task::Repair(part) => repair(part, &mut tell),
+                    Task::Repair(part) => repair(part, policy, &mut tell),
                     Task::Remake(part, filesystem) => remake(part, &filesystem, &mut tell),
                 };
                 tell(Event::Done(done));
@@ -290,10 +290,12 @@ fn copy_with_libraries(program: &Path) -> Result<PathBuf> {
 /// partition is closed first and reached through a mapping of its own,
 /// which goes again once the work is done; another partition is unmounted
 /// for it and mounted again read-only after.
-fn repair(part: Part, tell: &mut dyn FnMut(Event)) -> Result<(), Stop> {
+fn repair(part: Part, policy: skyward_config::Decrypt, tell: &mut dyn FnMut(Event)) -> Result<(), Stop> {
     tell(Event::Listed(vec![name(&part)]));
     tell(Event::At(0));
-    let done = reach(&part, |device| {
+    // This is an explicit repair request, independent of automatic fsck.
+    // Opening the storage key still follows the configured upgrade policy.
+    let done = reach(&part, policy, |device| {
         let filesystem = probe::filesystem(device)?.context("the partition holds no filesystem blkid knows")?;
         let (fixed, ran) = fsck::repair(device, &filesystem)?;
         Ok((Item::Fixed(fixed), ran.said))
@@ -330,11 +332,11 @@ fn name(part: &Part) -> String {
 
 /// Do `work` with the device the partition's filesystem is reached through,
 /// nothing mounted from it.
-fn reach<T>(part: &Part, work: impl FnOnce(&Path) -> Result<T>) -> Result<T> {
+fn reach<T>(part: &Part, policy: skyward_config::Decrypt, work: impl FnOnce(&Path) -> Result<T>) -> Result<T> {
     match part {
         Part::Data => {
             crate::wipe::release_data()?;
-            let mapped = crate::decrypt::with_key_service(data::map_unmounted).map_err(anyhow::Error::msg)?;
+            let mapped = crate::decrypt::with_key_service(policy, data::map_unmounted).map_err(anyhow::Error::msg)?;
             let done = work(&mapped);
             data::unmap()?;
             done
@@ -385,7 +387,7 @@ mod tests {
         };
 
         let mut told = Vec::new();
-        assert_eq!(repair(Part::Entry(entry), &mut |event| told.push(event)), Ok(()));
+        assert_eq!(repair(Part::Entry(entry), skyward_config::Decrypt::default(), &mut |event| told.push(event)), Ok(()));
 
         let [Event::Listed(names), Event::At(0), Event::Ended(0, item, said)] = &told[..] else {
             panic!("told {} events", told.len())

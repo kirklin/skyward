@@ -98,25 +98,37 @@ pub struct Opened {
     pub checked: Option<Checked>,
 }
 
+/// How to open an existing filesystem. KeyMint's upgrade policy belongs
+/// to the supplied service; filesystem access does not enable upgrades.
+#[derive(Debug, Clone, Copy)]
+pub struct Options {
+    pub read_only: bool,
+    pub check_filesystem: bool,
+}
+
 /// Open the phone's data partition: unwrap the key it is encrypted with,
 /// give that to the storage hardware, check the filesystem where the
 /// phone's table asks for it, and mount it writable, as the phone mounts
 /// it. The names and contents of each user's own files stay encrypted
 /// until that user's key is let in as well. A partition that does not
 /// mount leaves no device behind.
-fn open(service: &KeyMint) -> Result<Opened> {
-    let (entries, mapped) = map(service)?;
+fn open(service: &KeyMint, options: Options) -> Result<Opened> {
+    let (entries, mapped) = map(service, options.read_only)?;
     let mounted = (|| -> Result<(Option<Checked>, String)> {
         // A phone that names the partition once per filesystem it might
         // hold mounts it with the entry of the one it holds.
         let holds = skyward_block::probe::filesystem(&mapped)?;
         let entry = entries.iter().find(|e| holds.as_ref() == Some(&e.filesystem)).unwrap_or(&entries[0]);
-        let checked = match entry.extras.iter().any(|e| e == "check") {
+        let checked = match !options.read_only && options.check_filesystem && entry.extras.iter().any(|e| e == "check") {
             true => Some(skyward_block::fsck::check(&mapped, &entry.filesystem)?),
             false => None,
         };
         std::fs::create_dir_all(MOUNT).with_context(|| format!("make {MOUNT}"))?;
-        mount::mount(&mapped, Path::new(MOUNT), &entry.filesystem, &entry.options)?;
+        let mount_options = match options.read_only {
+            true => mount::read_only_options(&entry.filesystem, &entry.options)?,
+            false => entry.options.clone(),
+        };
+        mount::mount(&mapped, Path::new(MOUNT), &entry.filesystem, &mount_options)?;
         Ok((checked, entry.filesystem.clone()))
     })();
     match mounted {
@@ -131,14 +143,15 @@ fn open(service: &KeyMint) -> Result<Opened> {
 /// Map the data partition decrypted, under the key the phone keeps for it,
 /// and give its table's entries, the first the one the key is found by,
 /// and the device the filesystem is read and written through.
-fn map(service: &KeyMint) -> Result<(Vec<Entry>, PathBuf)> {
+fn map(service: &KeyMint, read_only: bool) -> Result<(Vec<Entry>, PathBuf)> {
+    anyhow::ensure!(dm::status(MAPPED)?.is_none(), "{MAPPED} is already mapped; close data before opening it again");
     let entries = skyward_block::fstab::read(MOUNT)?;
     let entry = entries.first().with_context(|| format!("the phone's own table says nothing about {MOUNT}"))?;
     let encryption = Encryption::of(entry)?;
     let device = skyward_block::fstab::device(entry)?;
     let key = storage_key(service, entry, &encryption)?;
     let sectors = skyward_block::size_bytes(&device)? / 512;
-    let mapped = dm::create(MAPPED, &[target(&device, sectors, &key, &encryption)], false)?;
+    let mapped = dm::create(MAPPED, &[target(&device, sectors, &key, &encryption)], read_only)?;
     Ok((entries, mapped))
 }
 
@@ -146,8 +159,7 @@ fn map(service: &KeyMint) -> Result<(Vec<Entry>, PathBuf)> {
 /// filesystem to be repaired, and give the device it is reached through;
 /// [`unmap`] takes it away again. The partition is to be closed.
 pub fn map_unmounted(service: &KeyMint) -> Result<PathBuf> {
-    anyhow::ensure!(dm::status(MAPPED)?.is_none(), "the data partition is open");
-    map(service).map(|(_, mapped)| mapped)
+    map(service, false).map(|(_, mapped)| mapped)
 }
 
 /// Take away the mapping [`map_unmounted`] made.
@@ -205,9 +217,26 @@ pub struct Opening {
 /// sign in, and open the own files of every user who set no screen lock
 /// and, behind the owner's, of those whose credential the phone made up.
 pub fn open_without_credential(service: &KeyMint) -> Result<Opening> {
+    open_with_options(service, Options { read_only: false, check_filesystem: true })
+}
+
+/// Open existing data without filesystem repairs, log replay, or writes.
+pub fn open_read_only(service: &KeyMint) -> Result<Opening> {
+    open_with_options(service, Options { read_only: true, check_filesystem: false })
+}
+
+pub fn open_with_options(service: &KeyMint, options: Options) -> Result<Opening> {
+    anyhow::ensure!(!options.read_only || service.upgrades_disabled(), "read-only decryption requires KeyMint upgrades to be disabled");
     let mounted = match mount::is_mount_point(Path::new(MOUNT))? {
-        true => None,
-        false => Some(open(service)?),
+        true => {
+            let mounted_read_only = mount::is_read_only(Path::new(MOUNT))?;
+            anyhow::ensure!(options.read_only == mounted_read_only,
+                "{MOUNT} is already {}; close it before requesting {} decryption",
+                if mounted_read_only { "read-only" } else { "writable" },
+                if options.read_only { "read-only" } else { "writable" });
+            None
+        }
+        false => Some(open(service, options)?),
     };
     open_shared(service)?;
     let mut closed = Vec::new();

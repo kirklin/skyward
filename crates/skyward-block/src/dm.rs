@@ -1,7 +1,7 @@
 // The table encoding serves the Android ioctls and the host tests.
 #![cfg_attr(not(target_os = "android"), allow(dead_code))]
 
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{anyhow, ensure, Context, Result};
 use std::mem::size_of;
 use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout};
 
@@ -76,6 +76,41 @@ pub struct Line {
     pub sectors: u64,
     pub kind: String,
     pub text: String,
+}
+
+/// Verify a read-only linear/zero mapping before reusing it for a logical
+/// partition. The same name alone does not establish which slot or extents
+/// it reads. Never include table parameters in errors: another target type
+/// could hold key material.
+pub fn verify_readonly_linear(name: &str, expected: &[Target]) -> Result<()> {
+    check_readonly_linear(readonly(name)?, &table(name)?, expected)
+        .with_context(|| format!("existing mapping {name} does not match the read-only logical partition"))
+}
+
+fn check_readonly_linear(readonly: bool, lines: &[Line], expected: &[Target]) -> Result<()> {
+    ensure!(readonly, "the mapping is writable");
+    ensure!(!expected.is_empty() && lines.len() == expected.len(), "the target count differs");
+    let mut start = 0_u64;
+    for (line, target) in lines.iter().zip(expected) {
+        let sectors = target.sectors();
+        ensure!(sectors != 0, "a logical extent has no sectors");
+        ensure!(line.start == start && line.sectors == sectors, "a logical extent's start or length differs");
+        start = start.checked_add(sectors).context("the logical partition's extent range overflows")?;
+        match target {
+            Target::Linear { device: (major, minor), offset, .. } => {
+                offset.checked_add(sectors).context("a linear extent's backing range overflows")?;
+                let device = format!("{major}:{minor}");
+                let offset = offset.to_string();
+                ensure!(line.kind == "linear", "a logical extent is not linear");
+                ensure!(line.text.split_whitespace().eq([device.as_str(), offset.as_str()]), "a linear extent's device or offset differs");
+            }
+            Target::Zero { .. } => {
+                ensure!(line.kind == "zero" && line.text.trim().is_empty(), "a logical extent is not zero-filled");
+            }
+            _ => anyhow::bail!("a logical partition expects a non-linear/non-zero target"),
+        }
+    }
+    Ok(())
 }
 
 // From <linux/dm-ioctl.h>.
@@ -530,5 +565,104 @@ mod tests {
         let listed = versions(&data).unwrap();
         assert_eq!(listed.iter().map(|(n, v)| (n.as_str(), *v)).collect::<Vec<_>>(), kinds);
         assert!(versions(&[]).unwrap().is_empty(), "a kernel with none");
+    }
+
+    fn logical_mapping() -> (Vec<Target>, Vec<Line>) {
+        (
+            vec![
+                Target::Linear { sectors: 16, device: (8, 1), offset: 2048 },
+                Target::Zero { sectors: 8 },
+                Target::Linear { sectors: 4, device: (259, 12), offset: 8192 },
+            ],
+            vec![
+                Line { start: 0, sectors: 16, kind: "linear".into(), text: "8:1 2048".into() },
+                Line { start: 16, sectors: 8, kind: "zero".into(), text: String::new() },
+                Line { start: 24, sectors: 4, kind: "linear".into(), text: "259:12 8192".into() },
+            ],
+        )
+    }
+
+    #[test]
+    fn an_existing_readonly_linear_and_zero_mapping_matches_its_metadata() {
+        let (expected, mut lines) = logical_mapping();
+        check_readonly_linear(true, &lines, &expected).unwrap();
+        lines[0].text = " 8:1\t2048 ".into();
+        lines[1].text = " \t".into();
+        check_readonly_linear(true, &lines, &expected).unwrap();
+    }
+
+    #[test]
+    fn a_writable_mapping_is_not_adopted_even_with_the_right_extents() {
+        let (expected, lines) = logical_mapping();
+        assert!(check_readonly_linear(false, &lines, &expected).is_err());
+    }
+
+    #[test]
+    fn another_backing_device_or_sector_offset_is_not_the_same_partition() {
+        let (expected, lines) = logical_mapping();
+        for params in ["9:1 2048", "8:2 2048", "8:1 2049", "8:1 2048 extra", "8:1", "8:1:2 2048", "8:1 18446744073709551616"] {
+            let mut changed = lines.clone();
+            changed[0].text = params.into();
+            assert!(check_readonly_linear(true, &changed, &expected).is_err(), "accepted different linear parameters");
+        }
+    }
+
+    #[test]
+    fn extent_gaps_overlaps_or_different_lengths_are_rejected() {
+        let (expected, lines) = logical_mapping();
+        for (index, start, sectors) in [(0, 1, 16), (0, 0, 15), (0, 0, 17), (1, 15, 8), (1, 17, 8), (2, 24, 0)] {
+            let mut changed = lines.clone();
+            changed[index].start = start;
+            changed[index].sectors = sectors;
+            assert!(check_readonly_linear(true, &changed, &expected).is_err());
+        }
+    }
+
+    #[test]
+    fn wrong_target_types_are_rejected_without_disclosing_their_parameters() {
+        let (expected, lines) = logical_mapping();
+        for kind in ["snapshot", "snapshot-merge", "verity", "default-key", "error", "zero"] {
+            let mut changed = lines.clone();
+            changed[0].kind = kind.into();
+            changed[0].text = "private-parameters-must-not-be-logged".into();
+            let error = check_readonly_linear(true, &changed, &expected).unwrap_err();
+            assert!(!format!("{error:#}").contains("private-parameters"));
+        }
+        let mut changed = lines;
+        changed[1].text = "unexpected zero parameters".into();
+        assert!(check_readonly_linear(true, &changed, &expected).is_err());
+    }
+
+    #[test]
+    fn extra_missing_empty_and_zero_length_tables_are_not_reused() {
+        let (expected, lines) = logical_mapping();
+        assert!(check_readonly_linear(true, &lines[..2], &expected).is_err());
+        assert!(check_readonly_linear(true, &lines, &expected[..2]).is_err());
+        assert!(check_readonly_linear(true, &[], &[]).is_err());
+        assert!(check_readonly_linear(true,
+            &[Line { start: 0, sectors: 0, kind: "zero".into(), text: String::new() }],
+            &[Target::Zero { sectors: 0 }],
+        ).is_err());
+    }
+
+    #[test]
+    fn logical_or_backing_extent_overflow_is_rejected() {
+        let expected = [Target::Zero { sectors: u64::MAX }, Target::Zero { sectors: 1 }];
+        let lines = [
+            Line { start: 0, sectors: u64::MAX, kind: "zero".into(), text: String::new() },
+            Line { start: u64::MAX, sectors: 1, kind: "zero".into(), text: String::new() },
+        ];
+        assert!(check_readonly_linear(true, &lines, &expected).is_err());
+        assert!(check_readonly_linear(true,
+            &[Line { start: 0, sectors: 8, kind: "linear".into(), text: format!("8:1 {}", u64::MAX - 3) }],
+            &[Target::Linear { sectors: 8, device: (8, 1), offset: u64::MAX - 3 }],
+        ).is_err());
+    }
+
+    #[test]
+    fn a_non_linear_expected_target_cannot_opt_into_reuse() {
+        let target = Target::Snapshot { sectors: 8, base: (253, 1), cow: (253, 2), merge: false, overflow: true };
+        let line = Line { start: 0, sectors: 8, kind: "snapshot".into(), text: "253:1 253:2 PO 8".into() };
+        assert!(check_readonly_linear(true, &[line], &[target]).is_err());
     }
 }

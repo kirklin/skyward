@@ -777,12 +777,7 @@ fn keep(from: &Path, to: &Path, meta: &fs::Metadata, give: &Give) -> Result<()> 
 fn attributes(from: &Path, to: &Path, meta: &fs::Metadata, give: &Give) -> Result<()> {
     let link = meta.file_type().is_symlink();
     let (owner, mode) = match give {
-        Give::Original(keeps) => {
-            if keeps.xattrs {
-                copy_xattrs(from, to)?;
-            }
-            (keeps.owner.then_some((meta.uid(), meta.gid())), keeps.mode.then_some(meta.mode() & 0o7777))
-        }
+        Give::Original(keeps) => (keeps.owner.then_some((meta.uid(), meta.gid())), keeps.mode.then_some(meta.mode() & 0o7777)),
         Give::Folder(like) => {
             if let Some(label) = &like.label {
                 set_label(to, label)?;
@@ -801,6 +796,13 @@ fn attributes(from: &Path, to: &Path, meta: &fs::Metadata, give: &Give) -> Resul
     if let Some(mode) = mode.filter(|_| !link) {
         fs::set_permissions(to, fs::Permissions::from_mode(mode)).with_context(|| format!("give {} its permissions", to.display()))?;
     }
+    // Changing ownership clears file capabilities. Restore the original's
+    // attributes last, after both its owner and permissions are in place.
+    if let Give::Original(keeps) = give {
+        if keeps.xattrs {
+            copy_xattrs(from, to)?;
+        }
+    }
     Ok(())
 }
 
@@ -808,7 +810,7 @@ fn attributes(from: &Path, to: &Path, meta: &fs::Metadata, give: &Give) -> Resul
 /// entry to another, a link's own rather than its target's, as far as the
 /// filesystem of `to` keeps them: one that keeps no attribute of a kind,
 /// as the recovery's own root keeps no access lists, says so for each.
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", all(test, target_os = "linux")))]
 fn copy_xattrs(from: &Path, to: &Path) -> Result<()> {
     use std::os::unix::ffi::OsStrExt;
     let cstr = |p: &Path| std::ffi::CString::new(p.as_os_str().as_bytes()).with_context(|| format!("{} holds a NUL", p.display()));
@@ -844,7 +846,7 @@ fn copy_xattrs(from: &Path, to: &Path) -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", all(test, target_os = "linux"))))]
 fn copy_xattrs(_from: &Path, _to: &Path) -> Result<()> {
     unreachable!("only the phone copies extended attributes")
 }
@@ -1320,6 +1322,40 @@ mod tests {
         for entry in ["photos", "photos/a.jpg", "photos/2026/b.txt", "photos/latest"] {
             assert_eq!(label(&into.join(entry)), "u:object_r:system_file:s0", "{entry}");
         }
+        fs::remove_dir_all(&at).unwrap();
+    }
+
+    /// Real xattr/ownership regression, explicitly run as root. Empty
+    /// capabilities on non-executable fixtures confer no privileges.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    #[ignore = "requires root with CAP_CHOWN and CAP_SETFCAP on an xattr-capable filesystem"]
+    fn changing_owner_preserves_empty_file_capabilities() {
+        use std::os::unix::ffi::OsStrExt;
+        assert_eq!(unsafe { libc::geteuid() }, 0, "run this explicit fixture test as root");
+        let at = scratch("capability-order");
+        let (from, to) = (at.join("from"), at.join("to"));
+        fs::write(&from, b"non-executable source fixture").unwrap();
+        fs::write(&to, b"non-executable destination fixture").unwrap();
+        std::os::unix::fs::lchown(&from, Some(12345), Some(12345)).unwrap();
+        fs::set_permissions(&from, fs::Permissions::from_mode(0o640)).unwrap();
+        let mut empty_caps = [0u8; 20];
+        empty_caps[..4].copy_from_slice(&0x0200_0000u32.to_le_bytes());
+        let source = std::ffi::CString::new(from.as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::lsetxattr(source.as_ptr(), c"security.capability".as_ptr(), empty_caps.as_ptr().cast(), empty_caps.len(), 0) }, 0,
+                   "setting empty file capabilities requires CAP_SETFCAP: {}", std::io::Error::last_os_error());
+        let meta = fs::symlink_metadata(&from).unwrap();
+        assert_ne!(meta.uid(), fs::symlink_metadata(&to).unwrap().uid(), "the test must actually change the destination owner");
+        // Linux host copies normally omit xattrs. Call the same production
+        // metadata function with the native-filesystem capabilities here.
+        attributes(&from, &to, &meta, &Give::Original(Keeps { owner: true, mode: true, xattrs: true })).unwrap();
+        let made = fs::symlink_metadata(&to).unwrap();
+        assert_eq!((made.uid(), made.gid(), made.mode() & 0o7777), (12345, 12345, 0o640));
+        let destination = std::ffi::CString::new(to.as_os_str().as_bytes()).unwrap();
+        let mut got = [0u8; 20];
+        assert_eq!(unsafe { libc::lgetxattr(destination.as_ptr(), c"security.capability".as_ptr(), got.as_mut_ptr().cast(), got.len()) }, 20,
+                   "ownership changes must not clear the restored capabilities: {}", std::io::Error::last_os_error());
+        assert_eq!(got, empty_caps);
         fs::remove_dir_all(&at).unwrap();
     }
 

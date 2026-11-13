@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 use skyward_binder::driver::Binder;
 use skyward_crypto::data::{self, Closed, Opening};
 use skyward_crypto::keymint::KeyMint;
+use skyward_config::Decrypt;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::sync::mpsc::{self, Receiver};
 use std::thread::{self, JoinHandle};
@@ -32,7 +33,9 @@ pub struct Decryptor {
 }
 
 impl Decryptor {
-    pub fn start(job: Job) -> Result<Decryptor> {
+    pub fn start(job: Job, policy: Decrypt) -> Result<Decryptor> {
+        skyward_sys::kmsg(&format!("decryption policy: read_only={}, auto_fsck={}, key_upgrades={}",
+            policy.read_only, policy.checks_filesystem(), policy.upgrades_keys()))?;
         let mut fds = [0; 2];
         if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) } != 0 {
             return Err(std::io::Error::last_os_error()).context("make the decrypting thread's wake pipe");
@@ -43,9 +46,9 @@ impl Decryptor {
             .name("decrypt".into())
             .spawn(move || {
                 let ended_as = match job {
-                    Job::Open => Ended::Opened(with_key_service(data::open_without_credential)),
+                    Job::Open => Ended::Opened(open(policy)),
                     Job::Unlock { closed, user, credential } => {
-                        Ended::Unlocked(with_key_service(|service| data::unlock(service, &closed, user, &credential)))
+                        Ended::Unlocked(with_key_service(policy, |service| data::unlock(service, &closed, user, &credential)))
                     }
                 };
                 // The screen only stops listening once it has let the
@@ -80,10 +83,19 @@ impl Drop for Decryptor {
 
 /// Do `work` with the phone's key service, reached afresh for it, and say
 /// why it failed in words for the page.
-pub fn with_key_service<T>(work: impl FnOnce(&KeyMint) -> Result<T>) -> Result<T, String> {
+pub fn options(policy: Decrypt) -> data::Options {
+    data::Options { read_only: policy.read_only, check_filesystem: policy.checks_filesystem() }
+}
+
+pub fn open(policy: Decrypt) -> Result<Opening, String> {
+    with_key_service(policy, |service| data::open_with_options(service, options(policy)))
+}
+
+pub fn with_key_service<T>(policy: Decrypt, work: impl FnOnce(&KeyMint) -> Result<T>) -> Result<T, String> {
     let done = (|| {
         let binder = Binder::open()?;
         let service = KeyMint::open(&binder)?;
+        let service = if policy.upgrades_keys() { service } else { service.without_upgrades() };
         work(&service)
     })();
     done.map_err(|e| format!("{e:#}"))

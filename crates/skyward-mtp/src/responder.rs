@@ -426,12 +426,12 @@ impl Responder {
             }
             Received::Done(_) => {
                 return Some(match sending.modified.map(|at| set_modified(&sending.path, at)) {
-                    Some(Err(e)) => Reply::failed(response::GENERAL_ERROR, format!("give {} its time: {e}", sending.path.display())),
+                    Some(Err(e)) => Reply::failed(io_failed(&e, response::GENERAL_ERROR), format!("give {} its time: {e}", sending.path.display())),
                     _ => Reply::ok(),
                 });
             }
             Received::Failed(e) if e.raw_os_error() == Some(libc::ENOSPC) => Some(Reply::failed(response::STORAGE_FULL, e)),
-            Received::Failed(e) => Some(Reply::failed(response::GENERAL_ERROR, format!("write {}: {e}", sending.path.display()))),
+            Received::Failed(e) => Some(Reply::failed(io_failed(&e, response::GENERAL_ERROR), format!("write {}: {e}", sending.path.display()))),
             Received::Stopped => None,
         };
         // A file not sent whole is not left behind.
@@ -456,7 +456,7 @@ impl Responder {
                 }
                 Some(Reply::ok().params(&[u32::try_from(n).unwrap_or(u32::MAX)]))
             }
-            Received::Failed(e) => Some(Reply::failed(response::GENERAL_ERROR, e).params(&[0])),
+            Received::Failed(e) => Some(Reply::failed(io_failed(&e, response::GENERAL_ERROR), e).params(&[0])),
             Received::Stopped => None,
         }
     }
@@ -617,12 +617,14 @@ impl Responder {
     fn storage_info(&self, cmd: &Command) -> Reply {
         let Some([id]) = cmd.take::<1>() else { return Reply::code(response::INVALID_PARAMETER) };
         let Some(s) = self.offered.as_ref().filter(|_| id == STORAGE_ID) else { return Reply::code(response::INVALID_STORAGE_ID) };
-        let (total, free) = match space(&s.top) {
+        let top = self.store.as_ref().expect("offered storage has a store").top();
+        let (total, free, read_only) = match space(top) {
             Ok(space) => space,
             Err(e) => return Reply::failed(response::GENERAL_ERROR, format!("look at {}: {e}", s.top.display())),
         };
         let mut w = Writer::new();
-        w.u16(storage::FIXED_RAM).u16(storage::HIERARCHICAL).u16(storage::READ_WRITE);
+        let access = if read_only { storage::READ_ONLY_WITHOUT_DELETE } else { storage::READ_WRITE };
+        w.u16(storage::FIXED_RAM).u16(storage::HIERARCHICAL).u16(access);
         w.u64(total).u64(free).u32(FREE_OBJECTS).string(&s.description).string("");
         Reply::dataset(w)
     }
@@ -666,7 +668,12 @@ impl Responder {
         let (Some(path), Some(name), Some(parent)) = (store.path(h), store.name(h), store.parent(h)) else {
             return Err(Reply::code(response::INVALID_OBJECT_HANDLE));
         };
-        let meta = fs::metadata(&path).map_err(|e| Reply::failed(response::INVALID_OBJECT_HANDLE, format!("look at {}: {e}", path.display())))?;
+        match store.checked_path(h) {
+            Ok(_) => {}
+            Err(store::Error::UnsafePath) => return Err(Reply::failed(response::ACCESS_DENIED, "symbolic links are not offered over MTP")),
+            Err(_) => return Err(Reply::code(response::INVALID_OBJECT_HANDLE)),
+        }
+        let meta = fs::symlink_metadata(&path).map_err(|e| Reply::failed(response::INVALID_OBJECT_HANDLE, format!("look at {}: {e}", path.display())))?;
         let relative = store.relative(h).expect("a known entry has a path");
         Ok(Object { name: name.to_os_string(), folder: store.is_folder(h), parent, meta, relative })
     }
@@ -824,7 +831,7 @@ impl Responder {
                 store.rename(h, name.into());
                 Reply::ok()
             }
-            Err(e) => Reply::failed(response::GENERAL_ERROR, format!("{e:#}")),
+            Err(e) => Reply::failed(write_failed(&e, response::GENERAL_ERROR), format!("{e:#}")),
         }
     }
 
@@ -845,11 +852,15 @@ impl Responder {
         if info.name.is_empty() || info.name == "." || info.name == ".." || info.name.contains('/') {
             return Reply::failed(response::INVALID_PARAMETER, format!("{:?} cannot be a name", info.name));
         }
-        let into = store.path(folder).expect("a known folder has a path");
+        let into = match store.checked_path(folder) {
+            Ok(path) => path,
+            Err(e) => return store_failed(e, response::INVALID_PARENT_OBJECT),
+        };
         let path = into.join(&info.name);
         if info.size != u32::MAX {
             match space(&into) {
-                Ok((_, free)) if u64::from(info.size) > free => return Reply::code(response::STORAGE_FULL),
+                Ok((_, _, true)) => return Reply::code(response::STORE_READ_ONLY),
+                Ok((_, free, false)) if u64::from(info.size) > free => return Reply::code(response::STORAGE_FULL),
                 Ok(_) => {}
                 Err(e) => return Reply::failed(response::GENERAL_ERROR, format!("look at {}: {e}", into.display())),
             }
@@ -869,7 +880,7 @@ impl Responder {
         };
         let file = match file {
             Ok(file) => file,
-            Err(e) => return Reply::failed(response::GENERAL_ERROR, format!("{e:#}")),
+            Err(e) => return Reply::failed(write_failed(&e, response::GENERAL_ERROR), format!("{e:#}")),
         };
         let handle = store.add(folder, info.name.into(), is_folder);
         let modified = time::parse(&info.modified, &self.zone);
@@ -892,6 +903,7 @@ impl Responder {
             }
             // What could not go stays, and the folders followed tell the
             // computer of what did.
+            Err(e) if write_failed(&e, response::GENERAL_ERROR) == response::STORE_READ_ONLY => Reply::failed(response::STORE_READ_ONLY, format!("{e:#}")),
             Err(e) if fs::symlink_metadata(&path).is_ok() => Reply::failed(response::PARTIAL_DELETION, format!("{e:#}")),
             Err(e) => {
                 store.remove(h);
@@ -914,7 +926,8 @@ impl Responder {
         if !store.is_folder(folder) {
             return Err(Reply::code(response::INVALID_PARENT_OBJECT));
         }
-        Ok((folder, store.path(folder).expect("a known folder has a path")))
+        let path = store.checked_path(folder).map_err(|e| store_failed(e, response::INVALID_PARENT_OBJECT))?;
+        Ok((folder, path))
     }
 
     fn move_object(&mut self, cmd: &Command) -> Reply {
@@ -934,7 +947,7 @@ impl Responder {
                 store.relocate(h, folder, o.name);
                 Reply::ok()
             }
-            Err(e) => Reply::failed(response::GENERAL_ERROR, format!("{e:#}")),
+            Err(e) => Reply::failed(write_failed(&e, response::GENERAL_ERROR), format!("{e:#}")),
         }
     }
 
@@ -955,7 +968,8 @@ impl Responder {
             return Reply::failed(response::GENERAL_ERROR, format!("{} is there already", target.display()));
         }
         match space(&into) {
-            Ok((_, free)) if o.size() > free => return Reply::code(response::STORAGE_FULL),
+            Ok((_, _, true)) => return Reply::code(response::STORE_READ_ONLY),
+            Ok((_, free, false)) if o.size() > free => return Reply::code(response::STORAGE_FULL),
             Ok(_) => {}
             Err(e) => return Reply::failed(response::GENERAL_ERROR, format!("look at {}: {e}", into.display())),
         }
@@ -969,7 +983,7 @@ impl Responder {
                 let made = store.add(folder, o.name, o.folder);
                 Reply::ok().params(&[made])
             }
-            Err(e) => Reply::failed(response::GENERAL_ERROR, format!("{e:#}")),
+            Err(e) => Reply::failed(write_failed(&e, response::GENERAL_ERROR), format!("{e:#}")),
         }
     }
 
@@ -1006,7 +1020,7 @@ impl Responder {
                 edit.size = size;
                 Reply::ok()
             }
-            Err(e) => Reply::failed(response::GENERAL_ERROR, e),
+            Err(e) => Reply::failed(io_failed(&e, response::GENERAL_ERROR), e),
         }
     }
 }
@@ -1079,8 +1093,8 @@ impl ObjectInfo {
 }
 
 /// The bytes the filesystem holding `path` has, and those free for files
-/// other than the system's own.
-fn space(path: &Path) -> io::Result<(u64, u64)> {
+/// other than the system's own, and whether its mount is read-only.
+fn space(path: &Path) -> io::Result<(u64, u64, bool)> {
     use std::os::unix::ffi::OsStrExt;
     let c = std::ffi::CString::new(path.as_os_str().as_bytes()).map_err(io::Error::other)?;
     let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
@@ -1090,7 +1104,7 @@ fn space(path: &Path) -> io::Result<(u64, u64)> {
     // The counts are 32 bits on some hosts and 64 on the phone.
     #[allow(clippy::useless_conversion)]
     let (blocks, available, size) = (u64::from(s.f_blocks), u64::from(s.f_bavail), u64::from(s.f_frsize));
-    Ok((blocks * size, available * size))
+    Ok((blocks * size, available * size, s.f_flag & libc::ST_RDONLY != 0))
 }
 
 /// Give the entry at `path` the time it last changed.
@@ -1106,10 +1120,19 @@ fn set_modified(path: &Path, unix: i64) -> io::Result<()> {
 
 /// The response for a file that would not open.
 fn access_failed(e: &io::Error) -> u16 {
-    match e.kind() {
+    io_failed(e, match e.kind() {
         io::ErrorKind::PermissionDenied => response::ACCESS_DENIED,
         _ => response::GENERAL_ERROR,
-    }
+    })
+}
+
+/// Preserve the read-only reason even where file operations add context.
+fn write_failed(e: &anyhow::Error, otherwise: u16) -> u16 {
+    e.downcast_ref::<io::Error>().map_or(otherwise, |e| io_failed(e, otherwise))
+}
+
+fn io_failed(e: &io::Error, otherwise: u16) -> u16 {
+    if e.raw_os_error() == Some(libc::EROFS) { response::STORE_READ_ONLY } else { otherwise }
 }
 
 /// The response for an entry the store does not have as asked.
@@ -1117,6 +1140,7 @@ fn store_failed(e: store::Error, not_folder: u16) -> Reply {
     match e {
         store::Error::Unknown => Reply::code(response::INVALID_OBJECT_HANDLE),
         store::Error::NotFolder => Reply::code(not_folder),
+        store::Error::UnsafePath => Reply::failed(response::ACCESS_DENIED, "symbolic links are not offered over MTP"),
         store::Error::Io(e) => Reply::failed(response::GENERAL_ERROR, e),
     }
 }

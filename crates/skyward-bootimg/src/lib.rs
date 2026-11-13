@@ -3,7 +3,9 @@
 //! on a computer and by the recovery on the phone.
 
 mod image;
+mod lz4;
 mod ramdisk;
 
 pub use image::BootImage;
+pub use lz4::LegacyDecoder;
 pub use ramdisk::{lz4_legacy, Entry, Ramdisk};

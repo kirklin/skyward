@@ -90,12 +90,15 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 
 ### 🚧 施工中
 
-这些机型的镜像按照各自的原厂固件构建，还没有在真机上试过。屏幕、触摸、WLAN 和振动已经配置好，不会解密 data 分区。
+这些适配仍在施工中。REDMI K60 Pro（`socrates`）已实刷 `recovery_a`，验证 PIN 可写 data 解密、Wi-Fi、Windows MTP 文件操作，以及专用共享存储和应用私有 CE 目录中的生产代码备份恢复；此前的显示、触摸、USB ADB、按键、亮度、振动和槽位查询验证也已记录。原生 ext4/F2FS 格式化、挂载和擦除在一次性 loop 镜像上通过。测试后已恢复原 recovery、卸载测试包并清理测试文件。具体构建与未验证范围见[实机验证记录](devices/socrates-validation.json)。下表其余机型的镜像按照原厂固件构建，还没有在真机上试过，不会解密 data 分区。
+
+机主确认 K60 Pro 当前移植系统的底包为 **OS3.0.303.0.WMKCNXM**。宿主框架实测为 **Android 17／API 37**；当前 vendor/odm 属性自报 **OS3.0.304.0.WMKCNXM、Android 13／API 33（VNDK 33）**。recovery 的构建输入另为官方 **Android 16 OTA OS3.0.304.0.WMKCNXM**。底包、框架、厂商层自报属性和打包来源分别记录，不把属性或构建输入当作整机底包版本；其他组合尚未验证。
 
 | 机型 | 代号 | 构建所用的系统版本 |
 | --- | --- | --- |
 | 🚧 小米 13 | `fuxi` | OS3.0.309.0.WMCCNXM（Android 16） |
 | 🚧 小米 13 Pro | `nuwa` | OS3.0.312.0.WMBCNXM（Android 16） |
+| 🚧 REDMI K60 Pro | `socrates` | OS3.0.304.0.WMKCNXM（Android 16） |
 | 🚧 小米 14 | `houji` | OS3.0.307.0.WNCCNXM（Android 16） |
 | 🚧 小米 14 Pro | `shennong` | OS3.0.309.0.WNBCNXM（Android 16） |
 | 🚧 小米 14 Ultra | `aurora` | OS3.0.308.0.WNACNXM（Android 16） |
@@ -149,6 +152,28 @@ Skyward 可以在手机自身分区中的系统旁边安装第二系统，主系
 
 ## 构建
 
+对于系统声明的安全补丁日期早于原数据密钥绑定日期的移植 ROM，可以给单台设备的
+REC 显式设置 `system_patchlevel_floor`。它只在启动安全服务前选择恢复环境的版本
+上下文，保留 ROM 中较新的日期；不修改 system/product 文件或磁盘密钥，也不补齐
+实际安全更新。日期必须来自已核实的原密钥上下文，且要求 `key_upgrades = false`。
+通用设备配置默认不设置此值。例如已确认密钥绑定 2026 年 9 月的设备可使用：
+
+```toml
+[decrypt]
+read_only = false
+auto_repair = false
+key_upgrades = false
+system_patchlevel_floor = "2026-09-01"
+```
+
+打包器的 `--system-patchlevel-floor 2026-09-01` 或 Actions 的同名输入可以生成这种
+专用变体。Actions 要求明确选择单个设备和分支，产物名附加 `decrypt20260901`。
+
+“自动重新刷入 Skyward”保留的是 recovery 分区内已安装的完整 Skyward 镜像，
+包含上述配置。临时内存启动且分区中没有 Skyward 时，开启该选项会在安装前明确
+报错；需要先安装 Skyward，或由用户选择关闭保留。系统因 `fs_mgr_mount_all` 请求
+清除 data 时，REC 会先显示确认界面，不把挂载失败直接当作用户的清除许可。
+
 Skyward 使用 `rust-toolchain.toml` 指定的稳定版 Rust 和它的 `aarch64-linux-android` 目标、Android NDK r29 和 [cargo-ndk](https://github.com/bbqsrc/cargo-ndk) 构建。recovery 服务针对手机构建，打包工具针对电脑构建：
 
 ```sh
@@ -170,11 +195,19 @@ target/release/skyward-pack stock --config devices/nezha.toml --out target/stock
 
 然后在它的基础上构建镜像：
 
+CI 另在原生 ARM64 Linux 上安装 `musl-tools`，运行
+`bash .github/scripts/build-bash.sh target/bash`，从校验过的 GNU 源码与补丁构建
+静态 Bash 5.3.20。把该目录复制到打包电脑，或下载工作流的 `bash-runtime` 产物。
+`--bash-dir` 会加入真正的 Bash、GPL 许可、musl 版权及精确源码说明；省略此选项时
+不支持要求 Bash 的脚本。对应源码、全部固定补丁和构建脚本位于 `bash-source.tar.gz`，
+与标签发布的镜像一同提供，也保存在 Actions 产物中。原厂 `/system/bin/sh` 保留。
+
 ```sh
 target/release/skyward-pack recovery \
   --stock target/stock/nezha/recovery.img \
   --binary target/aarch64-linux-android/release/skyward \
   --system-init target/system-init/aarch64-linux-android/release/system-init \
+  --bash-dir target/bash \
   --config devices/nezha.toml \
   --font resources/fonts/MiSansVF.ttf \
   --mono resources/fonts/KirkMono-Regular.ttf \

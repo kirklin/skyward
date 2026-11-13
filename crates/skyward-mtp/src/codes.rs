@@ -58,6 +58,7 @@ pub mod response {
     pub const INVALID_OBJECT_HANDLE: u16 = 0x2009;
     pub const DEVICE_PROP_NOT_SUPPORTED: u16 = 0x200A;
     pub const STORAGE_FULL: u16 = 0x200C;
+    pub const STORE_READ_ONLY: u16 = 0x200E;
     pub const ACCESS_DENIED: u16 = 0x200F;
     pub const NO_THUMBNAIL_PRESENT: u16 = 0x2010;
     pub const PARTIAL_DELETION: u16 = 0x2012;
@@ -179,6 +180,7 @@ pub mod storage {
     pub const FIXED_RAM: u16 = 0x0003;
     pub const HIERARCHICAL: u16 = 0x0002;
     pub const READ_WRITE: u16 = 0x0000;
+    pub const READ_ONLY_WITHOUT_DELETE: u16 = 0x0001;
 }
 
 /// The class requests the computer sends the MTP interface on the control

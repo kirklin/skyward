@@ -1,7 +1,7 @@
 use anyhow::{ensure, Context, Result};
 use clap::{Parser, Subcommand};
 use sha2::{Digest, Sha256};
-use skyward_config::ramdisk as paths;
+use skyward_config::{ramdisk as paths, PatchLevel};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -55,9 +55,18 @@ enum Cmd {
         /// statically.
         #[arg(long)]
         system_init: PathBuf,
+        /// Static AArch64 Bash bundle made by .github/scripts/build-bash.sh:
+        /// bash, COPYING, musl-COPYRIGHT and SOURCE. Omit only when building
+        /// without support for scripts that require Bash.
+        #[arg(long)]
+        bash_dir: Option<PathBuf>,
         /// The device configuration, devices/<codename>.toml.
         #[arg(long)]
         config: PathBuf,
+        /// Optional recovery-only system patch-date floor for existing data
+        /// keys. Does not change the ROM or enable key upgrades.
+        #[arg(long)]
+        system_patchlevel_floor: Option<PatchLevel>,
         /// The UI typeface.
         #[arg(long)]
         font: PathBuf,
@@ -105,7 +114,7 @@ fn main() -> Result<()> {
             img.kernel = BootImage::read(&kernel)?.kernel;
             write(&out, &img, &img.to_bytes()?)
         }
-        Cmd::Recovery { stock, binary, system_init, config, font, mono, mono_license, out } => {
+        Cmd::Recovery { stock, binary, system_init, bash_dir, config, system_patchlevel_floor, font, mono, mono_license, out } => {
             let size = partition_size(&stock)?;
             let mut img = BootImage::read(&stock)?;
             let mut rd = Ramdisk::decode(&img.ramdisk)?;
@@ -115,7 +124,12 @@ fn main() -> Result<()> {
                 anyhow::bail!("{} holds {}, which is not a stock recovery", stock.display(), e.name);
             }
             let read = |p: &PathBuf| std::fs::read(p).with_context(|| format!("read {}", p.display()));
-            skyward_config::DeviceConfig::load(&config)?;
+            let text = String::from_utf8(read(&config)?).context("device configuration is not UTF-8")?;
+            let text = match system_patchlevel_floor {
+                Some(floor) => skyward_config::DeviceConfig::with_system_patchlevel_floor(&text, floor)?,
+                None => text,
+            };
+            let cfg = skyward_config::DeviceConfig::parse(&text)?;
             rd.replace(paths::RECOVERY, read(&binary)?)?;
             // Install scripts look for the commands a stock recovery lacks
             // among its programs, and its unzip there too, a link to ziptool
@@ -125,7 +139,10 @@ fn main() -> Result<()> {
                 rd.link(command, recovery)?;
             }
             rd.add(paths::SYSTEM_INIT, 0o755, read(&system_init)?)?;
-            rd.add(paths::CONFIG, 0o644, read(&config)?)?;
+            if let Some(dir) = &bash_dir {
+                add_bash(&mut rd, dir)?;
+            }
+            rd.add(paths::CONFIG, 0o644, text.into_bytes())?;
             rd.add(paths::FONT, 0o644, read(&font)?)?;
             rd.add(paths::MONO, 0o644, read(&mono)?)?;
             rd.add(paths::MONO_LICENSE, 0o644, read(&mono_license)?)?;
@@ -145,8 +162,7 @@ fn main() -> Result<()> {
                 .find(paths::PROP_DEFAULT)
                 .with_context(|| format!("{} is not in the ramdisk", paths::PROP_DEFAULT))?
                 .data;
-            let mut props = without(stock_props, &BUILD_VERSION);
-            props.extend_from_slice(b"\nro.secure=0\nro.adb.secure=0\nro.debuggable=1\nro.ota.allow_downgrade=true\n");
+            let props = recovery_properties(stock_props, cfg.decrypt.preserves_keys());
             rd.replace(paths::PROP_DEFAULT, props)?;
             img.ramdisk = rd.encode()?;
             let bytes = img.to_bytes()?;
@@ -161,6 +177,23 @@ fn main() -> Result<()> {
             }
         }
     }
+}
+
+/// Keep the shell, its licences and the exact source/build reference
+/// together. A stock ramdisk's shell at /system/bin/sh is never replaced.
+fn add_bash(rd: &mut Ramdisk, dir: &Path) -> Result<()> {
+    for (source, target, mode) in [
+        ("bash", "system/bin/bash", 0o755),
+        ("COPYING", "skyward/licenses/bash-COPYING", 0o644),
+        ("musl-COPYRIGHT", "skyward/licenses/musl-COPYRIGHT", 0o644),
+        ("SOURCE", "skyward/licenses/bash-SOURCE", 0o644),
+    ] {
+        let path = dir.join(source);
+        let bytes = std::fs::read(&path).with_context(|| format!("read {}", path.display()))?;
+        ensure!(!bytes.is_empty(), "{} is empty", path.display());
+        rd.add(target, mode, bytes)?;
+    }
+    Ok(())
 }
 
 /// The partition a recovery is made on, as a full update package names it.
@@ -221,6 +254,20 @@ fn partition_size(stock: &Path) -> Result<usize> {
 /// fill in from the installed system once it has that mounted.
 const BUILD_VERSION: [&str; 3] = ["ro.build.version.release", "ro.build.version.security_patch", "ro.vendor.build.security_patch"];
 
+/// Stock vold may discard metadata keys if they cannot be opened. A key-
+/// preserving image must leave them intact, even when data is writable.
+const DELETE_METADATA_KEYS: &str = "ro.crypto.metadata_init_delete_all_keys.enabled";
+
+fn recovery_properties(stock_props: &[u8], preserve_keys: bool) -> Vec<u8> {
+    let mut props = without(stock_props, &BUILD_VERSION);
+    props.extend_from_slice(b"\nro.secure=0\nro.adb.secure=0\nro.debuggable=1\nro.ota.allow_downgrade=true\n");
+    if preserve_keys {
+        props = without(&props, &[DELETE_METADATA_KEYS]);
+        props.extend_from_slice(format!("{DELETE_METADATA_KEYS}=false\n").as_bytes());
+    }
+    props
+}
+
 /// The scheduling profiles a recovery's programs look up by name. A
 /// recovery's cgroup setup mounts no controllers, so of all a system's
 /// profiles do, only the timer slack applies here.
@@ -279,6 +326,32 @@ fn list(image: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn read_only_decryption_never_requests_metadata_key_deletion() {
+        let stock = format!("{DELETE_METADATA_KEYS}=true\nro.build.version.release=13\nro.vndk.version=33\n");
+        let disabled = format!("{DELETE_METADATA_KEYS}=false");
+        let enabled = format!("{DELETE_METADATA_KEYS}=true");
+        let diagnostic = String::from_utf8(recovery_properties(stock.as_bytes(), true)).unwrap();
+        assert!(diagnostic.lines().any(|l| l == disabled));
+        assert!(!diagnostic.lines().any(|l| l == enabled));
+        assert!(diagnostic.contains("ro.vndk.version=33\n"));
+        let normal = String::from_utf8(recovery_properties(stock.as_bytes(), false)).unwrap();
+        assert!(normal.lines().any(|l| l == enabled));
+    }
+
+    #[test]
+    fn writable_key_preserving_decryption_also_disables_metadata_key_deletion() {
+        let stock = format!("{DELETE_METADATA_KEYS}=true\nro.vndk.version=33\n");
+        let disabled = format!("{DELETE_METADATA_KEYS}=false");
+        let enabled = format!("{DELETE_METADATA_KEYS}=true");
+        let policy = skyward_config::Decrypt { read_only: false, auto_repair: false, key_upgrades: false, ..Default::default() };
+        let props = String::from_utf8(recovery_properties(stock.as_bytes(), policy.preserves_keys())).unwrap();
+        assert!(props.lines().any(|line| line == disabled));
+        assert!(!props.lines().any(|line| line == enabled));
+        let legacy = String::from_utf8(recovery_properties(stock.as_bytes(), skyward_config::Decrypt::default().preserves_keys())).unwrap();
+        assert!(legacy.lines().any(|line| line == enabled));
+    }
 
     #[test]
     fn the_lines_that_set_a_name_are_the_only_ones_left_out() {

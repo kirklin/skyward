@@ -3,6 +3,9 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
 
+mod patchlevel;
+pub use patchlevel::{select as select_system_patchlevel, PatchLevel};
+
 /// Recovery ramdisk files Skyward reads, adds or changes, as archive paths
 /// (they sit under `/` once the kernel unpacks the ramdisk).
 pub mod ramdisk {
@@ -50,6 +53,8 @@ pub struct DeviceConfig {
     pub modules: Modules,
     #[serde(default)]
     pub touch: Touch,
+    #[serde(default)]
+    pub decrypt: Decrypt,
     #[serde(default)]
     pub partitions: Partitions,
     /// Where the firmware the phone's drivers ask for is, on phones whose
@@ -161,6 +166,11 @@ pub struct Firmware {
     /// read-only while the file is read.
     #[serde(default)]
     pub partition: Option<String>,
+    /// Some builds leave a separate MAC file absent. Only an absent
+    /// file may be skipped;
+    /// mount failures and other read errors still stop WLAN startup.
+    #[serde(default)]
+    pub optional: bool,
 }
 
 /// The phone maker's update server, which the stock updater asks about the
@@ -215,6 +225,11 @@ pub struct Haptics {
     /// tenths of a hertz whatever its label.
     pub resonance: String,
     pub strength: Strength,
+    /// Scale custom FIFO samples instead of their effect magnitude, for
+    /// drivers whose custom-effect magnitude does not preserve the share.
+    /// Waveforms kept by the driver still use their original magnitude.
+    #[serde(default)]
+    pub scale_samples: bool,
 }
 
 /// How strongly the click plays, each as a share of the most its waveform
@@ -281,6 +296,10 @@ pub struct Display {
     pub height: u32,
     #[serde(default)]
     pub density: u32,
+    /// Power the display off before the first UI frame. Some host touch
+    /// processors need a new panel resume after their service restarts.
+    #[serde(default)]
+    pub reset_on_start: bool,
     /// Marketed screen diagonal in inches.
     #[serde(default)]
     pub diagonal: Option<f32>,
@@ -317,6 +336,45 @@ pub struct Touch {
     /// step of starting the controller.
     #[serde(default)]
     pub writes: Vec<Write>,
+}
+
+/// Access to decrypted data and the automatic work allowed while opening it.
+/// An explicit repair or wipe remains a separate, user-requested operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct Decrypt {
+    pub read_only: bool,
+    /// Run the fstab's pre-mount fsck, which may fix errors automatically.
+    /// This does not govern the kernel's normal writable-mount operations.
+    pub auto_repair: bool,
+    /// Let KeyMint renew existing blobs if it requires an upgrade. When
+    /// disabled, metadata keys are also protected from automatic deletion.
+    pub key_upgrades: bool,
+    /// An opt-in minimum system patch date for the recovery's KeyMint
+    /// context when a port reports an older date than the existing data's
+    /// keys. Never changes the installed ROM, lowers a later patch date,
+    /// enables key upgrades, or supplies actual security updates.
+    pub system_patchlevel_floor: Option<PatchLevel>,
+}
+
+impl Default for Decrypt {
+    fn default() -> Self {
+        Self { read_only: false, auto_repair: true, key_upgrades: true, system_patchlevel_floor: None }
+    }
+}
+
+impl Decrypt {
+    pub fn checks_filesystem(self) -> bool {
+        !self.read_only && self.auto_repair
+    }
+
+    pub fn upgrades_keys(self) -> bool {
+        !self.read_only && self.key_upgrades
+    }
+
+    pub fn preserves_keys(self) -> bool {
+        !self.upgrades_keys()
+    }
 }
 
 /// Partitions as the phone itself mounts them.
@@ -390,6 +448,11 @@ pub struct Service {
     /// names it: it keeps these alone, through its change of user.
     #[serde(default)]
     pub capabilities: Vec<String>,
+    /// Give this program a private mount namespace with a bounded tmpfs
+    /// at /data for its calibration cache. Mounting real userdata later
+    /// in the recovery does not change what this program sees there.
+    #[serde(default)]
+    pub memory_data: bool,
 }
 
 /// The kernel's capabilities, by the names init's capabilities lines give
@@ -494,6 +557,19 @@ pub fn codename(text: &str) -> Result<String> {
 }
 
 impl DeviceConfig {
+    /// Add an explicit recovery-only compatibility setting when packing a
+    /// device-specific image. Unspecified profiles remain byte-for-byte
+    /// unchanged; all other configuration values are retained.
+    pub fn with_system_patchlevel_floor(text: &str, floor: PatchLevel) -> Result<String> {
+        let mut table: toml::Table = toml::from_str(text).context("parse configuration to add a patch-level floor")?;
+        let decrypt = table.entry("decrypt").or_insert_with(|| toml::Value::Table(toml::Table::new()));
+        decrypt.as_table_mut().context("[decrypt] is not a table")?
+            .insert("system_patchlevel_floor".into(), toml::Value::String(floor.to_string()));
+        let text = toml::to_string(&table).context("write configuration with a patch-level floor")?;
+        Self::parse(&text)?;
+        Ok(text)
+    }
+
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let p = path.as_ref();
         let text = std::fs::read_to_string(p)
@@ -503,6 +579,8 @@ impl DeviceConfig {
 
     pub fn parse(text: &str) -> Result<Self> {
         let cfg: DeviceConfig = toml::from_str(text).context("parse device config")?;
+        ensure!(cfg.decrypt.system_patchlevel_floor.is_none() || !cfg.decrypt.key_upgrades,
+            "[decrypt] system_patchlevel_floor requires key_upgrades = false; a compatibility context must not upgrade existing keys");
         for log in &cfg.wipe.logs {
             let path = Path::new(log);
             let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
@@ -612,6 +690,54 @@ impl DeviceConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decryption_can_be_restricted_to_existing_data() {
+        let base = "[device]\ncodename = \"x\"\n";
+        assert!(!DeviceConfig::parse(base).unwrap().decrypt.read_only);
+        assert!(DeviceConfig::parse(&format!("{base}[decrypt]\nread_only = true\n")).unwrap().decrypt.read_only);
+    }
+
+    #[test]
+    fn writable_decryption_can_preserve_keys_and_skip_automatic_repairs() {
+        let base = "[device]\ncodename = \"x\"\n";
+        let legacy = DeviceConfig::parse(base).unwrap().decrypt;
+        assert!(!legacy.read_only);
+        assert!(legacy.checks_filesystem() && legacy.upgrades_keys());
+        let writable = DeviceConfig::parse(&format!("{base}[decrypt]\nread_only = false\nauto_repair = false\nkey_upgrades = false\n")).unwrap().decrypt;
+        assert!(!writable.read_only && !writable.checks_filesystem());
+        assert!(!writable.upgrades_keys() && writable.preserves_keys());
+        let readonly = Decrypt { read_only: true, ..legacy };
+        assert!(!readonly.checks_filesystem() && !readonly.upgrades_keys());
+        assert!(readonly.preserves_keys(), "read-only remains restrictive regardless of omitted switches");
+        let keys_only = Decrypt { key_upgrades: false, ..legacy };
+        assert!(keys_only.checks_filesystem() && !keys_only.upgrades_keys(), "the restrictions are independent");
+        let fs_only = Decrypt { auto_repair: false, ..legacy };
+        assert!(!fs_only.checks_filesystem() && fs_only.upgrades_keys());
+    }
+
+    #[test]
+    fn socrates_opens_writable_data_without_automatic_fsck_or_key_upgrades() {
+        let cfg: DeviceConfig = toml::from_str(include_str!("../../../devices/socrates.toml")).unwrap();
+        assert_eq!(cfg.decrypt, Decrypt { read_only: false, auto_repair: false, key_upgrades: false, ..Default::default() });
+        let other: DeviceConfig = toml::from_str(include_str!("../../../devices/ishtar.toml")).unwrap();
+        assert_eq!(other.decrypt, Decrypt::default());
+    }
+
+    #[test]
+    fn a_recovery_patchlevel_hint_preserves_the_device_and_key_restrictions() {
+        let base = include_str!("../../../devices/socrates.toml");
+        let text = DeviceConfig::with_system_patchlevel_floor(base, "2026-09-01".parse().unwrap()).unwrap();
+        let cfg = DeviceConfig::parse(&text).unwrap();
+        assert_eq!(cfg.device.codename, "socrates");
+        assert_eq!(cfg.services.len(), DeviceConfig::parse(base).unwrap().services.len());
+        assert!(!cfg.decrypt.upgrades_keys() && !cfg.decrypt.checks_filesystem());
+        assert!(!cfg.decrypt.read_only);
+        assert_eq!(cfg.decrypt.system_patchlevel_floor.unwrap().to_string(), "2026-09-01");
+        assert_eq!(select_system_patchlevel("2026-10-01", cfg.decrypt.system_patchlevel_floor).unwrap(), "2026-10-01");
+        assert!(DeviceConfig::parse("[device]\ncodename='x'\n[decrypt]\nsystem_patchlevel_floor='2026-02-30'\n").is_err());
+        assert!(DeviceConfig::parse("[device]\ncodename='x'\n[decrypt]\nsystem_patchlevel_floor='2026-09-01'\nkey_upgrades=true\n").is_err());
+    }
 
     #[test]
     fn the_commands_sit_beside_the_recovery_service_binary() {
@@ -793,6 +919,7 @@ mod tests {
         let root = DeviceConfig::parse(base).unwrap();
         let s = &root.services[0];
         assert_eq!((s.user.as_ref(), s.groups.len(), s.capabilities.len()), (None, 0, 0), "root, as init runs one that names no user");
+        assert!(!s.memory_data, "services use the recovery's mounts unless they request private RAM data");
         let named = DeviceConfig::parse(&format!("{base}user = \"system\"\ngroups = [\"system\", \"drmrpc\"]\ncapabilities = [\"WAKE_ALARM\"]\n")).unwrap();
         let s = &named.services[0];
         assert_eq!((s.user.as_deref(), &s.groups[..], &s.capabilities[..]), (Some("system"), &["system".to_string(), "drmrpc".to_string()][..], &["WAKE_ALARM".to_string()][..]));
@@ -839,6 +966,7 @@ mod tests {
             (include_str!("../../../devices/athens.toml"), "OS4.0.4.0.XPICNXM"),
             (include_str!("../../../devices/fuxi.toml"), "OS3.0.309.0.WMCCNXM"),
             (include_str!("../../../devices/nuwa.toml"), "OS3.0.312.0.WMBCNXM"),
+            (include_str!("../../../devices/socrates.toml"), "OS3.0.304.0.WMKCNXM"),
             (include_str!("../../../devices/houji.toml"), "OS3.0.307.0.WNCCNXM"),
             (include_str!("../../../devices/shennong.toml"), "OS3.0.309.0.WNBCNXM"),
             (include_str!("../../../devices/aurora.toml"), "OS3.0.308.0.WNACNXM"),
@@ -1015,6 +1143,14 @@ mod tests {
     }
 
     #[test]
+    fn a_firmware_file_is_required_unless_it_explicitly_allows_absence() {
+        let required: Firmware = toml::from_str("name = 'wlan/a.ini'\npath = '/vendor/etc/a.ini'\n").unwrap();
+        assert!(!required.optional);
+        let optional: Firmware = toml::from_str("name = 'wlan/mac.bin'\npath = 'kiwi_v2/wlan_mac.bin'\npartition = 'persist'\noptional = true\n").unwrap();
+        assert!(optional.optional);
+    }
+
+    #[test]
     fn services_use_the_partitions_they_run_from() {
         let cfg = DeviceConfig::parse(include_str!("../../../devices/ishtar.toml")).unwrap();
         let [report, sensor, listeners, ..] = &cfg.services[..] else { panic!("ishtar keeps several programs running") };
@@ -1024,5 +1160,70 @@ mod tests {
         assert!(!sensor.uses(Path::new("/mnt/system")), "its /system/lib64 is the recovery's own");
         assert!(!report.uses(Path::new("/vendor")));
         assert!(listeners.uses(Path::new("/vendor")));
+    }
+
+    #[test]
+    fn socrates_calibration_runs_before_the_wlan_is_enabled_with_private_ram_data() {
+        let cfg = DeviceConfig::parse(include_str!("../../../devices/socrates.toml")).unwrap();
+        assert!(cfg.modules.load.iter().any(|n| n == "qca_cld3_kiwi_v2"), "CNSS's device exists when its daemon starts");
+        let paths: Vec<_> = cfg.services.iter().map(|s| s.path.as_str()).collect();
+        let qrtr = paths.iter().position(|p| *p == "/vendor/bin/qrtr-ns").unwrap();
+        let cnss = paths.iter().position(|p| *p == "/vendor/bin/cnss-daemon").unwrap();
+        assert!(qrtr < cnss);
+        assert_eq!(cfg.services[qrtr].args, ["-f"], "supervise the foreground name service");
+        let calibration = &cfg.services[cnss];
+        assert_eq!(calibration.args, ["-n"]);
+        assert_eq!(calibration.user.as_deref(), Some("system"));
+        assert_eq!(calibration.capabilities, ["NET_ADMIN"]);
+        assert!(calibration.memory_data, "calibration never writes the installed userdata");
+        assert!(cfg.services.iter().enumerate().all(|(i, s)| !s.memory_data || i == cnss), "only CNSS gets its own data tree");
+        let wlan = cfg.wlan.unwrap();
+        assert_eq!(wlan.writes, [Write { path: "/sys/kernel/cnss/fs_ready".into(), value: "1".into() }], "calibration begins when the WLAN is turned on");
+        assert!(!wlan.firmware[0].optional, "the WLAN settings are required");
+        assert!(wlan.firmware[1].optional, "the separate persist MAC file is absent on the tested phone");
+    }
+
+    #[test]
+    fn only_socrates_requests_a_panel_resume_when_the_ui_starts() {
+        let cfg: DeviceConfig = toml::from_str(include_str!("../../../devices/socrates.toml")).unwrap();
+        assert!(cfg.display.reset_on_start);
+        let legacy: DeviceConfig = toml::from_str(include_str!("../../../devices/ishtar.toml")).unwrap();
+        assert!(!legacy.display.reset_on_start, "existing devices keep their startup sequence");
+        assert!(!Display::default().reset_on_start);
+    }
+
+    #[test]
+    fn socrates_starts_its_installed_hidl_boot_control() {
+        let cfg: DeviceConfig = toml::from_str(include_str!("../../../devices/socrates.toml")).unwrap();
+        let service = cfg.services.iter().find(|s| s.path == "/vendor/bin/hw/android.hardware.boot@1.2-service").unwrap();
+        assert_eq!(service.ready_hardware_service.as_deref(), Some("android.hardware.boot@1.2::IBootControl/default"));
+        assert_eq!(service.user.as_deref(), Some("root"));
+        assert_eq!(service.groups, ["root"]);
+    }
+
+    #[test]
+    fn only_socrates_scales_its_made_haptic_samples() {
+        let cfg: DeviceConfig =
+            toml::from_str(include_str!("../../../devices/socrates.toml")).unwrap();
+        let motor = cfg.haptics.unwrap();
+        assert!(motor.scale_samples);
+        assert_eq!(motor.click, None);
+        assert_eq!(
+            motor.strength,
+            Strength {
+                lightest: 0.15,
+                strongest: 1.0
+            }
+        );
+        for source in [
+            include_str!("../../../devices/ishtar.toml"),
+            include_str!("../../../devices/nezha.toml"),
+        ] {
+            let cfg: DeviceConfig = toml::from_str(source).unwrap();
+            assert!(
+                !cfg.haptics.unwrap().scale_samples,
+                "existing profiles retain magnitude scaling"
+            );
+        }
     }
 }

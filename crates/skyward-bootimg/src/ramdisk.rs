@@ -53,7 +53,11 @@ impl Ramdisk {
     /// boot images carry.
     pub fn decode(compressed: &[u8]) -> Result<Self> {
         let mut cpio = Vec::new();
-        lz4_flex::frame::FrameDecoder::new(compressed).read_to_end(&mut cpio).context("lz4 decode")?;
+        if compressed.starts_with(&LZ4_LEGACY_MAGIC.to_le_bytes()) {
+            crate::LegacyDecoder::new(compressed).read_to_end(&mut cpio).context("legacy lz4 decode")?;
+        } else {
+            lz4_flex::frame::FrameDecoder::new(compressed).read_to_end(&mut cpio).context("lz4 decode")?;
+        }
         let mut entries = Vec::new();
         let mut rest = Cursor::new(cpio.as_slice());
         loop {

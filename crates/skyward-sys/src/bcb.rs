@@ -171,6 +171,13 @@ impl Bcb {
         } else {
             Work::Menu
         };
+        // A mount failure, including a version-incompatible metadata key,
+        // is not the owner's consent to erase otherwise readable data.
+        // Android may pair this reason with --wipe_data; present the same
+        // confirmation as RescueParty instead of starting a reset.
+        if r.reason.as_deref() == Some("fs_mgr_mount_all") && matches!(r.work, Work::WipeData { .. }) {
+            r.work = Work::PromptWipeData;
+        }
         r
     }
 
@@ -391,6 +398,18 @@ mod tests {
     }
 
     const WIPE_DATA: Work = Work::WipeData { reformat: None };
+
+    #[test]
+    fn a_mount_failure_never_grants_permission_to_erase_data() {
+        for wipe in ["--wipe_data", "--format_data"] {
+            let r = asked("boot-recovery", &[wipe, "--reason=fs_mgr_mount_all"]);
+            assert_eq!(r.work, Work::PromptWipeData);
+            assert_eq!(r.reason.as_deref(), Some("fs_mgr_mount_all"));
+        }
+        assert_eq!(asked("boot-recovery", &["--wipe_data", "--reason=MasterClearConfirm"]).work, WIPE_DATA);
+        let update = asked("boot-recovery", &["--update_package=/cache/update.zip", "--wipe_data", "--reason=fs_mgr_mount_all"]);
+        assert!(matches!(update.work, Work::Update(_)), "unrelated request precedence stays unchanged");
+    }
 
     #[test]
     fn a_factory_reset_from_the_settings_erases_data() {

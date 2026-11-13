@@ -177,6 +177,12 @@ enum Cmd {
         /// Read the service's hardware information without opening any key.
         #[arg(long, conflicts_with = "alias")]
         info_only: bool,
+        /// Explicit diagnostic: permit the one upgradeKey retry of the
+        /// metadata wrapping key in memory. No disk key is rewritten,
+        /// but the secure world may change internal state. Never enables
+        /// upgrades on the data or UI decryption paths.
+        #[arg(long, conflicts_with_all = ["info_only", "alias"])]
+        upgrade_memory: bool,
         #[arg(long, default_value = "/metadata/vold/metadata_encryption/key")]
         key: PathBuf,
         /// Report instead what the key service keeps under this name, such
@@ -344,9 +350,10 @@ fn main() -> Result<()> {
             Ok(())
         }
         #[cfg(target_os = "android")]
-        Cmd::Keymint { key, alias, info_only } => {
+        Cmd::Keymint { key, alias, info_only, upgrade_memory } => {
             let binder = skyward_binder::driver::Binder::open()?;
-            let service = skyward_crypto::keymint::KeyMint::open(&binder)?.without_upgrades();
+            let service = skyward_crypto::keymint::KeyMint::open(&binder)?;
+            let service = if upgrade_memory { service } else { service.without_upgrades() };
             let hw = service.hardware()?;
             println!("keymint {} version {} at security level {} by {}", hw.name, hw.version, hw.security_level, hw.author);
             if info_only {
@@ -365,8 +372,12 @@ fn main() -> Result<()> {
                 return Ok(());
             }
             let stored = skyward_crypto::keystore::StoredKey::load(&key)?;
-            for (tag, value) in stored.authorizations(&service)? {
-                println!("  tag {tag} = {value}");
+            if upgrade_memory {
+                println!("explicit in-memory upgrade retry allowed; disk key files are not rewritten");
+            } else {
+                for (tag, value) in stored.authorizations(&service)? {
+                    println!("  tag {tag} = {value}");
+                }
             }
             let raw = stored.unwrap(skyward_crypto::keystore::Unwrap::Hardware(&service))?;
             println!("{} holds a key of {} bytes", key.display(), raw.len());

@@ -1055,6 +1055,17 @@ pub fn run(cfg: &DeviceConfig, programs: &[Service], font: &Path, mono: &Path, r
     let fonts = Fonts::load(font, 0, mono)?;
     let mut surface = KmsSurface::open("/dev/dri/card0")?;
     let (w, h) = surface.size();
+    // A touch controller that follows the panel wakes as the panel goes
+    // from rest to running, and at no other time. The recovery service
+    // running again finds it as the earlier run left it, at rest where the
+    // panel rested then, so the panel is put to rest and woken with a dark
+    // frame, as every later wake wakes it, before the touchscreen is taken
+    // in and told its settings: a controller at rest answers none of them.
+    if skyward_sys::runs_again() {
+        surface.rest()?;
+        surface.present(&Canvas::new(w, h))?;
+        surface.settle()?;
+    }
     eprintln!("display {}", surface.describe());
     let mut inputs = Inputs::open(w, h, cfg.touch.writes.clone())?;
     let started = Instant::now();

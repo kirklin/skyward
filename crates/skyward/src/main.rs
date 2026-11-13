@@ -27,6 +27,8 @@ mod readings;
 mod relabel;
 #[cfg(target_os = "android")]
 mod secure;
+#[cfg(any(target_os = "android", all(test, target_os = "linux")))]
+mod service_mounts;
 #[cfg(target_os = "android")]
 mod services;
 #[cfg(target_os = "android")]
@@ -102,6 +104,16 @@ enum Cmd {
     Mount,
     /// Unmount what `mount` mounted and remove its device-mapper devices.
     Umount,
+    /// Report partitions kept by private service mount namespaces. With
+    /// --cycle, test the installer's detach and immediately remount them
+    /// read-only, without running an installer or writing any partition.
+    #[cfg(target_os = "android")]
+    InstallMounts {
+        #[arg(long, default_value = "/skyward/device.toml")]
+        config: String,
+        #[arg(long)]
+        cycle: bool,
+    },
     /// Print where an update stands: its state, the slot it came from, each
     /// snapshot as libsnapshot keeps it and as the kernel maps it, and the
     /// kernel's snapshot targets.
@@ -280,6 +292,8 @@ fn main() -> Result<()> {
         }
         Cmd::Umount => skyward_vab::unmount_partitions(booted_slot()?),
         #[cfg(target_os = "android")]
+        Cmd::InstallMounts { config, cycle } => install_mounts(&config, cycle),
+        #[cfg(target_os = "android")]
         Cmd::Services { config } => {
             let props = skyward_info::installed_props(booted_slot()?)?;
             let mut services = DeviceConfig::load(&config)?.services;
@@ -429,6 +443,63 @@ fn main() -> Result<()> {
 
 fn booted_slot() -> Result<skyward_vab::Slot> {
     skyward_vab::current_slot()?.context("not an A/B device")
+}
+
+/// Exercise only the installer's mount preparation, restoring the system
+/// mounts even if detach fails. Locked files live until this command ends;
+/// it must not leave an installer to run after that.
+#[cfg(target_os = "android")]
+fn install_mounts(config: &str, cycle: bool) -> Result<()> {
+    use anyhow::ensure;
+    use std::fs;
+    let cfg = DeviceConfig::load(config)?;
+    ensure!(
+        skyward_sys::prop("ro.product.device").as_deref() == Some(cfg.device.codename.as_str()),
+        "the configuration is for another device"
+    );
+    let slot = booted_slot()?;
+    let props = skyward_info::installed_props(slot)?;
+    let services: Vec<_> = cfg.services.into_iter().filter(|s| s.runs_on(&props)).collect();
+    let mounted = skyward_vab::mounted_partitions(slot)?;
+    for point in services::private_mounts(&services, &mounted)? {
+        println!("kept by a private namespace: {}", point.display());
+    }
+    if !cycle {
+        return Ok(());
+    }
+    let recovery = services::running("/system/bin/recovery").context("the recovery service is not running")?;
+    ensure!(
+        fs::read_link(format!("/proc/{recovery}/ns/mnt"))? == fs::read_link("/proc/self/ns/mnt")?,
+        "not in the recovery's mount namespace"
+    );
+    ensure!(skyward_vab::snapshot_state()? == SnapshotState::None, "an update snapshot is outstanding");
+    for process in procfs::process::all_processes().context("list running processes")? {
+        let process = process.context("open a running process")?;
+        let args = match process.cmdline() {
+            Ok(args) => args,
+            Err(procfs::ProcError::NotFound(_)) => continue,
+            Err(e) => return Err(e).context("check for running installers"),
+        };
+        ensure!(
+            !args.iter().any(|a| matches!(
+                Path::new(a).file_name().and_then(|n| n.to_str()),
+                Some("update-binary" | "update_engine" | "update_engine_sideload" | "updater")
+            )),
+            "an installer is running"
+        );
+    }
+    let busy = services::pin(&services, &mounted)?;
+    let detached = skyward_vab::release_partitions(slot, &busy).context("detach the installed system");
+    let restored = skyward_vab::mount_partitions(slot).context("restore the read-only system mounts");
+    match (detached, restored) {
+        (Ok(()), Ok(mounts)) => {
+            println!("detach succeeded; restored {} read-only system mounts; no installer was run", mounts.partitions.len());
+            Ok(())
+        }
+        (Err(e), Ok(_)) => Err(e.context("read-only system mounts restored after detach failed")),
+        (Ok(()), Err(e)) => Err(e),
+        (Err(e), Err(r)) => Err(e.context(format!("restoring the system mounts failed too: {r:#}"))),
+    }
 }
 
 fn lp(super_dev: &Path, slot: Option<u32>) -> Result<()> {

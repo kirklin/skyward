@@ -1,3 +1,4 @@
+use crate::service_mounts::{kept_mounted, retained_mounts};
 use anyhow::{bail, ensure, Context, Result};
 use procfs::process::{FDTarget, MMapPath, Process};
 use skyward_config::Service;
@@ -7,6 +8,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::io;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::unix::fs::MetadataExt;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -269,11 +271,36 @@ fn private_memory_data(uid: libc::uid_t, gid: libc::gid_t) -> io::Result<()> {
     Ok(())
 }
 
+/// Partitions still mounted in a running service's private namespace,
+/// including a memory-data service that has no file open on them. Removing
+/// the recovery's mount alone cannot release their device-mapper devices.
+pub fn private_mounts(services: &[Service], mounted: &[Mounted]) -> Result<Vec<PathBuf>> {
+    let ours = fs::read_link("/proc/self/ns/mnt").context("read the recovery's mount namespace")?;
+    let mut devices = BTreeSet::new();
+    for s in services.iter().filter(|s| !s.oneshot) {
+        let Some(pid) = running(&s.path) else { continue };
+        let process = Process::new(pid as i32).with_context(|| format!("open process {pid}"))?;
+        devices.extend(kept_mounted(fs::read_link(format!("/proc/{pid}/ns/mnt")), &ours, || {
+            process.mountinfo().with_context(|| format!("read the mounts of {}", s.path))
+        })?);
+    }
+    let mounted = mounted
+        .iter()
+        .map(|m| {
+            let device = fs::metadata(&m.device).with_context(|| format!("stat {}", m.device.display()))?.rdev();
+            Ok((device, m.mount_point.clone()))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(retained_mounts(&devices, &mounted))
+}
+
 /// Lock in memory every file the running programs have mapped or open on
 /// the `mounted` partitions, so they keep working once those partitions
-/// are written over, and give the mount points the files are on. The
-/// locked mappings stay for the rest of the recovery's life.
+/// are written over, and give the mount points kept by files or private
+/// mount namespaces. The locked mappings stay for the rest of the
+/// recovery's life.
 pub fn pin(services: &[Service], mounted: &[Mounted]) -> Result<Vec<PathBuf>> {
+    let mut busy = private_mounts(services, mounted)?;
     let mut files = BTreeSet::new();
     // A program run once has ended, and one between restarts has nothing in
     // memory to keep either.
@@ -291,7 +318,6 @@ pub fn pin(services: &[Service], mounted: &[Mounted]) -> Result<Vec<PathBuf>> {
             }
         }
     }
-    let mut busy: Vec<PathBuf> = Vec::new();
     for file in files {
         let Some(m) = mounted.iter().find(|m| file.starts_with(&m.mount_point)) else { continue };
         if !fs::metadata(&file).with_context(|| format!("stat {}", file.display()))?.is_file() {

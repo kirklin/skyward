@@ -840,12 +840,11 @@ mod tests {
     use super::*;
     use skyward_crypto::fscrypt::{self, NAME_BYTES};
 
-    /// A folder for a test, in the temporary folder. On the phone that is
-    /// the folder the users' shared storage is in, /data/media: on the data
-    /// partition, and encrypted under no key of its own, so a folder in it
-    /// takes a key the way each user's own folder there does.
+    /// A folder for a test, in the folder the users' shared storage is in:
+    /// on the data partition, and encrypted under no key of its own, so a
+    /// folder in it takes a key the way each user's own folder there does.
     fn scratch(test: &str) -> PathBuf {
-        let at = std::env::temp_dir().join(format!("skyward-wipe-{test}-{}", std::process::id()));
+        let at = Path::new(data::SHARED_STORAGE).join(format!("skyward-wipe-{test}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&at);
         fs::create_dir_all(&at).unwrap();
         at

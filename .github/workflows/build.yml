@@ -56,7 +56,7 @@ jobs:
       - name: Test
         run: cargo test --locked --workspace
       - name: Lint what runs on the phone
-        run: cargo ndk -t arm64-v8a --platform 30 clippy --locked -p skyward -p skyward-install -p skyward-systems -p skyward-system-init -- -D warnings
+        run: cargo ndk -t arm64-v8a --platform 30 clippy --locked --workspace --all-targets -- -D warnings
 
   tools:
     name: Build the recovery service and the packer

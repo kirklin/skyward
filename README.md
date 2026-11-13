@@ -243,7 +243,16 @@ Tests and lints run on the computer; what runs only on the phone is linted for i
 ```sh
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
-cargo ndk -t arm64-v8a --platform 30 clippy -p skyward -p skyward-install -p skyward-systems -p skyward-system-init -- -D warnings
+cargo ndk -t arm64-v8a --platform 30 clippy --workspace --all-targets -- -D warnings
+```
+
+The tests whose names start with `on_the_phone` make filesystems, mount them and
+set encryption keys, which only a phone does. With a phone in Skyward attached over
+adb, its data partition open, `cargo ndk` pushes each test program to the phone and
+runs it there, one test at a time:
+
+```sh
+cargo ndk -t arm64-v8a --platform 30 test -p skyward -p skyward-block -p skyward-files -p skyward-mtp on_the_phone -- --test-threads=1
 ```
 
 `skyward-preview` draws the pages on the computer, as PNG files, without a phone:

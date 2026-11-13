@@ -41,6 +41,8 @@ mod systems;
 mod ui;
 #[cfg(target_os = "android")]
 mod updates;
+#[cfg(any(target_os = "android", test))]
+mod waveform;
 #[cfg(target_os = "android")]
 mod wipe;
 #[cfg(target_os = "android")]

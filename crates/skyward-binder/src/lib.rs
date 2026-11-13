@@ -6,3 +6,5 @@ pub mod status;
 
 #[cfg(target_os = "android")]
 pub mod driver;
+#[cfg(any(target_os = "android", test))]
+mod wire;

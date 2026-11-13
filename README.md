@@ -132,8 +132,8 @@ phone's model and codename, such as Xiaomi 17 Ultra (nezha). Check it against
 the slot the phone runs from, with the phone in fastboot mode:
 
 ```sh
-unzip skyward-v0.2.0-nezha-OS4.0.4.0.XPACNXM.zip
-fastboot flash recovery skyward-v0.2.0-nezha-OS4.0.4.0.XPACNXM.img
+unzip skyward-v0.3.0-nezha-OS4.0.4.0.XPACNXM.zip
+fastboot flash recovery skyward-v0.3.0-nezha-OS4.0.4.0.XPACNXM.img
 fastboot reboot recovery
 ```
 

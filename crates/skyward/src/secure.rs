@@ -166,34 +166,6 @@ pub fn libraries() -> Result<Option<PathBuf>> {
 /// Open the bundle of this name where it lies, and give where it is. A
 /// bundle the phone does not carry gives nothing; one already open is left
 /// as it is.
-/// Give the recovery's own library folder the few libraries the phone's
-/// own programs ask for that neither it nor the vendor partition carries,
-/// and open the bundle the lowest of them lie in. A recovery that carries
-/// them already gets nothing.
-pub fn prepare_services() -> Result<()> {
-    let _ = bundle(RUNTIME_BUNDLE)?;
-    for (name, from) in [
-        ("libvndksupport.so", "/mnt/system/system/lib64/libvndksupport.so"),
-        ("libdl_android.so", "/mnt/system/system/lib64/libdl_android.so"),
-        ("libqtigatekeeper.so", "/vendor/lib64/hw/libqtigatekeeper.so"),
-        ("libEseUtils.so", "/vendor/lib64/hw/libEseUtils.so"),
-    ] {
-        let at = Path::new("/system/lib64").join(name);
-        if fs::symlink_metadata(&at).is_err() && Path::new(from).is_file() {
-            let _ = std::os::unix::fs::symlink(from, &at);
-        }
-    }
-    // The secure element's driver makes its own node, which the phone's
-    // init gives to the accounts its services run as; a recovery makes it
-    // root's alone.
-    let node = Path::new("/dev/st54spi_gpio");
-    if node.exists() {
-        let _ = std::os::unix::fs::chown(node, Some(1000), Some(1000));
-        let _ = fs::set_permissions(node, std::os::unix::fs::PermissionsExt::from_mode(0o660));
-    }
-    Ok(())
-}
-
 fn bundle(name: &str) -> Result<Option<PathBuf>> {
     let at = Path::new(BUNDLE_MOUNT).join(name);
     if skyward_block::mount::is_mount_point(&at)? {

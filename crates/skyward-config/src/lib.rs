@@ -661,6 +661,19 @@ mod tests {
     }
 
     #[test]
+    fn warhol_bringup_has_no_guessed_services_or_recovery_partition() {
+        let cfg = DeviceConfig::parse(include_str!("../../../devices/experimental/warhol.toml")).unwrap();
+        assert_eq!(cfg.device.codename, "warhol");
+        assert_eq!((cfg.display.width, cfg.display.height, cfg.display.density), (1280, 2772, 520));
+        assert_eq!(cfg.modules.load, ["xiaomi_touch_warhol", "goodix_core_warhol"]);
+        assert!(cfg.services.is_empty());
+        assert!(cfg.touch.writes.is_empty());
+        assert!(cfg.stock.is_none());
+        assert!(cfg.update.is_none());
+        assert!(cfg.wlan.is_none());
+    }
+
+    #[test]
     fn a_library_for_logd_is_an_absolute_path_to_a_file() {
         let with = |library: &str| DeviceConfig::parse(&format!("[device]\ncodename = \"x\"\n[logd]\nlibraries = [\"{library}\"]\n"));
         assert!(with("/mnt/system/system/lib64/libcap.so").is_ok());

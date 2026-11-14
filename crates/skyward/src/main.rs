@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 #[cfg(target_os = "android")]
 mod backup;
 #[cfg(target_os = "android")]
+mod bringup;
+#[cfg(target_os = "android")]
 mod decrypt;
 #[cfg(target_os = "android")]
 mod filework;
@@ -747,6 +749,23 @@ fn recovery() -> Result<()> {
             skyward_sys::usb::set("none", std::time::Duration::from_secs(5))?;
         }
         skyward_sys::set_prop("sys.usb.config", "adb")?;
+        // This vendor_boot port has no dedicated recovery partition. Its
+        // first build must not process pending OTA/wipe requests or enter
+        // the normal runtime (which can decrypt, merge and write data).
+        #[cfg(target_os = "android")]
+        if Path::new("/skyward/bringup").exists() {
+            let cfg = DeviceConfig::load(Path::new("/").join(ramdisk::CONFIG))?;
+            if let Err(e) = bringup::run(&cfg) {
+                let why = format!("warhol bring-up stopped: {e:#}");
+                let _ = skyward_sys::kmsg(&why);
+                let _ = std::fs::write("/tmp/warhol-bringup-error.txt", why);
+            }
+            // Keep adbd reachable when KMS/input cannot start. Do not enter
+            // a recovery-service restart loop or fall back to the installer.
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(30));
+            }
+        }
         let misc = bcb::misc();
         let message = bcb::read(&misc)?;
         let request = message.request();

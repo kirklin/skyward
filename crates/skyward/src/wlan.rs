@@ -40,11 +40,6 @@ const WIFI: u32 = 1010;
 
 /// How long the driver may take to make its interface, the chip's firmware
 /// loading meanwhile.
-/// How many times the supplicant is started before it is taken as unable
-/// to run: one ends at once while the service directory has not yet read
-/// the description of what it registers.
-const SUPPLICANT_TRIES: u32 = 8;
-
 const INTERFACE_WAIT: Duration = Duration::from_secs(20);
 
 /// How long the supplicant may take to open its control socket.
@@ -688,46 +683,27 @@ fn start_supplicant(cfg: &Config, libraries: Option<&Path>) -> Result<Child> {
     if let Some(dir) = libraries {
         path.push(dir.to_string_lossy().into_owned());
     }
-    // It ends at once where the service directory has not yet read the
-    // description of the service it registers, which the recovery writes as
-    // it starts and the directory reads when it starts again: it is started
-    // a few more times, as the phone's own init starts one that ends at once.
-    let mut tries = 0;
-    let child = loop {
-        let mut child = Process::new(&cfg.supplicant)
-            .args(["-i", &cfg.interface, "-D", "nl80211", "-c"])
-            .arg(&settings)
-            .env("LD_LIBRARY_PATH", path.join(":"))
-            .current_dir("/")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .with_context(|| format!("start {}", cfg.supplicant))?;
-        let until = Instant::now() + SOCKET_WAIT;
-        let mut gone = None;
-        while !socket.exists() {
-            if let Some(status) = child.try_wait().context("look at wpa_supplicant")? {
-                gone = Some(status);
-                break;
-            }
-            if Instant::now() >= until {
-                end(&mut child, None);
-                bail!("wpa_supplicant opened no control socket in {} seconds", SOCKET_WAIT.as_secs());
-            }
-            thread::sleep(Duration::from_millis(100));
+    let mut child = Process::new(&cfg.supplicant)
+        .args(["-i", &cfg.interface, "-D", "nl80211", "-c"])
+        .arg(&settings)
+        .env("LD_LIBRARY_PATH", path.join(":"))
+        .current_dir("/")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .with_context(|| format!("start {}", cfg.supplicant))?;
+    let until = Instant::now() + SOCKET_WAIT;
+    while !socket.exists() {
+        if let Some(status) = child.try_wait().context("look at wpa_supplicant")? {
+            bail!("wpa_supplicant ended as it started: {status}");
         }
-        match gone {
-            None => break child,
-            Some(status) => {
-                tries += 1;
-                if tries >= SUPPLICANT_TRIES {
-                    bail!("wpa_supplicant ended as it started: {status}");
-                }
-                thread::sleep(Duration::from_millis(300));
-            }
+        if Instant::now() >= until {
+            end(&mut child, None);
+            bail!("wpa_supplicant opened no control socket in {} seconds", SOCKET_WAIT.as_secs());
         }
-    };
+        thread::sleep(Duration::from_millis(100));
+    }
     Ok(child)
 }
 

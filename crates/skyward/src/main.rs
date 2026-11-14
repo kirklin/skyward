@@ -600,10 +600,18 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
     agree_on_the_notes_key(&registering)
 }
 
+/// How long a file handed over may take to be there once the modules are
+/// loaded: a driver makes its files as it takes its device up, and ueventd
+/// makes the device's node once the kernel has told it of the device,
+/// either of which may come after the load of the module returns.
+#[cfg(target_os = "android")]
+const FILES_MADE: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Give each file the phone's own init hands over as it boots to the
 /// account it names, with the mode it gives, as its chown and chmod lines
-/// do. The files are the ones the modules just loaded made, which the
-/// phone's own programs open as those accounts.
+/// do. The files are the ones the modules just loaded make, which the
+/// phone's own programs open as those accounts; one not there yet is
+/// waited for.
 #[cfg(target_os = "android")]
 fn hand_over(owners: &[skyward_config::Owners]) -> Result<usize> {
     use skyward_sys::ueventd;
@@ -614,15 +622,7 @@ fn hand_over(owners: &[skyward_config::Owners]) -> Result<usize> {
     for run in owners {
         let (uid, gid) = (id(&run.user)?, id(&run.group)?);
         for path in &run.paths {
-            // The module that makes the node probes on the kernel's own
-            // thread, after the load returns, and a phone whose probe is
-            // slower than the load makes the node a moment later: wait for
-            // it as the phone's own init waits for what it hands over.
-            let mut waited = std::time::Duration::ZERO;
-            while !Path::new(path).exists() && waited < std::time::Duration::from_secs(5) {
-                std::thread::sleep(std::time::Duration::from_millis(50));
-                waited += std::time::Duration::from_millis(50);
-            }
+            skyward_sys::wait_file(Path::new(path), FILES_MADE).context("wait for a file the modules just loaded make")?;
             std::os::unix::fs::chown(path, Some(uid), Some(gid)).with_context(|| format!("give {path} to {}:{}", run.user, run.group))?;
             std::fs::set_permissions(path, std::fs::Permissions::from_mode(run.mode))
                 .with_context(|| format!("give {path} the mode {:o}", run.mode))?;

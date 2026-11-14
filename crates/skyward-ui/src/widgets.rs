@@ -163,10 +163,11 @@ pub(crate) fn wrap(c: &Canvas, face: &Face, text: &str, px: f32, max_w: f32) -> 
                     None => {}
                 }
             }
-            if let Some((at, before)) = line[..split].char_indices().last() {
-                if at > 0 && NO_LINE_END.contains(before) {
-                    split = at;
-                }
+            if let Some((at, before)) = line[..split].char_indices().last()
+                && at > 0
+                && NO_LINE_END.contains(before)
+            {
+                split = at;
             }
             let rest = line.split_off(split);
             lines.push(line.trim_end().to_string());

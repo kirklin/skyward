@@ -71,11 +71,11 @@ pub fn spots(t: &Theme, frame: &Frame) -> Vec<Spot> {
         let dots = widgets::pattern_dots(cx, cy, span).into_iter().enumerate();
         page.extend(dots.map(|(i, (x, y))| Spot { stop: Stop::Dot(i), group: Group::Page, rect: Rect::new(x - reach, y - reach, reach * 2.0, reach * 2.0) }));
     }
-    if let Some(rows) = &frame.rows {
-        if let Some(action) = rows.action {
-            let w = frame.canvas.w as f32;
-            page.extend((0..rows.count()).map(|i| Spot { stop: Stop::Hit(action(i)), group: Group::Page, rect: rows.rect(i, w) }));
-        }
+    if let Some(rows) = &frame.rows
+        && let Some(action) = rows.action
+    {
+        let w = frame.canvas.w as f32;
+        page.extend((0..rows.count()).map(|i| Spot { stop: Stop::Hit(action(i)), group: Group::Page, rect: rows.rect(i, w) }));
     }
     page.sort_by(|a, b| a.rect.y.total_cmp(&b.rect.y).then(across(a, b)));
     out.extend(page);

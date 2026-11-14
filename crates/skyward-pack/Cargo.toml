@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow = { workspace = true }
 clap = { version = "4.5.51", features = ["derive"] }
+hex = { workspace = true }
 # Reads the filesystem of a partition where it lies in a package, through
 # whatever gives it the partition's bytes.
 rust-fs-core = "0.4.4"

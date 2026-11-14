@@ -13,6 +13,8 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
 libc = { workspace = true }
 skyward-block = { path = "../skyward-block" }
 skyward-bootimg = { path = "../skyward-bootimg" }

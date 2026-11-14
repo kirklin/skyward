@@ -139,20 +139,16 @@ mod tests {
     fn a_prefixed_hash_is_the_block_of_prefix_then_the_bytes() {
         let secdiscardable = hash_with_prefix(SECDISCARDABLE_PREFIX, b"test");
         assert_eq!(
-            hex(&secdiscardable),
+            hex::encode(secdiscardable),
             "d29166a7b1dc78f68cdcb0e473a2d53421c932ee938167a2f41784e7f52adde2\
              02256f9eb3dcba42f08eef5be27bc87090e56c5b9099996f502939ab8961abcf"
         );
         let keygen = hash_with_prefix(KEYGEN_PREFIX, b"secret");
         assert_eq!(
-            hex(&keygen),
+            hex::encode(keygen),
             "1f0f944ae6b818481d8026af59a336cd84d6847475fa28196fc424a23794f21b\
              bae4f35a8be077f2c3fed1e4e5adbb58f1f97d522f5131b8cedcf4102478049d"
         );
-    }
-
-    fn hex(bytes: &[u8]) -> String {
-        bytes.iter().map(|b| format!("{b:02x}")).collect()
     }
 
     /// Wrap a key the way Android does, to read it back.

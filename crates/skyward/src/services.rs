@@ -73,10 +73,10 @@ pub fn start(programs: &[Started], libraries: Option<&Path>) -> Result<()> {
         // A property the program an earlier run of the recovery service
         // started has set says nothing of the one started now, which the
         // programs after it wait for.
-        if let Some(property) = s.ready_property.as_ref().filter(|_| running(&s.path).is_none()) {
-            if skyward_sys::prop(property).is_some_and(|value| !value.is_empty()) {
-                skyward_sys::set_prop(property, "")?;
-            }
+        if let Some(property) = s.ready_property.as_ref().filter(|_| running(&s.path).is_none())
+            && skyward_sys::prop(property).is_some_and(|value| !value.is_empty())
+        {
+            skyward_sys::set_prop(property, "")?;
         }
         let waiting = s.clone();
         let name = Path::new(&s.path).file_name().map_or_else(|| s.path.clone(), |n| n.to_string_lossy().into_owned());
@@ -330,22 +330,22 @@ fn ready(s: &Service) -> Result<()> {
     };
     let until = Instant::now() + READY_TIMEOUT;
     loop {
-        if let Some(name) = &s.ready_property {
-            if skyward_sys::prop(name).is_some_and(|v| !v.is_empty()) {
-                return Ok(());
-            }
+        if let Some(name) = &s.ready_property
+            && skyward_sys::prop(name).is_some_and(|v| !v.is_empty())
+        {
+            return Ok(());
         }
         // Either directory may itself be starting again, and until it
         // answers nothing can be looked up in it.
-        if let Some(name) = &s.ready_service {
-            if registered(name) {
-                return Ok(());
-            }
+        if let Some(name) = &s.ready_service
+            && registered(name)
+        {
+            return Ok(());
         }
-        if let Some(name) = &s.ready_hardware_service {
-            if registered_hardware(name) {
-                return Ok(());
-            }
+        if let Some(name) = &s.ready_hardware_service
+            && registered_hardware(name)
+        {
+            return Ok(());
         }
         if Instant::now() >= until {
             bail!("{} {waited_on} in {} seconds", s.path, READY_TIMEOUT.as_secs());

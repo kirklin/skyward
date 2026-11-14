@@ -24,7 +24,7 @@ use skyward_install::{Outcome, Reflash, Refusal, Stage};
 use skyward_net::download::Progress;
 use skyward_net::supplicant::Security;
 use skyward_net::wlan::{Bands, Network, Power, Stage as Joining};
-use skyward_systems::Who;
+use skyward_systems::{Held, Who};
 use skyward_vab::{Slot, Standing};
 use std::path::Path;
 
@@ -1960,16 +1960,17 @@ pub fn restore_backup(cx: &Ctx) -> Frame {
                 }
                 // The boot partitions' vbmeta checks the system's: one of
                 // another version without the other may not start.
-                if let (Some(was), Some(now)) = (&held.system, &i.os_version) {
-                    if was != now && chosen[0] != chosen[1] {
-                        let warn = tr!(
-                            l,
-                            "该备份来自 {was}，本机当前为 {now}。仅恢复启动分区或系统分区中的一项，可能导致无法开机。",
-                            "這份備份來自 {was}，本機目前為 {now}。僅還原啟動分割區或系統分割區中的一項，可能導致無法開機。",
-                            "This backup is from {was}, and this phone runs {now}. Restoring only one of the boot and system partitions may keep the phone from starting."
-                        );
-                        y = widgets::footnote(&mut c, t, f, y, &warn);
-                    }
+                if let (Some(was), Some(now)) = (&held.system, &i.os_version)
+                    && was != now
+                    && chosen[0] != chosen[1]
+                {
+                    let warn = tr!(
+                        l,
+                        "该备份来自 {was}，本机当前为 {now}。仅恢复启动分区或系统分区中的一项，可能导致无法开机。",
+                        "這份備份來自 {was}，本機目前為 {now}。僅還原啟動分割區或系統分割區中的一項，可能導致無法開機。",
+                        "This backup is from {was}, and this phone runs {now}. Restoring only one of the boot and system partitions may keep the phone from starting."
+                    );
+                    y = widgets::footnote(&mut c, t, f, y, &warn);
                 }
                 let (label, danger) = confirm_label(Confirm::Restore, cx.state);
                 let track = widgets::confirm(&mut c, t, f, y + t.m.dp(24.0), label, danger, s.confirm);
@@ -2914,10 +2915,10 @@ pub fn wlan(cx: &Ctx) -> Frame {
                 out.extend(hits(&joined.rows, &[Action::OpenJoined]));
                 out.push(Hit { rect: widgets::round_button(t, joined.rows[0]), action: Action::OpenJoined });
                 y = joined.bottom;
-                if let Joining::Connected(link) = &j.stage {
-                    if let Some(note) = link.reach.as_ref().and_then(|r| fmt::reach(l, r)) {
-                        y = widgets::footnote(&mut c, t, f, y, &note);
-                    }
+                if let Joining::Connected(link) = &j.stage
+                    && let Some(note) = link.reach.as_ref().and_then(|r| fmt::reach(l, r))
+                {
+                    y = widgets::footnote(&mut c, t, f, y, &note);
                 }
             }
             let others: Vec<(usize, &Network)> =
@@ -3713,11 +3714,13 @@ pub fn systems(cx: &Ctx) -> Frame {
     let starts = starting(systems);
     let chosen = s.system_pick.unwrap_or(starts);
     let second_role = l.pick(SECOND_SYSTEM);
+    // Boot partitions that hold a second system's image nothing is kept of
+    // start neither system the page knows.
     let main = SystemCard {
         role: l.pick(MAIN_SYSTEM),
         name: &systems.installed.name,
         detail: systems.installed.version.as_deref().unwrap_or_default(),
-        mark: SystemMark::Check(chosen == Who::Installed),
+        mark: SystemMark::Check(chosen == Who::Installed && systems.held != Held::Unrecorded),
     };
     let second = match &systems.other {
         Some(other) => SystemCard { role: second_role, name: &other.name, detail: &other.version, mark: SystemMark::Check(chosen == Who::Other) },
@@ -3756,6 +3759,25 @@ pub fn systems(cx: &Ctx) -> Frame {
         "Tap a card to pick a system. Switching rewrites only the boot and init_boot partitions of the slot that starts next, and leaves the main system's other partitions as they are. The second system's files are kept in the data partition.",
     ]);
     y = widgets::footnote(&mut c, t, f, y, what);
+    match systems.held {
+        Held::Recorded => {}
+        Held::Rewritten => {
+            let note = l.pick([
+                "Skyward 写入第二系统的启动镜像之后，启动分区被改写过。选择主系统并滑动确认，会用保存的主系统启动镜像覆盖现在的内容；在此之前，安装、清除和备份都不会进行。",
+                "Skyward 寫入第二系統的啟動映像檔之後，啟動分割區被改寫過。選擇主系統並滑動確認，會用儲存的主系統啟動映像檔覆蓋現在的內容；在此之前，安裝、清除和備份都不會進行。",
+                "Something else has written the boot partitions since Skyward put the second system's boot images there. Picking the main system and sliding to confirm writes the main system's saved boot images over what is there now; until then, nothing is installed, wiped or backed up.",
+            ]);
+            y = widgets::footnote(&mut c, t, f, y, note);
+        }
+        Held::Unrecorded => {
+            let note = l.pick([
+                "启动分区里是第二系统的启动镜像，Skyward 保存的记录已经不存在，无法写回主系统的启动镜像。请重新刷入主系统的 boot 和 init_boot 镜像。",
+                "啟動分割區裡是第二系統的啟動映像檔，Skyward 儲存的記錄已經不存在，無法寫回主系統的啟動映像檔。請重新刷入主系統的 boot 和 init_boot 映像檔。",
+                "The boot partitions hold a second system's boot images, and what Skyward kept of them is gone, so it can't put the main system's back. Flash the main system's boot and init_boot images again.",
+            ]);
+            y = widgets::footnote(&mut c, t, f, y, note);
+        }
+    }
     if systems.other.is_some() && systems.changed {
         let note = l.pick([
             "安装第二系统后，主系统的 vendor_boot 或 dtbo 分区已改变，第二系统可能无法正常启动。",

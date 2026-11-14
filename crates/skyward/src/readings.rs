@@ -4,8 +4,9 @@
 use anyhow::{Context, Result};
 use skyward_config::DeviceConfig;
 use skyward_info::{Battery, DeviceInfo};
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use skyward_sys::worker::{self, Told};
+use std::os::fd::RawFd;
+use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -22,22 +23,15 @@ pub enum Reading {
 }
 
 pub struct Readings {
-    taken: Receiver<Reading>,
+    taken: Told<Reading>,
     asks: Sender<()>,
-    /// Readable while readings wait.
-    wake: OwnedFd,
 }
 
 impl Readings {
     /// Start taking the readings of the phone `cfg` describes, the first a
     /// second from now. The thread ends once the screen lets them go.
     pub fn start(cfg: &DeviceConfig) -> Result<Readings> {
-        let mut fds = [0; 2];
-        if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) } != 0 {
-            return Err(std::io::Error::last_os_error()).context("make the readings' wake pipe");
-        }
-        let (wake, signal) = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
-        let (tx, taken) = mpsc::channel();
+        let (tell, taken) = worker::telling().context("make the readings' wake pipe")?;
         let (asks, asked) = mpsc::channel::<()>();
         let cfg = cfg.clone();
         thread::Builder::new()
@@ -62,18 +56,18 @@ impl Readings {
                     } else {
                         Reading::Battery(skyward_info::battery_now(), at)
                     };
-                    if tx.send(reading).is_err() {
+                    if !tell.tell(reading) {
                         return;
                     }
-                    unsafe { libc::write(signal.as_raw_fd(), [1u8].as_ptr().cast(), 1) };
                 }
             })
             .context("start the readings thread")?;
-        Ok(Readings { taken, asks, wake })
+        Ok(Readings { taken, asks })
     }
 
+    /// Readable while readings wait.
     pub fn fd(&self) -> RawFd {
-        self.wake.as_raw_fd()
+        self.taken.fd()
     }
 
     /// Read the battery at once.
@@ -83,8 +77,6 @@ impl Readings {
 
     /// The readings taken since the last call.
     pub fn taken(&self) -> Vec<Reading> {
-        let mut drain = [0u8; 64];
-        while unsafe { libc::read(self.wake.as_raw_fd(), drain.as_mut_ptr().cast(), drain.len()) } > 0 {}
-        self.taken.try_iter().collect()
+        self.taken.take()
     }
 }

@@ -132,8 +132,8 @@ phone's model and codename, such as Xiaomi 17 Ultra (nezha). Check it against
 the slot the phone runs from, with the phone in fastboot mode:
 
 ```sh
-unzip skyward-v0.3.0-nezha-OS4.0.4.0.XPACNXM.zip
-fastboot flash recovery skyward-v0.3.0-nezha-OS4.0.4.0.XPACNXM.img
+unzip skyward-v0.3.1-nezha-OS4.0.4.0.XPACNXM.zip
+fastboot flash recovery skyward-v0.3.1-nezha-OS4.0.4.0.XPACNXM.img
 fastboot reboot recovery
 ```
 
@@ -199,7 +199,7 @@ at the next start and brings Skyward up before anything else.
 
 ## Building
 
-Skyward builds with the stable Rust that `rust-toolchain.toml` names, with its
+Skyward builds with the version of Rust that `rust-toolchain.toml` names, with its
 `aarch64-linux-android` target, the Android NDK r29 and
 [cargo-ndk](https://github.com/bbqsrc/cargo-ndk). The recovery service is built for
 the phone, and the packer for the computer:
@@ -243,7 +243,16 @@ Tests and lints run on the computer; what runs only on the phone is linted for i
 ```sh
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
-cargo ndk -t arm64-v8a --platform 30 clippy -p skyward -p skyward-install -p skyward-systems -p skyward-system-init -- -D warnings
+cargo ndk -t arm64-v8a --platform 30 clippy --workspace --all-targets -- -D warnings
+```
+
+The tests whose names start with `on_the_phone` make filesystems, mount them and
+set encryption keys, which only a phone does. With a phone in Skyward attached over
+adb, its data partition open, `cargo ndk` pushes each test program to the phone and
+runs it there, one test at a time:
+
+```sh
+cargo ndk -t arm64-v8a --platform 30 test -p skyward -p skyward-block -p skyward-files -p skyward-mtp on_the_phone -- --test-threads=1
 ```
 
 `skyward-preview` draws the pages on the computer, as PNG files, without a phone:

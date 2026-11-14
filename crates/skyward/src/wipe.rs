@@ -6,16 +6,16 @@ use skyward_block::fstab::{self, Entry};
 use skyward_block::{erase, mount};
 use skyward_crypto::data::{self, Opening};
 use skyward_sys::bcb;
+use skyward_sys::worker::Worker;
 use skyward_vab::Hold;
 use std::ffi::CString;
 use std::fs;
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::RawFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
-use std::sync::mpsc::{self, Receiver};
-use std::thread::{self, JoinHandle};
+use std::thread;
 use std::time::{Duration, Instant};
 
 const DATA: &str = "/data";
@@ -767,36 +767,22 @@ pub enum Event {
 /// discarding a whole data partition can take minutes, and so can deleting
 /// all a user keeps.
 pub struct Eraser {
-    events: Receiver<Event>,
-    /// Readable while events wait.
-    wake: OwnedFd,
-    thread: Option<JoinHandle<()>>,
+    /// The screen lets it go once it has ended.
+    worker: Worker<Event>,
 }
 
 impl Eraser {
     /// Run `work` on its thread; what it tells, and how it ends, come back
     /// as events.
     pub fn start(work: impl FnOnce(&mut dyn FnMut(Event)) -> Result<(), Stop> + Send + 'static) -> Result<Eraser> {
-        let mut fds = [0; 2];
-        if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) } != 0 {
-            return Err(std::io::Error::last_os_error()).context("make the eraser's wake pipe");
-        }
-        let (wake, signal) = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
-        let (tx, events) = mpsc::channel();
-        let thread = thread::Builder::new()
-            .name("eraser".into())
-            .spawn(move || {
-                let mut tell = |event: Event| {
-                    // The screen only stops listening once it has let the
-                    // eraser go.
-                    let _ = tx.send(event);
-                    unsafe { libc::write(signal.as_raw_fd(), [1u8].as_ptr().cast(), 1) };
-                };
-                let ended = work(&mut tell);
-                tell(Event::Ended(ended));
-            })
-            .context("start the eraser")?;
-        Ok(Eraser { events, wake, thread: Some(thread) })
+        let worker = Worker::start("eraser", move |teller| {
+            let mut tell = |event: Event| {
+                teller.tell(event);
+            };
+            let ended = work(&mut tell);
+            tell(Event::Ended(ended));
+        })?;
+        Ok(Eraser { worker })
     }
 
     /// An eraser that ends at once, as `stop` says.
@@ -804,24 +790,14 @@ impl Eraser {
         Eraser::start(move |_| Err(stop))
     }
 
+    /// Readable while events wait.
     pub fn fd(&self) -> RawFd {
-        self.wake.as_raw_fd()
+        self.worker.fd()
     }
 
     /// The events since the last call.
     pub fn events(&self) -> Vec<Event> {
-        let mut drain = [0u8; 64];
-        while unsafe { libc::read(self.wake.as_raw_fd(), drain.as_mut_ptr().cast(), drain.len()) } > 0 {}
-        self.events.try_iter().collect()
-    }
-}
-
-impl Drop for Eraser {
-    /// The screen lets the eraser go once it has ended.
-    fn drop(&mut self) {
-        if let Some(thread) = self.thread.take() {
-            thread.join().expect("the eraser does not panic");
-        }
+        self.worker.events()
     }
 }
 
@@ -839,13 +815,13 @@ pub fn said(stop: &Stop) -> String {
 mod tests {
     use super::*;
     use skyward_crypto::fscrypt::{self, NAME_BYTES};
+    use std::os::fd::AsRawFd;
 
-    /// A folder for a test, in the temporary folder. On the phone that is
-    /// the folder the users' shared storage is in, /data/media: on the data
-    /// partition, and encrypted under no key of its own, so a folder in it
-    /// takes a key the way each user's own folder there does.
+    /// A folder for a test, in the folder the users' shared storage is in:
+    /// on the data partition, and encrypted under no key of its own, so a
+    /// folder in it takes a key the way each user's own folder there does.
     fn scratch(test: &str) -> PathBuf {
-        let at = std::env::temp_dir().join(format!("skyward-wipe-{test}-{}", std::process::id()));
+        let at = Path::new(data::SHARED_STORAGE).join(format!("skyward-wipe-{test}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&at);
         fs::create_dir_all(&at).unwrap();
         at

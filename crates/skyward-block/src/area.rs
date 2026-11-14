@@ -89,7 +89,7 @@ pub fn new_id() -> Result<String> {
     use std::io::Read;
     let mut bytes = [0u8; 16];
     std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut bytes)).context("read /dev/urandom")?;
-    Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
+    Ok(hex::encode(bytes))
 }
 
 fn unhex(id: &str) -> Result<[u8; 16]> {

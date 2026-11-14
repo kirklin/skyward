@@ -123,7 +123,7 @@ impl Writer {
             Sink::Lz4(encoder) => (encoder.finish().context("finish compressing")?, true),
         };
         let (files, stored) = files.finish().context("write the backup's files")?;
-        Ok(Stored { files, size: self.size, stored, compressed, sha256: hex(&self.digest.finalize()) })
+        Ok(Stored { files, size: self.size, stored, compressed, sha256: hex::encode(self.digest.finalize()) })
     }
 }
 
@@ -193,7 +193,7 @@ impl Reader {
     /// Once all of it is read: whether it is what was stored.
     pub fn check(self, stored: &Stored) -> Result<()> {
         ensure!(self.size == stored.size, "the backup holds {} bytes where {} were stored", self.size, stored.size);
-        let digest = hex(&self.digest.finalize());
+        let digest = hex::encode(self.digest.finalize());
         ensure!(digest == stored.sha256, "the backup does not hold what was stored: its digest is {digest}, {} was stored", stored.sha256);
         Ok(())
     }
@@ -222,11 +222,7 @@ pub fn digest(mut from: impl Read, len: u64, progress: &mut dyn FnMut(u64)) -> i
         done += want as u64;
         progress(done);
     }
-    Ok(hex(&digest.finalize()))
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+    Ok(hex::encode(digest.finalize()))
 }
 
 #[cfg(test)]

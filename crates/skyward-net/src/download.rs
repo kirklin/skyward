@@ -91,16 +91,6 @@ impl std::fmt::Display for NoRoom {
 
 impl std::error::Error for NoRoom {}
 
-/// The bytes free for anyone to write in the filesystem `dir` is on.
-pub fn free(dir: &Path) -> Result<u64> {
-    let c = std::ffi::CString::new(dir.as_os_str().as_encoded_bytes()).context("a path with a NUL")?;
-    let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
-    if unsafe { libc::statvfs(c.as_ptr(), &mut s) } != 0 {
-        return Err(std::io::Error::last_os_error()).with_context(|| format!("read the free space of {}", dir.display()));
-    }
-    Ok(s.f_bavail as u64 * s.f_frsize as u64)
-}
-
 /// The digest, by `D`, of what `file` holds, read from its start.
 fn hash_of<D: Digest>(file: &mut File, total: u64, stop: &AtomicBool, progress: &mut dyn FnMut(Progress)) -> Result<D> {
     let mut hash = D::new();
@@ -118,10 +108,6 @@ fn hash_of<D: Digest>(file: &mut File, total: u64, stop: &AtomicBool, progress: 
         done += n as u64;
         progress(Progress::Checking { done, total });
     }
-}
-
-fn hex(digest: &[u8]) -> String {
-    digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// Download `url` to `path`, carrying on from what an earlier download
@@ -152,7 +138,7 @@ fn fetch_as<D: Digest>(agent: &ureq::Agent, url: &str, path: &Path, sum: &str, s
         file.set_len(0).with_context(|| format!("empty {}", part.display()))?;
         have = 0;
     }
-    let room = free(dir)?;
+    let room = skyward_block::mount::space(dir).with_context(|| format!("read the free space of {}", dir.display()))?.available;
     if total - have > room {
         bail!(NoRoom { needed: total - have, free: room });
     }
@@ -194,7 +180,7 @@ fn fetch_as<D: Digest>(agent: &ureq::Agent, url: &str, path: &Path, sum: &str, s
         }
         file.sync_all().with_context(|| format!("write {} through", part.display()))?;
     }
-    if hex(&hash.finalize()) != sum.to_lowercase() {
+    if hex::encode(hash.finalize()) != sum.to_lowercase() {
         drop(file);
         fs::remove_file(&part).with_context(|| format!("delete {}", part.display()))?;
         bail!(Damaged);
@@ -224,18 +210,12 @@ mod tests {
         fs::write(&path, vec![7u8; CHUNK + 5]).unwrap();
         let mut seen = Vec::new();
         let hash = hash_of::<Md5>(&mut File::open(&path).unwrap(), (CHUNK + 5) as u64, &AtomicBool::new(false), &mut |p| seen.push(p)).unwrap();
-        assert_eq!(hex(&hash.finalize()), hex(&Md5::digest(vec![7u8; CHUNK + 5])));
+        assert_eq!(hash.finalize(), Md5::digest(vec![7u8; CHUNK + 5]));
         assert_eq!(seen.last(), Some(&Progress::Checking { done: (CHUNK + 5) as u64, total: (CHUNK + 5) as u64 }));
         let hash = hash_of::<Sha256>(&mut File::open(&path).unwrap(), (CHUNK + 5) as u64, &AtomicBool::new(false), &mut |_| {}).unwrap();
-        assert_eq!(hex(&hash.finalize()), hex(&Sha256::digest(vec![7u8; CHUNK + 5])));
+        assert_eq!(hash.finalize(), Sha256::digest(vec![7u8; CHUNK + 5]));
         let stopped = hash_of::<Md5>(&mut File::open(&path).unwrap(), 1, &AtomicBool::new(true), &mut |_| {});
         assert!(stopped.unwrap_err().is::<crate::Stopped>());
         fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn free_space_is_read_from_the_filesystem() {
-        assert!(free(&std::env::temp_dir()).unwrap() > 0);
-        assert!(free(Path::new("/no/such/folder")).is_err());
     }
 }

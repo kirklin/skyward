@@ -9,6 +9,13 @@ anyhow = { workspace = true }
 # The recovery carries no time zone files, so the rules come built in.
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-always"] }
 libc = { workspace = true }
+skyward-block = { path = "../skyward-block" }
 skyward-files = { path = "../skyward-files" }
+
+[target.'cfg(target_os = "android")'.dependencies]
 skyward-sys = { path = "../skyward-sys" }
+
+# Folders are followed with inotify, on a computer running Linux as on the
+# phone.
+[target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
 zerocopy = { version = "0.8.63", features = ["derive"] }

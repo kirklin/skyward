@@ -8,6 +8,7 @@ use crate::phone::{Happens, Phone};
 use crate::script::{Program, Socket};
 use anyhow::{bail, ensure, Context, Result};
 use skyward_config::Service;
+use std::path::Path;
 
 /// The key service, and the packages whose services it serves besides: it
 /// is one program behind them all.
@@ -73,22 +74,35 @@ const HARDWARE_DIRECTORY_READY: &str = "hwservicemanager.ready";
 /// the program is on: the recovery's own come before the vendor
 /// partition's, which carries its own copies of the lowest of them, and a
 /// program loading those would not be understood by the recovery's service
-/// directory; the installed system's come last, for the few a program on
-/// the odm partition asks for that neither has. The directory for hardware
-/// services is the installed system's own program and runs on its
-/// libraries alone.
-const VENDOR_LIBRARIES: [&str; 2] = ["/system/lib64", "/vendor/lib64"];
-const ODM_LIBRARIES: [&str; 5] = ["/system/lib64", "/vendor/lib64", "/odm/lib64", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"];
+/// directory; with the vendor partition's comes its folder of hardware
+/// libraries, where Android has a program on either partition look too.
+/// The directory for hardware services is the installed system's own
+/// program and runs on its libraries alone.
+const VENDOR_LIBRARIES: [&str; 3] = ["/system/lib64", "/vendor/lib64", "/vendor/lib64/hw"];
+const ODM_LIBRARIES: [&str; 4] = ["/system/lib64", "/vendor/lib64", "/vendor/lib64/hw", "/odm/lib64"];
 const SYSTEM_LIBRARIES: [&str; 3] = ["/mnt/system/system/lib64/bootstrap", "/mnt/system/system/lib64", "/mnt/system_ext/lib64"];
 
-/// The folders the program a script names `path` finds its libraries in.
-pub(crate) fn libraries_of(path: &str) -> Vec<String> {
-    let libraries: &[&str] = match path.split('/').nth(1) {
-        Some("vendor") => &VENDOR_LIBRARIES,
-        Some("odm") => &ODM_LIBRARIES,
-        _ => &SYSTEM_LIBRARIES,
+/// The installed system's folders, where a program on the vendor or the
+/// odm partition finds the few libraries it asks for that none of its own
+/// folders has: the ones Android lets such a program share with the
+/// system, which a recovery may not carry.
+const SHARED_LIBRARIES: [&str; 2] = ["/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"];
+
+/// The folders the program a script names `path` finds its libraries in,
+/// in the order they are looked in: those of its partition, then `bundle`,
+/// where a recovery has opened the libraries the phone's partitions were
+/// built against, then, for a program on the vendor or the odm partition,
+/// the installed system's. The bundle comes before those: the installed
+/// system carries libraries under the names of the bundle's, built for its
+/// own programs.
+pub(crate) fn libraries_of(path: &str, bundle: Option<&Path>) -> Vec<String> {
+    let (own, shared): (&[&str], &[&str]) = match path.split('/').nth(1) {
+        Some("vendor") => (&VENDOR_LIBRARIES, &SHARED_LIBRARIES),
+        Some("odm") => (&ODM_LIBRARIES, &SHARED_LIBRARIES),
+        _ => (&SYSTEM_LIBRARIES, &[]),
     };
-    libraries.iter().map(|l| l.to_string()).collect()
+    let bundle = bundle.map(|dir| dir.to_string_lossy().into_owned());
+    own.iter().map(|l| l.to_string()).chain(bundle).chain(shared.iter().map(|l| l.to_string())).collect()
 }
 
 /// A program to start, with what init gives it that a recovery has to
@@ -373,7 +387,7 @@ fn started(phone: &Phone, program: &Program, ready: Ready, registers: Vec<String
     let service = Service {
         path: phone.started_from(&program.path),
         args: program.args.clone(),
-        libraries: libraries_of(&program.path),
+        libraries: libraries_of(&program.path, phone.bundle.as_deref()),
         oneshot: false,
         ready_property,
         ready_service,

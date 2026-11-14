@@ -144,6 +144,10 @@ pub struct Phone {
     /// The properties init has when it reads the scripts: the bootloader's,
     /// those it makes of them, and the build's.
     pub properties: HashMap<String, String>,
+    /// Where a recovery has opened the libraries the phone's partitions
+    /// were built against, on a phone that carries them as a bundle of
+    /// their own.
+    pub bundle: Option<PathBuf>,
     /// Every program init knows, each once: a later section of the same
     /// name takes an earlier one's place only where it says it overrides.
     pub programs: Vec<Program>,
@@ -154,15 +158,17 @@ pub struct Phone {
 impl Phone {
     /// Read the scripts and the descriptions of `partitions`, in the order
     /// init reads its partitions, as a phone reads them whose bootloader
-    /// and whose build give it `properties`.
-    pub fn read(partitions: Vec<Partition>, mut properties: HashMap<String, String>) -> Result<Phone> {
+    /// and whose build give it `properties`. `bundle` is where a recovery
+    /// has opened the libraries the partitions were built against, where
+    /// the phone carries them as a bundle of their own.
+    pub fn read(partitions: Vec<Partition>, mut properties: HashMap<String, String>, bundle: Option<&Path>) -> Result<Phone> {
         for (name, from, otherwise) in FROM_BOOTLOADER {
             match properties.get(from).cloned().or(otherwise.map(str::to_string)) {
                 Some(value) => properties.insert(name.to_string(), value),
                 None => properties.remove(name),
             };
         }
-        let mut phone = Phone { partitions, properties, programs: Vec::new(), actions: Vec::new(), services: Vec::new() };
+        let mut phone = Phone { partitions, properties, bundle: bundle.map(Path::to_path_buf), programs: Vec::new(), actions: Vec::new(), services: Vec::new() };
         phone.read_scripts()?;
         phone.read_descriptions()?;
         Ok(phone)
@@ -432,7 +438,7 @@ mod tests {
     #[test]
     fn a_phone_expands_the_properties_it_has_and_falls_back_where_a_script_says_how() {
         let properties = [("ro.boot.hardware", "qcom"), ("ro.boot.product.vendor.sku", "sun")].map(|(name, value)| (name.to_string(), value.to_string()));
-        let phone = Phone::read(Vec::new(), properties.into_iter().collect()).unwrap();
+        let phone = Phone::read(Vec::new(), properties.into_iter().collect(), None).unwrap();
         assert_eq!(phone.expand("/vendor/etc/init/hw/init.${ro.hardware}.rc").as_deref(), Some("/vendor/etc/init/hw/init.qcom.rc"), "init makes it of the bootloader's");
         assert_eq!(phone.expand("init.${ro.boot.product.vendor.sku}.${ro.boot.mode:-normal}.rc").as_deref(), Some("init.sun.normal.rc"));
         assert_eq!(phone.expand("init.${ro.boot.hwc}.rc"), None, "a property the phone does not have, and nothing to put in its place");

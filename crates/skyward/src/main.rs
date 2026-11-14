@@ -292,7 +292,7 @@ fn main() -> Result<()> {
             let services: Vec<Started> = DeviceConfig::load(&config)?.services.into_iter().filter(|s| s.runs_on(&props)).map(Started::from).collect();
             let libraries = secure::libraries()?;
             services::start(&services, libraries.as_deref())?;
-            keys::start(&keys::found(slot, libraries.as_deref())?.steps?, libraries.as_deref())?;
+            keys::start(&keys::found(slot, libraries.as_deref())?.steps?)?;
             loop {
                 std::thread::park();
             }
@@ -596,7 +596,7 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
     for line in keys::describe(&steps) {
         skyward_sys::kmsg(&format!("for the phone's keys: {}", line.replace("\n  ", ", ")))?;
     }
-    keys::start(&steps, libraries.as_deref())?;
+    keys::start(&steps)?;
     agree_on_the_notes_key(&registering)
 }
 

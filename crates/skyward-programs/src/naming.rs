@@ -106,7 +106,7 @@ fn run(phone: &Phone, command: &[String]) -> Result<Started> {
     let service = Service {
         path: phone.started_from(&program[0]),
         args: program[1..].to_vec(),
-        libraries: libraries_of(&program[0]),
+        libraries: libraries_of(&program[0], phone.bundle.as_deref()),
         oneshot: true,
         ready_property: None,
         ready_service: None,
@@ -139,7 +139,7 @@ mod tests {
             partitions.push(Partition { name: name.to_string(), mounted: Path::new("/").join(name), at: at.join(name) });
         }
         let properties: HashMap<String, String> = properties.iter().map(|(name, value)| (name.to_string(), value.to_string())).collect();
-        Phone::read(partitions, properties).unwrap()
+        Phone::read(partitions, properties, None).unwrap()
     }
 
     fn once(path: &str, args: &[&str], libraries: &[&str], user: Option<&str>, groups: &[&str]) -> Does {
@@ -170,10 +170,11 @@ mod tests {
     fn a_build_the_bootloader_does_not_name_is_named_as_the_phone_s_init_names_it() {
         let dir = tempfile::tempdir().unwrap();
         let named_by_none = phone(dir.path(), BY_THE_CHIP, "", &[("ro.boot.hardware", "qcom"), ("ro.boot.product.hardware.sku", "ishtar")]);
+        let vendor_libraries = ["/system/lib64", "/vendor/lib64", "/vendor/lib64/hw", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"];
         assert_eq!(
             steps(&named_by_none).unwrap(),
             [
-                once("/vendor/bin/init.qti.qcv.sh", &[], &["/system/lib64", "/vendor/lib64"], None, &[]),
+                once("/vendor/bin/init.qti.qcv.sh", &[], &vendor_libraries, None, &[]),
                 set("ro.boot.product.vendor.sku", "${ro.vendor.qti.soc_name}"),
             ],
             "the section's commands up to the one that names the build, and none after it"
@@ -190,7 +191,7 @@ mod tests {
         let odm = "on charger\n    setprop ro.boot.product.hardware.sku charging\n";
         let dir = tempfile::tempdir().unwrap();
         let phone = phone(dir.path(), vendor, odm, &[("ro.boot.hardware", "qcom"), ("ro.boot.hwc", "CN")]);
-        let odm_libraries = ["/system/lib64", "/vendor/lib64", "/odm/lib64", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"];
+        let odm_libraries = ["/system/lib64", "/vendor/lib64", "/vendor/lib64/hw", "/odm/lib64", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"];
         assert_eq!(
             steps(&phone).unwrap(),
             [

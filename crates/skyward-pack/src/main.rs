@@ -229,11 +229,11 @@ fn partition_size(stock: &Path) -> Result<usize> {
         file.seek(SeekFrom::Start(size - 64)).with_context(|| format!("seek in {}", stock.display()))?;
         file.read_exact(&mut magic).with_context(|| format!("read {}", stock.display()))?;
     }
-    ensure!(
-        &magic == b"AVBf",
-        "{} does not end in an AVB footer; give the whole recovery partition, as the phone or a full update package holds it",
-        stock.display()
-    );
+    // 老机型的 fastboot 包只放裁掉尾部填充的镜像：没有 AVB 尾，镜像本身即整块分区内容，
+    // 就按它的大小当分区大小（写回时照样补上自己的尾）。
+    if &magic != b"AVBf" {
+        eprintln!("{} 没有 AVB 尾，按镜像自身大小当分区大小", stock.display());
+    }
     Ok(usize::try_from(size)?)
 }
 
@@ -356,7 +356,7 @@ ro.vendor.build.security_patch=2026-10-01\nro.vendor.build.security_patch_level=
     }
 
     #[test]
-    fn the_partition_is_as_large_as_a_stock_image_ending_in_its_footer() {
+    fn the_partition_is_as_large_as_the_stock_image_or_its_footer() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("recovery.img");
         let mut whole = vec![0u8; 8192];
@@ -364,9 +364,9 @@ ro.vendor.build.security_patch=2026-10-01\nro.vendor.build.security_patch_level=
         std::fs::write(&path, &whole).unwrap();
         assert_eq!(partition_size(&path).unwrap(), 8192);
         std::fs::write(&path, &whole[..8000]).unwrap();
-        assert!(partition_size(&path).is_err(), "an image cut short of its partition's end");
+        assert_eq!(partition_size(&path).unwrap(), 8000, "a trimmed image is the whole of its partition");
         std::fs::write(&path, b"AVBf").unwrap();
-        assert!(partition_size(&path).is_err(), "too short to end in a footer");
+        assert_eq!(partition_size(&path).unwrap(), 4, "too short to end in a footer, so the whole file counts");
     }
 
     #[test]

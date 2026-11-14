@@ -114,7 +114,7 @@ impl Canvas {
     /// first canvases drawn on to take without the kernel mapping it a page
     /// at a time as they are.
     pub fn keep_ready(w: u32, h: u32, n: usize) {
-        let canvases: Vec<Canvas> = (0..n).map(|_| Canvas::new(w, h)).collect();
+        let canvases = Vec::from_fn(n, |_| Canvas::new(w, h));
         drop(canvases);
     }
 

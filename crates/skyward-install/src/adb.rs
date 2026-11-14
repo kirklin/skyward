@@ -218,7 +218,7 @@ pub enum Service {
 }
 
 pub fn service(payload: &[u8]) -> Service {
-    let name = String::from_utf8_lossy(payload.strip_suffix(&[0]).unwrap_or(payload)).into_owned();
+    let name = String::from_utf8_lossy(payload.trim_suffix(&[0])).into_owned();
     if let Some(args) = name.strip_prefix("sideload-host:") {
         return offered(args).map_or(Service::Other(name), Service::SideloadHost);
     }

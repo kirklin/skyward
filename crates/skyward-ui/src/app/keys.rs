@@ -13,7 +13,7 @@ impl App {
             Stop::Back => self.act(Action::Back, now),
             Stop::Button(action) => self.act(action, now),
             Stop::Hit(Action::Slider(which)) => {
-                self.adjusting = !self.adjusting;
+                self.adjusting.toggle();
                 if self.adjusting {
                     let said = match which {
                         Slider::Brightness => ["按音量键调节亮度，按电源键完成", "按音量鍵調整亮度，按電源鍵完成", "Set the brightness with the volume keys, then press the power key"],

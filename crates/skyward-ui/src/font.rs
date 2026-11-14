@@ -236,7 +236,7 @@ impl FontInfo {
         Ok(FontInfo {
             family: needed(ttf_parser::name_id::FAMILY)?,
             // "Version 4.009" names the version twice in a row labelled 版本.
-            version: version.strip_prefix("Version ").unwrap_or(&version).to_string(),
+            version: version.trim_prefix("Version ").to_string(),
             copyright: name(ttf_parser::name_id::COPYRIGHT_NOTICE),
         })
     }

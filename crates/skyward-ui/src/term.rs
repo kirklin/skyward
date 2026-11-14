@@ -106,7 +106,7 @@ impl Term {
     /// application.
     pub fn key(&mut self, key: TermKey) -> Vec<u8> {
         if key == TermKey::Ctrl {
-            self.ctrl = !self.ctrl;
+            self.ctrl.toggle();
             return Vec::new();
         }
         self.ctrl = false;

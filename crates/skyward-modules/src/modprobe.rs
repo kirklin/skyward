@@ -19,7 +19,7 @@ pub const FIRST_STAGE: &str = "/lib/modules";
 /// than two characters.
 pub fn canonical(path: &str) -> Option<String> {
     let name = path.rsplit('/').next().unwrap_or(path);
-    let name = name.strip_suffix(".ko").unwrap_or(name);
+    let name = name.trim_suffix(".ko");
     if name.len() <= 1 {
         return None;
     }
@@ -37,7 +37,7 @@ pub fn cmdline_options(cmdline: &str) -> Vec<(String, String)> {
     let mut start = 0;
     for (i, b) in cmdline.bytes().enumerate() {
         if b == b'"' {
-            in_quotes = !in_quotes;
+            in_quotes.toggle();
         }
         if in_quotes {
             continue;

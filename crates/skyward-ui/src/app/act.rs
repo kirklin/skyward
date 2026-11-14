@@ -249,7 +249,7 @@ impl App {
                 self.refresh();
             }
             Action::BackupPart(k) => {
-                self.state.backup[k] = !self.state.backup[k];
+                self.state.backup[k].toggle();
                 self.refresh();
             }
             Action::BackupTo(place) => {
@@ -266,7 +266,7 @@ impl App {
             }
             Action::RestorePart(k) => {
                 let (_, parts) = self.state.restore.as_mut().expect("the restore page shows a backup");
-                parts[k] = !parts[k];
+                parts[k].toggle();
                 self.refresh();
             }
             Action::StopBackup => {
@@ -278,7 +278,7 @@ impl App {
                 }
             }
             Action::LogPart(k) => {
-                self.state.logs[k] = !self.state.logs[k];
+                self.state.logs[k].toggle();
                 self.refresh();
             }
             Action::LogsTo(k) => {

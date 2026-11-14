@@ -612,6 +612,15 @@ fn hand_over(owners: &[skyward_config::Owners]) -> Result<usize> {
     for run in owners {
         let (uid, gid) = (id(&run.user)?, id(&run.group)?);
         for path in &run.paths {
+            // The module that makes the node probes on the kernel's own
+            // thread, after the load returns, and a phone whose probe is
+            // slower than the load makes the node a moment later: wait for
+            // it as the phone's own init waits for what it hands over.
+            let mut waited = std::time::Duration::ZERO;
+            while !Path::new(path).exists() && waited < std::time::Duration::from_secs(5) {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                waited += std::time::Duration::from_millis(50);
+            }
             std::os::unix::fs::chown(path, Some(uid), Some(gid)).with_context(|| format!("give {path} to {}:{}", run.user, run.group))?;
             std::fs::set_permissions(path, std::fs::Permissions::from_mode(run.mode))
                 .with_context(|| format!("give {path} the mode {:o}", run.mode))?;

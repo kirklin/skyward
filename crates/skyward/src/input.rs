@@ -10,6 +10,22 @@ use std::fs;
 use std::io::{self, ErrorKind};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::path::PathBuf;
+use std::thread;
+use std::time::Duration;
+
+/// How often what the touchscreen was told is told to it again. A panel's
+/// driver may put the touch controller back into the state it powers up in
+/// when the panel comes back from sleep — Xiaomi's does, in
+/// `xiaomi_touch_resume_work` — and nothing in /dev/input changes when it
+/// does, so the scan that runs on a device appearing never sees it. Written
+/// once for the life of the recovery, the setting would be gone after the
+/// first sleep and every touch after it would land nowhere. Writing it again
+/// on a timer costs a small write to sysfs and covers every such reset.
+///
+/// Once a second, as the phone's own recovery does: a panel that comes back
+/// is usable at once rather than after a wait, and the write is a few bytes
+/// to a node the driver already holds in memory.
+const TOUCH_REFRESH: Duration = Duration::from_secs(1);
 
 pub enum Event {
     /// A touch and when the panel reported it, on [`monotonic_ms`]'s clock.
@@ -222,7 +238,38 @@ impl Inputs {
         if inputs.panel.is_none() {
             eprintln!("no touch panel yet; waiting for one to appear under /dev/input");
         }
+        inputs.keep_touch_told();
         Ok(inputs)
+    }
+
+    /// Tell the touchscreen again, every `TOUCH_REFRESH`, what it was told
+    /// when its panel was taken in. A panel's driver may undo that when it
+    /// comes back from sleep, and it does so without /dev/input changing, so
+    /// nothing here would otherwise notice.
+    ///
+    /// A write that fails is not fatal: the node may be gone if the module
+    /// was unloaded, or not be there yet. The next round tries again.
+    fn keep_touch_told(&self) {
+        let writes = self.touch_writes.clone();
+        if writes.is_empty() {
+            return;
+        }
+        let started = thread::Builder::new().name("touch".into()).spawn(move || {
+            loop {
+                thread::sleep(TOUCH_REFRESH);
+                for w in &writes {
+                    if fs::write(&w.path, &w.value).is_err() {
+                        continue;
+                    }
+                    let _ = skyward_sys::kmsg(&format!("wrote {} to {} for the touchscreen again", w.value, w.path));
+                }
+            }
+        });
+        if let Err(e) = started {
+            // The setting written when the panel was taken in still stands;
+            // only a later reset by the driver would be left uncovered.
+            eprintln!("touch: no thread to keep the touchscreen told: {e}");
+        }
     }
 
     /// Take in the devices under /dev/input not seen before: the first

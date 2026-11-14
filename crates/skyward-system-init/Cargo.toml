@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
+[lints]
+workspace = true
+
 # Built for the phone and linked statically: it runs before any system's
 # libraries are there to load.
 [[bin]]

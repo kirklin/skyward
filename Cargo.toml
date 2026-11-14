@@ -31,6 +31,11 @@ version = "0.3.1"
 edition = "2024"
 license = "GPL-3.0-or-later"
 
+# A dependency that nothing built of its package uses stops the build: one
+# that only the phone's build uses is listed among the phone's.
+[workspace.lints.cargo]
+unused_dependencies = "deny"
+
 [workspace.dependencies]
 libc = "0.2.175"
 anyhow = "1.0.100"

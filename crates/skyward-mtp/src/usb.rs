@@ -28,6 +28,11 @@ const EP_EVENT: &str = "/dev/usb-ffs/mtp/ep3";
 /// the bus while the other is read from the file or written to it.
 const CHUNK: usize = 1 << 20;
 
+/// How much of a file one transfer to the computer moves. WPD reads a file
+/// in its own requests and gives up on a transfer that outlasts them, so
+/// this stays at the size the phone's own MTP stack uses.
+const FILE_CHUNK: usize = 1 << 20;
+
 /// What a command is read into; one is a single short packet.
 const COMMAND_MAX: usize = 512;
 
@@ -473,6 +478,9 @@ pub struct Port {
     /// The command being read, kept while the phone attends to something
     /// else.
     reading: Option<(u64, Box<[u8; COMMAND_MAX]>)>,
+    /// Requests that ended while some other one was waited for, kept for
+    /// whoever asks after them: a command that came during a transfer.
+    spare: HashMap<u64, i64>,
     events: VecDeque<[u8; 16]>,
     /// The event going, which ends once the computer polls for it.
     event: Option<(u64, Box<[u8; 16]>)>,
@@ -507,6 +515,7 @@ impl Port {
             packet: 512,
             cancelled: false,
             reading: None,
+            spare: HashMap::new(),
             events: VecDeque::new(),
             event: None,
         })
@@ -560,7 +569,21 @@ impl Port {
                 Some(Control::Disabled)
             }
             SETUP => self.setup(&ev)?,
-            BIND | SUSPEND | RESUME => None,
+            BIND => None,
+            // The computer leaves the bus alone for a while and comes
+            // back: what was under way is lost, and the transfer starts
+            // again once it is listening.
+            SUSPEND => {
+                self.enabled = false;
+                note("the computer left the bus");
+                Some(Control::Disabled)
+            }
+            RESUME => {
+                self.packet = self.packet_size().unwrap_or(self.packet);
+                self.enabled = true;
+                note("the computer came back to the bus");
+                Some(Control::Enabled)
+            }
             other => {
                 note(&format!("passed over control event {other}"));
                 None
@@ -578,6 +601,7 @@ impl Port {
         let into_device = ev.request_type & DIR_IN == 0;
         match (class, ev.request) {
             (true, request::CANCEL | request::RESET) if into_device => {
+                note(&format!("control: the computer asks {:#04x}", ev.request));
                 let mut data = vec![0u8; length];
                 (&self.ep0).read_exact(&mut data)?;
                 Ok(Some(Control::Cancel))
@@ -632,7 +656,7 @@ impl Port {
         let fd = if write { self.bulk_in.as_raw_fd() } else { self.bulk_out.as_raw_fd() };
         match unsafe { self.aio.submit(fd, buf, len, write) } {
             Ok(key) => Ok(key),
-            Err(e) if matches!(e.raw_os_error(), Some(libc::EAGAIN | libc::ESHUTDOWN)) => {
+            Err(e) if matches!(e.raw_os_error(), Some(libc::EAGAIN | libc::ESHUTDOWN | libc::ECONNRESET)) => {
                 self.unconfigured();
                 Err(Halt::Disconnected)
             }
@@ -645,7 +669,10 @@ impl Port {
     fn moved(&mut self, res: i64) -> Result<usize, Halt> {
         match res {
             r if r >= 0 => Ok(r as usize),
-            r if r == -i64::from(libc::ESHUTDOWN) || r == -i64::from(libc::EAGAIN) => {
+            r if r == -i64::from(libc::ESHUTDOWN)
+                || r == -i64::from(libc::EAGAIN)
+                || r == -i64::from(libc::ECONNRESET) =>
+            {
                 self.unconfigured();
                 Err(Halt::Disconnected)
             }
@@ -665,6 +692,9 @@ impl Port {
     /// cancel, the function going, the phone waking the thread or `also`
     /// having something ends the wait with the request still in flight.
     fn finish(&mut self, key: u64, also: Option<RawFd>) -> Result<Result<i64, Interrupted>, Halt> {
+        if let Some(res) = self.spare.remove(&key) {
+            return Ok(Ok(res));
+        }
         loop {
             let mut result = None;
             for (k, res) in self.aio.ended()? {
@@ -673,6 +703,14 @@ impl Port {
                 } else if self.event.as_ref().is_some_and(|(e, _)| *e == k) {
                     self.event = None;
                     self.next_event()?;
+                } else {
+                    // Keep it: the command it answers is asked for later,
+                    // and a result thrown away would leave that wait on a
+                    // request that has already ended.
+                    if k == self.reading.as_ref().map_or(u64::MAX, |(r, _)| *r) {
+                        note(&format!("command read ended {res} while waiting for {key}"));
+                    }
+                    self.spare.insert(k, res);
                 }
             }
             if let Some(res) = result {
@@ -693,10 +731,17 @@ impl Port {
                 return Err(e.into());
             }
             if fds[1].revents != 0 {
-                match self.control()? {
-                    Some(Control::Cancel) => return Ok(Err(Interrupted::Cancel)),
-                    Some(Control::Disabled) => return Ok(Err(Interrupted::Disconnect)),
-                    Some(Control::Enabled) | None => {}
+                match self.control() {
+                    Ok(Some(Control::Cancel)) => return Ok(Err(Interrupted::Cancel)),
+                    Ok(Some(Control::Disabled)) => return Ok(Err(Interrupted::Disconnect)),
+                    Ok(Some(Control::Enabled)) | Ok(None) => {}
+                    // The port went with the function while a transfer was
+                    // under way: nothing of it is left to wait for.
+                    Err(e) if matches!(e.raw_os_error(), Some(libc::EAGAIN | libc::ESHUTDOWN | libc::ECONNRESET)) => {
+                        self.unconfigured();
+                        return Ok(Err(Interrupted::Disconnect));
+                    }
+                    Err(e) => return Err(e.into()),
                 }
             }
             if fds[2].revents != 0 {
@@ -721,9 +766,11 @@ impl Port {
                     return Err(e);
                 }
             }
-            for (k, _) in self.aio.ended()? {
+            for (k, res) in self.aio.ended()? {
                 if self.event.as_ref().is_some_and(|(e, _)| *e == k) {
                     self.event = None;
+                } else if k != key {
+                    self.spare.insert(k, res);
                 }
             }
         }
@@ -815,7 +862,13 @@ impl Port {
                         return Ok(Next::Command(buf[..n].to_vec()));
                     }
                 }
-                Ok(Err(Interrupted::Cancel)) => {}
+                Ok(Err(Interrupted::Cancel)) => {
+                    // The computer gave up on what it was asking: the read
+                    // ends with it and the endpoints halt, as a cancel
+                    // asks, and the next command starts afresh.
+                    self.abort(key, true)?;
+                    self.reading = None;
+                }
                 Ok(Err(Interrupted::Woken)) => return Ok(Next::Woken),
                 Ok(Err(Interrupted::Changed)) => return Ok(Next::Changed),
                 Ok(Err(Interrupted::Disconnect)) => {
@@ -870,7 +923,7 @@ impl Port {
     /// shorter than it was a moment ago halts the transfer.
     #[allow(clippy::too_many_arguments)]
     pub fn send_file(&mut self, code: u16, transaction: u32, file: &File, offset: u64, length: u64, stop: &mut dyn FnMut() -> bool) -> Result<(), Halt> {
-        let mut bufs = [vec![0u8; CHUNK], vec![0u8; CHUNK]];
+        let mut bufs = [vec![0u8; FILE_CHUNK], vec![0u8; FILE_CHUNK]];
         let end = offset + length;
         let mut at = offset;
         // Fill a buffer from `start` with what comes next of the file: how
@@ -892,6 +945,9 @@ impl Port {
             }
         };
         let mut cur = 0;
+        // How much of the file went out, so that a transfer that stops part
+        // way says where it stopped rather than only that it did.
+        let mut sent: u64 = 0;
         loop {
             let (this, other) = match bufs.split_at_mut(1) {
                 (a, b) if cur == 0 => (&mut a[0], &mut b[0]),
@@ -911,13 +967,19 @@ impl Port {
             } else {
                 0
             };
-            self.wait(key, stop)?;
+            if let Err(e) = self.wait(key, stop) {
+                note(&format!("send {code:#06x} txn {transaction} {sent} bytes then {e:?}"));
+                return Err(e);
+            }
+            sent += len as u64;
             if next == 0 {
                 break;
             }
             len = next;
             cur = 1 - cur;
         }
+        note(&format!("send {code:#06x} txn {transaction} done {sent}"));
+        note(&format!("send {code:#06x} txn {transaction} done {sent}"));
         if (HEADER as u64 + length).is_multiple_of(self.packet as u64) {
             self.transfer(&mut [], true, stop)?;
         }

@@ -151,6 +151,20 @@ impl Ramdisk {
         self.insert(name, S_IFREG | mode, data)
     }
 
+    /// Put a regular file in the ramdisk: one already there, a file or a
+    /// link, is replaced by it rather than the file being added again.
+    pub fn put(&mut self, name: &str, mode: u32, data: Vec<u8>) -> Result<()> {
+        match self.entries.iter_mut().find(|e| e.name == name) {
+            Some(e) if e.mode & S_IFMT == S_IFREG || e.mode & S_IFMT == S_IFLNK => {
+                e.mode = S_IFREG | mode;
+                e.data = data;
+                Ok(())
+            }
+            Some(_) => bail!("{name} is in the ramdisk and is a directory"),
+            None => self.insert(name, S_IFREG | mode, data),
+        }
+    }
+
     /// Point `name` to `target`: a link already there is pointed anew, and
     /// otherwise a root-owned link is added, creating missing parent
     /// directories.

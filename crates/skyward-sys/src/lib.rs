@@ -116,6 +116,20 @@ pub fn wait_prop(name: &str, value: &str, timeout: Duration) -> Result<()> {
     }
 }
 
+/// Wait until there is a file at `path`, for at most `timeout`: the kernel
+/// and ueventd make some files only a while after what has them made
+/// returns, as a driver makes its own once it has taken its device up.
+pub fn wait_file(path: &Path, timeout: Duration) -> Result<()> {
+    let until = Instant::now() + timeout;
+    while !path.exists() {
+        if Instant::now() >= until {
+            bail!("{} is not there after {} ms", path.display(), timeout.as_millis());
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    Ok(())
+}
+
 /// Where a power request sends the device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Power {
@@ -377,6 +391,34 @@ mod tests {
         assert!(told.untold(Some("read capacity: no data")), "another reason");
         assert!(!told.untold(None), "it went well");
         assert!(told.untold(Some("read capacity: no data")), "the same reason, after it went well in between");
+    }
+
+    #[test]
+    fn a_file_made_a_while_later_is_waited_for_and_one_never_made_is_said_to_be_missing() {
+        let dir = std::env::temp_dir().join(format!("skyward-wait-file-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let late = dir.join("late");
+        let (go, told) = std::sync::mpsc::channel();
+        let maker = {
+            let late = late.clone();
+            std::thread::spawn(move || {
+                told.recv().unwrap();
+                std::thread::sleep(Duration::from_millis(50));
+                std::fs::write(late, b"").unwrap();
+            })
+        };
+        assert!(!late.exists());
+        go.send(()).unwrap();
+        wait_file(&late, Duration::from_secs(60)).unwrap();
+        assert!(late.exists(), "it came back once the file was made");
+        maker.join().unwrap();
+        wait_file(&late, Duration::ZERO).unwrap();
+        let missing = dir.join("missing");
+        let began = Instant::now();
+        let said = wait_file(&missing, Duration::from_millis(50)).unwrap_err().to_string();
+        assert!(began.elapsed() >= Duration::from_millis(50), "it waited as long as it was given");
+        assert_eq!(said, format!("{} is not there after 50 ms", missing.display()));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

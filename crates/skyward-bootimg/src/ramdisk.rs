@@ -84,7 +84,12 @@ impl Ramdisk {
     /// with the reference `lz4` tool in legacy framing (the kernel's initramfs
     /// unpacker reads no other LZ4 framing) at its highest compression.
     pub fn encode(&self) -> Result<Vec<u8>> {
-        lz4_tool(&self.archive()?)
+        let archive = self.archive()?;
+        match lz4_tool(&archive) {
+            Ok(packed) => Ok(packed),
+            Err(e) if no_lz4_tool(&e) => Ok(lz4_legacy(&archive)),
+            Err(e) => Err(e),
+        }
     }
 
     /// Pack as a newc archive, uncompressed.
@@ -273,6 +278,18 @@ pub fn lz4_legacy(input: &[u8]) -> Vec<u8> {
         out.extend_from_slice(&block);
     }
     out
+}
+
+/// Whether this is a host with no `lz4` to run, which is not a failure: the
+/// archive can be compressed in process instead, in the same framing, and
+/// the kernel reads it just the same. Only a host that has no `lz4` at all
+/// is treated this way; one whose `lz4` fails for a reason of its own is
+/// still reported, because its output would be a compressed stream no
+/// longer at the highest compression the others are.
+fn no_lz4_tool(e: &anyhow::Error) -> bool {
+    e.chain()
+        .filter_map(|c| c.downcast_ref::<std::io::Error>())
+        .any(|io| io.kind() == std::io::ErrorKind::NotFound)
 }
 
 fn lz4_tool(input: &[u8]) -> Result<Vec<u8>> {

@@ -10,6 +10,8 @@ name = "skyward-pack"
 path = "src/main.rs"
 
 [dependencies]
+# The header layout of boot images older than vendor_boot.
+abootimg-oxide = "0.5.2"
 anyhow = { workspace = true }
 clap = { version = "4.5.51", features = ["derive"] }
 hex = { workspace = true }
@@ -17,6 +19,8 @@ hex = { workspace = true }
 # whatever gives it the partition's bytes.
 rust-fs-core = "0.4.4"
 rust-fs-erofs = "0.6.0"
+# The sum a version 0-2 boot image header keeps of what follows it.
+sha1 = "0.10.7"
 sha2 = "0.10.9"
 skyward-bootimg = { path = "../skyward-bootimg" }
 skyward-config = { path = "../skyward-config" }

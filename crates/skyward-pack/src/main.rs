@@ -8,8 +8,57 @@ use std::path::{Path, PathBuf};
 
 mod avb;
 mod described;
+mod legacy;
 
+use abootimg_oxide::{binrw::io::Cursor, Header};
+use legacy::LegacyImage;
 use skyward_bootimg::{BootImage, Ramdisk};
+
+/// A stock image whose ramdisk a recovery is built on, whichever layout its
+/// header has: versions 3 and 4 for phones that carry vendor_boot, 0 to 2 for
+/// the older ones.
+enum Stock {
+    Modern(BootImage),
+    Legacy(LegacyImage),
+}
+
+impl Stock {
+    fn read(path: &Path) -> Result<Self> {
+        let bytes = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
+        match Header::parse(&mut Cursor::new(&bytes)).context("header")? {
+            Header::V3(_) => Ok(Stock::Modern(BootImage::parse(&bytes)?)),
+            Header::V0(_) => Ok(Stock::Legacy(LegacyImage::parse(&bytes)?)),
+        }
+    }
+
+    fn kernel_len(&self) -> usize {
+        match self {
+            Stock::Modern(img) => img.kernel.len(),
+            Stock::Legacy(img) => img.kernel.len(),
+        }
+    }
+
+    fn ramdisk(&self) -> &[u8] {
+        match self {
+            Stock::Modern(img) => &img.ramdisk,
+            Stock::Legacy(img) => &img.ramdisk,
+        }
+    }
+
+    fn set_ramdisk(&mut self, ramdisk: Vec<u8>) {
+        match self {
+            Stock::Modern(img) => img.ramdisk = ramdisk,
+            Stock::Legacy(img) => img.ramdisk = ramdisk,
+        }
+    }
+
+    fn to_bytes(&self) -> Result<Vec<u8>> {
+        match self {
+            Stock::Modern(img) => img.to_bytes(),
+            Stock::Legacy(img) => img.to_bytes(),
+        }
+    }
+}
 
 /// Builds Skyward recovery images from a device's own stock images.
 #[derive(Parser)]
@@ -48,6 +97,10 @@ enum Cmd {
         /// phone or a full update package holds it, ending in its AVB footer.
         #[arg(long)]
         stock: PathBuf,
+        /// The size of the recovery partition, for a stock image cut short of
+        /// its AVB footer, which no longer tells it.
+        #[arg(long, default_value_t = 0)]
+        partition_size: usize,
         /// Skyward built for the device (aarch64-linux-android).
         #[arg(long)]
         binary: PathBuf,
@@ -118,21 +171,22 @@ fn main() -> Result<()> {
         Cmd::Repack { image, out } => {
             let mut img = BootImage::read(&image)?;
             img.ramdisk = Ramdisk::decode(&img.ramdisk)?.encode()?;
-            write(&out, &img, &img.to_bytes()?)
+            write(&out, img.kernel.len(), img.ramdisk.len(), &img.to_bytes()?)
         }
         Cmd::Boot { kernel, ramdisk, out } => {
             let mut img = BootImage::read(&ramdisk)?;
             img.kernel = BootImage::read(&kernel)?.kernel;
-            write(&out, &img, &img.to_bytes()?)
+            write(&out, img.kernel.len(), img.ramdisk.len(), &img.to_bytes()?)
         }
-        Cmd::Recovery { stock, binary, system_init, config, font, mono, mono_license, out } => {
-            let size = partition_size(&stock)?;
-            let mut img = BootImage::read(&stock)?;
-            let mut rd = Ramdisk::decode(&img.ramdisk)?;
+        Cmd::Recovery { stock, partition_size: partition, binary, system_init, config, font, mono, mono_license, out } => {
+            let size = if partition != 0 { partition } else { partition_size(&stock)? };
+            let stock_path = stock.clone();
+            let mut stock = Stock::read(&stock)?;
+            let mut rd = Ramdisk::decode(stock.ramdisk())?;
             // A stock recovery ramdisk has no third-party tree; refuse to build
             // on top of another custom recovery.
             if let Some(e) = rd.entries.iter().find(|e| e.name == "FFiles" || e.name.starts_with("twres")) {
-                anyhow::bail!("{} holds {}, which is not a stock recovery", stock.display(), e.name);
+                anyhow::bail!("{} holds {}, which is not a stock recovery", stock_path.display(), e.name);
             }
             let read = |p: &PathBuf| std::fs::read(p).with_context(|| format!("read {}", p.display()));
             skyward_config::DeviceConfig::load(&config)?;
@@ -168,9 +222,9 @@ fn main() -> Result<()> {
             let mut props = without(stock_props, &BUILD_VERSION);
             props.extend_from_slice(b"\nro.secure=0\nro.adb.secure=0\nro.debuggable=1\nro.ota.allow_downgrade=true\n");
             rd.replace(paths::PROP_DEFAULT, props)?;
-            img.ramdisk = rd.encode()?;
-            let bytes = img.to_bytes()?;
-            write(&out, &img, &avb::footed(&bytes, "recovery", size, &Sha256::digest(&bytes))?)
+            stock.set_ramdisk(rd.encode()?);
+            let bytes = stock.to_bytes()?;
+            write(&out, stock.kernel_len(), stock.ramdisk().len(), &avb::footed(&bytes, "recovery", size, &Sha256::digest(&bytes))?)
         }
         Cmd::Stock { config, out } => {
             let stock = skyward_config::DeviceConfig::load(&config)?.stock.with_context(|| format!("{} names no stock build", config.display()))?;
@@ -268,13 +322,13 @@ fn without(props: &[u8], names: &[&str]) -> Vec<u8> {
 }
 
 /// Write `bytes`, the image `img` makes, to `out`.
-fn write(out: &Path, img: &BootImage, bytes: &[u8]) -> Result<()> {
+fn write(out: &Path, kernel_len: usize, ramdisk_len: usize, bytes: &[u8]) -> Result<()> {
     std::fs::write(out, bytes).with_context(|| format!("write {}", out.display()))?;
     println!(
         "wrote {} ({} bytes kernel, {} bytes ramdisk, {} bytes in all)",
         out.display(),
-        img.kernel.len(),
-        img.ramdisk.len(),
+        kernel_len,
+        ramdisk_len,
         bytes.len()
     );
     Ok(())

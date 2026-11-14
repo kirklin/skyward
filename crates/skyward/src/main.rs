@@ -807,8 +807,15 @@ fn recovery() -> Result<()> {
             // erasing them, which may take super with them, and undoing
             // shared blocks, which writes to the slot's own.
             let mut programs = cfg.services.clone();
+            // An A-only phone has no slots and no super: there is nothing to
+            // map or mount, and the recovery runs from what the stock
+            // ramdisk carries.
             if !matches!(request.work, bcb::Work::Fastboot | bcb::Work::WipeAb { .. } | bcb::Work::UnshareBlocks) {
-                programs.extend(prepare(&cfg, booted_slot()?)?);
+                if let Some(slot) = skyward_vab::current_slot()? {
+                    programs.extend(prepare(&cfg, slot)?);
+                } else {
+                    skyward_sys::kmsg("A-only phone: no super to map, running from the stock ramdisk")?;
+                }
             }
             let root = Path::new("/");
             ui::run(&cfg, &programs, &root.join(ramdisk::FONT), &root.join(ramdisk::MONO), request, Screen::Home, None)

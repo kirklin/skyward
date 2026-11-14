@@ -1,0 +1,20 @@
+[device]
+codename = "sagit"
+brand = "Xiaomi"
+model = "Xiaomi Mi 6"
+# A-only: no _a/_b slot suffixes, no super, no vendor_boot.
+ab = false
+soc = { hans = "高通骁龙™835移动平台", hant = "高通驍龍™835行動平台", en = "Qualcomm Snapdragon 835 Mobile Platform" }
+os_version_prop = "ro.build.version.incremental"
+
+[display]
+# 5.15-inch 1080x1920 IPS, 428 ppi.
+width = 1080
+height = 1920
+density = 428
+diagonal = 5.15
+
+[modules]
+# Android 9 keeps every module on the vendor partition; there is no
+# vendor_boot or vendor_dlkm.
+sources = ["vendor"]

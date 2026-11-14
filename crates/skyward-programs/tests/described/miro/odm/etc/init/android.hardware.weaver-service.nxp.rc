@@ -1,0 +1,5 @@
+service vendor.weaver_nxp /odm/bin/hw/android.hardware.weaver-service.nxp-qti
+    class hal
+    user vendor_nxp_weaver
+    group vendor_nxp_weaver
+    capabilities WAKE_ALARM

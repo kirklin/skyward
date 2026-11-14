@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="../../readme.css">
+</head>
+<body>
+<main class="slide feature">
+  <header class="head">
+    <p class="eyebrow">替换原厂 recovery</p>
+    <h1 class="headline">系统发来的请求，<br><span translate="no">Skyward</span> 照常处理。</h1>
+    <p class="body">系统把请求写入 misc 分区，再重启到 recovery。<br><span translate="no">Skyward</span> 读取并执行请求，结束后按请求<br>自动重启或关机。</p>
+  </header>
+  <div class="visual">
+    <div class="asks">
+      <div class="cols"><p>系统的请求</p><i></i><p translate="no">Skyward</p></div>
+      <ul>
+        <li>
+          <div class="from"><b>在设置中恢复出厂设置</b><code translate="no">--wipe_data</code></div>
+          <span class="arrow"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+          <div class="to">清除全部数据，<br>完成后自动重启或关机</div>
+        </li>
+        <li>
+          <div class="from"><b>系统无法正常启动</b><code translate="no">--prompt_and_wipe_data</code></div>
+          <span class="arrow"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+          <div class="to">显示「无法启动系统」，<br>可以重试或恢复出厂设置</div>
+        </li>
+        <li>
+          <div class="from"><b translate="no">adb reboot sideload</b><code translate="no">--sideload</code></div>
+          <span class="arrow"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+          <div class="to">等待电脑发送安装包</div>
+        </li>
+        <li>
+          <div class="from"><b translate="no">adb reboot fastboot</b><code translate="no">--fastboot</code></div>
+          <span class="arrow"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+          <div class="to">进入 fastbootd</div>
+        </li>
+      </ul>
+    </div>
+  </div>
+</main>
+</body>
+</html>

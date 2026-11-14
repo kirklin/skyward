@@ -1,0 +1,7 @@
+#MIUI MOD: NFC_TransitConfig
+service vendor.nfc_hal_service /odm/bin/hw/android.hardware.nqnfc-service.nxp
+    class hal
+    user nfc
+    group nfc oem_2912
+
+#END NFC_TransitConfig

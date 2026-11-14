@@ -1,0 +1,25 @@
+
+on boot
+    chown system system /mnt/vendor/persist/sensors/lightSensorCali.json
+    chown system system /mnt/vendor/persist/sensors/lightSensorCaliSec.json
+    chown system system /mnt/vendor/persist/sensors/lightSensorCaliThird.json
+
+service audio_open /odm/bin/test-nusensors -a audio_open
+    class late_start
+    user system
+    disabled
+    oneshot
+
+service audio_close /odm/bin/test-nusensors -a audio_close
+    class late_start
+    user system
+    disabled
+    oneshot
+
+#####audio state  send BP #####
+on property:vendor.audio.usb_cctoggle=1
+    start audio_open
+
+
+on property:vendor.audio.usb_cctoggle=0
+    start audio_close

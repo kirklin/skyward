@@ -1,0 +1,12 @@
+#==============================================================================
+#       qesdk-secmanager.rc
+#
+#  Copyright (c) 2023 Qualcomm Technologies, Inc.
+#  All Rights Reserved.
+#  Confidential and Proprietary - Qualcomm Technologies, Inc.
+#===============================================================================
+service vendor.qesdk-securitymgr /vendor/bin/qesdk-secmanager
+    class hal
+    user system
+    group system
+    socket qesdsec seqpacket 666 root system

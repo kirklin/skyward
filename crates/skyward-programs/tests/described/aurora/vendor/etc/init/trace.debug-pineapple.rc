@@ -1,0 +1,9 @@
+on property:vendor.all.modules.ready=1
+    start dcc_dump-script
+
+# Coresight early boot service
+service dcc_dump-script /vendor/bin/sh /vendor/bin/dcc-script.sh
+    class core
+    user root
+    oneshot
+    seclabel u:r:vendor-qti-testscripts:s0

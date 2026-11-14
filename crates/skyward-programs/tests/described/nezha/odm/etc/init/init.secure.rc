@@ -1,0 +1,5 @@
+#Dynamically overwrite manfest.xml during startup operation
+on early-init && property:ro.special_edition=true
+    write /dev/kmsg "ro.special_edition=true: overwrite secure_element-service-goodixsp.xml by secure_element-service-goodix.xml"
+    mount none /odm/etc/secure_element-service-goodixsp.xml /odm/etc/vintf/manifest/secure_element-service-goodix.xml bind
+

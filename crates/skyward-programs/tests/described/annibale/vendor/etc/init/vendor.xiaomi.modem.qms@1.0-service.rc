@@ -1,0 +1,4 @@
+service vendor.miqms /vendor/bin/hw/vendor.xiaomi.modem.qms@1.0-service
+    class hal
+    user radio
+    group radio

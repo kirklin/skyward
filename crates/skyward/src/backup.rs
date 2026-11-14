@@ -11,13 +11,10 @@ use skyward_vab::{Slot, SnapshotState};
 use std::cell::Cell;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
-use std::os::unix::ffi::OsStrExt;
+use std::os::fd::{AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver};
 use std::sync::Arc;
-use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 /// The most often how far the work has come is told.
@@ -49,9 +46,10 @@ const RESTORE_ORDER: [Part; 4] = [Part::Boot, Part::System, Part::Efs, Part::Dat
 /// restore leaves as it is: internal storage, which is the user's own; the
 /// keys the partition opens with, and what the lock screen and the key
 /// service bind to the secure world, which an older copy would not open;
-/// and what the system makes again, its caches, compiled code and the
-/// updates it downloaded.
-const DATA_SKIPPED: [&str; 20] = [
+/// what the system makes again, its caches, compiled code and the updates
+/// it downloaded; and the second system, which lies where /metadata keeps
+/// it.
+const DATA_SKIPPED: [&str; 21] = [
     "media",
     "lost+found",
     "per_boot",
@@ -72,6 +70,7 @@ const DATA_SKIPPED: [&str; 20] = [
     "cache",
     "ota",
     "ota_package",
+    "skyward/systems",
 ];
 
 /// What of the data partition backups leave out on this phone: what every
@@ -178,82 +177,58 @@ pub enum End {
 }
 
 pub struct Worker {
-    events: Receiver<Event>,
-    /// Readable while events wait.
-    wake: OwnedFd,
     cancel: Arc<AtomicBool>,
-    thread: Option<JoinHandle<()>>,
+    /// The screen lets it go once the work has ended.
+    worker: skyward_sys::worker::Worker<Event>,
 }
 
 impl Worker {
     pub fn start(task: Task) -> Result<Worker> {
-        let mut fds = [0; 2];
-        if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) } != 0 {
-            return Err(io::Error::last_os_error()).context("make the backup worker's wake pipe");
-        }
-        let (wake, signal) = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
-        let (tx, events) = mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
         let stop = cancel.clone();
-        let thread = thread::Builder::new()
-            .name("backup".into())
-            .spawn(move || {
-                let tell = |event: Event| {
-                    // The screen only stops listening once it has let the
-                    // worker go.
-                    let _ = tx.send(event);
-                    unsafe { libc::write(signal.as_raw_fd(), [1u8].as_ptr().cast(), 1) };
-                };
-                let ended = match task {
-                    Task::Backup(t) => backup(t, &tell, &stop).map(End::Saved),
-                    Task::Restore(t) => restore(t, &tell, &stop).map(|unmade| End::Restored { unmade }),
-                };
-                let end = match ended {
-                    Ok(end) => end,
-                    Err(e) if e.is::<Cancelled>() => End::Stopped,
-                    Err(e) => match e.downcast::<Refusal>() {
-                        Ok(refusal) => End::Refused(refusal),
-                        Err(e) => End::Failed(format!("{e:#}")),
-                    },
-                };
-                let said = match &end {
-                    End::Saved(folder) => format!("backup saved in {}", folder.display()),
-                    End::Restored { unmade } => format!("backup restored, all but {unmade:?}"),
-                    End::Stopped => "backup stopped".into(),
-                    End::Refused(why) => format!("backup refused: {why}"),
-                    End::Failed(why) => format!("backup failed: {why}"),
-                };
-                skyward_sys::kmsg(&said).expect("the kernel log takes a line");
-                tell(Event::Ended(end));
-            })
-            .context("start the backup worker")?;
-        Ok(Worker { events, wake, cancel, thread: Some(thread) })
+        let worker = skyward_sys::worker::Worker::start("backup", move |teller| {
+            let tell = |event: Event| {
+                teller.tell(event);
+            };
+            let ended = match task {
+                Task::Backup(t) => backup(t, &tell, &stop).map(End::Saved),
+                Task::Restore(t) => restore(t, &tell, &stop).map(|unmade| End::Restored { unmade }),
+            };
+            let end = match ended {
+                Ok(end) => end,
+                Err(e) if e.is::<Cancelled>() => End::Stopped,
+                Err(e) => match e.downcast::<Refusal>() {
+                    Ok(refusal) => End::Refused(refusal),
+                    Err(e) => End::Failed(format!("{e:#}")),
+                },
+            };
+            let said = match &end {
+                End::Saved(folder) => format!("backup saved in {}", folder.display()),
+                End::Restored { unmade } => format!("backup restored, all but {unmade:?}"),
+                End::Stopped => "backup stopped".into(),
+                End::Refused(why) => format!("backup refused: {why}"),
+                End::Failed(why) => format!("backup failed: {why}"),
+            };
+            skyward_sys::kmsg(&said).expect("the kernel log takes a line");
+            tell(Event::Ended(end));
+        })?;
+        Ok(Worker { cancel, worker })
     }
 
+    /// Readable while events wait.
     pub fn fd(&self) -> RawFd {
-        self.wake.as_raw_fd()
+        self.worker.fd()
     }
 
     /// The events since the last call.
     pub fn events(&self) -> Vec<Event> {
-        let mut drain = [0u8; 64];
-        while unsafe { libc::read(self.wake.as_raw_fd(), drain.as_mut_ptr().cast(), drain.len()) } > 0 {}
-        self.events.try_iter().collect()
+        self.worker.events()
     }
 
     /// Ask the work to stop; it does between two chunks, and a restore
     /// only while nothing is written yet.
     pub fn stop(&self) {
         self.cancel.store(true, Ordering::Relaxed);
-    }
-}
-
-impl Drop for Worker {
-    /// The screen lets the worker go once its work has ended.
-    fn drop(&mut self) {
-        if let Some(thread) = self.thread.take() {
-            thread.join().expect("the backup worker does not panic");
-        }
     }
 }
 
@@ -318,18 +293,13 @@ fn copy(from: &mut impl Read, to: &mut impl Write, len: u64, cancel: &AtomicBool
 /// with, in hex.
 fn data_key() -> Result<String> {
     let bytes = fs::read(DATA_KEY).with_context(|| format!("read {DATA_KEY}"))?;
-    Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
+    Ok(hex::encode(bytes))
 }
 
 /// The bytes free where `path` is, or would be made.
 fn free_bytes(path: &Path) -> Result<u64> {
     let there = path.ancestors().find(|p| p.exists()).context("the root is always there")?;
-    let c = std::ffi::CString::new(there.as_os_str().as_bytes()).with_context(|| format!("{} holds a NUL", there.display()))?;
-    let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
-    if unsafe { libc::statvfs(c.as_ptr(), &mut st) } != 0 {
-        return Err(io::Error::last_os_error()).with_context(|| format!("look at the room on {}", there.display()));
-    }
-    Ok(st.f_bavail as u64 * st.f_frsize as u64)
+    Ok(mount::space(there).with_context(|| format!("look at the room on {}", there.display()))?.available)
 }
 
 /// The slot's partitions in super are read or written whole only while no
@@ -354,6 +324,9 @@ fn backup(t: BackupTask, tell: &dyn Fn(Event), cancel: &AtomicBool) -> Result<Pa
     // the data partition's archive headers.
     let mut needed = 0;
     if boot {
+        // The boot partitions are backed up as the installed system's,
+        // whose boot set goes back into them first.
+        skyward_systems::install::ensure_installed()?;
         for name in BOOT {
             let device = partition(&format!("{name}{}", slot.suffix()));
             if device.exists() {
@@ -536,6 +509,12 @@ fn restore(t: RestoreTask, tell: &dyn Fn(Event), cancel: &AtomicBool) -> Result<
     }
     if system {
         (t.detach)().context("take the slot's partitions off before writing over them")?;
+    }
+    // The boot partitions are restored as the installed system's, whose
+    // boot set goes back into them first, so that the second system's is
+    // not left kept as being there.
+    if items.iter().any(|i| i.part == Part::Boot) {
+        skyward_systems::install::ensure_installed()?;
     }
     // Once anything is written, the restore goes on to its end.
     let go_on = AtomicBool::new(false);

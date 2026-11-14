@@ -1,0 +1,17 @@
+ # Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ # All rights reserved.
+ # Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+service vendor.hexpservice /vendor/bin/hexlpservice
+    class hal
+    user media
+    group camera system
+
+    # AIDL interface
+    interface aidl vendor.qti.hardware.hexlp.IHexlpService/default
+
+    # don't auto restart
+    oneshot
+
+    # start only when requested (uncomment below to disable service at boot)
+    disabled

@@ -1,0 +1,12 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/commonsys/securemsm/sse/systemhelper_service/jni_service/vendor.qti.hardware.systemhelperaidl.xml
+-->
+<manifest version="9.0" type="framework">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.systemhelperaidl</name>
+        <fqname>ISystemEvent/default</fqname>
+        <fqname>ISystemResource/default</fqname>
+        <fqname>ISystemTUICallback/default</fqname>
+    </hal>
+</manifest>

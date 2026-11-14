@@ -1,0 +1,14 @@
+on boot
+    chown system system /dev/nanodev0
+    chmod 0664 /dev/nanodev0
+    chown system system /sys/class/nanodev/nanodev0/_version176x
+    chmod 0664 /sys/class/nanodev/nanodev0/_version176x
+    chown system system /sys/class/nanodev/nanodev0/_version803x
+    chmod 0664 /sys/class/nanodev/nanodev0/_version803x
+
+service nanoapp  /odm/bin/hw/vendor.xiaomi.hardware.keyboardnanoapp@1.0-service
+    class late_start
+    user system
+    group system
+    seclabel u:r:nanoapp:s0
+    onrestart restart nanoapp

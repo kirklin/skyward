@@ -1,0 +1,35 @@
+# MIUI ADD: Kernel_32bitTranslate
+on late-fs && property:ro.vendor.mi_fake_32bit_support=true
+    chmod 0666 /dev/tango32
+
+on early-init && property:ro.vendor.mi_fake_32bit_support=true
+    mount binfmt_misc none /proc/sys/fs/binfmt_misc
+    write /proc/sys/fs/binfmt_misc/register ":tango_translator:M::\x7fELF\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x28\x00:\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\xfe\xff\xff\xff:/system_ext/bin/tango_translator:POCF"
+
+on boot && property:ro.vendor.mi_fake_32bit_support=
+    write /proc/sys/fs/binfmt_misc/tango_translator 0
+
+on boot && property:ro.vendor.native_32bit=true
+    write /proc/sys/fs/binfmt_misc/tango_translator 0
+
+# Lazy zygote secondary service
+# Service start and stop only by start/stop, do restart only if zygote_secondary crashed
+service zygote_mi_secondary /system/bin/app_process32 -Xzygote /system/bin --zygote --socket-name=zygote_secondary
+    class main
+    disabled
+    user root
+    group root readproc reserved_disk
+    socket zygote_secondary stream 660 root system
+    socket usap_pool_secondary stream 660 root system
+    task_profiles ProcessCapacityHigh MaxPerformance
+
+on property:ro.zygote=zygote64 && property:ro.vendor.mi_support_zygote32_lazyload=true && property:sys.mi_zygote32.start=true
+    start zygote_mi_secondary
+
+#on property:ro.zygote=zygote64 && property:ro.vendor.mi_support_zygote32_lazyload=true && property:sys.mi_zygote32.start=false
+#    stop zygote_mi_secondary
+
+on zygote-start && property:ro.zygote=zygote64 && property:ro.vendor.mi_fake_32bit_support=true && property:ro.vendor.mi_support_zygote32_lazyload=false
+    start zygote_mi_secondary
+
+# END Kernel_32bitTranslate

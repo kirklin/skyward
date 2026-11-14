@@ -1,0 +1,117 @@
+service ntn-rild1 /odm/bin/hw/ntn_rild -s 1
+    class main
+    disabled
+    user root
+    group system root radio cache inet misc audio log readproc wakelock
+    capabilities BLOCK_SUSPEND
+
+on property:sys.boot_completed=1
+#on property:persist.odm.radio.ntn_rild_slot=1
+    chmod 0777 /dev/socket
+    chmod 0666 /dev/ttyHS5
+    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/bp_sleep_ap
+    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/ap_sleep_bp
+    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/rst
+    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/boot_mode0
+    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/boot_mode3
+    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/sat_1p1_en
+    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/sat_1p8_en
+    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/tt_uart_en
+    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/sim_signal1
+    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/sim_signal2
+    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/sim_power1_qc
+    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/sim_power1_ntn
+    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/sim_power2_qc
+    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/sim_power2_ntn
+    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/pwr_ctl_1p2
+    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/pwr_ctl_3p3
+    chmod 0666 /sys/devices/platform/soc/soc:jingshang_mdm/rst
+    chmod 0666 /sys/devices/platform/soc/soc:jingshang_mdm/pwr_ctl_1p1
+    chmod 0666 /sys/devices/platform/soc/soc:jingshang_mdm/sat_1p8_en
+    chmod 0666 /sys/devices/platform/soc/soc:jingshang_mdm/pwr_ctl_3p3
+    chmod 0666 /sys/devices/platform/soc/soc:jingshang_mdm/ap_sleep_bp
+    chmod 0666 /sys/devices/platform/soc/soc:jingshang_mdm/bp_sleep_ap
+    chmod 0666 /sys/devices/platform/soc/soc:jingshang_mdm/tt_uart_en
+    chmod 0666 /dev/tt_chip
+    start ntn-rild1
+
+service ntn-rild2 /odm/bin/hw/ntn_rild -s 2
+    class main
+    oneshot
+    disabled
+    user root
+    group system root radio cache inet misc audio log readproc wakelock
+    capabilities BLOCK_SUSPEND
+
+#on property:persist.odm.radio.ntn_rild_slot=2
+#    chmod 0666 /dev/ttyHS5
+#    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/bp_sleep_ap
+#    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/ap_sleep_bp
+#    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/rst
+#    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/boot_mode0
+#    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/boot_mode3
+#    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/sat_1p1_en
+#    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/sat_1p8_en
+#    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/tt_uart_en
+#    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/sim_signal1
+#    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/sim_signal2
+#    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/sim_power1_qc
+#    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/sim_power1_ntn
+#    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/sim_power2_qc
+#    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/sim_power2_ntn
+#    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/pwr_ctl_1p2
+#    chmod 0666 /sys/devices/platform/soc/soc:tiantong_mdm/pwr_ctl_3p3
+#    chmod 0666 /sys/devices/platform/soc/soc:jingshang_mdm/rst
+#    chmod 0666 /sys/devices/platform/soc/soc:jingshang_mdm/pwr_ctl_1p1
+#    chmod 0666 /sys/devices/platform/soc/soc:jingshang_mdm/sat_1p8_en
+#    chmod 0666 /sys/devices/platform/soc/soc:jingshang_mdm/pwr_ctl_3p3
+#    chmod 0666 /sys/devices/platform/soc/soc:jingshang_mdm/ap_sleep_bp
+#    chmod 0666 /sys/devices/platform/soc/soc:jingshang_mdm/bp_sleep_ap
+#    chmod 0666 /sys/devices/platform/soc/soc:jingshang_mdm/tt_uart_en
+#    chmod 0666 /dev/tt_chip
+#    start ntn-rild2
+
+#on property:persist.odm.radio.ntn_rild_slot=3
+#    stop ntn-rild1
+
+#on property:persist.odm.radio.ntn_rild_slot=4
+#    stop ntn-rild2
+
+on property:persist.odm.radio.ntn_rild_slot=5
+    restart ntn-rild1
+
+#service vendor.ntnstack /vendor/bin/logwrapper /odm/bin/tt_701_device_ps.axf
+service vendor.ntnstack /odm/bin/tt_701_device_ps.axf
+    class main
+    oneshot
+    disabled
+    user root
+    group system root radio cache inet misc audio log readproc wakelock
+    capabilities BLOCK_SUSPEND
+    seclabel u:r:ntn_stack:s0
+
+on property:persist.odm.radio.ntn_stack_on=0
+    stop vendor.ntnstack
+    setprop persist.odm.radio.ntn_rild_slot 5
+
+on property:persist.odm.radio.ntn_stack_on=1
+    chmod 0777 /data/vendor/log
+    mkdir /data/vendor/log/tt_log
+    chmod 0777 /data/vendor/log/tt_log
+    mkdir /data/vendor/radio/tt_log
+    chmod 0777 /data/vendor/radio/tt_log
+    start vendor.ntnstack
+    setprop persist.odm.radio.ntn_rild_slot 5
+
+
+# For CIT
+on property:persist.odm.radio.ntn_stack_on=4
+    stop vendor.ntnstack
+
+on property:persist.odm.radio.ntn_stack_on=6
+    chmod 0777 /data/vendor/log
+    mkdir /data/vendor/log/tt_log
+    chmod 0777 /data/vendor/log/tt_log
+    mkdir /data/vendor/radio/tt_log
+    chmod 0777 /data/vendor/radio/tt_log
+    start vendor.ntnstack

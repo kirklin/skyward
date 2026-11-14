@@ -1,0 +1,4 @@
+service vendor.mikeybag /odm/bin/vendor.xiaomi.hardware.mikeybag-service
+    class hal
+    user system
+    group system

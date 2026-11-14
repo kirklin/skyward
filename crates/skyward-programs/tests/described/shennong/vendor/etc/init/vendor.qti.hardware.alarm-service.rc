@@ -1,0 +1,11 @@
+# Copyright (c) 2023 Qualcomm Technologies, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+#
+service vendor.qti.hardware.alarm-service /vendor/bin/hw/vendor.qti.hardware.alarm-service
+    interface aidl vendor.qti.hardware.alarm.IAlarm/default
+    class hal
+    user system
+    group system
+    oneshot
+    disabled

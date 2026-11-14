@@ -1,0 +1,30 @@
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# All rights reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+service vendor.C2PAInternetService /vendor/bin/C2PAInternetService
+     class late_start
+     user system
+     group system inet
+
+# Service start up is configured based on vendor.c2pa_listener.service_start property:
+#     [0]: No optimization, service started on device bootup.
+#     [1]: Service disbaled on device bootup, started after first usecase.
+#     [2]: Service disbaled on device bootup, started on usecase boundary.
+on boot && property:vendor.c2pa_listener.service_start=0
+    setprop vendor.c2pa_listener.service.enabled true
+
+on boot && property:vendor.c2pa_listener.service_start=1
+    setprop vendor.c2pa_listener.service.enabled false
+
+on boot && property:vendor.c2pa_listener.service_start=2
+    setprop vendor.c2pa_listener.service.enabled false
+
+# c2pa_listener service start/stop is based on vendor.c2pa_listener.service.enabled property:
+#      [true]: Service is started.
+#      [false]: Service is stopped.
+on property:vendor.c2pa_listener.service.enabled=true
+    start vendor.C2PAInternetService
+
+on property:vendor.c2pa_listener.service.enabled=false
+    stop vendor.C2PAInternetService

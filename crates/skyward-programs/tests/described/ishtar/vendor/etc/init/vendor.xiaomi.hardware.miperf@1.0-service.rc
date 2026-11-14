@@ -1,0 +1,9 @@
+on post-fs-data
+    mkdir /data/vendor/miperf
+    chmod 0771 /data/vendor/miperf
+    chown root system /data/vendor/miperf
+
+service vendor.miperf /vendor/bin/hw/vendor.xiaomi.hardware.miperf@1.0-service
+    class hal
+    user root
+    group system root

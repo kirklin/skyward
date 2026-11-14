@@ -1,0 +1,9 @@
+# should after mkdir /data/miuilog/misight on post-fs-data
+service misight /system_ext/bin/misight
+   class main
+   user root
+   group system cache log readproc media_rw everybody
+   seclabel u:r:misight:s0
+   onrestart restart vendor.mi_misight
+ on post-fs-data
+    setprop persist.sys.misight.times 0

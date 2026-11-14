@@ -63,6 +63,8 @@ pub enum Icon {
     Wlan,
     /// A battery, as the stock Settings' battery shows it.
     Battery,
+    /// Two phones, the one behind showing round the one in front.
+    Systems,
 }
 
 /// The stock icons' box: every outline here is laid out in it.
@@ -336,6 +338,14 @@ const BATTERY: &[Part] = &[add(Shape::EvenOdd(
      C22.747,11.536 22.613,11.536 22.345,11.536C22.077,11.536 21.943,11.536 21.838,11.583C21.719,11.637 21.624,11.732 21.571,11.851Z",
 ))];
 
+const SYSTEMS: &[Part] = &[
+    add(Shape::Fill("M8.6,5.2H15A2.4,2.4 0 0 1 17.4,7.6V17.2A2.4,2.4 0 0 1 15,19.6H8.6A2.4,2.4 0 0 1 6.2,17.2V7.6A2.4,2.4 0 0 1 8.6,5.2Z")),
+    // The gap that sets the phone in front apart from the one behind.
+    cut(Shape::Fill("M13,7.1H19.4A3.7,3.7 0 0 1 23.1,10.8V20.4A3.7,3.7 0 0 1 19.4,24.1H13A3.7,3.7 0 0 1 9.3,20.4V10.8A3.7,3.7 0 0 1 13,7.1Z")),
+    add(Shape::Fill("M13,8.4H19.4A2.4,2.4 0 0 1 21.8,10.8V20.4A2.4,2.4 0 0 1 19.4,22.8H13A2.4,2.4 0 0 1 10.6,20.4V10.8A2.4,2.4 0 0 1 13,8.4Z")),
+    cut(Shape::Line("M14.4,20.2H18", 1.3)),
+];
+
 /// What `icon`'s glyph is drawn from, and at what share of its size.
 fn outline(icon: Icon) -> (&'static [Part], f32) {
     match icon {
@@ -360,6 +370,7 @@ fn outline(icon: Icon) -> (&'static [Part], f32) {
         Icon::Shield => (SHIELD, 1.0),
         Icon::Wlan => (WLAN, 1.0),
         Icon::Battery => (BATTERY, 1.0),
+        Icon::Systems => (SYSTEMS, 1.0),
     }
 }
 
@@ -489,7 +500,7 @@ fn path(d: &str) -> tiny_skia::Path {
 mod tests {
     use super::*;
 
-    const ALL: [Icon; 21] = [
+    const ALL: [Icon; 22] = [
         Icon::Install,
         Icon::Backup,
         Icon::Restore,
@@ -511,6 +522,7 @@ mod tests {
         Icon::Shield,
         Icon::Wlan,
         Icon::Battery,
+        Icon::Systems,
     ];
 
     /// Pixels a unit of the box takes in these tests.

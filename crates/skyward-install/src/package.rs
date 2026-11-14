@@ -1,7 +1,8 @@
 //! What arrives over sideload: an A/B update package, a zip with an
-//! install script, a partition image, or something this recovery cannot
-//! install; and whether an update package may go on this phone, checked
-//! the way Android's recovery checks it.
+//! install script, a partition image, a system to install beside the
+//! installed one, or something this recovery cannot install; and whether
+//! an update package may go on this phone, checked the way Android's
+//! recovery checks it.
 
 use crate::image::{self, ImageKind};
 use crate::Refusal;
@@ -26,6 +27,8 @@ pub enum Package {
     Image(ImageKind),
     /// A zip that installs itself by running the script inside it.
     Script,
+    /// A system to install beside the installed one.
+    System(skyward_systems::package::Contents),
     Unknown,
 }
 
@@ -87,6 +90,9 @@ pub fn identify<R: Read + Seek>(mut file: R) -> Result<Package> {
     if zip.index_for_name(PAYLOAD).is_some() {
         return update(&mut zip).map(Package::Update);
     }
+    if skyward_systems::package::is_system(&zip) {
+        return skyward_systems::package::read(&mut zip).map(Package::System);
+    }
     if zip.index_for_name(UPDATE_BINARY).is_some() {
         return Ok(Package::Script);
     }
@@ -144,10 +150,10 @@ pub fn check(update: &Update, phone: &Phone) -> Result<(), Refusal> {
     if !listed(&phone.device, devices) {
         return Err(Refusal::OtherDevice(devices.to_string()));
     }
-    if let Some(serials) = m.get("serialno") {
-        if !listed(&phone.serial, serials) {
-            return Err(Refusal::OtherSerial);
-        }
+    if let Some(serials) = m.get("serialno")
+        && !listed(&phone.serial, serials)
+    {
+        return Err(Refusal::OtherSerial);
     }
     if m.get("pre-build").is_some() || m.get("pre-build-incremental").is_some() {
         return Err(Refusal::Incremental);

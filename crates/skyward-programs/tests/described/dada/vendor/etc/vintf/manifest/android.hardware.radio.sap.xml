@@ -1,0 +1,11 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/qcril-nr/qcril_qmi/android.hardware.radio.sap.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>android.hardware.radio.sap</name>
+        <fqname>ISap/slot1</fqname>
+        <fqname>ISap/slot2</fqname>
+    </hal>
+</manifest>

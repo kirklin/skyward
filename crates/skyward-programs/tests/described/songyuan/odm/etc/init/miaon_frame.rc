@@ -1,0 +1,13 @@
+on property:vendor.native_aonframe.control=1
+    start miaon_frame
+
+on property:vendor.native_aonframe.control=0
+    stop miaon_frame
+
+service miaon_frame /odm/bin/hw/miaon_frame
+    class hal
+    user system
+    group system
+    interface aidl vendor.xiaomi.sensor.aonframe.IMiAonFrame/default
+    disabled
+    oneshot

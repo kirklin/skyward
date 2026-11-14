@@ -1,0 +1,11 @@
+<!--
+    Input:
+        vendor/xiaomi/proprietary/mifingerprint/mfp_service/AHBF-V3-service.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>android.hardware.biometrics.fingerprint</name>
+        <version>4</version>
+        <fqname>IFingerprint/default</fqname>
+    </hal>
+</manifest>

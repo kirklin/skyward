@@ -1,0 +1,14 @@
+service batteryantiaging /vendor/bin/hw/vendor.xiaomi.hardware.batteryantiaging-service
+    interface aidl vendor.xiaomi.hardware.batteryantiaging.IBatteryAntiAging/default
+    class hal
+    user root
+    group system
+    seclabel u:r:hal_batteryantiaging_default:s0
+    oneshot
+
+service BAA-charger /vendor/bin/hw/vendor.xiaomi.hardware.batteryantiaging-service --charger
+    class charger
+    user root
+    group system
+    seclabel u:r:hal_batteryantiaging_default:s0
+    oneshot

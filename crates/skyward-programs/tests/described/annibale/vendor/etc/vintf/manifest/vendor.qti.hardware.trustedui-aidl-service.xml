@@ -1,0 +1,11 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/securemsm/TrustedUI/aidl-service/vendor.qti.hardware.trustedui-aidl-service.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.trustedui</name>
+        <fqname>ITrustedInput/default</fqname>
+        <fqname>ITrustedUI/default</fqname>
+    </hal>
+</manifest>

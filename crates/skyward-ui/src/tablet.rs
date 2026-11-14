@@ -15,6 +15,7 @@ const SECTIONS: &[(Screen, Text, Icon)] = &[
     (Screen::Search, ["搜索", "搜尋", "Search"], Icon::More),
     (Screen::Wlan, ["WLAN", "Wi-Fi", "Wi-Fi"], Icon::Wlan),
     (Screen::Install, ["安装", "安裝", "Install"], Icon::Install),
+    (Screen::Systems, ["双系统", "雙系統", "Dual boot"], Icon::Systems),
     (Screen::Backup, ["备份", "備份", "Backup"], Icon::Backup),
     (Screen::Restore, ["恢复", "還原", "Restore"], Icon::Restore),
     (Screen::Mount, ["挂载", "掛載", "Mount"], Icon::Mount),
@@ -42,6 +43,17 @@ enum Gesture {
     Sidebar { start: f32, scroll: f32, pick: Option<Screen>, moved: bool },
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct SidebarKey {
+    dark: bool,
+    lang: Lang,
+    selected: Screen,
+    wlan: bool,
+    systems: bool,
+    scroll: u32,
+    pressed: Option<Screen>,
+}
+
 pub struct Tablet {
     pub detail: Canvas,
     sidebar: Canvas,
@@ -52,7 +64,7 @@ pub struct Tablet {
     max_scroll: f32,
     hits: Vec<(Rect, Screen)>,
     gesture: Gesture,
-    cached: Option<(bool, Lang, Screen, bool, u32, Option<Screen>)>,
+    cached: Option<SidebarKey>,
 }
 
 impl Tablet {
@@ -71,11 +83,13 @@ impl Tablet {
     pub fn paint(&mut self, out: &mut Canvas, f: &Fonts, app: &App) {
         let selected = app.tablet_selection();
         let wlan = app.state.offers(Screen::Wlan);
+        let systems = app.state.offers(Screen::Systems);
         let pressed = match self.gesture {
             Gesture::Sidebar { pick, moved: false, .. } => pick,
             _ => None,
         };
-        let key = (app.state.dark, app.state.lang, selected, wlan, self.scroll.round() as u32, pressed);
+        let key = SidebarKey { dark: app.state.dark, lang: app.state.lang, selected, wlan, systems,
+            scroll: self.scroll.round() as u32, pressed };
         if self.cached != Some(key) {
             let t = if app.state.dark { Theme::dark(self.width, self.height, self.dp) }
                 else { Theme::light(self.width, self.height, self.dp) };
@@ -87,14 +101,15 @@ impl Tablet {
             let words = widgets::search_words(&t, f, search,
                 app.state.lang.pick(["搜索恢复功能", "搜尋復原功能", "Search recovery"]));
             c.lay(&words, search.x.floor() as i32, search.y.floor() as i32, 1.0);
-            let entries: Vec<_> = SECTIONS.iter().filter(|(s, _, _)| *s != Screen::Search && (*s != Screen::Wlan || wlan)).collect();
+            let entries: Vec<_> = SECTIONS.iter().filter(|(s, _, _)| *s != Screen::Search
+                && (*s != Screen::Wlan || wlan) && (*s != Screen::Systems || systems)).collect();
             let top = 202.0*d;
             let row = 48.0*d;
             let gap = 12.0*d;
             let group = |s: Screen| match s {
                 Screen::About => 0,
                 Screen::Wlan => 1,
-                Screen::Install | Screen::Backup | Screen::Restore | Screen::Mount | Screen::Decrypt => 2,
+                Screen::Install | Screen::Systems | Screen::Backup | Screen::Restore | Screen::Mount | Screen::Decrypt => 2,
                 _ => 3,
             };
             let gaps = entries.windows(2).filter(|pair| group(pair[0].0) != group(pair[1].0)).count();
@@ -132,7 +147,7 @@ impl Tablet {
                 let ink = t.pal.text;
                 let color = match screen {
                     Screen::Install => GREEN,
-                    Screen::Restore => PURPLE,
+                    Screen::Restore | Screen::Systems => PURPLE,
                     Screen::Wipe => RED,
                     Screen::Reboot => ORANGE,
                     Screen::About | Screen::Wlan | Screen::Backup | Screen::Decrypt => BLUE,

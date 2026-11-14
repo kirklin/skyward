@@ -1,0 +1,26 @@
+# Copyright (c) 2021-2022 Qualcomm Technologies, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+#
+
+# msm specific files that need to be created on /data
+on post-fs-data
+    #Create DLSC daemon log dir
+    mkdir /data/vendor/dlsc 0770 radio radio
+    chmod 0770 /data/vendor/dlsc
+
+service vendor.dlsc /system/vendor/bin/dlsc
+    class main
+    disabled
+    user radio
+    group radio
+
+# The service will be restricted to userdebug build
+# variant on msm,mdm targets.
+# When we decide to move the service to user
+# variant we will re-evaluate the permissions
+on property:ro.build.type=userdebug && property:ro.baseband=msm
+    enable vendor.dlsc
+
+on property:ro.build.type=userdebug && property:ro.baseband=mdm
+    enable vendor.dlsc

@@ -1,0 +1,10 @@
+<!--
+    Input:
+        vendor/qcom/opensource/data-ipa-cfg-mgr/ipacm/src/vendor.qti.hardware.tetheroffload.service.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>android.hardware.tetheroffload</name>
+        <fqname>IOffload/default</fqname>
+    </hal>
+</manifest>

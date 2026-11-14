@@ -1,0 +1,5 @@
+<!--
+    Input:
+        vendor/goodix/security/opensource/halimpl/secure_element/aidl/secure_element-service-goodix.xml
+-->
+<manifest version="9.0" type="device"/>

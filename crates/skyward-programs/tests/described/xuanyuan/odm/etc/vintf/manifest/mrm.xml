@@ -1,0 +1,22 @@
+<!--
+    Input:
+        vendor/xiaomi/proprietary/miriskmanager/impl/mrm.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.xiaomi.hardware.misauth</name>
+        <fqname>IMiSharedAuth/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.xiaomi.hardware.mrm</name>
+        <fqname>IMrm/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.xiaomi.hardware.mrm</name>
+        <fqname>IMiCertificate/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.xiaomi.hardware.mrm</name>
+        <fqname>IMrmRemoteAuth/default</fqname>
+    </hal>
+</manifest>

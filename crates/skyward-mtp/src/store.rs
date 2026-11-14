@@ -266,12 +266,11 @@ impl Store {
                 }
             }
             Raw::Gone(wd) => {
-                if let Some(folder) = self.watch.forget(wd) {
-                    if let Ok(f) = self.folder_mut(folder) {
-                        if f.watch == Some(wd) {
-                            f.watch = None;
-                        }
-                    }
+                if let Some(folder) = self.watch.forget(wd)
+                    && let Ok(f) = self.folder_mut(folder)
+                    && f.watch == Some(wd)
+                {
+                    f.watch = None;
                 }
             }
             Raw::Appeared(wd, name) => {

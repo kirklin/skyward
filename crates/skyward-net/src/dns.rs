@@ -29,10 +29,16 @@ pub enum Answer {
     /// The answer did not fit in one datagram, and is asked for again over
     /// TCP.
     Truncated,
+    /// The server could not or would not look the name up, and says so
+    /// with this code: it failed at it, or turns the asker away. Another
+    /// server may know the name.
+    Unanswered(ResponseCode),
 }
 
 /// The answer `packet` gives to question `id`, after the names it points
-/// to; a packet that answers another question gives none.
+/// to; a packet that answers another question gives none. A name the
+/// server says does not exist, or has no IPv4 address, is an error: it is
+/// what any server says of it.
 pub fn answer(packet: &[u8], id: u16, host: &str) -> Result<Option<Answer>> {
     let Ok(m) = Message::from_vec(packet) else { return Ok(None) };
     if m.metadata.id != id || m.metadata.message_type != MessageType::Response {
@@ -44,7 +50,7 @@ pub fn answer(packet: &[u8], id: u16, host: &str) -> Result<Option<Answer>> {
     match m.metadata.response_code {
         ResponseCode::NoError => {}
         ResponseCode::NXDomain => bail!("{host} does not exist"),
-        other => bail!("the DNS server answered {other} for {host}"),
+        other => return Ok(Some(Answer::Unanswered(other))),
     }
     let addresses: Vec<Ipv4Addr> = m
         .answers
@@ -71,12 +77,20 @@ pub fn lookup(host: &str, servers: &[Ipv4Addr]) -> Result<Vec<Ipv4Addr>> {
     if let Ok(address) = host.parse::<Ipv4Addr>() {
         return Ok(vec![address]);
     }
+    let servers: Vec<SocketAddrV4> = servers.iter().map(|server| SocketAddrV4::new(*server, PORT)).collect();
+    ask_in_turn(host, &servers)
+}
+
+/// The IPv4 addresses of `host`, asked of the servers at `servers` one
+/// after another until one gives them; where none does, why the last did
+/// not.
+fn ask_in_turn(host: &str, servers: &[SocketAddrV4]) -> Result<Vec<Ipv4Addr>> {
     if servers.is_empty() {
         bail!("the network gave no DNS server");
     }
     let mut last = None;
     for server in servers {
-        match ask_server(host, SocketAddrV4::new(*server, PORT))? {
+        match ask_server(host, *server)? {
             Ok(found) => return Ok(found),
             Err(why) => last = Some(why),
         }
@@ -87,13 +101,22 @@ pub fn lookup(host: &str, servers: &[Ipv4Addr]) -> Result<Vec<Ipv4Addr>> {
 /// Ask the server at `at` over UDP, then over TCP where no whole answer
 /// comes over UDP, as some networks let a question out over UDP and never
 /// let its answer back in: the addresses of `host`, or why the server gave
-/// none. A name that is not there is an error, as it is not there at the
-/// next server either.
+/// none, which is for the next server to be asked: it did not answer, or
+/// answered that it could not or would not look the name up. A name that
+/// is not there is an error, as it is not there at the next server either.
 fn ask_server(host: &str, at: SocketAddrV4) -> Result<Result<Vec<Ipv4Addr>, anyhow::Error>> {
-    if let Some(Answer::Addresses(found)) = ask(host, at)? {
-        return Ok(Ok(found));
+    let unanswered = |code: ResponseCode| anyhow::anyhow!("the DNS server at {} answered {code} for {host}", at.ip());
+    match ask(host, at)? {
+        Some(Answer::Addresses(found)) => return Ok(Ok(found)),
+        Some(Answer::Unanswered(code)) => return Ok(Err(unanswered(code))),
+        Some(Answer::Truncated) | None => {}
     }
-    Ok(ask_tcp(host, at)?.map_err(|why| anyhow::anyhow!("the DNS server at {} did not answer over UDP, nor over TCP: {why}", at.ip())))
+    Ok(match ask_tcp(host, at)? {
+        Ok(Answer::Addresses(found)) => Ok(found),
+        Ok(Answer::Unanswered(code)) => Err(unanswered(code)),
+        Ok(Answer::Truncated) => bail!("the DNS server at {at} cut its answer short over TCP too"),
+        Err(why) => Err(anyhow::anyhow!("the DNS server at {} did not answer over UDP, nor over TCP: {why}", at.ip())),
+    })
 }
 
 /// Ask the server at `at` over UDP; nothing heard in time gives none.
@@ -121,9 +144,9 @@ fn ask(host: &str, at: SocketAddrV4) -> Result<Option<Answer>> {
 }
 
 /// Ask the server at `at` over TCP, where each message goes after its
-/// length in two bytes: its addresses for `host`, or why the server could
-/// not be asked or its answer read.
-fn ask_tcp(host: &str, at: SocketAddrV4) -> Result<Result<Vec<Ipv4Addr>, std::io::Error>> {
+/// length in two bytes: its answer for `host`, or why the server could not
+/// be asked or its answer read.
+fn ask_tcp(host: &str, at: SocketAddrV4) -> Result<Result<Answer, std::io::Error>> {
     let id = id();
     let q = question(id, host)?;
     let exchange = || -> std::io::Result<Vec<u8>> {
@@ -144,8 +167,7 @@ fn ask_tcp(host: &str, at: SocketAddrV4) -> Result<Result<Vec<Ipv4Addr>, std::io
         Err(e) => return Ok(Err(e)),
     };
     match answer(&packet, id, host)? {
-        Some(Answer::Addresses(found)) => Ok(Ok(found)),
-        Some(Answer::Truncated) => bail!("the DNS server at {at} cut its answer short over TCP too"),
+        Some(answer) => Ok(Ok(answer)),
         None => bail!("the DNS server at {at} answered another question"),
     }
 }
@@ -246,6 +268,74 @@ mod tests {
         server.join().unwrap();
         assert_eq!(found.unwrap(), ADDRESSES);
         drop(udp);
+    }
+
+    /// What a server answers to `asked` that gives `code` and no addresses.
+    fn coded(asked: &[u8], code: ResponseCode) -> Vec<u8> {
+        let q = Message::from_vec(asked).unwrap();
+        let mut m = Message::new(q.metadata.id, MessageType::Response, OpCode::Query);
+        m.metadata.response_code = code;
+        m.add_query(q.queries[0].clone());
+        m.to_vec().unwrap()
+    }
+
+    /// A server on this computer that answers the one question it is
+    /// asked over UDP as `reply` makes of it, and where it listens.
+    fn serving(reply: impl FnOnce(&[u8]) -> Vec<u8> + Send + 'static) -> (std::thread::JoinHandle<()>, SocketAddrV4) {
+        let udp = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let at = SocketAddrV4::new(Ipv4Addr::LOCALHOST, udp.local_addr().unwrap().port());
+        let server = std::thread::spawn(move || {
+            let mut buf = [0u8; 1500];
+            let (n, from) = udp.recv_from(&mut buf).unwrap();
+            udp.send_to(&reply(&buf[..n]), from).unwrap();
+        });
+        (server, at)
+    }
+
+    #[test]
+    fn a_server_that_will_not_look_the_name_up_says_so_with_its_code() {
+        let q = question(4, "update.example.com").unwrap();
+        for code in [ResponseCode::ServFail, ResponseCode::Refused] {
+            assert_eq!(answer(&coded(&q, code), 4, "update.example.com").unwrap(), Some(Answer::Unanswered(code)));
+        }
+    }
+
+    /// The first server the network gave fails at the question, or turns
+    /// the phone away, and the second knows the name.
+    #[test]
+    fn the_next_server_is_asked_where_one_will_not_look_the_name_up() {
+        for code in [ResponseCode::ServFail, ResponseCode::Refused] {
+            let (unwilling, first) = serving(move |asked| coded(asked, code));
+            let (knowing, second) = serving(|asked| served(asked, &ADDRESSES, false));
+            assert_eq!(ask_in_turn("update.example.com", &[first, second]).unwrap(), ADDRESSES, "after {code}");
+            unwilling.join().unwrap();
+            knowing.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn where_no_server_will_look_the_name_up_the_last_one_s_code_is_given() {
+        let (failing, first) = serving(|asked| coded(asked, ResponseCode::ServFail));
+        let (refusing, second) = serving(|asked| coded(asked, ResponseCode::Refused));
+        let why = ask_in_turn("update.example.com", &[first, second]).unwrap_err().to_string();
+        assert_eq!(why, format!("the DNS server at 127.0.0.1 answered {} for update.example.com", ResponseCode::Refused));
+        failing.join().unwrap();
+        refusing.join().unwrap();
+    }
+
+    /// A name that does not exist does not exist at the next server
+    /// either, which is asked nothing.
+    #[test]
+    fn a_name_the_first_server_says_does_not_exist_is_asked_of_no_other() {
+        let (denying, first) = serving(|asked| coded(asked, ResponseCode::NXDomain));
+        let unasked = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        unasked.set_nonblocking(true).unwrap();
+        let second = SocketAddrV4::new(Ipv4Addr::LOCALHOST, unasked.local_addr().unwrap().port());
+        let why = ask_in_turn("nothing.example", &[first, second]).unwrap_err().to_string();
+        assert_eq!(why, "nothing.example does not exist");
+        denying.join().unwrap();
+        let mut buf = [0u8; 1500];
+        assert_eq!(unasked.recv_from(&mut buf).unwrap_err().kind(), std::io::ErrorKind::WouldBlock);
     }
 
     #[test]

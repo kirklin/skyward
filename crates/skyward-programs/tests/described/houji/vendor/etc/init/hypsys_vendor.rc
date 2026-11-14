@@ -1,0 +1,50 @@
+on fs
+    mkdir /mnt/vendor/persist/stability 0755 system system
+    mkdir /mnt/vendor/persist/misys 0755 system system
+
+# Minidump
+on post-fs-data
+    mkdir /data/vendor/diag 2771 root log
+
+on zygote-start
+    chown root system /sys/kernel/hardware_info_to_dump/hardw_info
+    chmod 0660 /sys/kernel/hardware_info_to_dump/hardw_info
+
+# Charger Logger
+on post-fs-data
+    chmod 0660 /sys/class/power_supply/wireless/reverse_chg_mode
+
+# Log Manager
+on post-fs-data
+    mkdir /data/vendor/bsplog 0775 system system
+    mkdir /data/vendor/bsplog/audio 0775 system system
+    mkdir /data/vendor/bsplog/camera 0775 system system
+    mkdir /data/vendor/bsplog/charge 0775 system system
+    mkdir /data/vendor/bsplog/charge/charge_logger 0771 system system
+    mkdir /data/vendor/bsplog/modem 0775 system system
+    mkdir /data/vendor/bsplog/secure 0775 system system
+    mkdir /data/vendor/bsplog/sensor 0775 system system
+    mkdir /data/vendor/bsplog/touch 0775 system system
+    mkdir /data/vendor/bsplog/wlan 0775 system system
+    mkdir /data/vendor/bsplog/bt 0775 system system
+    mkdir /data/vendor/bsplog/bt/ssr_dump 0775 system system
+    mkdir /data/vendor/bsplog/other 0775 system system
+
+# IoMonitor
+on post-fs-data
+    mkdir /data/vendor/io_monitor 0771 system system
+    chown system system /dev/io_monitor
+    chmod 0666 /dev/io_monitor
+
+on property:persist.sys.abreuse.abstatus=yes
+    chmod 0775 /mnt/reuse
+    mkdir /mnt/reuse/bsplog 0777 system system
+
+# 绑定MiSys interface，RescueParty日志抓取时间较短，调用MiSys接口时HypSys还没启动，绑定后可以提前拉起HypSys
+# 对于其他服务接口不做处理，等待服务正常初始化即可
+service vendor.misys.common /vendor/bin/hypsys_vendor
+    class main
+    user system
+    group system root log cache everybody media_rw
+    file /dev/kmsg r
+    interface aidl vendor.xiaomi.hardware.misys.common.IMiSysImpl/default

@@ -1,0 +1,15 @@
+<!-- Copyright (c) 2023 Qualcomm Technologies, Inc.
+All Rights Reserved.
+Confidential and Proprietary - Qualcomm Technologies, Inc.
+-->
+<manifest version="1.0" type="device">
+    <!-- HEXLP Service -->
+    <hal format="aidl">
+        <name>vendor.qti.hardware.hexlp</name>
+        <version>1</version>
+        <interface>
+            <name>IHexlpService</name>
+            <instance>default</instance>
+        </interface>
+   </hal>
+</manifest>

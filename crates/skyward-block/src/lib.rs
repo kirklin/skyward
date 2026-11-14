@@ -3,6 +3,7 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
+pub mod area;
 pub mod dm;
 pub mod erase;
 pub mod fsck;
@@ -50,12 +51,12 @@ fn find_kv(haystack: &str, key: &str) -> Option<String> {
     }
     // bootconfig form: one `key = "value"` per line.
     for line in haystack.lines() {
-        if let Some((k, v)) = line.split_once('=') {
-            if k.trim() == key {
-                let val = v.trim().trim_matches('"').trim_end_matches(',').trim_matches('"');
-                if !val.is_empty() {
-                    return Some(val.to_string());
-                }
+        if let Some((k, v)) = line.split_once('=')
+            && k.trim() == key
+        {
+            let val = v.trim().trim_matches('"').trim_end_matches(',').trim_matches('"');
+            if !val.is_empty() {
+                return Some(val.to_string());
             }
         }
     }
@@ -119,6 +120,24 @@ pub fn devnum(path: impl AsRef<Path>) -> Result<(u32, u32)> {
 #[cfg(not(target_os = "android"))]
 pub fn devnum(path: impl AsRef<Path>) -> Result<(u32, u32)> {
     anyhow::bail!("this host has no block device {}", path.as_ref().display())
+}
+
+/// Drop the device's cached pages, so reading it back reads the flash.
+#[cfg(target_os = "android")]
+pub fn drop_cache(f: &fs::File) -> Result<()> {
+    use std::os::fd::AsRawFd;
+    let rc = unsafe { libc::posix_fadvise(f.as_raw_fd(), 0, 0, libc::POSIX_FADV_DONTNEED) };
+    if rc != 0 {
+        return Err(std::io::Error::from_raw_os_error(rc).into());
+    }
+    Ok(())
+}
+
+/// Hosts run the tests on plain files, whose reads come from the same
+/// cache either way.
+#[cfg(not(target_os = "android"))]
+pub fn drop_cache(_: &fs::File) -> Result<()> {
+    Ok(())
 }
 
 #[cfg(test)]

@@ -1,0 +1,9 @@
+# Copyright (c) 2022 Qualcomm Technologies, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+service qsguard /system_ext/bin/qsguard
+    class late_start
+    user system
+    group system readproc
+    capabilities KILL

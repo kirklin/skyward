@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="../../readme.css">
+</head>
+<body>
+<main class="slide feature">
+  <header class="head">
+    <p class="eyebrow">Replacing the stock recovery</p>
+    <h1 class="headline"><span translate="no">Skyward</span> does what<br>the system asks.</h1>
+    <p class="body">The system writes its request to the misc partition and restarts into recovery. <span translate="no">Skyward</span> reads it, carries it out, then reboots or powers off as asked.</p>
+  </header>
+  <div class="visual">
+    <div class="asks">
+      <div class="cols"><p>The system asks</p><i></i><p translate="no">Skyward</p></div>
+      <ul>
+        <li>
+          <div class="from"><b>Factory reset in Settings</b><code translate="no">--wipe_data</code></div>
+          <span class="arrow"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+          <div class="to">Wipes all data, then reboots<br>or powers off on its own</div>
+        </li>
+        <li>
+          <div class="from"><b>The system can't start</b><code translate="no">--prompt_and_wipe_data</code></div>
+          <span class="arrow"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+          <div class="to">Offers to try again<br>or to factory reset</div>
+        </li>
+        <li>
+          <div class="from"><b translate="no">adb reboot sideload</b><code translate="no">--sideload</code></div>
+          <span class="arrow"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+          <div class="to">Waits for the computer<br>to send a package</div>
+        </li>
+        <li>
+          <div class="from"><b translate="no">adb reboot fastboot</b><code translate="no">--fastboot</code></div>
+          <span class="arrow"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+          <div class="to">Starts fastbootd</div>
+        </li>
+      </ul>
+    </div>
+  </div>
+</main>
+</body>
+</html>

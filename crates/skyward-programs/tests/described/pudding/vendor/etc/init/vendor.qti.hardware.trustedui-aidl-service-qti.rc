@@ -1,0 +1,33 @@
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# All rights reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+# vendor.trustedui service is started on device bootup.
+service vendor.trustedui /vendor/bin/hw/vendor.qti.hardware.trustedui-aidl-service-qti
+    class hal
+    user system
+    group system
+
+# vendor.trustedui_optimized service is started by service manager on service request.
+service vendor.trustedui_optimized /vendor/bin/hw/vendor.qti.hardware.trustedui-aidl-service-qti
+    class hal
+    interface aidl vendor.qti.hardware.trustedui.ITrustedUI/default
+    interface aidl vendor.qti.hardware.trustedui.ITrustedInput/default
+    user system
+    group system
+    disabled
+    oneshot
+
+# Service start up is configured based on vendor.trustedui.service_start property:
+#     [0]: No optimization, service started on device bootup.
+#     [1]: Service disbaled on device bootup, started after first usecase.
+#     [2]: Service disbaled on device bootup, started on usecase boundary.
+on property:vendor.trustedui.service_start=0
+    stop vendor.trustedui_optimized
+
+on property:vendor.trustedui.service_start=1
+    stop vendor.trustedui
+
+on property:vendor.trustedui.service_start=2
+    stop vendor.trustedui
+

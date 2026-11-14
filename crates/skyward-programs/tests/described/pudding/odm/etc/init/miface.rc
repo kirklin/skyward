@@ -1,0 +1,15 @@
+
+on post-fs-data
+    mkdir /data/vendor/face 775 system system
+
+service odm.miface /odm/bin/hw/mifaced
+    class hal
+    user system
+    group system
+    disabled
+
+service vendor.miface /vendor/bin/hw/mifaced
+    class hal
+    user system
+    group system
+    disabled

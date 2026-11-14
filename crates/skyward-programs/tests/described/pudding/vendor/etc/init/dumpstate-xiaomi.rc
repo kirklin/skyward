@@ -1,0 +1,7 @@
+service vendor.dumpstate-xiaomi /vendor/bin/hw/android.hardware.dumpstate-service.xiaomi
+    class hal
+    user system
+    group system log
+    disabled
+    oneshot
+    interface aidl android.hardware.dumpstate.IDumpstateDevice/default

@@ -1,0 +1,47 @@
+on  property:persist.sys.millet.cgroup=true
+    #cgroup v1 freezer sys/fs/cgroup entries
+    mount tmpfs none /sys/fs/cgroup mode=0750,uid=0,gid=1000
+    mkdir /sys/fs/cgroup/freezer 0750 root system
+    mount cgroup none /sys/fs/cgroup/freezer freezer
+    # Xiaomi: Create cgroup in freezer
+    mkdir /sys/fs/cgroup/freezer/perf 0750 root system
+    mkdir /sys/fs/cgroup/freezer/perf/frozen 0750 root system
+    write /sys/fs/cgroup/freezer/perf/frozen/freezer.state FROZEN
+    chown root system /sys/fs/cgroup/freezer/perf/frozen/cgroup.procs
+    chmod 0660 /sys/fs/cgroup/freezer/perf/frozen/cgroup.procs
+    chown root system /sys/fs/cgroup/freezer/perf/frozen/tasks
+    chmod 0660 /sys/fs/cgroup/freezer/perf/frozen/tasks
+    mkdir /sys/fs/cgroup/freezer/perf/thawed 0750 root system
+    chown root system /sys/fs/cgroup/freezer/perf/thawed/cgroup.procs
+    chmod 0660 /sys/fs/cgroup/freezer/perf/thawed/cgroup.procs
+    chown root system /sys/fs/cgroup/freezer/perf/thawed/tasks
+    chmod 0660 /sys/fs/cgroup/freezer/perf/thawed/tasks
+
+service millet_sig /system_ext/bin/millet_monitor SIG
+    user root
+    group system
+    class main
+    disabled
+    onrestart setprop sys.millet.monitor 2
+
+service millet_binder /system_ext/bin/millet_monitor BINDER
+    user root
+    group system
+    class main
+    disabled
+    onrestart setprop sys.millet.monitor 2
+
+service millet_pkg /system_ext/bin/millet_monitor PKG
+    user root
+    group system
+    class  main
+    disabled
+    onrestart setprop sys.millet.monitor 2
+
+on property:sys.millet.monitor=1
+   stop millet_binder
+   stop millet_pkg
+   stop millet_sig
+   start millet_binder
+   start millet_pkg
+   start millet_sig

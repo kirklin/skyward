@@ -1,0 +1,15 @@
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# All rights reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+# MIUI MOD: GPS_GpsRemove
+service loc_sys_service /system_ext/bin/loc_sys_service
+    class main
+    user system
+    group system
+    oneshot
+    disabled
+
+on early-boot && property:ro.gps.loc_sys_service.skip=
+    start loc_sys_service
+# END GPS_GpsRemove

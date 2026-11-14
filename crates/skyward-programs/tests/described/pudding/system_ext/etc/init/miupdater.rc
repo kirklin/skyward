@@ -1,0 +1,38 @@
+#############################
+#update opcust
+service miupdater_opcust /system_ext/bin/miupdater
+	class main
+	user root
+	group root system inet cache media_rw everybody
+	disabled
+	oneshot
+	seclabel u:r:miupdater:s0
+
+on property:persist.sys.cota.partition=4
+    start miupdater_opcust
+
+#############################
+#update opconfig
+service miupdater_opconfig /system_ext/bin/miupdater
+	class main
+	user root
+	group root system inet cache media_rw everybody
+	disabled
+	oneshot
+	seclabel u:r:miupdater:s0
+
+on property:persist.sys.cota.partition=5
+    start miupdater_opconfig
+
+#############################
+#update md1img
+service miupdater_md1img /system_ext/bin/miupdater /dev/block/bootdevice/by-name/md1img_a md1img.img
+	class main
+	user root
+	group root system inet cache media_rw everybody
+	disabled
+	oneshot
+	seclabel u:r:miupdater:s0
+
+on property:persist.sys.cota.partition=10
+    start miupdater_md1img

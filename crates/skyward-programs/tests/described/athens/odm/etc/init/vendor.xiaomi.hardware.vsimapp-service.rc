@@ -1,0 +1,7 @@
+service vendor.vsimservice /odm/bin/vsimd
+    class hal
+    user system
+    group system
+    oneshot
+    disabled
+    interface aidl vendor.xiaomi.hardware.vsimapp.IVSIMService/default

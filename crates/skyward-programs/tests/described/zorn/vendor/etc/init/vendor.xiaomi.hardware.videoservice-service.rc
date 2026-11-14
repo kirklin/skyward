@@ -1,0 +1,6 @@
+# MIUI ADD: Video_VideoSelfRecovery
+service videoservice-service /vendor/bin/hw/vendor.xiaomi.hardware.videoservice-service
+    class hal
+    user mediacodec
+    group system camera audio
+

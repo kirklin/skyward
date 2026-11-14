@@ -1,0 +1,10 @@
+service vendor.mfidoca /odm/bin/fidoca
+    class hal
+    user system
+    group system
+    oneshot
+    disabled
+    interface aidl vendor.xiaomi.hardware.mfidoca.IFidoService/default
+
+on property:sys.boot_completed=1
+    start vendor.mfidoca

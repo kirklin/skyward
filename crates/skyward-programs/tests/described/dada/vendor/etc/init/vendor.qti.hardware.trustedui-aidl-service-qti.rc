@@ -1,0 +1,8 @@
+# Copyright (c) 2023 Qualcomm Technologies, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+service vendor.trustedui /vendor/bin/hw/vendor.qti.hardware.trustedui-aidl-service-qti
+    class hal
+    user system
+    group system

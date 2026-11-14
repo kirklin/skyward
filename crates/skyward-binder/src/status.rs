@@ -1,4 +1,4 @@
-use crate::parcel::Reader;
+use crate::parcel::{Parcel, Reader};
 use anyhow::{Context, Result};
 use std::fmt;
 
@@ -71,6 +71,74 @@ pub fn ok(r: &mut Reader) -> Result<()> {
     .into())
 }
 
+/// A reply to a call that went through, opened with the mark that says so,
+/// for what the method answers to be written after.
+pub fn went_through() -> Parcel {
+    let mut reply = Parcel::default();
+    reply.i32(NONE);
+    reply
+}
+
+/// Why this program turns a call down, said the way the caller's libbinder
+/// reads it out of the reply.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refusal {
+    exception: i32,
+    /// The service's own number for why, where it turns the call down in
+    /// its own terms.
+    code: i32,
+    said: String,
+}
+
+impl Refusal {
+    /// In the service's own terms, by its own number.
+    pub fn service(code: i32, said: impl Into<String>) -> Refusal {
+        Refusal { exception: SERVICE_SPECIFIC, code, said: said.into() }
+    }
+
+    pub fn illegal_argument(said: impl Into<String>) -> Refusal {
+        Refusal { exception: ILLEGAL_ARGUMENT, code: 0, said: said.into() }
+    }
+
+    pub fn illegal_state(said: impl Into<String>) -> Refusal {
+        Refusal { exception: ILLEGAL_STATE, code: 0, said: said.into() }
+    }
+
+    pub fn null_pointer(said: impl Into<String>) -> Refusal {
+        Refusal { exception: NULL_POINTER, code: 0, said: said.into() }
+    }
+
+    pub fn unsupported(said: impl Into<String>) -> Refusal {
+        Refusal { exception: UNSUPPORTED_OPERATION, code: 0, said: said.into() }
+    }
+
+    pub fn security(said: impl Into<String>) -> Refusal {
+        Refusal { exception: SECURITY, code: 0, said: said.into() }
+    }
+
+    /// The reply that carries it: the mark, what is said, room for a trace
+    /// that is not sent, and the service's own number where it has one.
+    pub fn reply(&self) -> Parcel {
+        let mut reply = Parcel::default();
+        reply.i32(self.exception);
+        reply.string(&self.said);
+        reply.i32(0);
+        if self.exception == SERVICE_SPECIFIC {
+            reply.i32(self.code);
+        }
+        reply
+    }
+}
+
+impl fmt::Display for Refusal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.exception {
+            SERVICE_SPECIFIC => write!(f, "the service's own error {}{}", self.code, aside(&self.said)),
+            exception => write!(f, "{}{}", name(exception), aside(&self.said)),
+        }
+    }
+}
+
 /// The service's own error number, when that is why a call failed.
 pub fn refused_with(e: &anyhow::Error) -> Option<i32> {
     match e.downcast_ref::<Fault>() {
@@ -118,6 +186,22 @@ mod tests {
         let bytes = refusal(SERVICE_SPECIFIC, "", -43);
         let e = ok(&mut Reader::new(&bytes)).unwrap_err().context("unwrap the key");
         assert_eq!(refused_with(&e), Some(-43));
+    }
+
+    #[test]
+    fn a_refusal_written_reads_back_as_the_fault_it_is() {
+        let own = Refusal::service(1, "the secure element is not connected").reply();
+        let e = ok(&mut Reader::new(own.bytes())).unwrap_err();
+        assert_eq!(refused_with(&e), Some(1));
+        assert!(format!("{e:#}").contains("not connected"), "{e:#}");
+        let state = Refusal::illegal_state("the session is closed").reply();
+        let e = ok(&mut Reader::new(state.bytes())).unwrap_err();
+        assert_eq!(e.downcast_ref::<Fault>(), Some(&Fault::Call { exception: ILLEGAL_STATE, said: "the session is closed".into() }));
+        let mut through = went_through();
+        through.bool(true);
+        let mut read = Reader::new(through.bytes());
+        ok(&mut read).unwrap();
+        assert!(read.bool().unwrap());
     }
 
     #[test]

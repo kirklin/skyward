@@ -3,6 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+pub mod modprobe;
+
 /// Where a module source's files are in the recovery: the vendor_boot
 /// ramdisk's modules under /lib/modules, the vendor_dlkm and vendor
 /// partitions where they are mounted, and the kernel's own modules in
@@ -133,35 +135,32 @@ fn find_file(dir: &Path, name: &str) -> Option<PathBuf> {
     None
 }
 
+/// Hand the open module `file` to the kernel with the settings `params`.
 #[cfg(target_os = "android")]
-pub fn insmod(path: impl AsRef<Path>, params: &str) -> Result<()> {
-    use std::ffi::CString;
+fn finit_module(file: &fs::File, params: &str) -> std::io::Result<()> {
     use std::os::unix::io::AsRawFd;
-    let path = path.as_ref();
-    let f = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
-    let cparams = CString::new(params)?;
-    let rc = unsafe {
-        libc::syscall(
-            libc::SYS_finit_module,
-            f.as_raw_fd(),
-            cparams.as_ptr(),
-            0 as libc::c_int,
-        )
-    };
+    let params = std::ffi::CString::new(params).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+    let rc = unsafe { libc::syscall(libc::SYS_finit_module, file.as_raw_fd(), params.as_ptr(), 0 as libc::c_int) };
     if rc != 0 {
-        let e = std::io::Error::last_os_error();
-        // Already loaded is success for our purposes.
-        if e.raw_os_error() == Some(libc::EEXIST) {
-            return Ok(());
-        }
-        return Err(e).with_context(|| format!("finit_module {}", path.display()));
+        return Err(std::io::Error::last_os_error());
     }
     Ok(())
 }
 
 #[cfg(not(target_os = "android"))]
-pub fn insmod(_path: impl AsRef<Path>, _params: &str) -> Result<()> {
-    anyhow::bail!("insmod is only implemented on android")
+fn finit_module(_file: &fs::File, _params: &str) -> std::io::Result<()> {
+    Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "modules are loaded only on the phone"))
+}
+
+pub fn insmod(path: impl AsRef<Path>, params: &str) -> Result<()> {
+    let path = path.as_ref();
+    let f = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
+    match finit_module(&f, params) {
+        Ok(()) => Ok(()),
+        // Already loaded is success for our purposes.
+        Err(e) if e.raw_os_error() == Some(libc::EEXIST) => Ok(()),
+        Err(e) => Err(e).with_context(|| format!("finit_module {}", path.display())),
+    }
 }
 
 #[cfg(test)]

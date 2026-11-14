@@ -1,0 +1,40 @@
+# Copyright (c) 2023 Qualcomm Technologies, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+service vendor.camera-provider /odm/bin/hw/vendor.qti.camera.provider-service_64
+    interface aidl android.hardware.camera.provider.ICameraProvider/vendor_qti/0
+    interface aidl vendor.qti.hardware.camera.offlinecamera.IOfflineCameraService/default
+    interface aidl vendor.xiaomi.hardware.quickcamera.IQuickCameraService/default
+    interface aidl vendor.qti.hardware.camera.aon.IAONService/default
+    interface vendor.qti.hardware.camera.postproc@1.0::IPostProcService camerapostprocservice
+    interface vendor.qti.hardware.camera.aon@1.0::IAONService aoncameraservice
+    interface vendor.qti.hardware.camera.aon@1.1::IAONService aoncameraservice
+    interface vendor.qti.hardware.camera.aon@1.2::IAONService aoncameraservice
+    interface vendor.qti.hardware.camera.aon@1.3::IAONService aoncameraservice
+    interface vendor.qti.hardware.camera.aon@1.4::IAONService aoncameraservice
+    interface vendor.xiaomi.hardware.bgservice@1.0::IBGService default
+    interface aidl vendor.xiaomi.hardware.aon.IAlwaysOn/miaonservicehal
+    interface aidl vendor.xiaomi.hardware.aidlbgservice.IBGService/default
+    interface aidl vendor.xiaomi.hardware.aidl.intentaware.IIntentAwareService/default
+    class hal
+    user cameraserver
+    group system audio camera input drmrpc oem_2907 oem_2912 wakelock
+    ioprio rt 4
+    capabilities SYS_NICE BLOCK_SUSPEND IPC_LOCK
+    task_profiles CameraServiceCapacity CameraServicePerformance CameraProcessProviderMemcg
+    # MIUI ADD : Performance_MemoryEnhance
+    writepid /sys/kernel/reserve_pool/pid
+    # END Performance_MemoryEnhance
+
+on boot
+    chown cameraserver camera /sys/module/camera/parameters/cam_event_inject
+    chown cameraserver camera /sys/module/camera/parameters/cam_cci_io_protect
+    chmod 0664 /sys/kernel/reserve_pool/config
+    chmod 0666 /sys/power/wake_lock
+    chmod 0666 /sys/power/wake_unlock
+    chmod u+xwr /data/vendor/camera
+    chown camera camera /data/vendor/camera/hook.db
+    chmod u+xwr /data/vendor/camera/hook.db
+    setprop persist.vendor.camera.firstBoot 1
+    setprop persist.vendor.camera.immunesystem.protection.switch true

@@ -1,0 +1,11 @@
+# Copyright (c) 2025 Xiaomi, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Xiaomi, Inc.
+#
+service seaaudio-default /odm/bin/hw/vendor.xiaomi.hardware.seaaudio-service
+    interface aidl vendor.xiaomi.hardware.seaaudio.ISeaAudio/default
+    oneshot
+    disabled
+    class main
+    user system
+    group system root radio cache inet misc audio log wakelock

@@ -1,0 +1,12 @@
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# All rights reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+service xtra-daemon /vendor/bin/xtra-daemon
+    class late_start
+    user gps
+    group inet diag gps system radio logd
+    restart_period 1200
+
+on post-fs-data
+    mkdir /dev/socket/location/xtra 0770 gps gps

@@ -1,0 +1,10 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/hexlp-framework/hlos-service/ipc/aidl/xml/vendor.qti.hardware.hexlp-service.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.hexlp</name>
+        <fqname>IHexlpService/default</fqname>
+    </hal>
+</manifest>

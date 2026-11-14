@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="../../readme.css">
+</head>
+<body>
+<main class="slide feature">
+  <header class="head">
+    <p class="eyebrow">Dual boot</p>
+    <h1 class="headline">A switch rewrites<br>only two partitions.</h1>
+    <p class="body"><span translate="no">Skyward</span> rewrites only boot and init_boot of the slot that starts next. The second system starts with the main system's vendor_boot and dtbo.</p>
+  </header>
+  <div class="visual">
+    <div class="disk">
+      <p class="group"><i class="hot"></i>Rewritten on a switch</p>
+      <div class="parts two">
+        <span class="part hot">boot</span>
+        <span class="part hot">init_boot</span>
+      </div>
+      <p class="group"><i></i>Left as they are</p>
+      <div class="parts">
+        <span class="part">vendor_boot</span>
+        <span class="part">dtbo</span>
+        <span class="part">recovery</span>
+        <span class="part">vbmeta</span>
+        <span class="part">firmware</span>
+        <span class="part">super</span>
+      </div>
+      <p class="group"><i class="own"></i>Two files in the data partition</p>
+      <div class="files">
+        <div class="file">
+          <svg viewBox="0 0 24 24"><g class="icon-line"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v13c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-13"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></g></svg>
+          <b>The second system's<br>root filesystem</b>
+        </div>
+        <div class="file">
+          <svg viewBox="0 0 24 24"><g class="icon-line"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 12.5l9 5 9-5"/><path d="M3 16.5l9 5 9-5"/></g></svg>
+          <b>Boot images of<br>both systems</b>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+</body>
+</html>

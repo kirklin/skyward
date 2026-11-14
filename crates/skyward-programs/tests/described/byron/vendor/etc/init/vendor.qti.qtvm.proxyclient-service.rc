@@ -1,0 +1,5 @@
+service vendor.qtvm.proxyclient-service /vendor/bin/vendor.qti.qtvm.proxyclient-service
+  class hal
+  user system
+  group system
+  oneshot

@@ -1,0 +1,44 @@
+ # Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ # All rights reserved.
+ # Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+on post-fs-data
+    # Create hexlp_unsigned directory
+    mkdir /data/vendor/hexlp_unsigned 0770 media media
+
+service vendor.hexlpservice /vendor/bin/hexlpservice -domain signed
+    class hal
+    # media UID is to access /data/vendor/hexlp/
+    user media
+    # camera GID is to access to /dev/synx_device
+    # system GID is to access /dev/dma_heap/qcom,system and /dev/dma_heap/system
+    group camera system
+
+    # AIDL interface
+    interface aidl vendor.qti.hardware.hexlp.IHexlpService/default
+
+    # don't auto restart
+    oneshot
+
+    # start only when requested (uncomment below to disable service at boot)
+    disabled
+
+service vendor.unsignedhexlpservice /vendor/bin/hexlpservice -domain unsigned
+    class hal
+    # media UID is to access /data/vendor/hexlp_unsigned/
+    user media
+    # camera GID is to access to /dev/synx_device
+    # system GID is to access /dev/dma_heap/qcom,system and /dev/dma_heap/system
+    group camera system
+
+    # Applying proper SELinux context label for unsigned hexlpservice
+    seclabel u:r:vendor_unsignedhexlpservice:s0
+
+    # AIDL interface
+    interface aidl vendor.qti.hardware.hexlp.IHexlpService/unsigned
+
+    # don't auto restart
+    oneshot
+
+    # start only when requested (uncomment below to disable service at boot)
+    disabled

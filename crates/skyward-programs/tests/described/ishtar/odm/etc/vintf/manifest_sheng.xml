@@ -1,0 +1,5 @@
+<!--
+    Input:
+        manifest_sheng.xml
+-->
+<manifest version="5.0" type="device" target-level="7"/>

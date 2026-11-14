@@ -1,0 +1,11 @@
+service fbo-installd /system_ext/bin/FboNativeService
+    class main
+    user root
+    group root
+    disabled
+    seclabel u:r:installd:s0
+
+on property:persist.sys.fboservice.ctrl=true
+    start fbo-installd
+on property:persist.sys.fboservice.ctrl=false
+    stop fbo-installd

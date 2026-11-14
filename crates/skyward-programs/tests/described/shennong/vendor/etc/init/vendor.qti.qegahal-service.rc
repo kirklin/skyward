@@ -1,0 +1,18 @@
+#==============================================================================
+#       vendor.qti.qegahal@1.0-service.rc
+#
+#  Copyright (c) 2023 Qualcomm Technologies, Inc.
+#  All Rights Reserved.
+#  Confidential and Proprietary - Qualcomm Technologies, Inc.
+#===============================================================================
+service qegahal /vendor/bin/vendor.qti.qegahal-service
+    class hal
+    oneshot
+    disabled
+    user system
+    group system
+    interface aidl vendor.qti.qegahal.IQegahal/default
+
+on post-fs-data
+    #Create qega-hal deamon related dirs
+    mkdir /odm/etc/qega 0770 root system

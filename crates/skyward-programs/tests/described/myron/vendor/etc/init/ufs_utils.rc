@@ -1,0 +1,9 @@
+on property:persist.vendor.ufs.errlog.enable=1
+    start get_error_history
+    setprop persist.vendor.ufs.errlog.enable 0
+
+service get_error_history /vendor/bin/ufs_utils err_hist -p /dev/0:0:0:4
+    class main
+    user system
+    oneshot
+    disabled

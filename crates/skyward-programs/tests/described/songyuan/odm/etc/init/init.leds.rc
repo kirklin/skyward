@@ -1,0 +1,20 @@
+on boot
+    #change owner of aw21024 led
+    chown system system /sys/class/leds/aw21024_led/reg
+    chmod 0664 /sys/class/leds/aw21024_led/reg
+    chown system system /sys/class/leds/aw21024_led/effect
+    chmod 0664 /sys/class/leds/aw21024_led/effect
+    chown system system /sys/class/leds/aw21024_led/rgbcolor
+    chmod 0664 /sys/class/leds/aw21024_led/rgbcolor
+    chown system system /sys/class/leds/aw21024_led/hwen
+    chmod 0664 /sys/class/leds/aw21024_led/hwen
+    chown system system /sys/class/leds/aw21024_led/brightness
+    chmod 0664 /sys/class/leds/aw21024_led/brightness
+    chown system system /sys/class/leds/aw21024_led/run
+    chmod 0664 /sys/class/leds/aw21024_led/run
+    chown system system /sys/class/leds/aw21024_led/period
+    chmod 0664 /sys/class/leds/aw21024_led/period
+    chown system system /sys/class/leds/aw21024_led/color
+    chmod 0664 /sys/class/leds/aw21024_led/color
+    chown system system /sys/class/leds/aw21024_led/repeat
+    chmod 0664 /sys/class/leds/aw21024_led/repeat

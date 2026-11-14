@@ -1,0 +1,45 @@
+service mfp-daemon /odm/bin/hw/mfp-daemon
+    interface aidl android.hardware.biometrics.fingerprint.IFingerprint/default
+    interface aidl vendor.qti.hardware.fingerprint.IQfpExtendedFingerprint/default
+    class late_start
+    user system
+    group system drmrpc diag input uhid
+    seclabel u:r:vendor_mfp-daemon:s0
+    capabilities SYS_NICE
+
+on early-boot
+    chown system graphics /sys/bus/platform/devices/soc:xiaomi_fingerprint/fingerdown
+    chmod 0664 /sys/bus/platform/devices/soc:xiaomi_fingerprint/fingerdown
+
+on boot
+    chmod 0666 /dev/xiaomi-fp
+    chown system system /dev/xiaomi-fp
+    chmod 0666 /dev/mifp_id
+    chown system system /dev/mifp_id
+    chmod 0666 /dev/input/event2
+    chown system system /sys/bus/platform/devices/soc:xiaomi_fingerprint/intr2
+    chmod 0666 /sys/bus/platform/devices/soc:xiaomi_fingerprint/intr2
+    chown system system /sys/class/touch/touch_dev/fod_low_attn
+    chmod 0666 /sys/class/touch/touch_dev/fod_low_attn
+
+on post-fs-data
+    mkdir /data/vendor/misc 01771 system system
+    mkdir /data/vendor/misc/mi_fp 0770 system system
+    mkdir /persist/mi_fp 0770 system system
+    mkdir /mnt/vendor/persist/mi_fp 0770 system system
+    mkdir /data/vendor/fpc 0770 system system
+    mkdir /data/vendor/fpdump 0770 system system
+    mkdir /data/vendor/goodix 0770 system system
+    mkdir /data/vendor/fpdata 0770 system system
+    mkdir /data/vendor/fingerprint 0770 system system
+    mkdir /mnt/vendor/persist/goodix 0770 system system
+    mkdir /mnt/vendor/persist/fingerprint 0770 system system
+    mkdir /data/vendor/fpdump/qfs4008 0770 system system
+    mkdir /mnt/vendor/persist/fingerprint/meta 0770 system system
+
+on property:vendor.fps_hal.restartimes=max
+    stop mfp-daemon
+
+on property:vendor.fp.dummy.dfs=*
+    stop mfp-daemon
+    start mfp-daemon

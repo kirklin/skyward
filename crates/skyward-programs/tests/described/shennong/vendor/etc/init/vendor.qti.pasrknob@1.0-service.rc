@@ -1,0 +1,20 @@
+# Copyright (c) 2023 Qualcomm Technologies, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+service vendor.pasrknob /vendor/bin/hw/pasrknob
+    class late_start
+    user system
+    group system
+    disabled
+    oneshot
+
+# Stop pasrknob service when vendor.pasr.enabled is disabled
+
+on property:vendor.pasr.enabled=false
+    start vendor.pasrknob
+
+# Start pasrknob service when vendor.pasr.enabled is enabled
+
+on property:vendor.pasr.enabled=true
+    start vendor.pasrknob

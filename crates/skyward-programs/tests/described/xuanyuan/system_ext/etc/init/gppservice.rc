@@ -1,0 +1,21 @@
+#
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# All rights reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+#
+
+# MIUI ADD: Display_GamePostProcessing
+# service vendor.gppservice /system/bin/gppservice
+#     class main
+#     user system
+#     group system
+service vendor.gppservice /system_ext/bin/gppservice
+    class main
+    user system
+    group system
+    disabled
+
+on property:ro.vendor.display.gppservice.support=true
+    start vendor.gppservice
+
+# END Display_GamePostProcessing

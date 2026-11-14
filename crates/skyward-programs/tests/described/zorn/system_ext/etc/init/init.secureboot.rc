@@ -1,0 +1,10 @@
+
+on init && property:ro.secureboot.devicelock=1 && property:ro.boot.verifiedbootstate=green
+    setprop ro.secureboot.lockstate locked
+
+on init && property:ro.secureboot.devicelock=1 && property:ro.boot.verifiedbootstate=orange
+    setprop ro.secureboot.lockstate unlocked
+
+
+on init && property:ro.secureboot.devicelock=1
+    setprop ro.secureboot.lockstate unknown

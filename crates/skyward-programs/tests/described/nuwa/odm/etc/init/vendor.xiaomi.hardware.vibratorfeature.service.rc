@@ -1,0 +1,62 @@
+on late-fs
+    # qcom-haptics
+    chmod 0666 /sys/class/qcom-haptics/lra_calibration
+    chmod 0666 /sys/class/qcom-haptics/lra_impedance
+    chmod 0666 /dev/qcom_haptic
+    chmod 0666 /mnt/vendor/persist/sensors/registry/registry/sns_offhand
+    chown system system /mnt/vendor/persist/sensors/registry/registry/sns_offhand
+    chown system system /dev/qcom_haptic
+    chown system system /sys/class/qcom-haptics/lra_frequency_hz
+    chmod 0666 /sys/class/qcom-haptics/lra_frequency_hz
+
+    # aw86224_haptic
+    chown system system /sys/bus/i2c/drivers/awinic_haptic/2-005a/f0_save
+    chown system system /sys/bus/i2c/drivers/awinic_haptic/2-005a/osc_save
+    chown system system /sys/bus/i2c/drivers/awinic_haptic/2-005a/custom_wave
+    chmod 0666  /sys/bus/i2c/drivers/awinic_haptic/2-005a/custom_wave
+
+    # awinic_haptic for O16U
+    chown system system /sys/bus/i2c/drivers/awinic_haptic/7-005a/f0_save
+    chown system system /sys/bus/i2c/drivers/awinic_haptic/7-005a/osc_save
+    chown system system /sys/bus/i2c/drivers/awinic_haptic/7-005a/custom_wave
+    chmod 0666  /sys/bus/i2c/drivers/awinic_haptic/7-005a/custom_wave
+
+    # SI Haptic 6887
+    chown system system /sys/bus/i2c/drivers/sih_haptic_688X/2-006b/f0_save
+    chown system system /sys/bus/i2c/drivers/sih_haptic_688X/2-006b/osc_save
+    chown system system /sys/bus/i2c/drivers/sih_haptic_688X/2-006b/custom_wave
+    chmod 0666  /sys/bus/i2c/drivers/sih_haptic_688X/2-006b/custom_wave
+
+    # SI Haptic 6887 for O16U
+    chown system system /sys/bus/i2c/drivers/sih_haptic_688X/7-006b/f0_save
+    chown system system /sys/bus/i2c/drivers/sih_haptic_688X/7-006b/osc_save
+    chown system system /sys/bus/i2c/drivers/sih_haptic_688X/7-006b/custom_wave
+    chmod 0666  /sys/bus/i2c/drivers/sih_haptic_688X/7-006b/custom_wave
+
+    # AAC rt6010 for P16U
+    chown system system /sys/bus/i2c/drivers/haptic_rt/7-005f/custom_wave
+    chmod 0666  /sys/bus/i2c/drivers/haptic_rt/7-005f/custom_wave
+
+    # cal-file directory
+    mkdir /mnt/vendor/persist/haptics 0755 system system
+
+service vibratorfeature-hal-service /odm/bin/hw/vendor.xiaomi.hardware.vibratorfeature.service
+    class hal
+    user system
+    group system input audio
+    onrestart restart vibratorfeature
+    setenv RICHTAP_DEVICE_PATH  /dev/qcom_haptic
+    setenv ENV_RICHTAP_CONFIG_PATH /odm/etc/aac_richtap.config
+
+on property:sys.boot_completed=1
+    setprop vendor.haptic.calibrate.done 1
+    # mode = interaction
+    setprop vendor.aihaptic.interaction.transient_intensity 100
+    setprop vendor.aihaptic.interaction.transient_sharpness 56
+    setprop vendor.aihaptic.interaction.continuous_intensity 100
+    setprop vendor.aihaptic.interaction.continuous_sharpness 56
+    # mode = warn
+    setprop vendor.aihaptic.warn.transient_intensity 100
+    setprop vendor.aihaptic.warn.transient_sharpness 56
+    setprop vendor.aihaptic.warn.continuous_intensity 65
+    setprop vendor.aihaptic.warn.continuous_sharpness 56

@@ -1,0 +1,15 @@
+#
+# Copyright (c) 2021 Qualcomm Technologies, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+#
+
+on early-boot
+    write /sys/kernel/icnss/wlan_en_delay 1000
+    write /sys/kernel/icnss/wpss_boot 1
+
+service wifi_qos_daemon /vendor/bin/wifi_qos_daemon
+    class late_start
+    user system
+    group system inet net_admin wifi
+    capabilities NET_ADMIN

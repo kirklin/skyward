@@ -1,0 +1,14 @@
+service miuitcptracker /system_ext/bin/miuitcptracker
+	class main
+	user root
+	group root system
+	disabled
+	seclabel u:r:bpfloader:s0
+	rlimit memlock 67108864 1073741824
+	# TODO need to talk
+	oneshot
+
+on property:persist.sys.miuitcptracker.ctrl=true
+    start miuitcptracker
+on property:persist.sys.miuitcptracker.ctrl=false
+    stop miuitcptracker

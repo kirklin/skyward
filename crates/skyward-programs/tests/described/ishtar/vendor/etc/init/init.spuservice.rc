@@ -1,0 +1,13 @@
+#####################################################################
+# Copyright (c) 2021-2022 Qualcomm Technologies, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+#####################################################################
+
+on boot && property:ro.boot.product.vendor.sku=kalama
+    start spuservice
+
+service spuservice /vendor/bin/hw/vendor.qti.spu@2.0-service
+    class hal
+    user system
+    group system

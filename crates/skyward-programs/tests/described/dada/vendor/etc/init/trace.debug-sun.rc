@@ -1,0 +1,64 @@
+on property:vendor.all.modules.ready=1 && property:ro.debuggable=1
+    #increase trace buffer size
+    write /sys/kernel/tracing/buffer_size_kb 20480
+    # timer
+    write /sys/kernel/tracing/events/timer/enable 1
+    write /sys/kernel/tracing/events/timer/timer_expire_entry/enable 1
+    write /sys/kernel/tracing/events/timer/timer_expire_exit/enable 1
+    write /sys/kernel/tracing/events/timer/hrtimer_cancel/enable 1
+    write /sys/kernel/tracing/events/timer/hrtimer_expire_entry/enable 1
+    write /sys/kernel/tracing/events/timer/hrtimer_expire_exit/enable 1
+    write /sys/kernel/tracing/events/timer/hrtimer_init/enable 1
+    write /sys/kernel/tracing/events/timer/hrtimer_start/enable 1
+    #enble FTRACE for softirq events
+    write /sys/kernel/tracing/events/irq/enable 1
+    #enble FTRACE for Workqueue events
+    write /sys/kernel/tracing/events/workqueue/enable 1
+    write /sys/kernel/tracing/events/workqueue/workqueue_execute_start/enable 1
+    # schedular
+    # write /sys/kernel/tracing/events/sched/sched_cpu_hotplug/enable 1
+    write /sys/kernel/tracing/events/sched/sched_migrate_task/enable 1
+    write /sys/kernel/tracing/events/sched/sched_pi_setprio/enable 1
+    write /sys/kernel/tracing/events/sched/sched_switch/enable 1
+    write /sys/kernel/tracing/events/sched/sched_wakeup/enable 1
+    write /sys/kernel/tracing/events/sched/sched_wakeup_new/enable 1
+    # clock
+    write /sys/kernel/tracing/events/power/clock_set_rate/enable 1
+    write /sys/kernel/tracing/events/power/clock_enable/enable 1
+    write /sys/kernel/tracing/events/power/clock_disable/enable 1
+    write /sys/kernel/tracing/events/power/cpu_frequency/enable 1
+    # regulator
+    write /sys/kernel/tracing/events/regulator/enable 1
+    # fastrpc
+    write /sys/kernel/tracing/events/fastrpc/enable 1
+    #ufs
+    #write /sys/kernel/tracing/events/block/enable 1
+    #write /sys/kernel/tracing/events/scsi/enable 1
+    #write /sys/kernel/tracing/events/ufs/enable 1
+
+    #preemptirq_long
+    write /sys/kernel/tracing/events/preemptirq_long/irq_disable_long/enable 1
+    write /sys/kernel/tracing/events/preemptirq_long/preempt_disable_long/enable 1
+
+    write /sys/kernel/tracing/tracing_on 1
+
+on property:vendor.all.modules.ready=1 && property:ro.soc.model=SM8750
+    start dcc_dump-script-8750
+
+on property:vendor.all.modules.ready=1 && property:ro.soc.model=SM8735
+    start dcc_dump-script-8735
+
+# Coresight early boot service
+service dcc_dump-script-8750 /vendor/bin/sh /vendor/bin/dcc-script.sh
+    class core
+    user root
+    disabled
+    oneshot
+    seclabel u:r:vendor-qti-testscripts:s0
+
+# Coresight early boot service
+service dcc_dump-script-8735 /vendor/bin/sh /vendor/bin/dcc-script-tuna.sh
+    class core
+    user root
+    disabled
+    oneshot

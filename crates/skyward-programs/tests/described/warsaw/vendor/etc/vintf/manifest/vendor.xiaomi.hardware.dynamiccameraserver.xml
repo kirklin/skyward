@@ -1,0 +1,10 @@
+<!--
+    Input:
+        vendor/xiaomi/proprietary/dynamiccamera/server/vendor.xiaomi.hardware.dynamiccameraserver.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.xiaomi.hardware.camera.synthetic</name>
+        <fqname>IVirtualCameraRegistrar/default</fqname>
+    </hal>
+</manifest>

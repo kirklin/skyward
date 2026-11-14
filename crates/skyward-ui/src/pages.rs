@@ -1,9 +1,9 @@
 use crate::app::{
     Action, BackupAt, BackupEnd, BackupJob, Check, ClashChoice, Confirm, Damage, Data, Dock, DownloadEnd, EraseStop, Field, FileKind,
     FileOp, FileTask, Fold, Folder, Frame, FsAction, FsChoice, FsRow, Have, HeroArt, Hit, Install, JobEnd, Keys, Pick, Place, Rows, Screen,
-    SkywardCheck, SkywardEnd, SkywardJob, SkywardStage, Slider, Source, State, Switch, Target, UsbDrive, UsbLink, Wipe, ADDABLE,
+    SkywardCheck, SkywardEnd, SkywardJob, SkywardStage, Slider, Source, State, Switch, SystemsWork, Target, UsbDrive, UsbLink, Wipe, ADDABLE,
     BACKUP_PARTS, DATA_ERASED, DATA_PARTITION, DOWNLOADS, FASTBOOT_CHOICES, SCREEN_OFF, TARGETS, TIME_ZONES, USB_DRIVE_UNREADABLE,
-    USB_DRIVE_WANTED, WIPES, installs,
+    USB_DRIVE_WANTED, WIPES, installs, starting,
 };
 use crate::canvas::Canvas;
 use crate::color::Rgba;
@@ -18,12 +18,13 @@ use crate::term::{self, Term};
 use crate::theme::Theme;
 use crate::tr;
 use crate::icons::{self, Icon};
-use crate::widgets::{self, Caption, Detail, Fact, Outline, Row, Spec, Tone, Trail};
+use crate::widgets::{self, Caption, Detail, Fact, Outline, Row, Spec, SystemCard, SystemMark, Tone, Trail};
 use skyward_info::{DeviceInfo, VERSION};
 use skyward_install::{Outcome, Reflash, Refusal, Stage};
 use skyward_net::download::Progress;
 use skyward_net::supplicant::Security;
 use skyward_net::wlan::{Bands, Network, Power, Stage as Joining};
+use skyward_systems::{Held, Who};
 use skyward_vab::{Slot, Standing};
 use std::path::Path;
 
@@ -96,6 +97,7 @@ pub fn render(screen: Screen, cx: &Ctx) -> Frame {
         Screen::License => license(cx),
         Screen::FontLicense => font_license(cx),
         Screen::Slot => slot(cx),
+        Screen::Systems => systems(cx),
         Screen::Fastboot => fastboot(cx),
         Screen::Erase => erase(cx),
         Screen::CantStart => cant_start(cx),
@@ -132,6 +134,9 @@ pub fn confirm_label(which: Confirm, s: &State) -> (&'static str, bool) {
         Confirm::RunScript => (INSTALL, true),
         Confirm::Merge => (["滑动以合并", "滑動以合併", "Slide to merge"], true),
         Confirm::Relabel => (["滑动以修复", "滑動以修復", "Slide to fix"], true),
+        Confirm::SwitchSystem => (["滑动以切换并重启", "滑動以切換並重新啟動", "Slide to switch and reboot"], false),
+        Confirm::RemoveSystem => (["滑动以删除", "滑動以刪除", "Slide to remove"], true),
+        Confirm::InstallSystem => (INSTALL, false),
     };
     (s.lang.pick(label), danger)
 }
@@ -169,6 +174,7 @@ const LANGUAGE: Text = ["语言", "語言", "Language"];
 const TIME_ZONE: Text = ["时区", "時區", "Time zone"];
 const LICENSE: Text = ["开源许可", "開放原始碼授權", "Open source licenses"];
 const FONTS: Text = ["界面字体", "介面字型", "UI fonts"];
+const DUAL_BOOT: Text = ["双系统", "雙系統", "Dual boot"];
 
 /// A canvas for a page `h` tall in the colour `bg`, holding the rows `cx`
 /// asks to be drawn.
@@ -247,16 +253,37 @@ pub fn home(cx: &Ctx) -> Frame {
         rows.push(Row::new(title).icon(ORANGE, Icon::Power).subtitle(note).trail(Trail::Arrow));
         opens.push(Some(Action::Open(Screen::Slot)));
     }
+    if cx.state.system_notice.is_some() {
+        let why = l.pick(["点按查看原因", "點按查看原因", "Tap to see why"]);
+        rows.push(Row::new(l.pick(SECOND_FAILED)).icon(RED, Icon::Systems).subtitle(why).trail(Trail::Arrow));
+        opens.push(Some(Action::Open(Screen::Systems)));
+    }
     let card = widgets::device_card(&mut c, t, f, y, &i.model, &sub, &rows);
     out.push(Hit { rect: card.rows[0], action: Action::Open(Screen::About) });
     out.extend(card.rows[1..].iter().zip(&opens).filter_map(|(&rect, open)| open.map(|action| Hit { rect, action })));
     y = card.bottom + t.m.card_gap;
     // On a phone whose WLAN the recovery brings up, the WLAN comes first
-    // under the device, as on the stock settings home.
+    // under the device, as on the stock settings home; with it, where the
+    // phone can hold a second system, the two systems.
+    let mut rows = Vec::new();
+    let mut opens = Vec::new();
     if let Some(w) = &cx.state.wlan {
-        let wlan = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(WLAN)).icon(BLUE, Icon::Wlan).trail(Trail::Value(fmt::wlan_value(l, w)))]);
-        out.extend(hits(&wlan.rows, &[Action::Open(Screen::Wlan)]));
-        y = wlan.bottom + t.m.card_gap;
+        rows.push(Row::new(l.pick(WLAN)).icon(BLUE, Icon::Wlan).trail(Trail::Value(fmt::wlan_value(l, w))));
+        opens.push(Action::Open(Screen::Wlan));
+    }
+    let starts = systems_value(cx);
+    if cx.state.offers(Screen::Systems) {
+        let row = Row::new(l.pick(DUAL_BOOT)).icon(PURPLE, Icon::Systems);
+        rows.push(match &starts {
+            Some(value) => row.trail(Trail::Value(value)),
+            None => row,
+        });
+        opens.push(Action::Open(Screen::Systems));
+    }
+    if !rows.is_empty() {
+        let first = widgets::list(&mut c, t, f, y, &rows);
+        out.extend(hits(&first.rows, &opens));
+        y = first.bottom + t.m.card_gap;
     }
     let tools = widgets::list(&mut c, t, f, y, &[
         Row::new(l.pick(["安装", "安裝", "Install"])).icon(GREEN, Icon::Install),
@@ -290,6 +317,20 @@ pub fn home(cx: &Ctx) -> Frame {
     // away.
     let height = fitted(t, system.bottom).max(t.m.h + fold.span.ceil() as u32);
     Frame { back: false, fold: Some(fold), ..Frame::new(t, c.crop_height(height), out, HOME_TITLE, cards_top) }
+}
+
+/// What the home page says beside its entry to the systems: the one that
+/// starts, where a second system is installed, once they are read.
+fn systems_value(cx: &Ctx) -> Option<String> {
+    let l = cx.state.lang;
+    match &cx.state.systems {
+        Some(Ok(systems)) => Some(match (&systems.other, starting(systems)) {
+            (None, _) => l.pick(["未安装第二系统", "未安裝第二系統", "No second system"]).into(),
+            (Some(_), Who::Installed) => systems.installed.name.clone(),
+            (Some(other), Who::Other) => other.name.clone(),
+        }),
+        _ => None,
+    }
 }
 
 /// What the advanced page says beside its system update entry: a download
@@ -904,11 +945,19 @@ pub fn install(cx: &Ctx) -> Frame {
     let methods = widgets::list(&mut c, t, f, y, &rows);
     let from_usb = Action::Open(Screen::Choose(Place::UsbDrive));
     let mut out = hits(&methods.rows[methods.rows.len() - 3..], &[from_storage, from_usb, Action::Sideload]);
-    let what = l.pick([
-        "支持安装 A/B 完整更新包和带安装脚本的刷机包，以及刷入 boot、init_boot、vendor_boot、recovery、dtbo、vbmeta 分区镜像。系统更新将安装到另一个槽位，重启后从该槽位启动。选择文件时仅列出文件夹以及 .zip、.img 文件。",
-        "支援安裝 A/B 完整更新檔和帶有安裝指令碼的刷機包，以及刷入 boot、init_boot、vendor_boot、recovery、dtbo、vbmeta 分割區映像檔。系統更新將安裝到另一個槽位，重新啟動後從該槽位啟動。選擇檔案時僅列出資料夾以及 .zip、.img 檔案。",
-        "Installs A/B full OTA packages and flashable zips with an install script, and flashes boot, init_boot, vendor_boot, recovery, dtbo and vbmeta partition images. A system update installs to the other slot, which starts after a reboot. Choosing a file lists only folders and .zip and .img files.",
-    ]);
+    // A phone that can hold a second system installs one from here too.
+    let what = l.pick(match cx.state.dual_boot {
+        true => [
+            "支持安装 A/B 完整更新包、带安装脚本的刷机包和第二系统的安装包，以及刷入 boot、init_boot、vendor_boot、recovery、dtbo、vbmeta 分区镜像。系统更新将安装到另一个槽位，重启后从该槽位启动；第二系统安装在 data 分区中，可在「双系统」中切换。选择文件时仅列出文件夹以及 .zip、.img 文件。",
+            "支援安裝 A/B 完整更新檔、帶有安裝指令碼的刷機包和第二系統的安裝檔，以及刷入 boot、init_boot、vendor_boot、recovery、dtbo、vbmeta 分割區映像檔。系統更新將安裝到另一個槽位，重新啟動後從該槽位啟動；第二系統安裝在 data 分割區中，可在「雙系統」中切換。選擇檔案時僅列出資料夾以及 .zip、.img 檔案。",
+            "Installs A/B full OTA packages, flashable zips with an install script and second systems' packages, and flashes boot, init_boot, vendor_boot, recovery, dtbo and vbmeta partition images. A system update installs to the other slot, which starts after a reboot; a second system installs into the data partition, and Dual boot switches to it. Choosing a file lists only folders and .zip and .img files.",
+        ],
+        false => [
+            "支持安装 A/B 完整更新包和带安装脚本的刷机包，以及刷入 boot、init_boot、vendor_boot、recovery、dtbo、vbmeta 分区镜像。系统更新将安装到另一个槽位，重启后从该槽位启动。选择文件时仅列出文件夹以及 .zip、.img 文件。",
+            "支援安裝 A/B 完整更新檔和帶有安裝指令碼的刷機包，以及刷入 boot、init_boot、vendor_boot、recovery、dtbo、vbmeta 分割區映像檔。系統更新將安裝到另一個槽位，重新啟動後從該槽位啟動。選擇檔案時僅列出資料夾以及 .zip、.img 檔案。",
+            "Installs A/B full OTA packages and flashable zips with an install script, and flashes boot, init_boot, vendor_boot, recovery, dtbo and vbmeta partition images. A system update installs to the other slot, which starts after a reboot. Choosing a file lists only folders and .zip and .img files.",
+        ],
+    });
     let y = widgets::footnote(&mut c, t, f, methods.bottom, what);
     let y = widgets::section(&mut c, t, f, y, l.pick(["选项", "選項", "Options"]));
     let check = Row::new(l.pick(["验证刷机包签名", "驗證刷機包簽章", "Verify zip signatures"])).trail(Trail::Switch(cx.state.check_signature));
@@ -986,7 +1035,32 @@ fn update_stage(l: Lang, stage: Option<&Stage>) -> (String, Option<f32>) {
         }
         Some(Stage::Finishing) => (l.pick(["第 3 步，共 3 步：完成安装", "第 3 步，共 3 步：完成安裝", "Step 3 of 3: finishing"]).into(), None),
         Some(Stage::Reflashing { done, total }) => (l.pick(REFLASHING).into(), Some(*done as f32 / *total as f32)),
-        Some(Stage::Flashing { .. } | Stage::Script { .. } | Stage::Signature { .. }) | None => (l.pick(["正在准备", "正在準備", "Getting ready"]).into(), None),
+        Some(Stage::Flashing { .. } | Stage::Script { .. } | Stage::Signature { .. } | Stage::Allocating { .. } | Stage::Root { .. } | Stage::Storing) | None => {
+            (l.pick(GETTING_READY).into(), None)
+        }
+    }
+}
+
+/// Where installing a system beside the installed one stands, and the share
+/// of its step done when known.
+fn system_stage(l: Lang, stage: Option<&Stage>) -> (String, Option<f32>) {
+    match stage {
+        Some(Stage::Allocating { done, total }) => {
+            let s = share(*done, *total);
+            let p = percent(s);
+            (tr!(l, "第 1 步，共 3 步：在 data 分区中分配空间 {p}%", "第 1 步，共 3 步：在 data 分割區中分配空間 {p}%", "Step 1 of 3: setting room aside in the data partition {p}%"), Some(s))
+        }
+        Some(Stage::Root { done, total }) => {
+            let s = share(*done, *total);
+            let p = percent(s);
+            let said = match done * 2 <= *total {
+                true => tr!(l, "第 2 步，共 3 步：写入系统 {p}%", "第 2 步，共 3 步：寫入系統 {p}%", "Step 2 of 3: writing the system {p}%"),
+                false => tr!(l, "第 2 步，共 3 步：校验系统 {p}%", "第 2 步，共 3 步：驗證系統 {p}%", "Step 2 of 3: verifying the system {p}%"),
+            };
+            (said, Some(s))
+        }
+        Some(Stage::Storing) => (l.pick(["第 3 步，共 3 步：保存启动镜像", "第 3 步，共 3 步：儲存啟動映像檔", "Step 3 of 3: keeping its boot images"]).into(), None),
+        _ => (l.pick(GETTING_READY).into(), None),
     }
 }
 
@@ -1294,6 +1368,42 @@ pub fn installing(cx: &Ctx) -> Frame {
             });
             widgets::footnote(&mut c, t, f, y, keep)
         }
+        Install::SystemChoosing(choice) => {
+            let version = &choice.version;
+            let detail = tr!(l, "{version}，将安装为第二系统", "{version}，將安裝為第二系統", "{version}, to install as the second system");
+            let y = widgets::list(&mut c, t, f, top, &[standing(&choice.name, PURPLE, Icon::Systems, &detail)]).bottom;
+            let y = widgets::section(&mut c, t, f, y, l.pick(["分配空间", "分配空間", "Room for it"]));
+            let sizes: Vec<String> = choice.sizes.iter().map(|&b| fmt::bytes(b)).collect();
+            let least = l.pick(["系统所需的最小空间", "系統所需的最小空間", "The least the system takes"]);
+            let rows: Vec<Row> = sizes
+                .iter()
+                .enumerate()
+                .map(|(k, size)| {
+                    let row = Row::new(size).trail(Trail::Check(k == choice.size));
+                    if k == 0 { row.subtitle(least) } else { row }
+                })
+                .collect();
+            let list = widgets::list(&mut c, t, f, y, &rows);
+            let picks: Vec<Action> = (0..choice.sizes.len()).map(Action::SystemSize).collect();
+            out.extend(hits(&list.rows, &picks));
+            let note = l.pick([
+                "所选空间将从 data 分区中划出，供第二系统存放文件，安装后无法更改；删除第二系统后归还。主系统的分区不会被写入。",
+                "所選空間將從 data 分割區中劃出，供第二系統存放檔案，安裝後無法變更；刪除第二系統後歸還。主系統的分割區不會被寫入。",
+                "The room chosen is set aside in the data partition for the second system's files, can't be changed once it's installed, and comes back when the second system is removed. Nothing of the main system's partitions is written.",
+            ]);
+            let y = widgets::footnote(&mut c, t, f, list.bottom, note);
+            let (label, danger) = confirm_label(Confirm::InstallSystem, cx.state);
+            let track = widgets::confirm(&mut c, t, f, y + t.m.dp(24.0), label, danger, s.confirm);
+            out.push(Hit { rect: track, action: Action::Confirm(Confirm::InstallSystem) });
+            let note = l.pick(["返回将取消安装，不会写入任何内容。", "返回將取消安裝，不會寫入任何內容。", "Going back cancels the install without writing anything."]);
+            widgets::footnote(&mut c, t, f, track.y + track.h, note)
+        }
+        Install::Systeming { name, stage } => {
+            let title = tr!(l, "正在安装 {name}", "正在安裝 {name}", "Installing {name}");
+            let (detail, done) = system_stage(l, stage.as_ref());
+            let y = widgets::progress_card(&mut c, t, f, top, &title, &detail, done);
+            widgets::footnote(&mut c, t, f, y, until_installed(l, s.source))
+        }
         Install::ConfirmingScript => {
             let name = s.package_name.as_deref().unwrap_or(l.pick(["刷机包", "刷機包", "Flashable zip"]));
             let detail = l.pick([
@@ -1448,6 +1558,18 @@ fn finished(
             let y = reflashed(c, cx, next.bottom);
             let y = afterwards_of(c, cx, y, true);
             script_output(c, cx, y, rows)
+        }
+        Outcome::SystemInstalled { name } => {
+            let detail = tr!(
+                l,
+                "{name} 已安装为第二系统，可在「双系统」中切换。",
+                "{name} 已安裝為第二系統，可在「雙系統」中切換。",
+                "{name} is installed as the second system. Switch to it from Dual boot."
+            );
+            let y = widgets::list(c, t, f, top, &[standing(installed, GREEN, Icon::Systems, &detail)]).bottom;
+            let next = widgets::list(c, t, f, y + gap, &[Row::new(l.pick(DUAL_BOOT)).icon(PURPLE, Icon::Systems)]);
+            out.extend(hits(&next.rows, &[Action::Open(Screen::Systems)]));
+            afterwards_of(c, cx, next.bottom, true)
         }
         Outcome::Cancelled => {
             let y = widgets::list(c, t, f, top, &[standing(l.pick(["已取消", "已取消", "Cancelled"]), SLATE, Icon::Install, nothing_written)]).bottom;
@@ -1876,16 +1998,17 @@ pub fn restore_backup(cx: &Ctx) -> Frame {
                 }
                 // The boot partitions' vbmeta checks the system's: one of
                 // another version without the other may not start.
-                if let (Some(was), Some(now)) = (&held.system, &i.os_version) {
-                    if was != now && chosen[0] != chosen[1] {
-                        let warn = tr!(
-                            l,
-                            "该备份来自 {was}，本机当前为 {now}。仅恢复启动分区或系统分区中的一项，可能导致无法开机。",
-                            "這份備份來自 {was}，本機目前為 {now}。僅還原啟動分割區或系統分割區中的一項，可能導致無法開機。",
-                            "This backup is from {was}, and this phone runs {now}. Restoring only one of the boot and system partitions may keep the phone from starting."
-                        );
-                        y = widgets::footnote(&mut c, t, f, y, &warn);
-                    }
+                if let (Some(was), Some(now)) = (&held.system, &i.os_version)
+                    && was != now
+                    && chosen[0] != chosen[1]
+                {
+                    let warn = tr!(
+                        l,
+                        "该备份来自 {was}，本机当前为 {now}。仅恢复启动分区或系统分区中的一项，可能导致无法开机。",
+                        "這份備份來自 {was}，本機目前為 {now}。僅還原啟動分割區或系統分割區中的一項，可能導致無法開機。",
+                        "This backup is from {was}, and this phone runs {now}. Restoring only one of the boot and system partitions may keep the phone from starting."
+                    );
+                    y = widgets::footnote(&mut c, t, f, y, &warn);
                 }
                 let (label, danger) = confirm_label(Confirm::Restore, cx.state);
                 let track = widgets::confirm(&mut c, t, f, y + t.m.dp(24.0), label, danger, s.confirm);
@@ -2830,10 +2953,10 @@ pub fn wlan(cx: &Ctx) -> Frame {
                 out.extend(hits(&joined.rows, &[Action::OpenJoined]));
                 out.push(Hit { rect: widgets::round_button(t, joined.rows[0]), action: Action::OpenJoined });
                 y = joined.bottom;
-                if let Joining::Connected(link) = &j.stage {
-                    if let Some(note) = link.reach.as_ref().and_then(|r| fmt::reach(l, r)) {
-                        y = widgets::footnote(&mut c, t, f, y, &note);
-                    }
+                if let Joining::Connected(link) = &j.stage
+                    && let Some(note) = link.reach.as_ref().and_then(|r| fmt::reach(l, r))
+                {
+                    y = widgets::footnote(&mut c, t, f, y, &note);
                 }
             }
             let others: Vec<(usize, &Network)> =
@@ -3569,6 +3692,172 @@ pub fn slot(cx: &Ctx) -> Frame {
     let track = widgets::confirm(&mut c, t, f, y + t.m.dp(24.0), label, danger, s.confirm);
     out.push(Hit { rect: track, action: Action::Confirm(Confirm::Slot) });
     Frame::new(t, c, out, title, top)
+}
+
+const MAIN_SYSTEM: Text = ["主系统", "主系統", "Main system"];
+const SECOND_SYSTEM: Text = ["第二系统", "第二系統", "Second system"];
+
+/// What the home page and the systems page say once the second system's
+/// start stopped.
+const SECOND_FAILED: Text = ["第二系统未能启动", "第二系統未能啟動", "The second system couldn't start"];
+
+/// The two systems as big cards one over the other, laid out as the boot
+/// slot page lays out its slots: the main system, in the phone's own
+/// partitions, and the second, whose files lie in the data partition, or
+/// the place to install one, the one that starts next checked. Picking the
+/// other and swiping writes its boot images into the slot that starts
+/// next, and restarts into it. Under them, the second system, and removing
+/// it.
+pub fn systems(cx: &Ctx) -> Frame {
+    let (t, f, s, i, l) = (cx.t, cx.f, cx.state, cx.info, cx.state.lang);
+    let mut c = long_page(cx);
+    let mut out = Vec::new();
+    let top = t.m.content_top;
+    let title = l.pick(DUAL_BOOT);
+    // While the boot partitions are written, or the second system removed,
+    // the page only says so: of a switch the system asked for, perhaps
+    // before the systems are read.
+    if let Some(work) = s.systems_work {
+        let (heading, detail) = match work {
+            SystemsWork::Switching(to) => {
+                let name = match (&s.systems, to) {
+                    (Some(Ok(systems)), Who::Installed) => Some(systems.installed.name.as_str()),
+                    (Some(Ok(systems)), Who::Other) => systems.other.as_ref().map(|o| o.name.as_str()),
+                    _ => None,
+                };
+                let heading = match name {
+                    Some(name) => tr!(l, "正在切换到 {name}", "正在切換到 {name}", "Switching to {name}"),
+                    None => l.pick(["正在切换系统", "正在切換系統", "Switching systems"]).to_string(),
+                };
+                (heading, l.pick(["正在写入启动镜像", "正在寫入啟動映像檔", "Writing its boot images"]))
+            }
+            SystemsWork::Removing => (
+                l.pick(["正在删除第二系统", "正在刪除第二系統", "Removing the second system"]).to_string(),
+                l.pick(["正在归还 data 分区中的空间", "正在歸還 data 分割區中的空間", "Giving its room back to the data partition"]),
+            ),
+        };
+        let y = widgets::progress_card(&mut c, t, f, top, &heading, detail, None);
+        let y = widgets::footnote(&mut c, t, f, y, l.pick(["完成前，请不要关机。", "完成前，請不要關機。", "Don't power off until it's done."]));
+        return Frame::new(t, fit(c, t, y), out, title, top);
+    }
+    let systems = match &s.systems {
+        Some(Ok(systems)) => systems,
+        Some(Err(why)) => {
+            let list = widgets::list(&mut c, t, f, top, &[Row::new(l.pick(["无法读取双系统", "無法讀取雙系統", "Couldn't read the systems"])).trail(Trail::None)]);
+            let y = widgets::footnote(&mut c, t, f, list.bottom, why);
+            return Frame::new(t, fit(c, t, y), out, title, top);
+        }
+        None => return Frame::new(t, fit(c, t, top), out, title, top),
+    };
+    let starts = starting(systems);
+    let chosen = s.system_pick.unwrap_or(starts);
+    let second_role = l.pick(SECOND_SYSTEM);
+    // Boot partitions that hold a second system's image nothing is kept of
+    // start neither system the page knows.
+    let main = SystemCard {
+        role: l.pick(MAIN_SYSTEM),
+        name: &systems.installed.name,
+        detail: systems.installed.version.as_deref().unwrap_or_default(),
+        mark: SystemMark::Check(chosen == Who::Installed && systems.held != Held::Unrecorded),
+    };
+    let second = match &systems.other {
+        Some(other) => SystemCard { role: second_role, name: &other.name, detail: &other.version, mark: SystemMark::Check(chosen == Who::Other) },
+        None => SystemCard {
+            role: second_role,
+            name: l.pick(["安装系统", "安裝系統", "Install a system"]),
+            detail: l.pick(["选择第二系统的安装包", "選擇第二系統的安裝檔", "Choose the second system's package"]),
+            mark: SystemMark::Opens,
+        },
+    };
+    let y = widgets::section_first(&mut c, t, f, top, l.pick(["下次启动", "下次啟動", "Next boot"]));
+    let shown = widgets::system_cards(&mut c, t, f, y, &[main, second]);
+    let second_opens = match systems.other {
+        Some(_) => Action::PickSystem(Who::Other),
+        None => Action::Open(Screen::Install),
+    };
+    out.extend(hits(&shown.rows, &[Action::PickSystem(Who::Installed), second_opens]));
+    let mut y = shown.bottom + t.m.dp(12.0);
+    if let Some(why) = &s.system_notice {
+        y = widgets::info_card(&mut c, t, f, y, &[(l.pick(SECOND_FAILED), why.clone())]);
+    }
+    if chosen != starts {
+        match (chosen, fmt::snapshot_system_note(l, &i.snapshot)) {
+            (Who::Other, Some(note)) => y = widgets::footnote(&mut c, t, f, y, note),
+            _ => {
+                let (label, danger) = confirm_label(Confirm::SwitchSystem, s);
+                let track = widgets::confirm(&mut c, t, f, y + t.m.dp(12.0), label, danger, s.confirm);
+                out.push(Hit { rect: track, action: Action::Confirm(Confirm::SwitchSystem) });
+                y = track.y + track.h;
+            }
+        }
+    }
+    let what = l.pick([
+        "点按卡片选择系统。切换系统只改写下次启动槽位的 boot 和 init_boot 分区，主系统的其他分区保持不变。第二系统的文件保存在 data 分区中。",
+        "點按卡片選擇系統。切換系統只改寫下次啟動槽位的 boot 和 init_boot 分割區，主系統的其他分割區保持不變。第二系統的檔案儲存在 data 分割區中。",
+        "Tap a card to pick a system. Switching rewrites only the boot and init_boot partitions of the slot that starts next, and leaves the main system's other partitions as they are. The second system's files are kept in the data partition.",
+    ]);
+    y = widgets::footnote(&mut c, t, f, y, what);
+    match systems.held {
+        Held::Recorded => {}
+        Held::Rewritten => {
+            let note = l.pick([
+                "Skyward 写入第二系统的启动镜像之后，启动分区被改写过。选择主系统并滑动确认，会用保存的主系统启动镜像覆盖现在的内容；在此之前，安装、清除和备份都不会进行。",
+                "Skyward 寫入第二系統的啟動映像檔之後，啟動分割區被改寫過。選擇主系統並滑動確認，會用儲存的主系統啟動映像檔覆蓋現在的內容；在此之前，安裝、清除和備份都不會進行。",
+                "Something else has written the boot partitions since Skyward put the second system's boot images there. Picking the main system and sliding to confirm writes the main system's saved boot images over what is there now; until then, nothing is installed, wiped or backed up.",
+            ]);
+            y = widgets::footnote(&mut c, t, f, y, note);
+        }
+        Held::Unrecorded => {
+            let note = l.pick([
+                "启动分区里是第二系统的启动镜像，Skyward 保存的记录已经不存在，无法写回主系统的启动镜像。请重新刷入主系统的 boot 和 init_boot 镜像。",
+                "啟動分割區裡是第二系統的啟動映像檔，Skyward 儲存的記錄已經不存在，無法寫回主系統的啟動映像檔。請重新刷入主系統的 boot 和 init_boot 映像檔。",
+                "The boot partitions hold a second system's boot images, and what Skyward kept of them is gone, so it can't put the main system's back. Flash the main system's boot and init_boot images again.",
+            ]);
+            y = widgets::footnote(&mut c, t, f, y, note);
+        }
+    }
+    if systems.other.is_some() && systems.changed {
+        let note = l.pick([
+            "安装第二系统后，主系统的 vendor_boot 或 dtbo 分区已改变，第二系统可能无法正常启动。",
+            "安裝第二系統後，主系統的 vendor_boot 或 dtbo 分割區已改變，第二系統可能無法正常啟動。",
+            "The main system's vendor_boot or dtbo partition has changed since the second system was installed, so the second system may not start properly.",
+        ]);
+        y = widgets::footnote(&mut c, t, f, y, note);
+    }
+    if let Some(other) = &systems.other {
+        y = widgets::section(&mut c, t, f, y, second_role);
+        let size = fmt::bytes(other.size);
+        let facts = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(["占用空间", "佔用空間", "Space used"])).trail(Trail::Text(&size))]);
+        let mounted = matches!(s.data, Data::Open | Data::Locked { .. });
+        let remove = Row::new(l.pick(["删除第二系统", "刪除第二系統", "Remove the second system"])).tint(t.pal.danger);
+        let (remove, act) = match mounted {
+            true => (remove.trail(Trail::None), Action::AskDelete),
+            false => (remove.subtitle(l.pick(DECRYPT_NEEDED)), Action::Open(Screen::Decrypt)),
+        };
+        let removing = widgets::list(&mut c, t, f, facts.bottom + t.m.card_gap, &[remove]);
+        out.extend(hits(&removing.rows, &[act]));
+        y = removing.bottom;
+        if s.asking_delete && mounted {
+            let ask = match starts {
+                Who::Other => l.pick([
+                    "将先切换回主系统，再删除第二系统及其全部数据，删除后无法恢复。",
+                    "將先切換回主系統，再刪除第二系統及其全部資料，刪除後無法復原。",
+                    "The phone goes back to the main system first, then the second system and all its data are removed for good.",
+                ]),
+                Who::Installed => l.pick([
+                    "删除第二系统及其全部数据？删除后无法恢复。",
+                    "刪除第二系統及其全部資料？刪除後無法復原。",
+                    "Remove the second system and all its data? It can't be brought back.",
+                ]),
+            };
+            let y2 = widgets::footnote(&mut c, t, f, y, ask);
+            let (label, danger) = confirm_label(Confirm::RemoveSystem, s);
+            let track = widgets::confirm(&mut c, t, f, y2 + t.m.dp(24.0), label, danger, s.confirm);
+            out.push(Hit { rect: track, action: Action::Confirm(Confirm::RemoveSystem) });
+            y = track.y + track.h;
+        }
+    }
+    Frame::new(t, fit(c, t, y), out, title, top)
 }
 
 /// The phone's own fastbootd serving the computer: whether it runs, how far

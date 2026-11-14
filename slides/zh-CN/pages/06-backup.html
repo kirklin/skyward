@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="../../readme.css">
+</head>
+<body>
+<main class="slide feature">
+  <header class="head">
+    <p class="eyebrow">备份和恢复</p>
+    <h1 class="headline">系统、应用和 IMEI<br>都可以备份。</h1>
+    <p class="body">备份可以保存到内部存储或 U 盘，可以压缩，<br>也可以在完成后校验。恢复时先校验整个备份，<br>确认完整后才开始写入。</p>
+  </header>
+  <div class="visual">
+    <p class="ui-section">备份内容</p>
+    <ul class="ui-list tight">
+      <li>
+        <div><b>启动分区</b><small>boot、init_boot、vendor_boot、dtbo、vbmeta 和 recovery</small></div>
+        <span class="check on"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      </li>
+      <li>
+        <div><b>系统分区</b><small>当前槽位在 super 中的分区</small></div>
+        <span class="check on"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      </li>
+      <li>
+        <div><b>data 分区</b><small>应用、账户和设置，不包括内部存储、锁屏密码和指纹</small></div>
+        <span class="check on"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      </li>
+      <li>
+        <div><b>基带与 EFS</b><small>IMEI、基带设置和传感器校准数据</small></div>
+        <span class="check on"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      </li>
+    </ul>
+    <p class="ui-section">选项</p>
+    <ul class="ui-list tight">
+      <li>
+        <div><b>压缩</b><small>备份更小，耗时更长</small></div>
+        <span class="switch on"></span>
+      </li>
+      <li>
+        <div><b>完成后校验</b><small>确认备份文件完整</small></div>
+        <span class="switch on"></span>
+      </li>
+    </ul>
+  </div>
+</main>
+</body>
+</html>

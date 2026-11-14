@@ -52,20 +52,17 @@ mounted = ["persist"]
 [logd]
 libraries = ["/mnt/system/system/lib64/libsysutils.so", "/mnt/system/system/lib64/libcap.so"]
 
-# Each of the phone's own programs below runs as the user, in the groups
-# and with the capabilities its init script on the phone gives it, so that
-# what it makes in the data partition is whose it is when the phone runs
-# it, and the phone's own copy of it can still read and remove it.
-
-# What the phone's own init runs once the system has finished starting.
-# The kernel starts both CPU clusters on the performance governor, which
-# holds them at their highest clock, and Qualcomm's idle driver keeps idle
-# CPUs from powering down until it is told otherwise; the script hands the
+# What the phone's own init runs once the system has finished starting, as
+# the user and in the groups its init script on the phone gives it. The
+# kernel starts both CPU clusters on the performance governor, which holds
+# them at their highest clock, and Qualcomm's idle driver keeps idle CPUs
+# from powering down until it is told otherwise; the script hands the
 # clusters to WALT, lets idle CPUs power down and sets how the memory bus
 # scales. Without it the CPUs stay at their highest clock and voltage even
 # while idle, and the phone slowly heats up. It needs none of the programs
-# below and runs before them, so one of them that does not come up still
-# leaves the CPUs settled.
+# that use the phone's keys, which the recovery reads from the phone's own
+# partitions, and runs before them, so one of them that does not come up
+# still leaves the CPUs settled.
 [[service]]
 path = "/vendor/bin/sh"
 args = ["/vendor/bin/init.kernel.post_boot.sh"]
@@ -73,91 +70,6 @@ libraries = ["/system/lib64", "/vendor/lib64"]
 oneshot = true
 user = "root"
 groups = ["root", "system", "wakelock", "graphics"]
-
-# The secure world reaches back into Android through the listeners this
-# daemon registers; without them the key service cannot use any key.
-[[service]]
-path = "/vendor/bin/qseecomd"
-libraries = ["/system/lib64", "/vendor/lib64"]
-ready_property = "vendor.sys.listeners.registered"
-user = "root"
-groups = ["root", "drmrpc"]
-
-# The opener the secure world's apps are reached through by programs that
-# speak to them as GlobalPlatform's TEE client does, which loads those apps
-# from /vendor/firmware_mnt/image as they are first asked for.
-[[service]]
-path = "/vendor/bin/hlosminkdaemon"
-libraries = ["/system/lib64", "/vendor/lib64"]
-user = "system"
-groups = ["system", "oem_2912", "wakelock"]
-capabilities = ["WAKE_ALARM", "BLOCK_SUSPEND"]
-
-# The key service, which is the only thing that can use the keys the phone
-# wrapped in hardware. The same program serves the secure clock and the
-# shared secret, which the phone describes apart from it.
-[[service]]
-path = "/vendor/bin/hw/android.hardware.security.onekeymint-service-qti"
-libraries = ["/system/lib64", "/vendor/lib64"]
-ready_service = "android.hardware.security.keymint.IKeyMintDevice/default"
-registers = [
-    "android.hardware.security.keymint.IRemotelyProvisionedComponent/default",
-    "android.hardware.security.secureclock.ISecureClock/default",
-    "android.hardware.security.sharedsecret.ISharedSecret/default",
-]
-user = "system"
-groups = ["system", "drmrpc"]
-
-# The credential service: it is what the secure world has check the secret
-# behind a screen lock, and the only thing that can hand out the note the
-# key service wants before it will use a key that secret guards.
-[[service]]
-path = "/vendor/bin/hw/android.hardware.gatekeeper-rust-service-qti"
-libraries = ["/system/lib64", "/vendor/lib64"]
-ready_service = "android.hardware.gatekeeper.IGatekeeper/default"
-user = "system"
-groups = ["system"]
-
-# The weaver, in the secure element of the builds whose odm properties set
-# ro.special_edition: Goodix's, behind its own service, which reaches it
-# through the secure world. Every user's secret is bound to a slot of it,
-# with a screen lock or without. The phone's init puts the description of
-# what the secure element's service registers in place of an empty one on
-# those builds. Both programs load the vendor partition's libhardware,
-# which asks for the installed system's libvndksupport, and that for its
-# libdl_android, of which only the copy in bootstrap is a file rather than
-# a link into a bundle; the installed system's libraries come last, so only
-# these two are taken from them. The other builds keep their weaver in a
-# Thales secure element, which its service reaches only through Android's
-# own OMAPI service, and a recovery runs none of Android's framework.
-[[service]]
-path = "/odm/bin/hw/android.hardware.secure_element-service-goodix"
-libraries = ["/system/lib64", "/vendor/lib64", "/odm/lib64", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"]
-ready_service = "android.hardware.secure_element.ISecureElement/eSE2"
-registers = ["vendor.goodix.hardware.secure_element_aidl.IGdxEse/default"]
-description = "/odm/etc/secure_element-service-goodixsp.xml"
-when = { property = "ro.special_edition", value = "true" }
-user = "system"
-groups = ["system"]
-
-[[service]]
-path = "/odm/bin/hw/android.hardware.weaver-service"
-libraries = ["/system/lib64", "/vendor/lib64", "/odm/lib64", "/mnt/system/system/lib64", "/mnt/system/system/lib64/bootstrap"]
-ready_service = "android.hardware.weaver.IWeaver/default"
-when = { property = "ro.special_edition", value = "true" }
-user = "system"
-groups = ["system", "drmrpc"]
-capabilities = ["WAKE_ALARM"]
-
-# The boot control, which says which slot the bootloader starts next and
-# switches it, writing where the bootloader reads it. It comes last: the
-# phone is usable without it.
-[[service]]
-path = "/vendor/bin/hw/android.hardware.boot-service.qti"
-libraries = ["/system/lib64", "/vendor/lib64"]
-ready_service = "android.hardware.boot.IBootControl/default"
-user = "root"
-groups = ["root"]
 
 # WLAN: Qualcomm's Peach on PCIe, driven by qca_cld3_peach_v2 over the
 # cnss2 platform driver. The vendor's cfg80211 asks for rfkill, one of the

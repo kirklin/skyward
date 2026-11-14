@@ -1,0 +1,9 @@
+<!--
+    Input:
+        device/xiaomi/mivendor/manifest_whale.xml
+-->
+<manifest version="9.0" type="device" target-level="202504">
+    <sepolicy>
+        <version>202504</version>
+    </sepolicy>
+</manifest>

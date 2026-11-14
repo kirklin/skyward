@@ -1,0 +1,31 @@
+#==============================================================================
+#       init.qti.graphics.rc
+#
+#  Copyright (c) 2023-2024 Qualcomm Technologies, Inc.
+#  All Rights Reserved.
+#  Confidential and Proprietary - Qualcomm Technologies, Inc.
+#===============================================================================
+
+service vendor_qti_graphics_boot /vendor/bin/init.qti.graphics.sh
+    class main
+    user shell
+    group shell
+    disabled
+    oneshot
+
+on early-init
+    start vendor_qti_graphics_boot
+
+on early-fs && property:vendor.display.gpu_rendering=true
+    setprop ro.hardware.vulkan adreno
+    setprop ro.hardware.egl adreno
+    setprop ro.opengles.version 196610
+    setprop vendor.gralloc.disable_ubwc 0
+    setprop ro.hwui.use_vulkan true
+
+on early-fs && property:vendor.display.gpu_rendering=false
+    setprop ro.hardware.vulkan pastel
+    setprop ro.hardware.egl angle
+    setprop ro.opengles.version 196609
+    setprop vendor.gralloc.disable_ubwc 1
+    setprop ro.hwui.use_vulkan false

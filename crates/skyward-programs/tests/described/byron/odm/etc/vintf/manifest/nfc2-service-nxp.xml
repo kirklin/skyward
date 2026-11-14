@@ -1,0 +1,15 @@
+<!--
+    Input:
+        vendor/nxp/opensource/hidlimpl/aidl/2.0/nfc2-service-nxp.xml
+-->
+<manifest version="9.0" type="device" target-level="202504">
+    <hal format="aidl">
+        <name>android.hardware.nfc</name>
+        <version>2</version>
+        <fqname>INfc/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.nxp.nxpnfc_aidl</name>
+        <fqname>INxpNfc/default</fqname>
+    </hal>
+</manifest>

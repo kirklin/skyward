@@ -1,0 +1,8 @@
+# MIUI ADD: Performance_BoostFramework
+on boot
+    chown root system /dev/xr_perf_actuator
+    chmod 664 /dev/xr_perf_actuator
+    write /sys/kernel/qos_inherit/inherit_enable 0x3ff
+    write /sys/kernel/qos_sched/sched_enable 1
+    write /sys/kernel/speedlock/sl_enable 1
+# END Performance_BoostFramework

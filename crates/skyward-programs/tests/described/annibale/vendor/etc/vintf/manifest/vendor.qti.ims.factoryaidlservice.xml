@@ -1,0 +1,10 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/ims/modules/imsd/vendor.qti.ims.factoryaidlservice.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.ims.factoryaidlservice</name>
+        <fqname>IImsFactory/default</fqname>
+    </hal>
+</manifest>

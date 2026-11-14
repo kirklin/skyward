@@ -1,0 +1,34 @@
+<manifest version="1.0" type="device">
+    <hal format="aidl">
+        <name>vendor.xiaomi.hardware.mrm</name>
+        <version>1</version>
+        <interface>
+            <name>IMrm</name>
+            <instance>default</instance>
+        </interface>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.xiaomi.hardware.mrm</name>
+        <version>1</version>
+        <interface>
+            <name>IMiCertificate</name>
+            <instance>default</instance>
+        </interface>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.xiaomi.hardware.mrm</name>
+        <version>1</version>
+        <interface>
+            <name>IMrmRemoteAuth</name>
+            <instance>default</instance>
+        </interface>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.xiaomi.hardware.misauth</name>
+        <version>1</version>
+        <interface>
+            <name>IMiSharedAuth</name>
+            <instance>default</instance>
+        </interface>
+    </hal>
+</manifest>

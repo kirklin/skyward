@@ -86,6 +86,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "allocator-api2"
+version = "0.2.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
+
+[[package]]
+name = "am-lz4-flex"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e99a8b1acf1c1749062af7f82b410d72b36c15def030f7e2b6e3454f235aa57"
+
+[[package]]
 name = "anstream"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -310,6 +322,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "byteorder"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
+
+[[package]]
 name = "bytes"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -486,6 +504,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5ca28b0ae3115b884660db4118d803791fd6756b6e88f39c0f3f7859060d7566"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "crc"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5eb8a2a1cd12ab0d987a5d5e825195d372001a4094a0376319d5a0ad71c1ba0d"
+dependencies = [
+ "crc-catalog",
+]
+
+[[package]]
+name = "crc-catalog"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "217698eaf96b4a3f0bc4f3662aaa55bdf913cd54d7204591faa790070c6d0853"
+
+[[package]]
+name = "crc32c"
+version = "0.6.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f132a176423ee852e8f0a35d43088d1850966b50745be818a88b76f64b1c6cb"
+dependencies = [
+ "rustc_version",
 ]
 
 [[package]]
@@ -897,6 +939,12 @@ dependencies = [
 
 [[package]]
 name = "foldhash"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
+
+[[package]]
+name = "foldhash"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
@@ -975,11 +1023,22 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
+version = "0.15.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
+dependencies = [
+ "allocator-api2",
+ "equivalent",
+ "foldhash 0.1.5",
+]
+
+[[package]]
+name = "hashbrown"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
 dependencies = [
- "foldhash",
+ "foldhash 0.2.0",
 ]
 
 [[package]]
@@ -988,7 +1047,7 @@ version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 dependencies = [
- "foldhash",
+ "foldhash 0.2.0",
 ]
 
 [[package]]
@@ -1431,6 +1490,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
+name = "lru"
+version = "0.12.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
+dependencies = [
+ "hashbrown 0.15.5",
+]
+
+[[package]]
 name = "lz4-sys"
 version = "1.11.1+lz4-1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1442,11 +1510,27 @@ dependencies = [
 
 [[package]]
 name = "lz4_flex"
+version = "0.11.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "373f5eceeeab7925e0c1098212f2fbc4d416adec9d35051a6ab251e824c1854a"
+
+[[package]]
+name = "lz4_flex"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ecbdfe44b1bd960b68170b417450a628c43f7cf56bb3c5317e61cb230ee7f226"
 dependencies = [
  "twox-hash",
+]
+
+[[package]]
+name = "lzma-rs"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "297e814c836ae64db86b36cf2a557ba54368d03f6afcd7d947c266692f71115e"
+dependencies = [
+ "byteorder",
+ "crc",
 ]
 
 [[package]]
@@ -1926,6 +2010,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "roxmltree"
+version = "0.21.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9da7f59328b09405b181fee1018925fad50f157afb43c0c0f5c522c256dd5907"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "rsa"
 version = "0.9.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1982,6 +2075,28 @@ dependencies = [
  "libsqlite3-sys",
  "smallvec",
  "sqlite-wasm-rs",
+]
+
+[[package]]
+name = "rust-fs-core"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9bd7693404cc43fc8f3c5f92f3808c30277e2e2682440513d58f10e3d9bac815"
+
+[[package]]
+name = "rust-fs-erofs"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "20497b079a994e4ce4dccd2f4d5026eec88be9fb5901e7912ace59037ddf3b85"
+dependencies = [
+ "am-lz4-flex",
+ "crc32c",
+ "flate2",
+ "lru",
+ "lz4_flex 0.11.6",
+ "lzma-rs",
+ "rust-fs-core",
+ "ruzstd",
 ]
 
 [[package]]
@@ -2046,6 +2161,15 @@ name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
+
+[[package]]
+name = "ruzstd"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7c1c839d570d835527c9a5e4db7cb2198683a988cb9d7293fc8674e6bd58fc8"
+dependencies = [
+ "twox-hash",
+]
 
 [[package]]
 name = "salsa20"
@@ -2238,11 +2362,12 @@ checksum = "33f4fe9184a62d842c9ef383018f3306d8ba224fd9d836f56d7288308847c256"
 
 [[package]]
 name = "skyward"
-version = "0.1.6"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "clap",
  "evdev",
+ "hex",
  "libc",
  "procfs",
  "skyward-backup",
@@ -2257,7 +2382,10 @@ dependencies = [
  "skyward-modules",
  "skyward-mtp",
  "skyward-net",
+ "skyward-omapi",
+ "skyward-programs",
  "skyward-sys",
+ "skyward-systems",
  "skyward-ui",
  "skyward-vab",
  "tempfile",
@@ -2268,11 +2396,12 @@ dependencies = [
 
 [[package]]
 name = "skyward-backup"
-version = "0.1.6"
+version = "0.3.1"
 dependencies = [
  "anyhow",
+ "hex",
  "libc",
- "lz4_flex",
+ "lz4_flex 0.14.0",
  "serde",
  "sha2 0.10.9",
  "skyward-files",
@@ -2282,7 +2411,7 @@ dependencies = [
 
 [[package]]
 name = "skyward-binder"
-version = "0.1.6"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "libc",
@@ -2291,17 +2420,31 @@ dependencies = [
 
 [[package]]
 name = "skyward-block"
-version = "0.1.6"
+version = "0.3.1"
 dependencies = [
  "anyhow",
+ "hex",
  "libc",
  "procfs",
+ "serde",
  "zerocopy",
 ]
 
 [[package]]
+name = "skyward-bootimg"
+version = "0.3.1"
+dependencies = [
+ "abootimg-oxide",
+ "anyhow",
+ "cpio",
+ "libc",
+ "lz4_flex 0.14.0",
+ "tempfile",
+]
+
+[[package]]
 name = "skyward-config"
-version = "0.1.6"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "serde",
@@ -2310,10 +2453,11 @@ dependencies = [
 
 [[package]]
 name = "skyward-crypto"
-version = "0.1.6"
+version = "0.3.1"
 dependencies = [
  "aes-gcm",
  "anyhow",
+ "hex",
  "hmac",
  "libc",
  "rusqlite",
@@ -2325,7 +2469,7 @@ dependencies = [
 
 [[package]]
 name = "skyward-files"
-version = "0.1.6"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "libc",
@@ -2333,7 +2477,7 @@ dependencies = [
 
 [[package]]
 name = "skyward-info"
-version = "0.1.6"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "libc",
@@ -2347,7 +2491,7 @@ dependencies = [
 
 [[package]]
 name = "skyward-install"
-version = "0.1.6"
+version = "0.3.1"
 dependencies = [
  "abootimg-oxide",
  "anyhow",
@@ -2355,16 +2499,18 @@ dependencies = [
  "cpio",
  "flate2",
  "libc",
- "lz4_flex",
+ "lz4_flex 0.14.0",
  "p256",
  "polyfuse-kernel",
  "rsa",
  "sha1 0.10.7",
  "sha2 0.10.9",
  "skyward-block",
+ "skyward-bootimg",
  "skyward-config",
  "skyward-info",
  "skyward-sys",
+ "skyward-systems",
  "skyward-vab",
  "tempfile",
  "x509-cert",
@@ -2375,7 +2521,7 @@ dependencies = [
 
 [[package]]
 name = "skyward-lp"
-version = "0.1.6"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "sha2 0.10.9",
@@ -2384,19 +2530,21 @@ dependencies = [
 
 [[package]]
 name = "skyward-modules"
-version = "0.1.6"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "libc",
+ "tempfile",
 ]
 
 [[package]]
 name = "skyward-mtp"
-version = "0.1.6"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "jiff",
  "libc",
+ "skyward-block",
  "skyward-files",
  "skyward-sys",
  "zerocopy",
@@ -2404,13 +2552,14 @@ dependencies = [
 
 [[package]]
 name = "skyward-net"
-version = "0.1.6"
+version = "0.3.1"
 dependencies = [
  "aes",
  "anyhow",
  "base64 0.22.1",
  "cbc",
  "dhcproto",
+ "hex",
  "hickory-proto",
  "httparse",
  "libc",
@@ -2419,28 +2568,40 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "skyward-block",
  "ureq",
 ]
 
 [[package]]
-name = "skyward-pack"
-version = "0.1.6"
+name = "skyward-omapi"
+version = "0.3.1"
 dependencies = [
- "abootimg-oxide",
+ "anyhow",
+ "skyward-binder",
+ "skyward-sys",
+]
+
+[[package]]
+name = "skyward-pack"
+version = "0.3.1"
+dependencies = [
  "anyhow",
  "clap",
- "cpio",
- "lz4_flex",
+ "hex",
+ "rust-fs-core",
+ "rust-fs-erofs",
  "serde_json",
  "sha2 0.10.9",
+ "skyward-bootimg",
  "skyward-config",
+ "skyward-programs",
  "tempfile",
  "unpayload",
 ]
 
 [[package]]
 name = "skyward-preview"
-version = "0.1.6"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "png",
@@ -2449,14 +2610,27 @@ dependencies = [
  "skyward-info",
  "skyward-install",
  "skyward-net",
+ "skyward-systems",
  "skyward-ui",
  "skyward-vab",
  "toml",
 ]
 
 [[package]]
+name = "skyward-programs"
+version = "0.3.1"
+dependencies = [
+ "anyhow",
+ "roxmltree",
+ "skyward-config",
+ "skyward-omapi",
+ "skyward-sys",
+ "tempfile",
+]
+
+[[package]]
 name = "skyward-sys"
-version = "0.1.6"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "libc",
@@ -2464,8 +2638,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "skyward-system-init"
+version = "0.3.1"
+dependencies = [
+ "anyhow",
+ "libc",
+ "skyward-block",
+ "skyward-bootimg",
+ "skyward-modules",
+ "skyward-sys",
+ "skyward-systems",
+]
+
+[[package]]
+name = "skyward-systems"
+version = "0.3.1"
+dependencies = [
+ "abootimg-oxide",
+ "anyhow",
+ "hex",
+ "libc",
+ "serde",
+ "sha2 0.10.9",
+ "skyward-block",
+ "skyward-bootimg",
+ "skyward-config",
+ "skyward-vab",
+ "tempfile",
+ "toml",
+ "zip 8.6.0",
+]
+
+[[package]]
 name = "skyward-ui"
-version = "0.1.6"
+version = "0.3.1"
 dependencies = [
  "ab_glyph",
  "ab_glyph_rasterizer",
@@ -2483,6 +2689,7 @@ dependencies = [
  "skyward-info",
  "skyward-install",
  "skyward-net",
+ "skyward-systems",
  "skyward-vab",
  "svgtypes",
  "syn 2.0.119",
@@ -2494,7 +2701,7 @@ dependencies = [
 
 [[package]]
 name = "skyward-vab"
-version = "0.1.6"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "libc",
@@ -2830,9 +3037,9 @@ dependencies = [
 
 [[package]]
 name = "unpayload"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46dadb36e6ea954baa95d0b8f5c84d4cae6e70e1ea6b963facb5131dd781234b"
+checksum = "3dd952df6789d45fe9c89e2d0a6dba96d49e14b9f76adc77d305a7fce9763ebd"
 dependencies = [
  "blake2",
  "brotli-decompressor",

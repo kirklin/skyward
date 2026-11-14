@@ -1,0 +1,32 @@
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# All rights reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+# vendor.c2pa service is started on device bootup.
+service vendor.c2pa /vendor/bin/hw/vendor.qti.hardware.c2pa-aidl-service-qti
+    class hal
+    user system
+    group system
+
+# vendor.c2pa_optimized service is started by service manager on service request.
+service vendor.c2pa_optimized /vendor/bin/hw/vendor.qti.hardware.c2pa-aidl-service-qti
+    class hal
+    interface aidl vendor.qti.hardware.c2pa.IC2PA/default
+    user system
+    group system
+    disabled
+    oneshot
+
+# Service start up is configured based on vendor.c2pa.service_start property:
+#     [0]: No optimization, service started on device bootup.
+#     [1]: Service disbaled on device bootup, started after first usecase.
+#     [2]: Service disbaled on device bootup, started on usecase boundary.
+on property:vendor.c2pa.service_start=0
+    stop vendor.c2pa_optimized
+
+on property:vendor.c2pa.service_start=1
+    stop vendor.c2pa
+
+on property:vendor.c2pa.service_start=2
+    stop vendor.c2pa
+

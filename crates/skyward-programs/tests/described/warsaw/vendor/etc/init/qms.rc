@@ -1,0 +1,14 @@
+
+on post-fs-data
+      mkdir /data/vendor/qms 0700 radio radio
+      mkdir /data/vendor/qms_logs 0700 radio radio
+      mkdir /data/vendor/qms_logs/main 0700 radio radio
+      mkdir /data/vendor/qms_logs/other 0700 radio radio
+      mkdir /data/vendor/qms_logs/config 0700 radio radio
+
+service vendor.qms /vendor/bin/qms
+     # MIUI ADD:  Stability_BugFixUpstream
+     user root
+     # END Stability_BugFixUpstream
+     class main
+     group radio wakelock wifi inet net_admin

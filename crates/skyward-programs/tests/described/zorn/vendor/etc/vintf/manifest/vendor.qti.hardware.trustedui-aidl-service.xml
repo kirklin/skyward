@@ -1,0 +1,19 @@
+<manifest version="1.0" type="device">
+<!---/*************************************************************************
+* Copyright (c) 2023 Qualcomm Technologies, Inc.
+* All Rights Reserved.
+* Confidential and Proprietary - Qualcomm Technologies, Inc.
+****************************************************************************-->
+    <hal format="aidl">
+        <name>vendor.qti.hardware.trustedui</name>
+        <version>1</version>
+        <interface>
+            <name>ITrustedUI</name>
+            <instance>default</instance>
+        </interface>
+        <interface>
+            <name>ITrustedInput</name>
+            <instance>default</instance>
+        </interface>
+    </hal>
+</manifest>

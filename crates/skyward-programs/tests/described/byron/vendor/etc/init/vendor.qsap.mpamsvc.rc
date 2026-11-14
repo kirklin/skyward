@@ -1,0 +1,12 @@
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# All rights reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+service vendor.qsap.mpamsvc /vendor/bin/qsap_mpamsvc
+    class main
+    user system
+    group system
+
+on post-fs-data
+    #Create dir for MPAM
+    mkdir /data/vendor/mpamsvc 0750 system system

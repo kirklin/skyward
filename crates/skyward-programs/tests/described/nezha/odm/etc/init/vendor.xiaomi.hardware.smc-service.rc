@@ -1,0 +1,24 @@
+on boot
+    mkdir /data/vendor/gnss 0775 system system
+    mkdir /data/vendor/gnss/rsmc 0775 system system
+    mkdir /data/vendor/gnss/rsmc/system_config 0775 system system
+    mkdir /data/vendor/gnss/rsmc/system_config/using 0775 system system
+    mkdir /mnt/vendor/persist/rsmc 0775 system system
+    chmod 666 /sys/bus/spi/devices/spi0.0/rsmc_pic
+    chmod 666 /sys/bus/spi/devices/spi14.0/rsmc_pic
+    chmod 666 /sys/bus/spi/devices/spi14.1/rsmc_pic
+    chmod 666 /sys/bus/spi/devices/spi19.0/rsmc_pic
+
+service smc_hal_service /odm/bin/hw/vendor.xiaomi.hardware.smc-service
+    interface aidl vendor.xiaomi.hardware.smc.ISmc/default
+    class hal
+    user system
+    group system
+    disabled
+    oneshot
+    
+on property:sys.bdShortMsg.control=1
+    start smc_hal_service
+
+on property:sys.bdShortMsg.control=0
+    stop smc_hal_service

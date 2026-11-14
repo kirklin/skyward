@@ -1,0 +1,10 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/bluetooth/xpan/xpan_provider/vendor.qti.hardware.bluetooth.xpanprovider.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.bluetooth.xpanprovider</name>
+        <fqname>IXpanProvider/default</fqname>
+    </hal>
+</manifest>

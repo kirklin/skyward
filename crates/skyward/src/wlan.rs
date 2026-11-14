@@ -648,18 +648,27 @@ fn place(file: &Firmware) -> Result<()> {
     let to = Path::new(FIRMWARE).join(&file.name);
     let dir = to.parent().expect("a firmware file is in a folder");
     fs::create_dir_all(dir).with_context(|| format!("make {}", dir.display()))?;
-    let bytes = match &file.partition {
-        None => fs::read(&file.path).with_context(|| format!("read {}", file.path))?,
+    let loaded = match &file.partition {
+        None => skyward_programs::firmware::read(Path::new("/"), file)?,
         Some(partition) => {
             let at = Path::new(PARTITIONS).join(partition);
             fs::create_dir_all(&at).with_context(|| format!("make {}", at.display()))?;
             skyward_block::mount::mount_ro(&Path::new(skyward_block::BY_NAME).join(partition), &at)?;
-            let read = fs::read(at.join(&file.path)).with_context(|| format!("read {} on {partition}", file.path));
-            skyward_block::mount::umount(&at)?;
-            read?
+            let read = skyward_programs::firmware::read(&at, file).with_context(|| format!("read firmware on {partition}"));
+            let unmounted = skyward_block::mount::umount(&at);
+            // Always unmount, while retaining the original read error.
+            let loaded = read?;
+            unmounted?;
+            loaded
         }
     };
-    fs::write(&to, bytes).with_context(|| format!("write {}", to.display()))
+    match loaded {
+        Some((from, bytes)) => {
+            fs::write(&to, bytes).with_context(|| format!("write {}", to.display()))?;
+            skyward_sys::kmsg(&format!("WLAN firmware {} read from {}", file.name, from.display()))
+        }
+        None => skyward_sys::kmsg(&format!("optional WLAN firmware {} absent; the driver will choose its address", file.name)),
+    }
 }
 
 /// Start the supplicant on the interface, and wait for its control socket.

@@ -57,6 +57,15 @@ oneshot = true
 user = "root"
 groups = ["root", "system", "wakelock", "graphics"]
 
+# The observed AIDL boot control, started on its own and kept, so the
+# slots page reads the slots no matter what became of the key chain.
+[[service]]
+path = "/vendor/bin/hw/android.hardware.boot-service.qti"
+libraries = ["/system/lib64", "/vendor/lib64"]
+ready_service = "android.hardware.boot.IBootControl/default"
+user = "root"
+groups = ["root"]
+
 # WLAN: Qualcomm's Peach on PCIe (qcom,cnss-peach in its dtbo), as on the
 # 17 Ultra, whose vendor partition this phone shares file for file but for
 # its build properties, a power hint and two radio libraries.
@@ -73,13 +82,13 @@ probe = "http://connect.rom.miui.com/generate_204"
 [update]
 server = "https://update.miui.com/updates/miotaV3.php"
 
-# The stock build the recovery is made on: the Chinese system's OS4.0.4.0,
+# The stock build the recovery is made on: the Chinese system's OS4.0.6.0,
 # whose full update package on the phone maker's own download server holds
 # the recovery partition the recovery is built on top of.
 [stock]
-version = "OS4.0.4.0.XPMCNXM"
-package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.4.0.XPMCNXM/myron-ota_full-OS4.0.4.0.XPMCNXM-user-17.0-70d1c400a4.zip"
-recovery = "6e4170a336ffb5a6291bb422c660efb5d61f45a4315524848848cb650e0d4832"
+version = "OS4.0.6.0.XPMCNXM"
+package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.6.0.XPMCNXM/myron-ota_full-OS4.0.6.0.XPMCNXM-user-17.0-66564d402b.zip"
+recovery = "49622932fb32ab623db336866734ad440a2e15af5f750ceb9b1d3d0f7fdabafc"
 
 # qcom-hv-haptics (qcom,hv-haptics in its dtbo), with the click made from
 # samples at the motor's resonant frequency as on the 17 Ultra. The

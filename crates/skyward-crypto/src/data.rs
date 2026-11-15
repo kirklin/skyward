@@ -84,9 +84,12 @@ fn open(service: &KeyMint) -> Result<Opened> {
     })();
     match mounted {
         Ok((checked, filesystem)) => Ok(Opened { mapped, filesystem, checked }),
-        Err(e) => match dm::remove(MAPPED) {
-            Ok(()) => Err(e),
-            Err(r) => Err(e.context(format!("removing {MAPPED} afterwards failed too: {r:#}"))),
+        Err(e) => match dm::status(MAPPED) {
+            Ok(Some(_)) => match dm::remove(MAPPED) {
+                Ok(()) => Err(e),
+                Err(r) => Err(e.context(format!("removing {MAPPED} afterwards failed too: {r:#}"))),
+            },
+            _ => Err(e),
         },
     }
 }
@@ -97,6 +100,13 @@ fn open(service: &KeyMint) -> Result<Opened> {
 fn map(service: &KeyMint) -> Result<(Vec<Entry>, PathBuf)> {
     let entries = skyward_block::fstab::read(MOUNT)?;
     let entry = entries.first().with_context(|| format!("the phone's own table says nothing about {MOUNT}"))?;
+    // A phone whose own table names no whole-disk encryption keeps its
+    // data partition as the plain filesystem it is: nothing stands between
+    // it and the device the table points at.
+    if entries.iter().all(|e| e.extra("metadata_encryption").is_none()) {
+        let device = skyward_block::fstab::device(entry)?;
+        return Ok((entries, PathBuf::from(device)));
+    }
     let encryption = Encryption::of(entry)?;
     let device = skyward_block::fstab::device(entry)?;
     let key = storage_key(service, entry, &encryption)?;
@@ -113,9 +123,20 @@ pub fn map_unmounted(service: &KeyMint) -> Result<PathBuf> {
     map(service).map(|(_, mapped)| mapped)
 }
 
-/// Take away the mapping [`map_unmounted`] made.
+/// Take away the mapping [`map_unmounted`] made, where it made one.
 pub fn unmap() -> Result<()> {
-    dm::remove(MAPPED)
+    if dm::status(MAPPED)?.is_some() {
+        dm::remove(MAPPED)?;
+    }
+    Ok(())
+}
+
+/// Whether the phone's own table names no whole-disk encryption for its
+/// data partition, so that everything on it reads as the plain filesystem
+/// it is, once mounted.
+fn plain() -> Result<bool> {
+    let entries = skyward_block::fstab::read(MOUNT)?;
+    Ok(entries.iter().all(|e| e.extra("metadata_encryption").is_none()))
 }
 
 /// Show the owner's shared storage at /sdcard; shown already, it stays.
@@ -172,6 +193,13 @@ pub fn open_without_credential(service: &KeyMint) -> Result<Opening> {
         true => None,
         false => Some(open(service)?),
     };
+    // A phone that names no whole-disk encryption keeps every file's name
+    // and content readable as they are: there is no key to let in, and so
+    // no user's own files stay closed.
+    if plain()? {
+        show_owner_storage()?;
+        return Ok(Opening { mounted, closed: Vec::new() });
+    }
     open_shared(service)?;
     let mut closed = Vec::new();
     let mut owner = Note::default();

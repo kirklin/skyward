@@ -26,15 +26,22 @@ pub struct Encryption {
 }
 
 impl Encryption {
-    /// Read what an entry of the phone's own table says.
-    pub fn of(entry: &Entry) -> Result<Encryption> {
-        let said = entry.extra("metadata_encryption").context("the phone says its data partition is not encrypted whole")?;
+    /// Read what an entry of the phone's own table says, or nothing where
+    /// the table names no whole-disk encryption at all, as a phone that
+    /// keeps its data partition plain does.
+    pub fn maybe_of(entry: &Entry) -> Result<Option<Encryption>> {
+        let Some(said) = entry.extra("metadata_encryption") else { return Ok(None) };
         let (name, rest) = said.split_once(':').unwrap_or((said, ""));
         let cipher = CIPHERS
             .iter()
             .find_map(|(theirs, kernels)| (*theirs == name).then_some(*kernels))
             .with_context(|| format!("no cipher here is the {name} the phone names"))?;
-        Ok(Encryption { cipher: cipher.to_string(), wrapped: rest == "wrappedkey_v0" })
+        Ok(Some(Encryption { cipher: cipher.to_string(), wrapped: rest == "wrappedkey_v0" }))
+    }
+
+    /// Read what an entry of the phone's own table says.
+    pub fn of(entry: &Entry) -> Result<Encryption> {
+        Self::maybe_of(entry)?.context("the phone says its data partition is not encrypted whole")
     }
 }
 
@@ -76,6 +83,15 @@ mod tests {
         assert_eq!(Encryption::of(&e).unwrap(), Encryption { cipher: "aes-xts-plain64".into(), wrapped: true });
         let plain = entry("metadata_encryption=adiantum");
         assert_eq!(Encryption::of(&plain).unwrap(), Encryption { cipher: "xchacha12,aes-adiantum-plain64".into(), wrapped: false });
+    }
+
+    #[test]
+    fn a_table_that_names_no_whole_encryption_asks_for_none() {
+        assert_eq!(Encryption::maybe_of(&entry("quota")).unwrap(), None);
+        assert_eq!(
+            Encryption::maybe_of(&entry("metadata_encryption=aes-256-xts:wrappedkey_v0")).unwrap(),
+            Some(Encryption { cipher: "aes-xts-plain64".into(), wrapped: true }),
+        );
     }
 
     #[test]

@@ -16,7 +16,7 @@ density = 480
 sources = ["vendor_boot", "vendor_dlkm", "vendor", "system_dlkm"]
 # The touchscreen: FocalTech's, over SPI behind Xiaomi's touch layer, the
 # one touch driver the phone's own modules.load lists.
-load = ["focaltech_touch_3685g_1"]
+load = ["focaltech_touch_3685g_1", "smcinvoke_dlkm", "qsee_ipc_irq_bridge", "stm_st54se_gpio", "stm_nfc_i2c"]
 
 # As on the 17 Ultra, the controller comes back from its reset sending raw
 # frames for /odm/lib64/libtouchreport.so, which a recovery runs none of;
@@ -41,6 +41,19 @@ mounted = ["persist"]
 [logd]
 libraries = ["/mnt/system/system/lib64/libsysutils.so", "/mnt/system/system/lib64/libcap.so"]
 
+# These nodes appear only after the Thales and NFC modules are loaded.
+[[owners]]
+user = "system"
+group = "system"
+mode = 0o660
+paths = ["/dev/st54spi_gpio"]
+
+[[owners]]
+user = "nfc"
+group = "nfc"
+mode = 0o660
+paths = ["/dev/st21nfc"]
+
 # What the phone's own init runs once the system has finished starting, as
 # kernel-post-boot in /vendor/etc/init/hw/init.qti.kernel.rc. The kernel
 # starts both CPU clusters on the performance governor, which holds them at
@@ -48,7 +61,10 @@ libraries = ["/mnt/system/system/lib64/libsysutils.so", "/mnt/system/system/lib6
 # powering down until it is told otherwise; the script hands the clusters
 # to WALT, lets idle CPUs power down and sets how the memory bus scales.
 # Without it the CPUs stay at their highest clock and voltage even while
-# idle, and the phone slowly heats up.
+# idle, and the phone slowly heats up. It needs none of the programs that
+# use the phone's keys, which the recovery reads from the phone's own
+# partitions, and runs before them, so one of them that does not come up
+# still leaves the CPUs settled.
 [[service]]
 path = "/vendor/bin/sh"
 args = ["/vendor/bin/init.kernel.post_boot.sh"]
@@ -56,6 +72,15 @@ libraries = ["/system/lib64", "/vendor/lib64"]
 oneshot = true
 user = "root"
 groups = ["root", "system", "wakelock", "graphics"]
+
+# The secure-element and Weaver services resolve these through the recovery's
+# system library directory.
+[[service]]
+path = "/system/bin/sh"
+args = ["-c", "umask 022; cp /mnt/system/system/lib64/libvndksupport.so /mnt/system/system/lib64/libnetd_client.so /mnt/system/system/lib64/bootstrap/libdl_android.so /system/lib64/ && chmod 644 /system/lib64/libvndksupport.so /system/lib64/libnetd_client.so /system/lib64/libdl_android.so"]
+oneshot = true
+user = "root"
+groups = ["root"]
 
 # WLAN: Qualcomm's Peach on PCIe (qcom,cnss-peach in its dtbo), as on the
 # 17 Ultra, whose vendor partition this phone shares file for file but for
@@ -73,13 +98,13 @@ probe = "http://connect.rom.miui.com/generate_204"
 [update]
 server = "https://update.miui.com/updates/miotaV3.php"
 
-# The stock build the recovery is made on: the Chinese system's OS4.0.4.0,
+# The stock build the recovery is made on: the Chinese system's OS4.0.7.0,
 # whose full update package on the phone maker's own download server holds
 # the recovery partition the recovery is built on top of.
 [stock]
-version = "OS4.0.4.0.XGNCNXM"
-package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.4.0.XGNCNXM/songyuan-ota_full-OS4.0.4.0.XGNCNXM-user-17.0-25df7572bd.zip"
-recovery = "de8fcb7522ab6fd8b366b8bd6f0f2f5150d969a4c4d5ce04c61d1f87f6a2353d"
+version = "OS4.0.7.0.XGNCNXM"
+package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.7.0.XGNCNXM/songyuan-ota_full-OS4.0.7.0.XGNCNXM-user-17.0-1e5021a06d.zip"
+recovery = "a65419e57617f1bc45d1fa1dd3c224a6055e85ab0ea545dfeccb333531740de3"
 
 # qcom-hv-haptics (qcom,hv-haptics in its dtbo), with the click made from
 # samples at the motor's resonant frequency as on the 17 Ultra. The

@@ -233,6 +233,7 @@ pub enum Refusal {
     /// A system to install beside the installed one, which only someone
     /// at the screen installs, not the system.
     SystemAsked,
+    SecondSystemDisabled,
     /// A system to install while the data partition, where its root goes,
     /// is not open.
     DataClosed,

@@ -62,6 +62,20 @@ struct Palette {
 }
 
 fn palette(t: &Theme) -> Palette {
+    if t.wallpaper.is_some() {
+        return Palette {
+            page: t.pal.bg,
+            name: t.outside_ink(),
+            line: t.outside_note(),
+            note: t.outside_note(),
+            chevron: t.outside_note(),
+            pill: Rgba::rgb(43, 51, 59),
+            pill_text: t.outside_ink(),
+            here: Rgba::rgb(69, 52, 27),
+            here_text: Rgba::rgb(255, 211, 135),
+            arrow: t.outside_note(),
+        };
+    }
     if t.dark {
         Palette {
             page: Rgba::rgb(0, 0, 0),
@@ -229,7 +243,7 @@ pub fn rows(t: &Theme, f: &Fonts, entries: &[FileRow], action: fn(usize) -> Acti
 pub fn row(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, e: &FileRow, now: i64, zone: usize) {
     let m = &t.m;
     let p = palette(t);
-    c.clear(p.page);
+    c.clear(if t.wallpaper.is_some() { p.page.with_alpha(0) } else { p.page });
     let cy = c.h as f32 / 2.0;
     let size = m.dp(ICON_DP);
     let folder = matches!(e.kind, FileKind::Folder { .. } | FileKind::Link { folder: true, .. });
@@ -444,7 +458,7 @@ pub fn strip(t: &Theme, f: &Fonts, top: &str, folder: &str) -> Pinned {
     let m = &t.m;
     let p = palette(t);
     let mut c = Canvas::new(m.w, m.dp(STRIP_DP).round() as u32);
-    c.clear(p.page);
+    c.clear(if t.wallpaper.is_some() { p.page.with_alpha(218) } else { p.page });
     let below = Path::new(folder).components().filter_map(|part| match part {
         Component::Normal(name) => Some(name.to_string_lossy().into_owned()),
         _ => None,

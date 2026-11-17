@@ -86,6 +86,7 @@ pub enum Screen {
     Decrypt,
     Home,
     Settings,
+    Wallpaper,
     Reboot,
     Wipe,
     /// Mounting and unmounting the slot's partitions.
@@ -228,6 +229,9 @@ pub enum Confirm {
 /// What a control does when touched.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Action {
+    ToggleWallpaper,
+    WallpaperBlur(bool),
+    SelectWallpaper(usize),
     Open(Screen),
     /// Leave the decrypt page for the page it was opened from; the page
     /// the recovery started on, for the home page without keeping it
@@ -702,7 +706,9 @@ const MAX_FLING_DP: f32 = 8000.0;
 /// swings out on the slower spring.
 const HARD_BOUNCE_DP: f32 = 1667.0;
 /// Scroll, in dp, over which a large title fades out.
-const TITLE_FADE_DP: f32 = 20.0;
+pub(crate) const TITLE_FADE_DP: f32 = 20.0;
+// White takes over the top band as the mask becomes opaque enough for dark ink.
+const WHITE_BAR_INK_LEVEL: f32 = 0.46;
 /// Blur, in dp, of a title faded out completely.
 const TITLE_BLUR_DP: f32 = 25.0 / 3.0;
 /// A search bar folding away: its icon and words fade out over the first
@@ -1095,10 +1101,10 @@ pub struct App {
     /// its words and the theme.
     search_words: Option<((&'static str, bool), Canvas)>,
     /// The `<` chip for the theme (dark or not), and where it goes.
-    chip: Option<(bool, Canvas, i32, i32)>,
+    chip: Option<(Canvas, i32, i32)>,
     /// The chip behind the round button at the right end of the bar, as
     /// for `<`.
-    button_chip: Option<(bool, Canvas, i32, i32)>,
+    button_chip: Option<(Canvas, i32, i32)>,
     /// The folder the terminal page's shell last started in, where Enter
     /// starts it again once it has ended.
     shell_folder: String,
@@ -1269,10 +1275,18 @@ impl App {
     }
 
     pub fn theme(&self) -> Theme {
-        if self.state.dark {
+        let theme = if self.state.dark {
             Theme::dark(self.w, self.h, self.px_per_dp)
         } else {
             Theme::light(self.w, self.h, self.px_per_dp)
+        };
+        if self.state.wallpaper_enabled {
+            let mut theme = theme.over_wallpaper(self.state.wallpaper_index);
+            theme.wallpaper_level = (self.state.wallpaper_brightness * 100.0).round() as u8;
+            theme.wallpaper_heavy = self.state.wallpaper_strong;
+            theme
+        } else {
+            theme
         }
     }
 
@@ -1527,7 +1541,9 @@ impl App {
             (gone, gone)
         } else {
             let under = (fr.content_top - widgets::bar_bottom(&t) - t.m.dp(20.0)).max(0.0);
-            (fr.header && fr.title_lift(scroll) >= t.m.dp(TITLE_FADE_DP), scroll > under)
+            let title = fr.header && fr.title_lift(scroll) >= t.m.dp(TITLE_FADE_DP);
+            let bar = if fr.fold.is_some() { title } else { scroll > under };
+            (title, bar)
         })
     }
 

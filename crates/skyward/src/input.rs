@@ -243,10 +243,7 @@ impl Inputs {
             if direct && mt && self.panel.is_none() {
                 self.wakeful.add(dev.as_raw_fd())?;
                 self.panel = Some(Panel::new(path, dev)?);
-                for w in &self.touch_writes {
-                    fs::write(&w.path, &w.value).with_context(|| format!("write {} to {}", w.value, w.path))?;
-                    skyward_sys::kmsg(&format!("wrote {} to {} for the touchscreen", w.value, w.path))?;
-                }
+                self.configure_touch()?;
             } else if keys {
                 set_nonblocking(dev.as_raw_fd()).context("make buttons non-blocking")?;
                 self.wakeful.add(dev.as_raw_fd())?;
@@ -278,6 +275,17 @@ impl Inputs {
     /// Whether a touch panel has come up.
     pub fn has_panel(&self) -> bool {
         self.panel.is_some()
+    }
+
+    pub fn has_touch_settings(&self) -> bool {
+        !self.touch_writes.is_empty()
+    }
+
+    pub fn configure_touch(&self) -> Result<()> {
+        for w in &self.touch_writes {
+            fs::write(&w.path, &w.value).with_context(|| format!("write {} to {}", w.value, w.path))?;
+        }
+        Ok(())
     }
 
     /// Readable while a device has something queued, or /dev/input changed.

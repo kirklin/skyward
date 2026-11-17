@@ -21,6 +21,7 @@ pub mod surface;
 pub mod term;
 pub mod theme;
 pub mod widgets;
+pub(crate) mod wallpaper;
 
 pub use app::App;
 pub use canvas::Canvas;

@@ -893,7 +893,7 @@ pub fn back_chip(t: &Theme) -> (Canvas, i32, i32) {
 /// Such a chip about the disc centred at (`cx`, `cy`) of radius `r`.
 fn chip(t: &Theme, (cx, cy, r): (f32, f32, f32)) -> (Canvas, i32, i32) {
     let m = &t.m;
-    let (fill, rim) = if t.dark { (Rgba::rgb(38, 38, 38), Rgba::rgb(62, 62, 62)) } else { (Rgba::rgb(248, 248, 248), Rgba::rgb(255, 255, 255)) };
+    let (fill, rim) = (Rgba::rgb(248, 248, 248), Rgba::rgb(255, 255, 255));
     let spread = m.dp(7.0);
     let reach = r + spread;
     let (x0, y0) = ((cx - reach).floor() as i32 - 1, (cy - reach).floor() as i32 - 1);
@@ -930,7 +930,7 @@ pub fn toast(c: &mut Canvas, t: &Theme, f: &Fonts, text: &str) {
 /// its icon and words: those are laid over it from [`search_words`].
 pub fn search_bar(c: &mut Canvas, t: &Theme, r: Rect, level: f32) {
     let ink = t.pal.search;
-    c.fill_round_rect(r.x, r.y, r.w, r.h, r.h / 2.0, ink.with_alpha((ink.a as f32 * level).round() as u8));
+    crate::wallpaper::panel(c, t, r, r.h / 2.0, ink.with_alpha((ink.a as f32 * level).round() as u8));
 }
 
 /// The icon and words of the home page's search bar standing at `bar`, on
@@ -1010,7 +1010,7 @@ pub fn back_held(c: &mut Canvas, t: &Theme) {
     c.fill_circle(cx, cy, r, t.pal.button_press);
     let side = (r * 2.0).ceil() as u32 + 2;
     let arrow = Sprite::capture(cx - r - 1.0, cy - r - 1.0, side, side, |c, dx, dy| arrow_at(c, t, dx, dy, Rgba::rgb(0, 0, 0)));
-    arrow.draw(c, 0.0, 0.0, t.pal.text, BACK_HELD_ALPHA as f32 / 255.0);
+    arrow.draw(c, 0.0, 0.0, t.outside_ink(), BACK_HELD_ALPHA as f32 / 255.0);
 }
 
 /// What the round button at the right end of the bar shows.
@@ -1073,7 +1073,7 @@ pub fn button_held(c: &mut Canvas, t: &Theme, glyph: Glyph) {
     c.fill_circle(cx, cy, r, t.pal.button_press);
     let side = (r * 2.0).ceil() as u32 + 2;
     let art = Sprite::capture(cx - r - 1.0, cy - r - 1.0, side, side, |c, dx, dy| glyph_at(c, t, glyph, dx, dy, Rgba::rgb(0, 0, 0)));
-    art.draw(c, 0.0, 0.0, t.pal.text, BACK_HELD_ALPHA as f32 / 255.0);
+    art.draw(c, 0.0, 0.0, t.outside_ink(), BACK_HELD_ALPHA as f32 / 255.0);
 }
 
 /// The round button that leaves the search held down, in `r`: its disc
@@ -1243,7 +1243,8 @@ pub fn footnote(c: &mut Canvas, t: &Theme, f: &Fonts, y: f32, text: &str) -> f32
     let lines = wrap(c, &f.value, text, m.sub_px, max_w);
     let mut top = y + m.dp(10.0);
     for line in &lines {
-        c.text_top(&f.value, line, x, top, m.sub_px, t.pal.value, None);
+        let ink = if t.wallpaper.is_some() { t.pal.section } else { t.pal.value };
+        c.text_top(&f.value, line, x, top, m.sub_px, ink, None);
         top += m.sub_pitch;
     }
     top
@@ -1263,7 +1264,8 @@ pub fn paragraph(c: &mut Canvas, t: &Theme, f: &Fonts, y: f32, text: &str) -> f3
         }
         let lines: Vec<String> = para.lines().flat_map(|l| wrap(c, &f.body, l, m.sub_px, max_w)).collect();
         for line in &lines {
-            c.text_top(&f.body, line, x, top, m.sub_px, t.pal.info, None);
+            let ink = if t.wallpaper.is_some() { t.outside_note() } else { t.pal.info };
+            c.text_top(&f.body, line, x, top, m.sub_px, ink, None);
             top += m.sub_pitch;
         }
     }
@@ -1648,7 +1650,7 @@ pub fn list_toned(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, rows: &[Row], 
     let lays: Vec<Layout> = rows.iter().map(|r| layout(c, t, f, r)).collect();
     let h: f32 = lays.iter().map(|l| l.h).sum();
     let w = m.w as f32 - m.margin * 2.0;
-    c.fill_round_rect(m.margin, top, w, h, m.card_radius, tone.card);
+    crate::wallpaper::panel(c, t, Rect::new(m.margin, top, w, h), m.card_radius, tone.card);
     let mut y = top;
     let mut rects = Vec::new();
     for (r, l) in rows.iter().zip(&lays) {
@@ -1661,18 +1663,23 @@ pub fn list_toned(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, rows: &[Row], 
 
 /// Account-style card: avatar, name and detail, then optional rows. The
 /// first rect returned covers the name row.
-pub fn device_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, title: &str, sub: &str, rows: &[Row]) -> Block {
+#[allow(clippy::too_many_arguments)]
+pub fn device_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, codename: &str, title: &str, sub: &str, rows: &[Row]) -> Block {
     let m = &t.m;
     let lays: Vec<Layout> = rows.iter().map(|r| layout(c, t, f, r)).collect();
     let h = m.account_row_h + lays.iter().map(|l| l.h).sum::<f32>();
     let (card_x, right) = (m.margin, m.w as f32 - m.margin);
-    c.fill_round_rect(card_x, top, right - card_x, h, m.card_radius, t.pal.card);
+    crate::wallpaper::panel(c, t, Rect::new(card_x, top, right - card_x, h), m.card_radius, t.pal.card);
 
     let cy = top + m.account_row_h / 2.0;
     let av = m.avatar;
     let acx = card_x + m.avatar_inset + av / 2.0;
-    c.fill_circle(acx, cy, av / 2.0, t.pal.avatar);
-    icons::glyph(c, Icon::Phone, acx, cy, av * 0.86, t.pal.avatar_glyph);
+    if codename == "songyuan" {
+        songyuan_avatar(c, acx, cy, av * 1.14);
+    } else {
+        c.fill_circle(acx, cy, av / 2.0, t.pal.avatar);
+        icons::glyph(c, Icon::Phone, acx, cy, av * 0.86, t.pal.avatar_glyph);
+    }
 
     let tx = card_x + m.inner + m.icon + m.icon_gap;
     let (tt, tb) = f.heading.ink(m.account_title_px);
@@ -1692,6 +1699,29 @@ pub fn device_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, title: &str, 
         y += l.h;
     }
     Block { bottom: top + h, rows: rects }
+}
+
+fn songyuan_avatar(c: &mut Canvas, cx: f32, cy: f32, size: f32) {
+    // Product image of the Golden White K100 Pro Max, cropped to the phones.
+    static PHOTO: std::sync::OnceLock<Canvas> = std::sync::OnceLock::new();
+    let photo = PHOTO.get_or_init(|| {
+        let mut png = png::Decoder::new(&include_bytes!("songyuan-white.png")[..]).read_info().expect("embedded phone PNG");
+        let mut data = vec![0; png.output_buffer_size()];
+        let info = png.next_frame(&mut data).expect("embedded phone frame");
+        assert_eq!(info.color_type, png::ColorType::Rgba);
+        let mut image = Canvas::new(info.width, info.height);
+        image.data = data;
+        image
+    });
+    let side = size.round().max(1.0) as u32;
+    let mut layer = Canvas::new(side, side);
+    for (i, pixel) in layer.data.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+        let x = i as u32 % side * photo.w / side;
+        let y = i as u32 / side * photo.h / side;
+        let at = ((y * photo.w + x) * 4) as usize;
+        pixel.copy_from_slice(&photo.data[at..at + 4]);
+    }
+    c.over_at(&layer, (cx - size / 2.0).round() as i32, (cy - size / 2.0).round() as i32);
 }
 
 pub fn switch(c: &mut Canvas, t: &Theme, right: f32, cy: f32, on: bool) {
@@ -1742,28 +1772,29 @@ pub fn slider_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, caption: Capt
         Some(l) => slider_bottom - top + below_gap + l.h,
         None => slider_bottom - top + m.dp(18.0),
     };
-    c.fill_round_rect(card_x, top, right - card_x, h, m.card_radius, t.pal.card);
+    crate::wallpaper::panel(c, t, Rect::new(card_x, top, right - card_x, h), m.card_radius, t.pal.card);
 
     let lcy = top + m.dp(31.2);
     let scx = card_x + m.dp(28.0);
+    let icon = if t.dark { t.pal.mono_icon } else { t.pal.info };
     match caption {
         Caption::Sun => {
-            c.fill_circle(scx, lcy, m.dp(5.7), t.pal.mono_icon);
+            c.fill_circle(scx, lcy, m.dp(5.7), icon);
             for k in 0..8 {
                 let a = k as f32 * FRAC_PI_4;
                 let (ux, uy) = (a.cos(), a.sin());
-                c.line(scx + ux * m.dp(8.3), lcy + uy * m.dp(8.3), scx + ux * m.dp(8.9), lcy + uy * m.dp(8.9), m.dp(2.0), t.pal.mono_icon);
+                c.line(scx + ux * m.dp(8.3), lcy + uy * m.dp(8.3), scx + ux * m.dp(8.9), lcy + uy * m.dp(8.9), m.dp(2.0), icon);
             }
         }
         Caption::Vibrate => {
-            c.stroke_round_rect(scx - m.dp(4.3), lcy - m.dp(7.7), m.dp(8.6), m.dp(15.4), m.dp(2.2), m.dp(2.0), t.pal.mono_icon);
+            c.stroke_round_rect(scx - m.dp(4.3), lcy - m.dp(7.7), m.dp(8.6), m.dp(15.4), m.dp(2.2), m.dp(2.0), icon);
             for side in [-1.0f32, 1.0] {
                 let x = scx + side * m.dp(8.0);
                 let (out, step) = (side * m.dp(1.7), m.dp(3.2));
                 let ys = [lcy - step * 1.5, lcy - step * 0.5, lcy + step * 0.5, lcy + step * 1.5];
                 for (k, pair) in ys.windows(2).enumerate() {
                     let (a, b) = if k % 2 == 0 { (0.0, out) } else { (out, 0.0) };
-                    c.line(x + a, pair[0], x + b, pair[1], m.dp(1.8), t.pal.mono_icon);
+                    c.line(x + a, pair[0], x + b, pair[1], m.dp(1.8), icon);
                 }
             }
         }
@@ -1858,7 +1889,8 @@ pub fn pattern_lock(c: &mut Canvas, t: &Theme, cx: f32, cy: f32, span: f32, path
             c.fill_circle(px, py, m.dp(14.0), t.pal.accent.with_alpha(60));
             c.fill_circle(px, py, m.dp(6.0), t.pal.accent);
         } else {
-            c.fill_circle(px, py, m.dp(5.0), t.pal.value);
+            let ink = if t.wallpaper.is_some() { t.outside_note() } else { t.pal.value };
+            c.fill_circle(px, py, m.dp(5.0), ink);
         }
     }
 }
@@ -1916,12 +1948,18 @@ pub fn keypad(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32, pressed: 
             _ => t.pal.card,
         };
         let fill = if pressed == Some(cap) { mix(base, t.pal.text, 0.16) } else { base };
-        if !bare || cap == Cap::Enter {
+        if t.wallpaper.is_some() {
+            crate::wallpaper::panel(c, t, r, r.w / 2.0, base);
+            if cap == Cap::Enter || pressed == Some(cap) {
+                let tint = if cap == Cap::Enter { t.pal.accent.with_alpha(202) } else { t.pal.row_press };
+                c.fill_circle(cx, cy, r.w / 2.0, tint);
+            }
+        } else if !bare || cap == Cap::Enter {
             c.fill_circle(cx, cy, r.w / 2.0, fill);
         }
         match cap {
             Cap::Char(ch) => c.text_center(&f.heading, &ch.to_string(), cx, cy, m.dp(34.0), t.pal.text),
-            Cap::Backspace => c.text_center(&f.body, l.pick(["删除", "刪除", "Delete"]), cx, cy, m.row_title_px, t.pal.accent),
+            Cap::Backspace => c.text_center(&f.body, l.pick(["删除", "刪除", "Delete"]), cx, cy, m.row_title_px, if t.wallpaper.is_some() { t.pal.text } else { t.outside_accent() }),
             _ => c.text_center(&f.heading, l.pick(["解密", "解密", "Decrypt"]), cx, cy, m.row_title_px, Rgba::rgb(255, 255, 255)),
         }
     }
@@ -2245,7 +2283,7 @@ pub fn facts(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, rows: &[Fact], tone
     let row_h = m.dp(51.0);
     let (card_x, right) = (m.margin, m.w as f32 - m.margin);
     let h = row_h * rows.len() as f32;
-    c.fill_round_rect(card_x, top, right - card_x, h, m.card_radius, tone.card);
+    crate::wallpaper::panel(c, t, Rect::new(card_x, top, right - card_x, h), m.card_radius, tone.card);
     let mut rects = Vec::new();
     for (i, r) in rows.iter().enumerate() {
         rects.push(Rect::new(card_x, top + row_h * i as f32, right - card_x, row_h));
@@ -2280,7 +2318,7 @@ pub fn spec_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, title: &str, it
     let (pitch, drop) = (m.dp(45.7), m.dp(15.5));
     let last_caption = first + pitch * items.len().saturating_sub(1) as f32 + drop;
     let bottom = last_caption + m.dp(19.7);
-    c.fill_round_rect(card_x, top, right - card_x, bottom - top, m.card_radius, tone.card);
+    crate::wallpaper::panel(c, t, Rect::new(card_x, top, right - card_x, bottom - top), m.card_radius, tone.card);
     for (k, line) in lines.iter().enumerate() {
         c.text(&f.heading, line, x, first_title + title_pitch * k as f32, title_px, tone.text, Some(room));
     }
@@ -2357,7 +2395,7 @@ pub fn info_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, items: &[(&str,
         title_top = last + m.dp(33.0);
     }
     let bottom = last + m.dp(24.0);
-    c.fill_round_rect(card_x, top, right - card_x, bottom - top, m.card_radius, t.pal.card);
+    crate::wallpaper::panel(c, t, Rect::new(card_x, top, right - card_x, bottom - top), m.card_radius, t.pal.card);
     for ((title, _), (lines, base)) in items.iter().zip(blocks.iter().zip(&bases)) {
         c.text(&f.heading, title, x, *base, m.row_title_px, t.pal.info, Some(width));
         for (k, l) in lines.iter().enumerate() {
@@ -2424,7 +2462,7 @@ pub fn output_row(c: &mut Canvas, t: &Theme, f: &Fonts, lines: &[String], i: usi
     let (base, above, _) = output_layout(t, f);
     let y0 = if i == 0 { 0.0 } else { -m.card_radius };
     let y1 = c.h as f32 + if i + 1 == lines.len() { 0.0 } else { m.card_radius };
-    c.clear(t.pal.bg);
+    c.clear(if t.wallpaper.is_some() { t.pal.bg.with_alpha(0) } else { t.pal.bg });
     c.fill_round_rect(m.margin, y0, m.w as f32 - 2.0 * m.margin, y1 - y0, m.card_radius, t.pal.card);
     let (face, parts) = output_line(c, t, f, &lines[i]);
     let first = base + if i == 0 { above } else { 0.0 };
@@ -2456,7 +2494,13 @@ pub fn theme_picker(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32) -> 
         }
         theme_tile(c, t, sx + inset, top + inset, tile, tile, dark);
         let w = c.text_width(&f.heading, label, label_px);
-        let color = if on { t.pal.accent } else { t.pal.info };
+        let color = if t.wallpaper.is_some() {
+            if on { Rgba::rgb(169, 202, 255) } else { t.outside_ink() }
+        } else if on {
+            t.pal.accent
+        } else {
+            t.pal.info
+        };
         c.text(&f.heading, label, sx + (slot_w - w) / 2.0, caption_base, label_px, color, None);
         rects.push(Rect::new(sx, top, slot_w, bottom - top));
     }
@@ -3067,6 +3111,20 @@ mod tests {
         assert!(holes(&battery(&t, &f, 100, false, right, cy)) > 60, "the digits show the page through");
         assert_eq!(holes(&battery(&t, &f, 100, true, right, cy)), 0, "white digits over green");
         assert_eq!(holes(&battery(&t, &f, 15, false, right, cy)), 0, "white digits over red");
+    }
+
+    #[test]
+    fn info_cards_register_the_same_wallpaper_material_as_other_cards() {
+        let t = Theme::light(360, 780, 1.0).over_wallpaper(0);
+        let f = crate::font::bundled();
+        let mut c = Canvas::new(t.m.w, t.m.h);
+        c.wallpaper_panels = Some(Vec::new());
+        let top = 100.0;
+        let bottom = info_card(&mut c, &t, &f, top, &[("Current version", "0.3.0".into())]);
+        assert_eq!(
+            c.wallpaper_panels.as_deref().unwrap(),
+            &[(Rect::new(t.m.margin, top, t.m.w as f32 - 2.0 * t.m.margin, bottom - top), t.m.card_radius)]
+        );
     }
 
     #[test]

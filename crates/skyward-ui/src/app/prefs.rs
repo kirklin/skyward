@@ -7,6 +7,7 @@ use super::*;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Slider {
     Brightness,
+    WallpaperBrightness,
     /// How strongly the motor taps.
     Vibration,
 }
@@ -59,6 +60,7 @@ impl App {
     pub(super) fn level(&self, which: Slider) -> f32 {
         match which {
             Slider::Brightness => self.state.brightness,
+            Slider::WallpaperBrightness => self.state.wallpaper_brightness,
             Slider::Vibration => self.state.vibration,
         }
     }
@@ -66,9 +68,18 @@ impl App {
     /// Set a slider to `level` of its span, the brightness no lower than
     /// its floor, and draw the slider at `track` on the page again.
     pub(super) fn set_level(&mut self, t: &Theme, which: Slider, track: Rect, level: f32) {
+        if which == Slider::WallpaperBrightness {
+            let level = level.clamp(0.0, 1.0);
+            if self.state.wallpaper_brightness != level {
+                self.state.wallpaper_brightness = level;
+                self.refresh();
+            }
+            return;
+        }
         let value = match which {
             Slider::Brightness => &mut self.state.brightness,
             Slider::Vibration => &mut self.state.vibration,
+            Slider::WallpaperBrightness => unreachable!(),
         };
         *value = level.clamp(if which == Slider::Brightness { MIN_BRIGHTNESS } else { 0.0 }, 1.0);
         let value = *value;

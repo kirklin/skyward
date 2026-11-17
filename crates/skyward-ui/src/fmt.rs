@@ -1097,6 +1097,9 @@ pub fn refusal(l: Lang, r: &Refusal, codename: &str, source: Source, zone: usize
         Refusal::Panicked => l
             .pick(["暂无法安装该更新，请重启到系统后重试。", "暫時無法安裝這個更新，請重新啟動到系統後重試。", "This update can't be installed now. Reboot to the system, then try again."])
             .into(),
+        Refusal::SecondSystemDisabled => l
+            .pick(["此版本不支持安装第二系统。", "此版本不支援安裝第二系統。", "Installing a second system is disabled in this build."])
+            .into(),
         Refusal::SystemAsked => l
             .pick([
                 "系统请求安装的是另一个系统，只能在本机上手动安装。",

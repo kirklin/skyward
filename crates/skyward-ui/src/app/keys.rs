@@ -17,6 +17,7 @@ impl App {
                 if self.adjusting {
                     let said = match which {
                         Slider::Brightness => ["按音量键调节亮度，按电源键完成", "按音量鍵調整亮度，按電源鍵完成", "Set the brightness with the volume keys, then press the power key"],
+                        Slider::WallpaperBrightness => ["按音量键调节壁纸亮度，按电源键完成", "按音量鍵調整桌布亮度，按電源鍵完成", "Use the volume keys to adjust wallpaper brightness"],
                         Slider::Vibration => {
                             ["按音量键调节振动强度，按电源键完成", "按音量鍵調整震動強度，按電源鍵完成", "Set the vibration with the volume keys, then press the power key"]
                         }

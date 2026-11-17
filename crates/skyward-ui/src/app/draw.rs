@@ -185,11 +185,18 @@ impl App {
         let since = self.charging.as_ref().map_or(now, |c| c.since);
         let dither = self.dither.get_or_insert_with(|| glow::Dither::new(out.w as usize, out.h as usize));
         let art = self.charge_art.as_ref().expect("drawn above");
+        let wallpaper = t.wallpaper.is_some();
         if level >= 1.0 {
-            charge::draw(out, art, &t.m, battery.level, now.saturating_sub(since), dither);
+            if wallpaper {
+                crate::wallpaper::compose(out, &t, self.state.wallpaper_strong, &[], 0);
+            }
+            charge::draw(out, art, &t.m, battery.level, now.saturating_sub(since), dither, wallpaper);
         } else {
             let screen = self.charge_canvas.get_or_insert_with(|| Canvas::new(out.w, out.h));
-            charge::draw(screen, art, &t.m, battery.level, now.saturating_sub(since), dither);
+            if wallpaper {
+                crate::wallpaper::compose(screen, &t, self.state.wallpaper_strong, &[], 0);
+            }
+            charge::draw(screen, art, &t.m, battery.level, now.saturating_sub(since), dither, wallpaper);
             out.lay(screen, 0, 0, level);
         }
     }
@@ -238,14 +245,9 @@ impl App {
                 self.search_words = Some((key, widgets::search_words(&t, f, fold.bar, fold.hint)));
             }
         }
-        if self.chip.as_ref().is_none_or(|c| c.0 != t.dark) {
-            let (art, x, y) = widgets::back_chip(&t);
-            self.chip = Some((t.dark, art, x, y));
-        }
-        let button = self.frame.as_ref().is_some_and(|fr| fr.button.is_some());
-        if button && self.button_chip.as_ref().is_none_or(|c| c.0 != t.dark) {
-            let (art, x, y) = widgets::button_chip(&t);
-            self.button_chip = Some((t.dark, art, x, y));
+        self.chip.get_or_insert_with(|| widgets::back_chip(&t));
+        if self.frame.as_ref().is_some_and(|fr| fr.button.is_some()) {
+            self.button_chip.get_or_insert_with(|| widgets::button_chip(&t));
         }
         let slide = self.slid(now);
         if self.frame.as_ref().is_some_and(|fr| fr.hero.is_none()) {
@@ -319,7 +321,8 @@ impl App {
         }
         self.shown = Some(view);
 
-        widgets::status_bar(out, &t, f, &self.bar(clock, info), t.pal.status);
+        let status_theme = if view.bar >= WHITE_BAR_INK_LEVEL { t.on_white_bar() } else { t };
+        widgets::status_bar(out, &status_theme, f, &self.bar(clock, info), status_theme.pal.status);
         if let Some((text, _)) = &self.toast {
             widgets::toast(out, &t, f, text);
         }
@@ -373,14 +376,24 @@ impl App {
             let top = (widgets::bar_bottom(t) + m.dp(ABOUT_FIELD_DP)) / m.h as f32;
             let field = glow::sample(glow, out.w as usize, out.h as usize, FIELD_CELL, top, t.pal.bg, fade);
             let dither = self.dither.get_or_insert_with(|| glow::Dither::new(out.w as usize, out.h as usize));
-            glow::paint(out, &field, fade, &glow::Layer { canvas: &frame.canvas, runs: &art.runs, offset: offset as isize }, dither);
+            if t.wallpaper.is_some() {
+                crate::wallpaper::compose(out, t, self.state.wallpaper_strong, &frame.wallpaper_panels, offset as i32);
+                out.overlay_rows(&frame.canvas, 0, frame.canvas.h as i32, -offset as i32);
+            } else {
+                glow::paint(out, &field, fade, &glow::Layer { canvas: &frame.canvas, runs: &art.runs, offset: offset as isize }, dither);
+            }
             press_row(out);
             let range = m.dp(ABOUT_LOGO_DP) - widgets::bar_bottom(t);
             let v = (scroll / range).clamp(0.0, 1.0);
-            art.version.draw_scaled(out, 0.0, 0.0, 1.0 - 0.1 * v, t.hero.version, 1.0 - v);
-            art.author.draw_scaled(out, 0.0, 0.0, 1.0 - 0.1 * v, t.hero.version, 1.0 - v);
+            let ink = if t.wallpaper.is_some() { t.outside_ink() } else { t.hero.version };
+            art.version.draw_scaled(out, 0.0, 0.0, 1.0 - 0.1 * v, ink, 1.0 - v);
+            art.author.draw_scaled(out, 0.0, 0.0, 1.0 - 0.1 * v, ink, 1.0 - v);
             let l = ((scroll - range) / m.dp(ABOUT_LOGO_FADE_DP)).clamp(0.0, 1.0);
-            glow::ink_wordmark(out, &field, &glow.look().ink, &art.wordmark, 1.0 - 0.1 * l, 1.0 - l, fade, dither);
+            if t.wallpaper.is_some() {
+                art.wordmark.draw_scaled(out, 0.0, 0.0, 1.0 - 0.1 * l, ink, 1.0 - l);
+            } else {
+                glow::ink_wordmark(out, &field, &glow.look().ink, &art.wordmark, 1.0 - 0.1 * l, 1.0 - l, fade, dither);
+            }
         } else {
             // The page rows on screen above a long list's rows, those rows,
             // and the page colour past the ends; every pixel is written
@@ -390,14 +403,22 @@ impl App {
             let (list_top, list_end) = span.unwrap_or((h, h));
             let first = (-offset).clamp(0.0, h) as usize;
             let last = (frame.canvas.h as f32 - offset).clamp(first as f32, list_top) as usize;
-            if first < last {
-                let from = offset as i32 + first as i32;
-                out.put_rows(&frame.canvas, from, from + (last - first) as i32, first as i32);
+            if t.wallpaper.is_some() {
+                crate::wallpaper::compose(out, t, self.state.wallpaper_strong, &frame.wallpaper_panels, offset as i32);
+                if first < last {
+                    let from = offset as i32 + first as i32;
+                    out.overlay_rows(&frame.canvas, from, from + (last - first) as i32, first as i32);
+                }
+            } else {
+                if first < last {
+                    let from = offset as i32 + first as i32;
+                    out.put_rows(&frame.canvas, from, from + (last - first) as i32, first as i32);
+                }
+                out.fill_rect(0.0, 0.0, out.w as f32, first as f32, frame.bg);
+                out.fill_rect(0.0, last as f32, out.w as f32, list_top - last as f32, frame.bg);
+                let below = list_end.max(last as f32);
+                out.fill_rect(0.0, below, out.w as f32, h - below, frame.bg);
             }
-            out.fill_rect(0.0, 0.0, out.w as f32, first as f32, frame.bg);
-            out.fill_rect(0.0, last as f32, out.w as f32, list_top - last as f32, frame.bg);
-            let below = list_end.max(last as f32);
-            out.fill_rect(0.0, below, out.w as f32, h - below, frame.bg);
             if let Some(rows) = &frame.rows {
                 // A long list's rows on screen, each drawn when it first
                 // shows. Those more than half a screen away are let go, and
@@ -418,7 +439,13 @@ impl App {
                             self.drawn.len() - 1
                         }
                     };
-                    out.put(&self.drawn[k].1, (rows.edges[i] - offset) as i32);
+                    let canvas = &self.drawn[k].1;
+                    let y = (rows.edges[i] - offset) as i32;
+                    if t.wallpaper.is_some() {
+                        out.overlay_rows(canvas, 0, canvas.h as i32, y);
+                    } else {
+                        out.put(canvas, y);
+                    }
                 }
             } else {
                 // Off a long list, its rows' canvases are not kept.
@@ -431,7 +458,7 @@ impl App {
             }
             if frame.header {
                 let level = (1.0 - frame.title_lift(scroll) / m.dp(TITLE_FADE_DP)).clamp(0.0, 1.0);
-                draw_faded(out, big, 0.0, -frame.title_lift(offset), t.pal.text, level, (1.0 - level) * m.dp(TITLE_BLUR_DP));
+                draw_faded(out, big, 0.0, -frame.title_lift(offset), t.outside_ink(), level, (1.0 - level) * m.dp(TITLE_BLUR_DP));
             }
         }
         // The search page's round button and the home page's search bar
@@ -448,21 +475,26 @@ impl App {
             out.lay(&caret.art, caret.x, caret.y - offset as i32, 1.0);
         }
         let bar = view.bar;
+        let ink = if bar >= WHITE_BAR_INK_LEVEL { Rgba::rgb(29, 29, 29) } else { t.outside_ink() };
         let strip = frame.pinned.as_ref().map(|p| (p, pinned_top(t, p, offset)));
         shine(out, Group::Page);
         if bar > 0.0 {
             match strip {
                 // The strip under the bar is veiled with it, and the list
                 // thins out below the strip.
-                Some((p, top)) => widgets::strip_mask(out, t, frame.bg, bar, top.round(), top.round() + p.canvas.h as f32),
+                Some((p, top)) => widgets::strip_mask(out, t, Rgba::rgb(255, 255, 255), bar, top.round(), top.round() + p.canvas.h as f32),
                 None => {
                     let stops = if frame.hero.is_some() { &widgets::ABOUT_BAR_MASK[..] } else { &widgets::BAR_MASK[..] };
-                    widgets::bar_mask(out, t, stops, frame.bg, bar);
+                    widgets::bar_mask(out, t, stops, Rgba::rgb(255, 255, 255), bar);
                 }
             }
         }
         if let Some((p, top)) = strip {
-            out.put(&p.canvas, top.round() as i32);
+            if t.wallpaper.is_some() {
+                out.overlay_rows(&p.canvas, 0, p.canvas.h as i32, top.round() as i32);
+            } else {
+                out.put(&p.canvas, top.round() as i32);
+            }
             shine(out, Group::Strip);
         }
         if let Some(d) = &frame.dock {
@@ -470,21 +502,21 @@ impl App {
             shine(out, Group::Dock);
         }
         if frame.back {
-            let (_, chip, x, y) = self.chip.as_ref().expect("a page's `<` is drawn with it");
+            let (chip, x, y) = self.chip.as_ref().expect("a page's `<` is drawn with it");
             out.lay(chip, *x, *y, bar);
             if pressing == Some(Action::Back) {
                 widgets::back_held(out, t);
             } else {
-                widgets::back_arrow(out, t, t.pal.text);
+                widgets::back_arrow(out, t, ink);
             }
         }
         if let Some((glyph, action)) = frame.button {
-            let (_, chip, x, y) = self.button_chip.as_ref().expect("a page's round button is drawn with its chip");
+            let (chip, x, y) = self.button_chip.as_ref().expect("a page's round button is drawn with its chip");
             out.lay(chip, *x, *y, bar);
             if pressing == Some(action) {
                 widgets::button_held(out, t, glyph);
             } else {
-                widgets::button_glyph(out, t, glyph, t.pal.text);
+                widgets::button_glyph(out, t, glyph, ink);
             }
         }
         if frame.back || frame.button.is_some() {
@@ -492,7 +524,7 @@ impl App {
         }
         let level = view.title;
         let blur = if frame.hero.is_some() { 0.0 } else { (1.0 - level) * m.dp(TITLE_BLUR_DP) };
-        draw_faded(out, small, 0.0, 0.0, t.pal.text, level, blur);
+        draw_faded(out, small, 0.0, 0.0, ink, level, blur);
     }
 
     /// Where a page sliding in over the page left, or the page left
@@ -550,7 +582,11 @@ impl App {
             self.draw_rows(f, info, morph.scroll - rise, morph.scroll - rise + m.h as f32);
         }
         let frame = self.frame.as_ref().expect("rendered above");
-        out.fill_rect(0.0, 0.0, out.w as f32, out.h as f32, frame.bg);
+        if t.wallpaper.is_some() {
+            crate::wallpaper::compose(out, &t, self.state.wallpaper_strong, &[], 0);
+        } else {
+            out.fill_rect(0.0, 0.0, out.w as f32, out.h as f32, frame.bg);
+        }
         if morph.into {
             // The search page's keyboard and what it shows under its
             // field, from its frame; that comes in once the bar is nearly
@@ -567,11 +603,18 @@ impl App {
         } else {
             // The home page under its bar comes down with it.
             let below = m.content_top + m.search_h;
-            out.put_rows(&frame.canvas, below.floor() as i32, frame.canvas.h as i32, (below - morph.scroll + rise).floor() as i32);
+            let from = below.floor() as i32;
+            let to = (below - morph.scroll + rise).floor() as i32;
+            if t.wallpaper.is_some() {
+                crate::wallpaper::compose(out, &t, self.state.wallpaper_strong, &frame.wallpaper_panels, from - to);
+                out.overlay_rows(&frame.canvas, from, frame.canvas.h as i32, to);
+            } else {
+                out.put_rows(&frame.canvas, from, frame.canvas.h as i32, to);
+            }
         }
         let title = morph.title.get_or_insert_with(|| Blurs::new(widgets::big_title(&t, f, pages::HOME_TITLE)));
         let level = (1.0 - q / MORPH_TITLE_GONE).clamp(0.0, 1.0);
-        draw_faded(out, title, 0.0, rise - morph.scroll, t.pal.text, level, (1.0 - level) * m.dp(TITLE_BLUR_DP));
+        draw_faded(out, title, 0.0, rise - morph.scroll, t.outside_ink(), level, (1.0 - level) * m.dp(TITLE_BLUR_DP));
         if let Some((keys, top)) = &morph.keyboard {
             out.put(keys, (*top as f32 + (1.0 - q) * keys.h as f32).round() as i32);
         }

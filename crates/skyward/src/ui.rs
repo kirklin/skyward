@@ -68,6 +68,8 @@ const TOUCH_WAIT: Duration = Duration::from_secs(5);
 /// the display turns off; the phone's own system keeps its panel dozing
 /// about as long after the screen goes off.
 const REST: Duration = Duration::from_secs(5);
+// The controller can finish resetting after the panel comes on.
+const TOUCH_RESUME_MS: [u64; 3] = [100, 350, 850];
 
 /// Where logs saved to the temporary folder go, in the recovery service's
 /// own folder, and where in internal storage the others do.
@@ -1145,6 +1147,7 @@ struct Pages<'a> {
     blanked: bool,
     /// When the panel gone dark began to rest.
     rested_at: Option<Instant>,
+    touch_resume: Option<(u64, usize)>,
     /// Started for fastboot, the port goes to the phone's own fastbootd. The
     /// page says whether it came up and how far a computer has the port;
     /// why it did not come up goes to the kernel log and on screen.
@@ -1341,7 +1344,7 @@ impl<'a> Pages<'a> {
         let by_name = Path::new(skyward_block::BY_NAME);
         let both = |base: &str| -> Result<bool> { Ok(by_name.join(format!("{base}_a")).try_exists()? && by_name.join(format!("{base}_b")).try_exists()?) };
         app.state.recovery_partitions = both("recovery")?;
-        app.state.dual_boot = app.state.recovery_partitions && both("boot")? && both("init_boot")?;
+        app.state.dual_boot = false;
         // The second system's work; the systems are read at once, for the home
         // page to name the one that starts, once a switch cut off before is
         // finished.
@@ -1389,6 +1392,7 @@ impl<'a> Pages<'a> {
             asked: None,
             blanked: false,
             rested_at: None,
+            touch_resume: None,
             fastboot,
             port_at,
             transfer,
@@ -1690,6 +1694,9 @@ impl<'a> Pages<'a> {
         let panel = self.app.panel(now);
         let mut shown = false;
         if panel.is_some() {
+            if self.blanked && self.inputs.has_touch_settings() {
+                self.touch_resume = Some((now, 0));
+            }
             // A display turned off comes on again with a frame drawn for it.
             if self.app.take_dirty() || !self.surface.is_on() {
                 let t0 = Instant::now();
@@ -1741,6 +1748,18 @@ impl<'a> Pages<'a> {
     /// is due to change; the phone is let sleep meanwhile where nothing
     /// needs it awake. `lit` and `shown` are as [`Pages::show`] gave them.
     fn wait(&mut self, sleeper: &Sleeper, uevents: &uevent::Listener, now: u64, lit: bool, shown: bool) -> Result<()> {
+        if !lit {
+            self.touch_resume = None;
+        } else if let Some((since, retry)) = self.touch_resume
+            && now >= since + TOUCH_RESUME_MS[retry]
+        {
+            match self.inputs.configure_touch() {
+                Ok(()) if retry + 1 == TOUCH_RESUME_MS.len() => skyward_sys::kmsg("touch settings restored after panel wake")?,
+                Ok(()) => {}
+                Err(e) => skyward_sys::kmsg(&format!("touch settings after panel wake: {e:#}"))?,
+            }
+            self.touch_resume = (retry + 1 < TOUCH_RESUME_MS.len()).then_some((since, retry + 1));
+        }
         // A page at rest draws the rows it has yet to while nothing else
         // is to be done, a band at a time, looking for input between bands.
         let ahead = lit && !shown && self.app.draw_ahead(&self.fonts, &self.info);
@@ -1751,7 +1770,8 @@ impl<'a> Pages<'a> {
         let until_due = self.app.deadline(now).map(|d| d.saturating_sub(now) as i32);
         // A resting panel turns off once its rest is over.
         let rest_left = self.rested_at.map(|at| REST.saturating_sub(at.elapsed()).as_millis() as i32);
-        let timeout = if ahead { 0 } else { until_due.into_iter().chain(rest_left).min().map_or(1000, |t| t.clamp(floor, 1000)) };
+        let touch_due = self.touch_resume.map(|(since, retry)| (since + TOUCH_RESUME_MS[retry]).saturating_sub(now) as i32);
+        let timeout = if ahead { 0 } else { until_due.into_iter().chain(rest_left).chain(touch_due).min().map_or(1000, |t| t.clamp(floor, 1000)) };
         sleeper.allow(self.may_sleep()?);
         let mut fds = vec![self.inputs.fd(), uevents.fd(), sleeper.fd()];
         if let Some(i) = &self.installer {

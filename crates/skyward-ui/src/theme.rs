@@ -153,21 +153,60 @@ pub struct Theme {
     pub hero: Hero,
     pub m: Metrics,
     pub dark: bool,
+    pub(crate) wallpaper: Option<usize>,
+    pub(crate) wallpaper_held: bool,
+    pub(crate) wallpaper_level: u8,
+    pub(crate) wallpaper_heavy: bool,
 }
 
 impl Theme {
     /// `px_per_dp` is the panel density over 160, e.g. 3.0 at 480 dpi.
     pub fn light(w: u32, h: u32, px_per_dp: f32) -> Self {
-        Theme { pal: LIGHT, hero: LIGHT_HERO, m: metrics(w, h, px_per_dp), dark: false }
+        Theme { pal: LIGHT, hero: LIGHT_HERO, m: metrics(w, h, px_per_dp), dark: false, wallpaper: None, wallpaper_held: false, wallpaper_level: 67, wallpaper_heavy: false }
     }
 
     pub fn dark(w: u32, h: u32, px_per_dp: f32) -> Self {
-        Theme { pal: DARK, hero: DARK_HERO, m: metrics(w, h, px_per_dp), dark: true }
+        Theme { pal: DARK, hero: DARK_HERO, m: metrics(w, h, px_per_dp), dark: true, wallpaper: None, wallpaper_held: false, wallpaper_level: 67, wallpaper_heavy: false }
+    }
+
+    pub(crate) fn over_wallpaper(mut self, image: usize) -> Self {
+        self.wallpaper = Some(image);
+        self.pal.bg = Rgba::rgb(19, 24, 29);
+        self.pal.section = Rgba::rgb(224, 229, 234);
+        self.pal.status = self.pal.section;
+        self.pal.battery = DARK.battery;
+        self.pal.card = if self.dark { Rgba::rgb(67, 75, 85) } else { Rgba::rgb(220, 226, 232) };
+        self.pal.search = self.pal.card;
+        self.pal.value = if self.dark { Rgba::rgb(196, 205, 214) } else { Rgba::rgb(29, 42, 53) };
+        self.pal.chevron = if self.dark { Rgba::rgb(161, 174, 185) } else { Rgba::rgb(85, 97, 109) };
+        self.pal.subtitle = self.pal.value;
+        self.pal.search_icon = self.pal.value;
+        self.pal.placeholder = self.pal.value;
+        self
+    }
+
+    pub(crate) fn on_white_bar(mut self) -> Self {
+        self.pal.status = LIGHT.status;
+        self.pal.battery = LIGHT.battery;
+        self
+    }
+
+    pub(crate) fn outside_ink(&self) -> Rgba {
+        if self.wallpaper.is_some() { Rgba::rgb(246, 249, 252) } else { self.pal.text }
+    }
+
+    pub(crate) fn outside_note(&self) -> Rgba {
+        if self.wallpaper.is_some() { self.pal.section } else { self.pal.subtitle }
+    }
+
+    pub(crate) fn outside_accent(&self) -> Rgba {
+        if self.wallpaper.is_some() { Rgba::rgb(181, 211, 255) } else { self.pal.accent }
     }
 
     /// This theme with every card as it shows behind a row held down.
     pub fn pressed(&self) -> Theme {
         let mut t = *self;
+        t.wallpaper_held = self.wallpaper.is_some();
         t.pal.card = over(self.pal.row_press, self.pal.card);
         t.hero.card = over(self.pal.row_press, self.hero.card);
         t

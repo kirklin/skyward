@@ -65,6 +65,9 @@ pub enum Icon {
     Battery,
     /// Two phones, the one behind showing round the one in front.
     Systems,
+    /// A browser window: its title bar with three dots, and a planet
+    /// with a star cut out of it.
+    Browser,
 }
 
 /// The stock icons' box: every outline here is laid out in it.
@@ -346,6 +349,19 @@ const SYSTEMS: &[Part] = &[
     cut(Shape::Line("M14.4,20.2H18", 1.3)),
 ];
 
+const BROWSER: &[Part] = &[
+    // The window, and the bar's three dots and the line under it.
+    add(Shape::Fill("M7.6,5.8H20.4A3.4,3.4 0 0 1 23.8,9.2V18.8A3.4,3.4 0 0 1 20.4,22.2H7.6A3.4,3.4 0 0 1 4.2,18.8V9.2A3.4,3.4 0 0 1 7.6,5.8Z")),
+    cut(Shape::Fill("M7.4,7.45A0.75,0.75 0 1 1 7.4,8.95A0.75,0.75 0 1 1 7.4,7.45Z")),
+    cut(Shape::Fill("M9.9,7.45A0.75,0.75 0 1 1 9.9,8.95A0.75,0.75 0 1 1 9.9,7.45Z")),
+    cut(Shape::Fill("M12.4,7.45A0.75,0.75 0 1 1 12.4,8.95A0.75,0.75 0 1 1 12.4,7.45Z")),
+    cut(Shape::Line("M4.2,10.6H23.8", 1.1)),
+    // The gap round the planet, the planet, and the star cut out of it.
+    cut(Shape::Fill("M8.6,16.4A5.4,5.4 0 1 1 19.4,16.4A5.4,5.4 0 1 1 8.6,16.4Z")),
+    add(Shape::Fill("M9.9,16.4A4.1,4.1 0 1 1 18.1,16.4A4.1,4.1 0 1 1 9.9,16.4Z")),
+    cut(Shape::Fill("M14,12.9L14.9,15.5L17.5,16.4L14.9,17.3L14,19.9L13.1,17.3L10.5,16.4L13.1,15.5Z")),
+];
+
 /// What `icon`'s glyph is drawn from, and at what share of its size.
 fn outline(icon: Icon) -> (&'static [Part], f32) {
     match icon {
@@ -371,6 +387,7 @@ fn outline(icon: Icon) -> (&'static [Part], f32) {
         Icon::Wlan => (WLAN, 1.0),
         Icon::Battery => (BATTERY, 1.0),
         Icon::Systems => (SYSTEMS, 1.0),
+        Icon::Browser => (BROWSER, 1.0),
     }
 }
 
@@ -500,7 +517,7 @@ fn path(d: &str) -> tiny_skia::Path {
 mod tests {
     use super::*;
 
-    const ALL: [Icon; 22] = [
+    const ALL: [Icon; 23] = [
         Icon::Install,
         Icon::Backup,
         Icon::Restore,
@@ -523,6 +540,7 @@ mod tests {
         Icon::Wlan,
         Icon::Battery,
         Icon::Systems,
+        Icon::Browser,
     ];
 
     /// Pixels a unit of the box takes in these tests.

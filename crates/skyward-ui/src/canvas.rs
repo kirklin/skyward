@@ -16,6 +16,7 @@ pub struct Canvas {
     /// The rows held, rows `top..bottom`, top to bottom; of each, the
     /// `span` columns from column `left`.
     pub data: Vec<u8>,
+    pub(crate) wallpaper_panels: Option<Vec<(crate::geom::Rect, f32)>>,
     top: u32,
     bottom: u32,
     left: u32,
@@ -92,7 +93,7 @@ impl Canvas {
                 data.extend_from_within(..data.len().min(n - data.len()));
             }
         }
-        Self { w, h, data, top, bottom, left, span }
+        Self { w, h, data, wallpaper_panels: None, top, bottom, left, span }
     }
 
     /// A canvas `w` × `h` that holds rows `rows` of it whole, as whatever
@@ -107,7 +108,7 @@ impl Canvas {
         } else {
             data.resize(n, 0);
         }
-        Self { w, h, data, top, bottom, left: 0, span: w }
+        Self { w, h, data, wallpaper_panels: None, top, bottom, left: 0, span: w }
     }
 
     /// Keep memory for `n` canvases `w` × `h`, written to once, for the
@@ -463,6 +464,34 @@ impl Canvas {
     /// either canvas, are left out. Those that land on this canvas are rows
     /// `src` holds.
     pub fn put_rows(&mut self, src: &Canvas, from: i32, to: i32, y: i32) {
+        self.place_rows(src, from, to, y, false);
+    }
+
+    pub(crate) fn overlay_rows(&mut self, src: &Canvas, from: i32, to: i32, y: i32) {
+        self.place_rows(src, from, to, y, true);
+    }
+
+    /// Composite an image at an offset, preserving coverage on transparent bands.
+    pub(crate) fn over_at(&mut self, image: &Canvas, x: i32, y: i32) {
+        assert!(image.whole());
+        let (left, right) = self.columns(x, x + image.w as i32);
+        if left >= right {
+            return;
+        }
+        let (first, end) = self.rows(y, y + image.h as i32);
+        let len = (right - left) as usize * 4;
+        for py in first..end {
+            let from = image.at(left - x, py - y);
+            let to = self.at(left, py);
+            let input = &image.data[from..from + len];
+            let output = &mut self.data[to..to + len];
+            for (src, dst) in input.as_chunks::<4>().0.iter().zip(output.as_chunks_mut::<4>().0) {
+                blend_px(dst, Rgba { r: src[0], g: src[1], b: src[2], a: src[3] }, u32::from(src[3]));
+            }
+        }
+    }
+
+    fn place_rows(&mut self, src: &Canvas, from: i32, to: i32, y: i32, overlay: bool) {
         assert_eq!(src.w, self.w, "the rows span the canvas");
         assert!(self.whole(), "rows are put on a whole canvas");
         // Rows asked for above `src`'s top are left out, the rest landing
@@ -481,7 +510,20 @@ impl Canvas {
         let row = self.w as usize * 4;
         let (dst, at) = ((y + first) as usize * row, src.at(0, from + first));
         let len = (last - first) as usize * row;
-        self.data[dst..dst + len].copy_from_slice(&src.data[at..at + len]);
+        let pixels = &src.data[at..at + len];
+        let out = &mut self.data[dst..dst + len];
+        if !overlay {
+            out.copy_from_slice(pixels);
+            return;
+        }
+        for (from, to) in pixels.as_chunks::<4>().0.iter().zip(out.as_chunks_mut::<4>().0) {
+            match from[3] {
+                0 => {}
+                255 => *to = *from,
+                alpha => *to = mix(*to, *from, u32::from(alpha) + u32::from(alpha >> 7)),
+            }
+            to[3] = 255;
+        }
     }
 
     /// Each row as runs of clear, solid and partly covered pixels, for
@@ -542,6 +584,38 @@ impl Canvas {
     /// A rounded rectangle in one colour.
     pub fn fill_round_rect(&mut self, x: f32, y: f32, w: f32, h: f32, r: f32, color: Rgba) {
         self.fill_round_rect_graded(x, y, w, h, r, &|_| color);
+    }
+
+    pub(crate) fn fill_round_rect_sampled(&mut self, rect: crate::geom::Rect, radius: f32, mut sample: impl FnMut(u32, u32) -> Rgba) {
+        let (cx, cy) = rect.centre();
+        let (hx, hy) = (rect.w / 2.0, rect.h / 2.0);
+        let radius = radius.min(hx).min(hy);
+        let (x0, x1) = self.columns(rect.x.floor() as i32, (rect.x + rect.w).ceil() as i32);
+        let (y0, y1) = self.rows(rect.y.floor() as i32, (rect.y + rect.h).ceil() as i32);
+        if x0 >= x1 || y0 >= y1 {
+            return;
+        }
+        for y in y0..y1 {
+            let fy = y as f32 + 0.5;
+            let qy = (fy - cy).abs() - (hy - radius);
+            let reach = |edge| round_reach(hx, radius, qy, edge).unwrap_or(0.0);
+            let (lo, hi) = centred(cx, reach(0.5), x0, x1);
+            let (first, end) = centred(cx, reach(-0.5), lo, hi);
+            for x in (lo..first).chain(end..hi) {
+                let cov = (0.5 - rr_sdf(x as f32 + 0.5, fy, cx, cy, hx, hy, radius)).clamp(0.0, 1.0);
+                if cov > 0.0 {
+                    self.blend(x, y, sample(x as u32, y as u32), cov);
+                }
+            }
+            if first < end {
+                let from = self.at(first, y);
+                let to = self.at(end, y);
+                for (x, pixel) in (first..end).zip(self.data[from..to].as_chunks_mut::<4>().0) {
+                    let ink = sample(x as u32, y as u32);
+                    blend_over(pixel, ink, 1.0);
+                }
+            }
+        }
     }
 
     /// A rounded rectangle shading from top to bottom, each row in the

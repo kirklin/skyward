@@ -65,6 +65,7 @@ pub fn render(screen: Screen, cx: &Ctx) -> Frame {
         Screen::Decrypt => decrypt(cx),
         Screen::Home => home(cx),
         Screen::Settings => settings(cx),
+        Screen::Wallpaper => wallpaper(cx),
         Screen::Reboot => reboot(cx),
         Screen::Wipe => wipe(cx),
         Screen::Mount => mount(cx),
@@ -175,13 +176,18 @@ const TIME_ZONE: Text = ["时区", "時區", "Time zone"];
 const LICENSE: Text = ["开源许可", "開放原始碼授權", "Open source licenses"];
 const FONTS: Text = ["界面字体", "介面字型", "UI fonts"];
 const DUAL_BOOT: Text = ["双系统", "雙系統", "Dual boot"];
+const WALLPAPER: Text = ["壁纸", "桌布", "Wallpaper"];
 
 /// A canvas for a page `h` tall in the colour `bg`, holding the rows `cx`
 /// asks to be drawn.
 fn sheet(cx: &Ctx, h: u32, bg: Rgba) -> Canvas {
     let w = cx.t.m.w;
     let Band { rows, cols } = cx.band.unwrap_or(Band { rows: (0, h), cols: (0, w) });
-    Canvas::band(w, h, rows.0..rows.1, cols.0..cols.1, bg)
+    let mut canvas = Canvas::band(w, h, rows.0..rows.1, cols.0..cols.1, if cx.t.wallpaper.is_some() { bg.with_alpha(0) } else { bg });
+    if cx.t.wallpaper.is_some() {
+        canvas.wallpaper_panels = Some(Vec::new());
+    }
+    canvas
 }
 
 fn page(cx: &Ctx) -> Canvas {
@@ -258,7 +264,7 @@ pub fn home(cx: &Ctx) -> Frame {
         rows.push(Row::new(l.pick(SECOND_FAILED)).icon(RED, Icon::Systems).subtitle(why).trail(Trail::Arrow));
         opens.push(Some(Action::Open(Screen::Systems)));
     }
-    let card = widgets::device_card(&mut c, t, f, y, &i.model, &sub, &rows);
+    let card = widgets::device_card(&mut c, t, f, y, &i.codename, &i.model, &sub, &rows);
     out.push(Hit { rect: card.rows[0], action: Action::Open(Screen::About) });
     out.extend(card.rows[1..].iter().zip(&opens).filter_map(|(&rect, open)| open.map(|action| Hit { rect, action })));
     y = card.bottom + t.m.card_gap;
@@ -313,9 +319,10 @@ pub fn home(cx: &Ctx) -> Frame {
         Action::Open(Screen::Settings),
         Action::Open(Screen::Reboot),
     ]));
-    // However little it holds, the page scrolls far enough to fold its bar
-    // away.
-    let height = fitted(t, system.bottom).max(t.m.h + fold.span.ceil() as u32);
+    // Even a short home page must scroll past the search fold and through
+    // the large title's fade, so the compact title can take over at rest.
+    let title_end = fold.span + t.m.dp(crate::app::TITLE_FADE_DP);
+    let height = fitted(t, system.bottom).max(t.m.h + title_end.ceil() as u32 + 1);
     Frame { back: false, fold: Some(fold), ..Frame::new(t, c.crop_height(height), out, HOME_TITLE, cards_top) }
 }
 
@@ -355,7 +362,15 @@ pub fn settings(cx: &Ctx) -> Frame {
     let top = t.m.content_top;
     let themes = widgets::theme_picker(&mut c, t, f, l, top + t.m.dp(8.9));
     out.extend(hits(&themes.rows, &[Action::Theme { dark: false }, Action::Theme { dark: true }]));
-    let mut y = widgets::section(&mut c, t, f, themes.bottom, l.pick(["亮度", "亮度", "Brightness"]));
+    let paper = widgets::list(&mut c, t, f, themes.bottom + t.m.card_gap, &[
+        Row::new(l.pick(WALLPAPER)).trail(Trail::Value(l.pick(if s.wallpaper_enabled {
+            ["已开启", "已開啟", "On"]
+        } else {
+            ["已关闭", "已關閉", "Off"]
+        }))),
+    ]);
+    out.extend(hits(&paper.rows, &[Action::Open(Screen::Wallpaper)]));
+    let mut y = widgets::section(&mut c, t, f, paper.bottom, l.pick(["亮度", "亮度", "Brightness"]));
     let off = fmt::screen_off(l, SCREEN_OFF[s.screen_off]);
     let below = Row::new(l.pick(SCREEN_TIMEOUT)).trail(Trail::Value(&off));
     let slider = widgets::slider_card(&mut c, t, f, y, Caption::Sun, l.pick(["屏幕亮度", "螢幕亮度", "Screen brightness"]), s.brightness, Some(below));
@@ -402,6 +417,51 @@ pub fn settings(cx: &Ctx) -> Frame {
     let about = widgets::list(&mut c, t, f, y, &rows);
     out.extend(hits(&about.rows, &opens));
     Frame::new(t, fit(c, t, about.bottom), out, l.pick(SETTINGS), top)
+}
+
+pub fn wallpaper(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = long_page(cx);
+    let top = t.m.content_top;
+    let preview_w = t.m.dp(104.0).round() as u32;
+    let preview_h = preview_w * 660 / 300;
+    let x = (t.m.w - preview_w) / 2;
+    let preview_y = top.ceil() as u32;
+    let mut preview = Canvas::filled(preview_w, preview_h, t.pal.bg);
+    crate::wallpaper::preview(&mut preview, s.wallpaper_index, s.wallpaper_strong, (s.wallpaper_brightness * 100.0).round() as u8);
+    c.over_at(&preview, x as i32, preview_y as i32);
+    let options = widgets::list(&mut c, t, f, (preview_y + preview_h) as f32 + t.m.card_gap, &[
+        Row::new(l.pick(["显示壁纸", "顯示桌布", "Show wallpaper"])).trail(Trail::Switch(s.wallpaper_enabled)),
+    ]);
+    let mut out = hits(&options.rows, &[Action::ToggleWallpaper]);
+    let brightness = widgets::slider_card(&mut c, t, f, options.bottom + t.m.card_gap, Caption::Sun,
+        l.pick(["壁纸亮度", "桌布亮度", "Wallpaper brightness"]), s.wallpaper_brightness, None);
+    out.push(Hit { rect: brightness.track, action: Action::Slider(Slider::WallpaperBrightness) });
+    let y = widgets::section(&mut c, t, f, brightness.bottom, l.pick(["高斯模糊", "高斯模糊", "Gaussian blur"]));
+    let blur = widgets::list(&mut c, t, f, y, &[
+        Row::new(l.pick(["柔和", "柔和", "Soft"])).trail(Trail::Check(!s.wallpaper_strong)),
+        Row::new(l.pick(["较强", "較強", "Strong"])).trail(Trail::Check(s.wallpaper_strong)),
+    ]);
+    out.extend(hits(&blur.rows, &[Action::WallpaperBlur(false), Action::WallpaperBlur(true)]));
+    let y = widgets::section(&mut c, t, f, blur.bottom, l.pick(["内置壁纸", "內建桌布", "Bundled wallpapers"]));
+    let gap = t.m.dp(9.0);
+    let tile_w = (t.m.w as f32 - 2.0 * t.m.margin - 2.0 * gap) / 3.0;
+    let tile_h = tile_w * 152.0 / 96.0;
+    let radius = t.m.dp(13.0);
+    for index in 0..crate::wallpaper::COUNT {
+        let x = t.m.margin + (index % 3) as f32 * (tile_w + gap);
+        let top = y + (index / 3) as f32 * (tile_h + gap);
+        let tile = Rect::new(x, top, tile_w, tile_h);
+        crate::wallpaper::thumbnail(&mut c, index, tile, radius);
+        if s.wallpaper_index == index {
+            let stroke = t.m.dp(2.5);
+            c.stroke_round_rect(x + stroke / 2.0, top + stroke / 2.0, tile_w - stroke, tile_h - stroke, radius - stroke / 2.0, stroke, t.pal.accent);
+            widgets::check_circle(&mut c, t, x + tile_w - t.m.dp(17.0), top + tile_h - t.m.dp(17.0), true);
+        }
+        out.push(Hit { rect: tile, action: Action::SelectWallpaper(index) });
+    }
+    let bottom = y + crate::wallpaper::COUNT.div_ceil(3) as f32 * (tile_h + gap) - gap;
+    Frame::new(t, fit(c, t, bottom), out, l.pick(WALLPAPER), top)
 }
 
 /// What the settings page says beside its Skyward update entry: an update
@@ -526,6 +586,9 @@ pub fn about(cx: &Ctx) -> Frame {
     // how tall it comes to, then drawn that tall.
     let (_, _, bottom) = about_cards(cx, &mut Canvas::band(m.w, m.h * 3, 0..0, 0..0, Rgba { r: 0, g: 0, b: 0, a: 0 }));
     let mut c = Canvas::new(m.w, fitted(t, bottom));
+    if t.wallpaper.is_some() {
+        c.wallpaper_panels = Some(Vec::new());
+    }
     let (out, summary_top, bottom) = about_cards(cx, &mut c);
     let canvas = fit(c, t, bottom);
     let art = HeroArt {
@@ -559,7 +622,7 @@ fn soc(l: Lang, i: &DeviceInfo) -> Option<&str> {
 fn about_cards(cx: &Ctx, c: &mut Canvas) -> (Vec<Hit>, f32, f32) {
     let (t, f, i, l) = (cx.t, cx.f, cx.info, cx.state.lang);
     let m = &t.m;
-    let tone = Tone::hero(t);
+    let tone = if t.wallpaper.is_some() { Tone::page(t) } else { Tone::hero(t) };
     let mut out = Vec::new();
 
     let storage = fmt::storage_used(&i.storage).unwrap_or_else(|| fmt::capacity(i.storage.total));
@@ -724,9 +787,9 @@ fn data_status(cx: &Ctx, mut c: Canvas, icon: Icon, title: &str, note: Option<&s
     let sign_cy = m.dp(150.0);
     c.fill_circle(x, sign_cy, m.dp(30.0), t.pal.card);
     icons::glyph(&mut c, icon, x, sign_cy, m.dp(40.0), t.pal.accent);
-    c.text_center(&f.heading, title, x, sign_cy + m.dp(64.0), m.dp(24.0), t.pal.text);
+    c.text_center(&f.heading, title, x, sign_cy + m.dp(64.0), m.dp(24.0), t.outside_ink());
     if let Some(note) = note {
-        c.text_center(&f.body, note, x, sign_cy + m.dp(98.0), m.sub_px, t.pal.subtitle);
+        c.text_center(&f.body, note, x, sign_cy + m.dp(98.0), m.sub_px, t.outside_note());
     }
     let mut out = Vec::new();
     if let Some(why) = why {
@@ -736,7 +799,7 @@ fn data_status(cx: &Ctx, mut c: Canvas, icon: Icon, title: &str, note: Option<&s
     }
     let leave_cy = m.h as f32 - m.dp(64.0);
     let leave = l.pick(if matches!(cx.state.data, Data::Open | Data::Erased) { ["完成", "完成", "Done"] } else { NOT_NOW });
-    c.text_center(&f.heading, leave, x, leave_cy, m.row_title_px, t.pal.accent);
+    c.text_center(&f.heading, leave, x, leave_cy, m.row_title_px, t.outside_accent());
     out.push(Hit { rect: Rect::new(x - m.dp(80.0), leave_cy - m.dp(24.0), m.dp(160.0), m.dp(48.0)), action: Action::Skip });
     Frame { header: false, ..Frame::new(t, c, out, l.pick(DECRYPT), 0.0) }
 }
@@ -762,8 +825,8 @@ fn code(cx: &Ctx, mut c: Canvas, user: u32, keys: Keys, checking: bool) -> Frame
         (false, user) => tr!(l, "输入用户 {user} 的锁屏密码", "輸入使用者 {user} 的螢幕鎖定密碼", "Enter user {user}'s screen lock"),
     };
     let note = l.pick(if checking { ["正在验证", "正在驗證", "Checking"] } else { ["解密后可查看本机文件", "解密後可查看本機檔案", "Decrypt to see the phone's files"] });
-    c.text_center(&f.heading, &title, x, m.dp(130.0), m.dp(24.0), t.pal.text);
-    c.text_center(&f.body, note, x, m.dp(166.0), m.sub_px, t.pal.subtitle);
+    c.text_center(&f.heading, &title, x, m.dp(130.0), m.dp(24.0), t.outside_ink());
+    c.text_center(&f.body, note, x, m.dp(166.0), m.sub_px, t.outside_note());
     let mut pattern = None;
     let bottom = match keys {
         Keys::Letters => {
@@ -799,7 +862,7 @@ fn code(cx: &Ctx, mut c: Canvas, user: u32, keys: Keys, checking: bool) -> Frame
         widgets::code_dots(&mut c, t, x, bottom - m.dp(92.0), s.code.chars().count());
     }
     let skip_cy = bottom - m.dp(34.0);
-    c.text_center(&f.heading, l.pick(NOT_NOW), x, skip_cy, m.row_title_px, t.pal.accent);
+    c.text_center(&f.heading, l.pick(NOT_NOW), x, skip_cy, m.row_title_px, t.outside_accent());
     out.push(Hit { rect: Rect::new(x - m.dp(80.0), skip_cy - m.dp(24.0), m.dp(160.0), m.dp(48.0)), action: Action::Skip });
     Frame { header: false, pattern, ..Frame::new(t, c, out, l.pick(DECRYPT), 0.0) }
 }
@@ -3137,7 +3200,7 @@ fn listing(
     title: &'static str,
 ) -> Frame {
     let (t, f) = (cx.t, cx.f);
-    let bg = files::page(t);
+    let bg = if t.wallpaper.is_some() { t.pal.bg } else { files::page(t) };
     let mut c = sheet(cx, t.m.h, bg);
     let rows = match (absent, &folder.entries) {
         (Some((note, why)), _) => {

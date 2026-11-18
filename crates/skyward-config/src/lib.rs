@@ -781,7 +781,7 @@ mod tests {
             (include_str!("../../../devices/pandora.toml"), "OS4.0.4.0.XBLCNXM"),
             (include_str!("../../../devices/popsicle.toml"), "OS4.0.4.0.XPBCNXM"),
             (include_str!("../../../devices/myron.toml"), "OS4.0.4.0.XPMCNXM"),
-            (include_str!("../../../devices/songyuan.toml"), "OS4.0.4.0.XGNCNXM"),
+            (include_str!("../../../devices/songyuan.toml"), "OS4.0.7.0.XGNCNXM"),
             (include_str!("../../../devices/athens.toml"), "OS4.0.4.0.XPICNXM"),
             (include_str!("../../../devices/fuxi.toml"), "OS3.0.309.0.WMCCNXM"),
             (include_str!("../../../devices/nuwa.toml"), "OS3.0.312.0.WMBCNXM"),

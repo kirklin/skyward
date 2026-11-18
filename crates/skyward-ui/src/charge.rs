@@ -106,9 +106,11 @@ impl Art {
 
 /// Draw the charging screen over the whole of `out`, `ms` after the cable
 /// went in, the battery `level` full.
-pub fn draw(out: &mut Canvas, art: &Art, m: &Metrics, level: u8, ms: u64, dither: &Dither) {
+pub fn draw(out: &mut Canvas, art: &Art, m: &Metrics, level: u8, ms: u64, dither: &Dither, wallpaper: bool) {
     let (top, field) = tide(m, level, ms);
-    out.fill_rect(0.0, 0.0, out.w as f32, top as f32, BLACK);
+    if !wallpaper {
+        out.fill_rect(0.0, 0.0, out.w as f32, top as f32, BLACK);
+    }
     glow::paint_band(out, &field, top, dither);
     art.digits.draw(out, 0.0, 0.0, INK, 1.0);
     art.percent.draw(out, 0.0, 0.0, INK, 1.0);

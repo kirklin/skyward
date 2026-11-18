@@ -33,6 +33,20 @@ impl App {
                 self.refresh();
             }
             Action::Back | Action::CloseSearch => return self.back(now),
+            Action::ToggleWallpaper => {
+                self.state.wallpaper_enabled = !self.state.wallpaper_enabled;
+                self.refresh();
+            }
+            Action::WallpaperBlur(strong) => {
+                self.state.wallpaper_strong = strong;
+                self.refresh();
+            }
+            Action::SelectWallpaper(index) if index < crate::wallpaper::COUNT => {
+                self.state.wallpaper_index = index;
+                self.state.wallpaper_enabled = true;
+                self.refresh();
+            }
+            Action::SelectWallpaper(_) => {}
             Action::Theme { dark } => {
                 if self.state.dark != dark {
                     self.state.dark = dark;

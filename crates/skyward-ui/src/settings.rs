@@ -37,6 +37,10 @@ pub struct Settings {
     /// names none, as fastboot's does.
     pub spoken: Option<String>,
     pub dark: bool,
+    pub wallpaper_enabled: bool,
+    pub wallpaper_index: usize,
+    pub wallpaper_strong: bool,
+    pub wallpaper_brightness: f32,
     /// The brightness slider's place, from 0 at its left end to 1.
     pub brightness: f32,
     /// How long the screen stays on with nothing touched, in seconds; 0
@@ -120,6 +124,10 @@ impl Settings {
             language: state.language_chosen.then(|| state.lang.tag().to_string()),
             spoken: Some(state.lang.tag().to_string()),
             dark: state.dark,
+            wallpaper_enabled: state.wallpaper_enabled,
+            wallpaper_index: state.wallpaper_index,
+            wallpaper_strong: state.wallpaper_strong,
+            wallpaper_brightness: state.wallpaper_brightness,
             brightness: state.brightness,
             screen_off: SCREEN_OFF[state.screen_off].map_or(0, |ms| ms / 1000),
             time_zone: TIME_ZONES[state.time_zone].2.to_string(),
@@ -170,6 +178,12 @@ impl Settings {
             state.language_chosen = true;
         }
         state.dark = self.dark;
+        state.wallpaper_enabled = self.wallpaper_enabled;
+        state.wallpaper_index = if self.wallpaper_index < crate::wallpaper::COUNT { self.wallpaper_index } else { 0 };
+        state.wallpaper_strong = self.wallpaper_strong;
+        if (0.0..=1.0).contains(&self.wallpaper_brightness) {
+            state.wallpaper_brightness = self.wallpaper_brightness;
+        }
         if (0.0..=1.0).contains(&self.brightness) {
             state.brightness = self.brightness;
         }
@@ -214,7 +228,7 @@ fn picked<const N: usize>(kept: &[String], all: &[&str; N]) -> [bool; N] {
 /// What the settings file held as the recovery started.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Kept {
-    Settings(Settings),
+    Settings(Box<Settings>),
     /// No settings: no file, or one that does not read as settings.
     Nothing,
     /// Where the file is could not be read; it is left alone this time.
@@ -246,7 +260,7 @@ pub struct Keeper {
 impl Keeper {
     pub fn new(kept: &Kept) -> Keeper {
         let holds = match kept {
-            Kept::Settings(settings) => Some(Some(settings.clone())),
+            Kept::Settings(settings) => Some(Some(settings.as_ref().clone())),
             Kept::Nothing => Some(None),
             Kept::Unreadable => None,
         };
@@ -295,6 +309,19 @@ impl Keeper {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wallpaper_defaults_and_selection_round_trip() {
+        let mut state = State::default();
+        Settings::read("{}").unwrap().apply(&mut state);
+        assert_eq!((state.wallpaper_enabled, state.wallpaper_index, state.wallpaper_strong), (false, 0, false));
+        state.wallpaper_enabled = true;
+        state.wallpaper_index = 3;
+        state.wallpaper_strong = true;
+        let mut restored = State::default();
+        Settings::read(&Settings::of(&state).text()).unwrap().apply(&mut restored);
+        assert_eq!((restored.wallpaper_enabled, restored.wallpaper_index, restored.wallpaper_strong), (true, 3, true));
+    }
 
     #[test]
     fn the_settings_go_round_through_their_file() {
@@ -375,7 +402,7 @@ mod tests {
 
     #[test]
     fn changed_settings_are_written_once_they_have_stood_for_a_moment() {
-        let mut keeper = Keeper::new(&Kept::Settings(Settings::default()));
+        let mut keeper = Keeper::new(&Kept::Settings(Box::default()));
         assert_eq!(keeper.due(Settings::default(), 0), None, "what the file holds is not written again");
         let dark = Settings { dark: true, ..Settings::default() };
         assert_eq!(keeper.due(dark.clone(), 1_000), None);

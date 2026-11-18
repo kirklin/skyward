@@ -6,6 +6,10 @@ use super::*;
 /// stands.
 #[derive(Clone, Debug, PartialEq)]
 pub struct State {
+    pub wallpaper_enabled: bool,
+    pub wallpaper_index: usize,
+    pub wallpaper_strong: bool,
+    pub wallpaper_brightness: f32,
     /// The language the pages speak.
     pub lang: Lang,
     /// The language was chosen on the language page, now or at an earlier
@@ -186,6 +190,10 @@ pub struct State {
 impl Default for State {
     fn default() -> Self {
         State {
+            wallpaper_enabled: false,
+            wallpaper_index: 0,
+            wallpaper_strong: false,
+            wallpaper_brightness: 2.0 / 3.0,
             lang: Lang::Hans,
             language_chosen: false,
             dark: false,

@@ -29,12 +29,6 @@ const MOUNT: Text = ["挂载", "掛載", "Mount"];
 
 pub const ENTRIES: &[Entry] = &[
     entry(["WLAN", "Wi-Fi", "Wi-Fi"], HOME, Screen::Wlan, &["wuxianwangluo", "wxwl", "wangluo", "wl", "lianwang", "wifi", "wlan"]),
-    entry(
-        ["双系统", "雙系統", "Dual boot"],
-        HOME,
-        Screen::Systems,
-        &["shuangxitong", "sxt", "qiehuanxitong", "qhxt", "duoxitong", "dxt", "dualboot", "multiboot", "linux"],
-    ),
     entry(INSTALL, HOME, Screen::Install, &["anzhuang", "az", "install", "shuaji", "sj"]),
     entry(["从内部存储安装", "從內部儲存空間安裝", "Install from internal storage"], INSTALL, Screen::Install, &["congneibucunchuanzhuang", "cnbccaz", "neicun", "sdcard", "zip"]),
     entry(["从 U 盘安装", "從 USB 隨身碟安裝", "Install from a USB drive"], INSTALL, Screen::Install, &["congupananzhuang", "cupaz", "upan", "usb", "otg"]),
@@ -66,6 +60,7 @@ pub const ENTRIES: &[Entry] = &[
         &["xitonggengxin", "xtgx", "hebing", "hb", "xiazai", "xz", "wanzhenggengxinbao", "wzgxb", "update", "ota", "merge", "snapshot", "download"],
     ),
     entry(SETTINGS, HOME, Screen::Settings, &["shezhi", "sz", "settings"]),
+    entry(["壁纸", "桌布", "Wallpaper"], SETTINGS, Screen::Wallpaper, &["bizhi", "bz", "wallpaper"]),
     entry(["深色模式", "深色模式", "Dark mode"], SETTINGS, Screen::Settings, &["shensemoshi", "ssms", "dark", "theme"]),
     entry(["屏幕亮度", "螢幕亮度", "Screen brightness"], SETTINGS, Screen::Settings, &["pingmuliangdu", "pmld", "liangdu", "ld", "brightness"]),
     entry(["息屏时间", "螢幕自動關閉", "Screen timeout"], SETTINGS, Screen::ScreenOff, &["xipingshijian", "xpsj", "timeout"]),
@@ -191,11 +186,11 @@ mod tests {
     }
 
     #[test]
-    fn the_second_system_is_found_where_the_phone_can_hold_one() {
-        assert_eq!(titles("sxt"), ["双系统"]);
-        assert_eq!(titles("qiehuan"), ["双系统"]);
-        assert_eq!(find("dual", Lang::En).iter().map(|e| e.title[2]).collect::<Vec<_>>(), ["Dual boot"]);
-        assert!(find_on("shuangxitong", Lang::Hans, |s| s != Screen::Systems).is_empty());
+    fn the_disabled_second_system_is_not_offered_in_search() {
+        assert!(titles("sxt").is_empty());
+        assert!(titles("qiehuan").is_empty());
+        assert!(find("dual", Lang::En).is_empty());
+        assert!(find("shuangxitong", Lang::Hans).is_empty());
     }
 
     #[test]

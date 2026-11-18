@@ -153,7 +153,11 @@ mod tests {
         assert!(title(&screen) != still, "then it goes up with the page");
         assert!(!app.title.on, "the bar's title waits for the large one to fade");
         scroll_to(&mut app, &f, fold.span + m.dp(TITLE_FADE_DP) + 2.0, 7000);
-        assert!(app.title.on);
+        assert!(app.title.on && app.bar.on);
+        app.compose(&mut screen, &f, &i, "12:00", 9000);
+        assert!(px(&screen, 0) >= 252, "the collapsed title has a white top mask");
+        let edge = (widgets::bar_bottom(&t) + m.dp(20.0)).ceil() as u32;
+        assert_eq!(px(&screen, edge), t.pal.bg.r, "the mask feathers into the page");
     }
 
     #[test]
@@ -276,10 +280,11 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Settings, W, H, PPD);
         app.frame(&f, &i);
-        app.touch(Touch::Down(700.0, 2000.0), &f, 0);
-        app.touch(Touch::Move(700.0, 1700.0), &f, 100);
+        let x = app.theme().m.margin / 2.0;
+        app.touch(Touch::Down(x, 2000.0), &f, 0);
+        app.touch(Touch::Move(x, 1700.0), &f, 100);
         assert_eq!(app.top().1, 300.0);
-        app.touch(Touch::Move(700.0, 2100.0), &f, 500);
+        app.touch(Touch::Move(x, 2100.0), &f, 500);
         assert_eq!(app.top().1, 0.0);
         assert!(app.overscroll(500) < 0.0, "the last 100 px pull the page down");
     }
@@ -478,6 +483,31 @@ mod tests {
         assert_eq!(app.bar.level(4800 + 100), 1.0, "the bar comes in 100 ms");
         scroll_to(&mut app, &f, 0.0, 6000);
         assert!(!app.title.on && !app.bar.on);
+    }
+
+    #[test]
+    fn short_pages_scroll_far_enough_to_show_the_bar_title_and_mask() {
+        let (fonts, info) = (fonts(), info());
+        for screen in [
+            Screen::Wlan, Screen::Advanced, Screen::Update, Screen::Settings,
+            Screen::Install, Screen::Mount, Screen::Reboot, Screen::Wipe,
+            Screen::Backup, Screen::Restore, Screen::ScreenOff, Screen::Language,
+            Screen::TimeZone, Screen::Logs, Screen::Filesystems, Screen::Specs,
+            Screen::SkywardUpdate, Screen::FileInfo, Screen::Permissions,
+        ] {
+            let mut app = App::new(screen, 1200, 2608, 3.0);
+            app.state.file = Some(entry("example.txt", FileKind::File));
+            app.state.wlan = Some(Wlan::default());
+            app.frame(&fonts, &info);
+            let end = app.max_scroll();
+            assert!(end > 0.0, "{screen:?} needs room to collapse its title");
+            app.top_mut().1 = end;
+            app.follow_scroll(0);
+            assert!(app.title.on && app.bar.on, "{screen:?} reaches its title and mask");
+            app.top_mut().1 = 0.0;
+            app.follow_scroll(2000);
+            assert!(!app.title.on && !app.bar.on, "{screen:?} restores its large title");
+        }
     }
 
     #[test]

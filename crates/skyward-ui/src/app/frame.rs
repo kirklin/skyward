@@ -28,6 +28,7 @@ pub struct Frame {
     pub pattern: Option<(f32, f32, f32)>,
     /// The colour of the page itself, past the canvas and under the bar.
     pub bg: Rgba,
+    pub(crate) wallpaper_panels: Vec<(Rect, f32)>,
     /// A list too long to draw whole: its rows are drawn as they scroll
     /// into view, below the canvas's content and past its end.
     pub rows: Option<Rows>,
@@ -192,9 +193,11 @@ pub struct HeroArt {
 impl Frame {
     /// A page of cards on the grey page colour that opens with its title in
     /// large type and goes back with `<`.
-    pub fn new(t: &Theme, canvas: Canvas, hits: Vec<Hit>, title: &'static str, content_top: f32) -> Frame {
+    pub fn new(t: &Theme, mut canvas: Canvas, hits: Vec<Hit>, title: &'static str, content_top: f32) -> Frame {
+        let wallpaper_panels = canvas.wallpaper_panels.take().unwrap_or_default();
         Frame {
             canvas,
+            wallpaper_panels,
             hits,
             title,
             back: true,
@@ -250,6 +253,13 @@ impl Frame {
     pub fn height(&self, t: &Theme) -> f32 {
         let h = self.canvas.h as f32;
         let h = self.rows.as_ref().map_or(h, |r| h.max((r.bottom() + t.m.margin * 2.0).ceil()));
+        let h = if self.header && self.scrollback.is_none() {
+            let title = self.fold.map_or(0.0, |fold| fold.span) + t.m.dp(TITLE_FADE_DP);
+            let mask = (self.content_top - widgets::bar_bottom(t) - t.m.dp(20.0)).max(0.0);
+            h.max(t.m.h as f32 + title.max(mask).ceil() + 1.0)
+        } else {
+            h
+        };
         h + self.dock.as_ref().map_or(0.0, |d| d.canvas.h as f32)
     }
 }

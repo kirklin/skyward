@@ -120,7 +120,8 @@ mod tests {
         press(&mut app, Key::VolumeUp, 0);
         assert_eq!(lit(&mut app, &f, &i), choice(FASTBOOT_CHOICES.len() - 1), "up from the first goes round to the last");
         assert_eq!(press(&mut app, Key::Power, 0), vec![Effect::Reboot(Target::PowerOff)]);
-        assert_eq!(tap(&mut app, &f, &i, Action::RebootTo(Target::Bootloader)), vec![Effect::Reboot(Target::Bootloader)], "a touch takes a choice too");
+        app.tick(2000);
+        assert_eq!(tap_at(&mut app, &f, &i, Action::RebootTo(Target::Bootloader), 2000), vec![Effect::Reboot(Target::Bootloader)], "a touch takes a choice once the key scroll settles");
         assert!(press(&mut app, Key::Back, 0).is_empty());
         assert_eq!(app.screen(), Screen::Fastboot, "there is nothing to go back to");
     }

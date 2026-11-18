@@ -290,16 +290,7 @@ fn element(phone: &Phone, name: &str) -> Result<Started> {
         }
     };
     let registers = besides(phone, program, &own, |_| false);
-    let mut started = started(phone, program, Ready::Service(own), registers);
-    if program.path == "/vendor/bin/hw/android.hardware.secure_element-service.qti" {
-        started.service.libraries.extend([
-            "/vendor/lib64/hw".into(),
-            "/odm/lib64".into(),
-            "/mnt/system/system/lib64".into(),
-            "/mnt/system/system/lib64/bootstrap".into(),
-        ]);
-    }
-    Ok(started)
+    Ok(started(phone, program, Ready::Service(own), registers))
 }
 
 /// The description of the service `name` of `kind`, where the phone

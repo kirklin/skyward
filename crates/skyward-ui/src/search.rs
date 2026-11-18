@@ -186,9 +186,9 @@ mod tests {
     }
 
     #[test]
-    fn the_second_system_is_found_where_the_phone_can_hold_one() {
-        assert_eq!(titles("sxt"), ["双系统"]);
-        assert_eq!(titles("qiehuan"), ["双系统"]);
+    fn the_disabled_second_system_is_not_offered_in_search() {
+        assert!(titles("sxt").is_empty());
+        assert!(titles("qiehuan").is_empty());
         assert!(find("dual", Lang::En).is_empty());
         assert!(find("shuangxitong", Lang::Hans).is_empty());
     }

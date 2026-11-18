@@ -280,10 +280,11 @@ mod tests {
         let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Settings, W, H, PPD);
         app.frame(&f, &i);
-        app.touch(Touch::Down(700.0, 2000.0), &f, 0);
-        app.touch(Touch::Move(700.0, 1700.0), &f, 100);
+        let x = app.theme().m.margin / 2.0;
+        app.touch(Touch::Down(x, 2000.0), &f, 0);
+        app.touch(Touch::Move(x, 1700.0), &f, 100);
         assert_eq!(app.top().1, 300.0);
-        app.touch(Touch::Move(700.0, 2100.0), &f, 500);
+        app.touch(Touch::Move(x, 2100.0), &f, 500);
         assert_eq!(app.top().1, 0.0);
         assert!(app.overscroll(500) < 0.0, "the last 100 px pull the page down");
     }

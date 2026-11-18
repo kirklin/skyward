@@ -122,6 +122,9 @@ mod tests {
                 read(texts, &path);
                 continue;
             }
+            if path.extension().is_none_or(|extension| extension != "rs") {
+                continue;
+            }
             let file = syn::parse_file(&fs::read_to_string(&path).unwrap()).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
             texts.visit_file(&file);
         }

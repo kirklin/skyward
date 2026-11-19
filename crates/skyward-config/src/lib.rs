@@ -274,6 +274,9 @@ pub struct Device {
     /// System property that carries the vendor OS version.
     #[serde(default = "default_os_version_prop")]
     pub os_version_prop: String,
+    /// Start the configured local programs before setting up Binder.
+    #[serde(default)]
+    pub services_before_binder: bool,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -528,6 +531,12 @@ impl DeviceConfig {
             );
         }
         for s in &cfg.services {
+            ensure!(
+                !cfg.device.services_before_binder
+                    || (s.ready_service.is_none() && s.ready_hardware_service.is_none() && s.registers.is_empty()),
+                "[[service]] {}: a program started before Binder cannot register or wait for a Binder service",
+                s.path
+            );
             ensure!(s.user.is_none() || !s.groups.is_empty(), "[[service]] {}: a program given a user is given its group too", s.path);
             for name in s.user.iter().chain(&s.groups) {
                 ensure!(!name.is_empty() && !name.contains(char::is_whitespace), "[[service]] {}: {name:?} is not an account's name", s.path);
@@ -773,6 +782,24 @@ mod tests {
         assert_eq!((post_boot.user.as_deref(), &post_boot.groups[..]), (Some("root"), &["root", "system", "wakelock", "graphics"].map(str::to_string)[..]));
         let touch = find(&ishtar, "/odm/bin/touch_report");
         assert_eq!((touch.user.as_deref(), &touch.capabilities[..]), (Some("system"), &["SYS_NICE".to_string()][..]));
+    }
+
+    #[test]
+    fn only_programs_without_binder_dependencies_can_start_before_binder() {
+        let unicorn = DeviceConfig::parse(include_str!("../../../devices/unicorn.toml")).unwrap();
+        assert!(unicorn.device.services_before_binder);
+        let ishtar = DeviceConfig::parse(include_str!("../../../devices/ishtar.toml")).unwrap();
+        assert!(!ishtar.device.services_before_binder);
+
+        let config = "[device]\ncodename = \"phone\"\nservices_before_binder = true\n[[service]]\npath = \"/vendor/bin/example\"\n";
+        for field in [
+            "ready_service = \"android.example.IExample/default\"\n",
+            "ready_hardware_service = \"android.example@1.0::IExample/default\"\n",
+            "registers = [\"android.example.IExample/default\"]\n",
+        ] {
+            let err = DeviceConfig::parse(&format!("{config}{field}")).unwrap_err();
+            assert!(err.to_string().contains("started before Binder"));
+        }
     }
 
     #[test]

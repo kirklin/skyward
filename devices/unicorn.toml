@@ -5,6 +5,9 @@ model = "Xiaomi 12S Pro"
 ab = true
 soc = { hans = "第一代骁龙®8+移动平台", hant = "Snapdragon® 8+ Gen 1 行動平台", en = "Snapdragon® 8+ Gen 1 Mobile Platform" }
 os_version_prop = "ro.build.version.incremental"
+# The ST panel needs touch_report to turn its raw frames into input
+# events. Both touch programs run without the Android service managers.
+services_before_binder = true
 
 [display]
 # Native panel mode. Stock scales 1080x2400 at 420 dpi, giving 560 dpi
@@ -31,33 +34,41 @@ uncover_vendor = true
 # The QCA6490 firmware tree links to persist for the board's WLAN MAC.
 mounted = ["persist"]
 
-# From vendor.xiaomi.hw.touchfeature@1.0-service.rc. These are the files
-# made by the common xiaomi_touch driver, used by the touch programs.
+# From vendor.xiaomi.hw.touchfeature@1.0-service.rc. These files are
+# present in recovery and used by the touch programs.
 [[owners]]
 user = "system"
 group = "system"
 mode = 0o664
 paths = [
     "/dev/xiaomi-touch",
+    "/dev/xiaomi-touch-knock",
     "/proc/tp_hal_version",
     "/sys/class/touch/touch_dev/enable_touch_raw",
+    "/sys/class/touch/touch_dev/enable_touch_delta",
     "/sys/class/touch/touch_dev/touch_thp_cmd",
     "/sys/class/touch/touch_dev/touch_thp_cmd_data",
+    "/sys/class/touch/touch_dev/touch_thp_dump",
+    "/sys/class/touch/touch_dev/touch_thp_mem_notify",
     "/sys/class/touch/touch_dev/touch_thp_rx_num",
     "/sys/class/touch/touch_dev/touch_thp_tx_num",
     "/sys/class/touch/touch_dev/touch_thp_x_resolution",
     "/sys/class/touch/touch_dev/touch_thp_y_resolution",
     "/sys/class/touch/touch_dev/update_rawdata",
+    "/sys/class/touch/touch_dev/palm_sensor_data",
+    "/sys/class/touch/touch_dev/suspend_state",
 ]
 
 [[service]]
 path = "/vendor/bin/touch_report"
+libraries = ["/vendor/lib64", "/system/lib64"]
 user = "system"
 groups = ["system", "uhid", "input"]
 capabilities = ["SYS_NICE"]
 
 [[service]]
 path = "/vendor/bin/touchsensor"
+libraries = ["/vendor/lib64", "/system/lib64"]
 user = "system"
 groups = ["system", "uhid", "input"]
 

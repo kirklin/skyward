@@ -553,6 +553,10 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
         let handed = hand_over(&cfg.owners)?;
         skyward_sys::kmsg(&format!("{handed} of the phone's own files handed to the accounts its init gives them"))?;
     }
+    let libraries = secure::libraries()?;
+    if cfg.device.services_before_binder {
+        services::start(&services, libraries.as_deref())?;
+    }
     // What the phone describes is known wherever its partitions could be
     // read at all; what they say of its keys may still not be.
     let (described, found) = match found {
@@ -592,11 +596,12 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
         secure::publish_descriptions(&told)?;
         skyward_sys::kmsg(&format!("the service directory is told of {} of the phone's own services", told.len()))?;
     }
-    let libraries = secure::libraries()?;
     if let Some(dir) = &libraries {
         skyward_sys::kmsg(&format!("the phone's own libraries are at {}", dir.display()))?;
     }
-    services::start(&services, libraries.as_deref())?;
+    if !cfg.device.services_before_binder {
+        services::start(&services, libraries.as_deref())?;
+    }
     let steps = found.context("make out from the phone's partitions how its keys are used")?;
     for line in keys::describe(&steps) {
         skyward_sys::kmsg(&format!("for the phone's keys: {}", line.replace("\n  ", ", ")))?;

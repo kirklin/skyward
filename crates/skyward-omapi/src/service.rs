@@ -165,6 +165,14 @@ impl Terminal {
     }
 
     fn present(&self, binder: &Binder) -> bool {
+        // The chip is asked to start before it is asked whether it is there:
+        // its own service connects to the chip when it is asked to start, and
+        // one never asked answers that it is not there — which leaves a phone
+        // whose credential sits in its secure element unable to open the data
+        // partition, as the weaver asks this first and gives up on a no.
+        if !self.connected.load(Ordering::SeqCst) {
+            let _ = self.start(binder);
+        }
         self.element(binder).and_then(|e| e.present()).unwrap_or(false)
     }
 

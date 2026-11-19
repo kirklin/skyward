@@ -207,13 +207,17 @@ const DATA: &str = "/data";
 /// The vibration motor, played through the kernel's force-feedback events:
 /// its click, a waveform its driver keeps or one made from samples at the
 /// motor's resonant frequency, which the driver plays as they are given,
-/// and the ticks of the screen going off by the power key, made too.
+/// and the ticks of the screen going off by the power key, kept or made too.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Haptics {
     /// The driver's number for a click waveform it keeps, on phones whose
     /// driver plays the waveforms it keeps.
     #[serde(default)]
     pub click: Option<i16>,
+    /// The driver's waveform for screen-off feedback, where it plays
+    /// presets instead of synthesized samples.
+    #[serde(default)]
+    pub ticks: Option<i16>,
     /// The file the driver says the motor's resonant frequency in, in
     /// tenths of a hertz whatever its label.
     pub resonance: String,
@@ -654,7 +658,16 @@ mod tests {
         let cfg = DeviceConfig::parse(include_str!("../../../devices/ishtar.toml")).unwrap();
         let haptics = cfg.haptics.expect("the 13 Ultra has a motor");
         assert_eq!((haptics.click, haptics.resonance.as_str()), (Some(0), "/sys/class/qcom-haptics/lra_frequency_hz"));
+        assert_eq!(haptics.ticks, None, "the 13 Ultra makes its screen-off ticks");
         assert_eq!(haptics.strength, Strength { lightest: 0.5, strongest: 1.0 });
+    }
+
+    #[test]
+    fn unicorn_uses_stock_waveforms_for_both_kinds_of_feedback() {
+        let cfg = DeviceConfig::parse(include_str!("../../../devices/unicorn.toml")).unwrap();
+        let haptics = cfg.haptics.expect("the 12S Pro has an Awinic motor");
+        assert_eq!((haptics.click, haptics.ticks), (Some(0), Some(0)));
+        assert_eq!(haptics.strength, Strength { lightest: 0.35, strongest: 1.0 });
     }
 
     #[test]

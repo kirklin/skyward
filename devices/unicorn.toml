@@ -88,3 +88,13 @@ server = "https://update.miui.com/updates/miotaV3.php"
 version = "OS3.0.4.0.VLECNXM"
 package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS3.0.4.0.VLECNXM/unicorn-ota_full-OS3.0.4.0.VLECNXM-user-15.0-9be4b80759.zip"
 recovery = "1d8a136d5f4579114d52da561042db828940d972eff859d3ada513c88db494bd"
+
+# AW86927 plays the stock RAM waveform through force feedback. The
+# standard click (0) felt clearer than the heavy click on the phone.
+# Use a stock waveform for screen-off too: the QTI sample format is not
+# the interface used by this driver.
+[haptics]
+click = 0
+ticks = 0
+resonance = "/sys/bus/i2c/drivers/awinic_haptic/6-005a/f0_value"
+strength = { lightest = 0.35, strongest = 1.0 }

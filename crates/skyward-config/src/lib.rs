@@ -122,9 +122,8 @@ pub struct Wlan {
     /// the libraries of the vendor interface the phone was built against.
     #[serde(default)]
     pub libraries: Vec<String>,
-    /// The service it registers with the service directory as it starts,
-    /// which the directory takes only from a program the running system
-    /// describes.
+    /// The AIDL or HIDL service it registers as it starts. Its service
+    /// directory takes it only from a program the running system describes.
     pub service: String,
     /// The page the stock system asks over plain HTTP to tell whether a
     /// network reaches the internet, which answers 204 with nothing.
@@ -147,6 +146,10 @@ pub struct Write {
 pub struct FirmwarePartition {
     /// The partition's name, without the slot it is of.
     pub partition: String,
+    /// Remove stock recovery's mount over /vendor/firmware after the
+    /// modem firmware can also be reached under /firmware/image.
+    #[serde(default)]
+    pub uncover_vendor: bool,
 }
 
 /// A file a driver asks the firmware loader for, and where it is.
@@ -699,7 +702,7 @@ mod tests {
             [Write { path: "/sys/class/touch/touch_dev/enable_touch_raw".into(), value: "0".into() }],
             "its controller reports positions itself"
         );
-        assert_eq!(cfg.firmware, Some(FirmwarePartition { partition: "modem".into() }));
+        assert_eq!(cfg.firmware, Some(FirmwarePartition { partition: "modem".into(), uncover_vendor: false }));
         assert_eq!(cfg.partitions.mounted, ["persist"], "the secure world keeps its own files there");
         let [post_boot] = &cfg.services[..] else { panic!("one program: those that use the phone's keys are read from the phone's own partitions") };
         assert_eq!(post_boot.path, "/vendor/bin/sh");
@@ -785,6 +788,7 @@ mod tests {
             (include_str!("../../../devices/athens.toml"), "OS4.0.4.0.XPICNXM"),
             (include_str!("../../../devices/fuxi.toml"), "OS3.0.309.0.WMCCNXM"),
             (include_str!("../../../devices/nuwa.toml"), "OS3.0.312.0.WMBCNXM"),
+            (include_str!("../../../devices/unicorn.toml"), "OS3.0.4.0.VLECNXM"),
             (include_str!("../../../devices/houji.toml"), "OS3.0.307.0.WNCCNXM"),
             (include_str!("../../../devices/shennong.toml"), "OS3.0.309.0.WNBCNXM"),
             (include_str!("../../../devices/aurora.toml"), "OS3.0.308.0.WNACNXM"),

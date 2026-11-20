@@ -611,10 +611,10 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
     if let Some(dir) = &libraries {
         skyward_sys::kmsg(&format!("the phone's own libraries are at {}", dir.display()))?;
     }
-    if let Some(orientation) = &cfg.orientation {
-        if let Err(e) = orientation::prepare(orientation) {
-            skyward_sys::kmsg(&format!("orientation services not prepared: {e:#}"))?;
-        }
+    if let Some(orientation) = &cfg.orientation
+        && let Err(e) = orientation::prepare(orientation)
+    {
+        skyward_sys::kmsg(&format!("orientation services not prepared: {e:#}"))?;
     }
     services::start(&services, libraries.as_deref())?;
     let steps = found.context("make out from the phone's partitions how its keys are used")?;

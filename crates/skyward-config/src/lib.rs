@@ -122,6 +122,10 @@ pub struct Wlan {
     /// the libraries of the vendor interface the phone was built against.
     #[serde(default)]
     pub libraries: Vec<String>,
+    /// The recovery lacks the Binder setup and libraries this HIDL
+    /// supplicant needs. Use the installed system's runtime and directory.
+    #[serde(default)]
+    pub installed_hidl: bool,
     /// The AIDL or HIDL service it registers as it starts. Its service
     /// directory takes it only from a program the running system describes.
     pub service: String,

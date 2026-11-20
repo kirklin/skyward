@@ -77,7 +77,10 @@ modules = ["qca_cld3_qca6490"]
 writes = [{ path = "/sys/kernel/cnss/fs_ready", value = "1" }]
 interface = "wlan0"
 supplicant = "/vendor/bin/hw/wpa_supplicant"
-libraries = ["/vendor/lib64", "/system/lib64"]
+# The Android 12 recovery lacks libbinder_ndk. The installed system
+# provides Binder, and VNDK 31 supplies the vendor HIDL and crypto ABIs.
+libraries = ["/vendor/lib64", "/mnt/system/system/lib64"]
+installed_hidl = true
 service = "android.hardware.wifi.supplicant@1.4::ISupplicant/default"
 probe = "http://connect.rom.miui.com/generate_204"
 

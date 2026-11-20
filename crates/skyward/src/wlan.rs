@@ -3,6 +3,7 @@
 //! address asked for over DHCP and kept. The screen is told how things
 //! stand each time that changes.
 
+use crate::secure;
 use anyhow::{bail, ensure, Context, Result};
 use skyward_config::{Firmware, Wlan as Config};
 use skyward_net::dhcp::{self, Kept, Lease};
@@ -44,6 +45,12 @@ const INTERFACE_WAIT: Duration = Duration::from_secs(20);
 
 /// How long the supplicant may take to open its control socket.
 const SOCKET_WAIT: Duration = Duration::from_secs(10);
+
+/// The installed HIDL directory and its own libraries, mounted read-only.
+const HARDWARE_DIRECTORY: &str = "/mnt/system_ext/bin/hwservicemanager";
+const DIRECTORY_LIBRARIES: [&str; 2] = ["/mnt/system/system/lib64", "/mnt/system_ext/lib64"];
+const DIRECTORY_READY: &str = "hwservicemanager.ready";
+const DIRECTORY_WAIT: Duration = Duration::from_secs(5);
 
 /// How long the supplicant gets to end once asked to.
 const END_WAIT: Duration = Duration::from_secs(3);
@@ -106,7 +113,7 @@ impl Worker {
         let (inbox, asked) = worker::telling().context("make the WLAN thread's inbox")?;
         let back = inbox.clone();
         let worker = worker::Worker::start("wlan", move |tell| {
-            let mut s = Station { cfg, modules, libraries, servers, state: Wlan::default(), running: None, back, tell };
+            let mut s = Station { cfg, modules, libraries, servers, state: Wlan::default(), running: None, hardware_directory: None, back, tell };
             s.run(&asked);
         })?;
         Ok(Worker { inbox, worker })
@@ -200,6 +207,7 @@ struct Station {
     servers: Servers,
     state: Wlan,
     running: Option<Running>,
+    hardware_directory: Option<Child>,
     /// What a thread asking for an address, or looking how far the
     /// network reaches, answers to: the thread's own inbox.
     back: Teller<Inbox>,
@@ -224,7 +232,13 @@ impl Station {
                     Inbox::Command(c) => self.command(c),
                     Inbox::Address(n, answer) => self.addressed(n, answer),
                     Inbox::Reach(n, reach) => self.reached(n, reach),
-                    Inbox::End => return self.off(),
+                    Inbox::End => {
+                        self.off();
+                        if let Some(mut child) = self.hardware_directory.take() {
+                            end(&mut child, None);
+                        }
+                        return;
+                    }
                 }
             }
             self.listen();
@@ -297,9 +311,17 @@ impl Station {
         }
     }
 
-    fn start(&self) -> Result<Running> {
+    fn start(&mut self) -> Result<Running> {
         bring_up(&self.cfg, &self.modules)?;
-        let mut child = start_supplicant(&self.cfg, self.libraries.as_deref())?;
+        let runtime = if self.cfg.installed_hidl {
+            let runtime = secure::installed_runtime()?;
+            ensure!(self.libraries.is_some(), "the installed HIDL supplicant needs its VNDK libraries");
+            self.ensure_hardware_directory(&runtime)?;
+            Some(runtime)
+        } else {
+            None
+        };
+        let mut child = start_supplicant(&self.cfg, self.libraries.as_deref(), runtime.as_deref())?;
         let socket = Path::new(HOME).join("sockets").join(&self.cfg.interface);
         let connected = (|| -> Result<(Control, Control)> {
             let control = Control::open(&socket)?;
@@ -330,6 +352,34 @@ impl Station {
             polled_at: Instant::now(),
             counted: None,
         })
+    }
+
+    fn ensure_hardware_directory(&mut self, runtime: &Path) -> Result<()> {
+        if let Some(child) = &mut self.hardware_directory
+            && child.try_wait().context("look at hwservicemanager")?.is_none()
+        {
+            return Ok(());
+        }
+        self.hardware_directory = None;
+        secure::mount_binder_drivers()?;
+        // The vendor manifest already describes both supplicant services.
+        secure::prepare_hardware_directory(&[])?;
+        skyward_sys::set_prop(DIRECTORY_READY, "false")?;
+        let libraries = [runtime.join("lib64/bionic").into_os_string(), DIRECTORY_LIBRARIES[0].into(), DIRECTORY_LIBRARIES[1].into()];
+        let mut child = Process::new(runtime.join("bin/linker64"))
+            .arg(HARDWARE_DIRECTORY)
+            .env("LD_LIBRARY_PATH", std::env::join_paths(libraries)?)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .context("start installed hwservicemanager for WLAN")?;
+        if let Err(e) = skyward_sys::wait_prop(DIRECTORY_READY, "true", DIRECTORY_WAIT) {
+            end(&mut child, None);
+            return Err(e).context("wait for installed hwservicemanager");
+        }
+        self.hardware_directory = Some(child);
+        Ok(())
     }
 
     fn off(&mut self) {
@@ -663,7 +713,7 @@ fn place(file: &Firmware) -> Result<()> {
 }
 
 /// Start the supplicant on the interface, and wait for its control socket.
-fn start_supplicant(cfg: &Config, libraries: Option<&Path>) -> Result<Child> {
+fn start_supplicant(cfg: &Config, libraries: Option<&Path>, runtime: Option<&Path>) -> Result<Child> {
     let home = Path::new(HOME);
     let sockets = home.join("sockets");
     fs::create_dir_all(&sockets).with_context(|| format!("make {}", sockets.display()))?;
@@ -683,7 +733,19 @@ fn start_supplicant(cfg: &Config, libraries: Option<&Path>) -> Result<Child> {
     if let Some(dir) = libraries {
         path.push(dir.to_string_lossy().into_owned());
     }
-    let mut child = Process::new(&cfg.supplicant)
+    let mut command = if let Some(runtime) = runtime {
+        let vndk = libraries.context("the installed HIDL supplicant needs its VNDK libraries")?;
+        // The installed system provides Binder, but this vendor binary
+        // was linked against the crypto and HIDL interfaces in its VNDK.
+        let preload = ["libcrypto.so", "libssl.so", "libnl.so", "libhidlbase.so"].map(|name| vndk.join(name));
+        path.insert(0, runtime.join("lib64/bionic").to_string_lossy().into_owned());
+        let mut command = Process::new(runtime.join("bin/linker64"));
+        command.arg(&cfg.supplicant).env("LD_PRELOAD", std::env::join_paths(preload)?);
+        command
+    } else {
+        Process::new(&cfg.supplicant)
+    };
+    let mut child = command
         .args(["-i", &cfg.interface, "-D", "nl80211", "-c"])
         .arg(&settings)
         .env("LD_LIBRARY_PATH", path.join(":"))

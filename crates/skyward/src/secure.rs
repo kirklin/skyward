@@ -5,6 +5,7 @@
 use anyhow::{ensure, Context, Result};
 use std::collections::BTreeSet;
 use std::fs;
+use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -90,10 +91,7 @@ pub fn prepare_hardware_directory(wanted: &[String]) -> Result<()> {
     // installed system's programs are loaded by the installed system's
     // loader rather than by the older one a recovery carries.
     let loader = Path::new(EARLY_LOADER);
-    let from = bundle(RUNTIME_BUNDLE)?
-        .map(|at| at.join(BUNDLE_LOADER))
-        .filter(|p| p.is_file())
-        .with_context(|| format!("the installed system carries no {RUNTIME_BUNDLE}, which holds the loader its own programs ask for"))?;
+    let from = installed_runtime()?.join(BUNDLE_LOADER);
     let dir = loader.parent().expect("the loader is in a directory");
     fs::create_dir_all(dir).with_context(|| format!("make {}", dir.display()))?;
     // Made under the recovery's own umask the folder is root's alone, and
@@ -125,13 +123,44 @@ pub fn prepare_hardware_directory(wanted: &[String]) -> Result<()> {
     fs::set_permissions(RECOVERY_LABELS, std::os::unix::fs::PermissionsExt::from_mode(0o755))
         .with_context(|| format!("open {RECOVERY_LABELS} to every user"))?;
     fs::copy(from, &into).with_context(|| format!("copy {} to {}", from.display(), into.display()))?;
-    fs::write(RECOVERY_MANIFEST, describe_hardware(wanted)?).with_context(|| format!("write {RECOVERY_MANIFEST}"))?;
+    let manifest = Path::new(RECOVERY_MANIFEST);
+    let dir = manifest.parent().expect("the manifest is in a directory");
+    fs::create_dir_all(dir).with_context(|| format!("make {}", dir.display()))?;
+    fs::set_permissions(dir, fs::Permissions::from_mode(0o755)).with_context(|| format!("open {}", dir.display()))?;
+    fs::write(manifest, describe_hardware(wanted)?).with_context(|| format!("write {RECOVERY_MANIFEST}"))?;
     fs::set_permissions(RECOVERY_MANIFEST, std::os::unix::fs::PermissionsExt::from_mode(0o644))
         .with_context(|| format!("let every user read {RECOVERY_MANIFEST}"))?;
     // The directory turns itself off when it cannot find its own
     // description, and a run of it before this was written may have left
     // that behind.
     skyward_sys::set_prop(DIRECTORY_OFF, "false")?;
+    Ok(())
+}
+
+/// The installed system's dynamic linker and Bionic libraries.
+pub fn installed_runtime() -> Result<PathBuf> {
+    bundle(RUNTIME_BUNDLE)?
+        .filter(|at| at.join(BUNDLE_LOADER).is_file())
+        .with_context(|| format!("the installed system carries no {RUNTIME_BUNDLE}, which holds the loader its own programs ask for"))
+}
+
+/// Expose the Binder devices when the stock recovery's init left them out.
+pub fn mount_binder_drivers() -> Result<()> {
+    let at = Path::new("/dev/binderfs");
+    if !skyward_block::mount::is_mount_point(at)? {
+        fs::create_dir_all(at).context("make /dev/binderfs")?;
+        skyward_block::mount::mount(Path::new("binder"), at, "binder", &["stats=global".to_owned()])?;
+    }
+    for name in ["binder", "hwbinder", "vndbinder"] {
+        let node = at.join(name);
+        ensure!(fs::metadata(&node).with_context(|| format!("open {}", node.display()))?.file_type().is_char_device(),
+            "{} is not a Binder device", node.display());
+        let link = Path::new("/dev").join(name);
+        if !link.exists() {
+            std::os::unix::fs::symlink(&node, &link).with_context(|| format!("point {} at {}", link.display(), node.display()))?;
+        }
+        fs::set_permissions(&node, fs::Permissions::from_mode(0o666)).with_context(|| format!("open {} to every program", node.display()))?;
+    }
     Ok(())
 }
 

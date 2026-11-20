@@ -25,8 +25,24 @@ pub struct State {
     /// The slot whose boot partitions hold the other system's boot set;
     /// none while they hold the installed system's.
     pub occupied: Option<String>,
+    /// What those partitions held once the other system's boot set was
+    /// written into them, which tells whether anything else has written
+    /// them since. A state kept by a Skyward that did not keep this has
+    /// none.
+    #[serde(default)]
+    pub written: Option<Written>,
     /// A switch begun and not yet done.
     pub switching: Option<Switching>,
+}
+
+/// The SHA-256 of each of a slot's boot partitions, whole, as they read
+/// back once written. The init_boot image written for the other system is
+/// made with the program of the Skyward that writes it, so its sum is none
+/// the store keeps.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Written {
+    pub boot: String,
+    pub init_boot: String,
 }
 
 /// The area the boot sets are kept in, and how large the partitions they
@@ -170,10 +186,17 @@ pub(crate) mod tests {
                 dtbo: "ff".into(),
             }),
             occupied: Some("_a".into()),
+            written: Some(Written { boot: "cc".into(), init_boot: "11".into() }),
             switching: Some(Switching { to: Who::Installed, slot: "_a".into(), saved: false }),
         };
         state.save(&path).unwrap();
         assert_eq!(State::load(&path).unwrap(), state);
+        // A state an earlier Skyward kept says nothing of what was written,
+        // and reads as one that has none.
+        let earlier = State { written: None, ..state.clone() };
+        earlier.save(&path).unwrap();
+        assert!(!fs::read_to_string(&path).unwrap().contains("written"));
+        assert_eq!(State::load(&path).unwrap(), earlier);
         assert!(!path.with_extension("toml.new").exists(), "nothing left beside it");
         assert_eq!((state.occupant("_a"), state.occupant("_b")), (Who::Other, Who::Installed));
         assert_eq!(Who::named("installed", &state), Some(Who::Installed));

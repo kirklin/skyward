@@ -1,0 +1,15 @@
+#  @file    locqesdkservice.rc
+#  @brief   Definition for Location Qesdk Service
+#
+#  DESCRIPTION
+#  ---------------------------------------------------------------------------
+#       Copyright (c) 2022 Qualcomm Technologies, Inc.
+#       All Rights Reserved.
+#       Confidential and Proprietary - Qualcomm Technologies, Inc.
+#  ---------------------------------------------------------------------------
+
+service vendor.qsap.location /vendor/bin/qsap_location
+    class main
+    user gps
+    group gps
+

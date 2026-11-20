@@ -1,0 +1,16 @@
+service nativehang-dumpstate /system_ext/bin/NativeHangService
+    interface aidl NativeHangService
+    class main
+    user root
+    group root
+    oneshot
+    disabled
+    seclabel u:r:dumpstate:s0
+
+on property:persist.sys.nativehangservice.ctrl=true
+    start nativehang-dumpstate
+on property:persist.sys.nativehangservice.ctrl=false
+    stop nativehang-dumpstate
+
+on post-fs-data
+    mkdir /data/local/nativehang 0777 root root

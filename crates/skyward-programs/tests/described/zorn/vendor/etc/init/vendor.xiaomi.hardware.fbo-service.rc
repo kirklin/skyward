@@ -1,0 +1,53 @@
+service vendor.fbo-hal /vendor/bin/hw/vendor.xiaomi.hardware.fbo-service
+    class hal
+    user root
+    group root
+
+
+on property:persist.sys.stability.snapshot_control=*
+    setprop vendor.snapshot_control ${persist.sys.stability.snapshot_control}
+
+on property:persist.sys.stability.snapshot_freespace.minlimit=*
+    setprop vendor.snapshot_freespace.minlimit ${persist.sys.stability.snapshot_freespace.minlimit}
+
+on property:persist.sys.stability.snapshot_freespace.maxlimit=*
+    setprop vendor.snapshot_freespace.maxlimit ${persist.sys.stability.snapshot_freespace.maxlimit}
+
+on property:persist.sys.stability.snapshot_devicefreeblock=*
+    setprop vendor.snapshot_devicefreeblock ${persist.sys.stability.snapshot_devicefreeblock}
+
+on property:persist.sys.stability.snapshot2_control.enable_allbackup=*
+    setprop vendor.snapshot2_control.enable_allbackup ${persist.sys.stability.snapshot2_control.enable_allbackup}
+
+on property:persist.sys.stability.snapshot2_control.enable_systembackup=*
+    setprop vendor.snapshot2_control.enable_systembackup ${persist.sys.stability.snapshot2_control.enable_systembackup}
+
+on property:persist.sys.stability.snapshot2_control.enable_userdatabackup=*
+    setprop vendor.snapshot2_control.enable_userdatabackup ${persist.sys.stability.snapshot2_control.enable_userdatabackup}
+
+on property:persist.sys.memory.user_freesize=*
+    setprop vendor.memory.user_freesize ${persist.sys.memory.user_freesize}
+
+on property:persist.sys.memory.totalsize=*
+    setprop vendor.memory.totalsize ${persist.sys.memory.totalsize}
+
+on property:persist.sys.stability.fbo1_control=*
+    setprop vendor.fbo1_control ${persist.sys.stability.fbo1_control}
+
+on property:persist.sys.stability.fbo2_control=*
+    setprop vendor.fbo2_control ${persist.sys.stability.fbo2_control}
+
+on property:persist.sys.stability.fbo3_control=*
+    setprop vendor.fbo3_control ${persist.sys.stability.fbo3_control}
+
+on property:persist.sys.stability.fbo_hal_stop=*
+    setprop vendor.fbo_hal_stop ${persist.sys.stability.fbo_hal_stop}
+
+on property:persist.mtbf.test=*
+    setprop vendor.snapshot_stress_test.enable ${persist.mtbf.test}
+
+on property:persist.sys.stability.userdatabackup_period=*
+    setprop vendor.snapshot2_control.userdatabackup_period ${persist.sys.stability.userdatabackup_period}
+
+on property:persist.sys.stability.alluserdatabackup_period=*
+    setprop vendor.snapshot2_control.alluserdatabackup_period ${persist.sys.stability.alluserdatabackup_period}

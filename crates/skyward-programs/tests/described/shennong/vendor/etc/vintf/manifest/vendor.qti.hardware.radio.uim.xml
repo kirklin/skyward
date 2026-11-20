@@ -1,0 +1,14 @@
+<!--/*
+ * Copyright (c) 2023 Qualcomm Technologies, Inc.
+ * All Rights Reserved.
+ * Confidential and Proprietary - Qualcomm Technologies, Inc.
+ */
+-->
+<manifest version="1.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.radio.uim</name>
+        <version>1</version>
+        <fqname>IUim/Uim0</fqname>
+        <fqname>IUim/Uim1</fqname>
+    </hal>
+</manifest>

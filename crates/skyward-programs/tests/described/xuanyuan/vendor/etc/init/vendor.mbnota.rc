@@ -1,0 +1,12 @@
+on post-fs-data
+    # Create directory for mbnconfig
+    mkdir /data/vendor/mbnconfig 0777 system system
+    mkdir /data/vendor/mbnconfig/image 0777 system system
+    mkdir /data/vendor/mbnconfig/image/modem_pr 0777 system system
+    mkdir /data/vendor/mbnconfig/image/modem_pr/mcfg 0777 system system
+
+service vendor.mbnota /vendor/bin/mbnota
+    class core
+    user system
+    group system
+    oneshot

@@ -1,0 +1,13 @@
+# Copyright (c) 2023 Qualcomm Technologies, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+#
+
+on init
+    start minkipcbinder-service
+
+service minkipcbinder-service /vendor/bin/hw/vendor.qti.hardware.minkipcbinder@1.0-service
+   class hal
+   user system
+   group system
+   interface aidl vendor.qti.hardware.minkipcbinder

@@ -1,0 +1,9 @@
+on fs
+    mkdir /mnt/vendor/persist/audio
+    chown audioserver audio /mnt/vendor/persist/audio
+    
+    # neccessary add excute permission 'x' for audio dir
+    chmod 775 /mnt/vendor/persist/audio
+    
+    chmod 666 /mnt/vendor/persist/audio/crus_calr.bin
+    chmod 666 /mnt/vendor/persist/audio/crus_calr.txt

@@ -1,0 +1,12 @@
+#for ddr training
+service do_ddr_training /vendor/bin/dd if=/dev/zero of=/dev/block/by-name/ddr
+    class main
+    disabled
+    user root
+    oneshot
+    seclabel u:r:ddr_training:s0
+
+on property:vendor.ddr_training.is.start=true
+    start do_ddr_training
+    setprop vendor.ddr_training.is.start prepared
+

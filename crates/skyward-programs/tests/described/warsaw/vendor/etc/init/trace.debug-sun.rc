@@ -1,0 +1,20 @@
+on property:vendor.all.modules.ready=1 && property:ro.soc.model=SM8750
+    start dcc_dump-script-8750
+
+on property:vendor.all.modules.ready=1 && property:ro.soc.model=SM8735
+    start dcc_dump-script-8735
+
+# Coresight early boot service
+service dcc_dump-script-8750 /vendor/bin/sh /vendor/bin/dcc-script.sh
+    class core
+    user root
+    disabled
+    oneshot
+    seclabel u:r:vendor-qti-testscripts:s0
+
+# Coresight early boot service
+service dcc_dump-script-8735 /vendor/bin/sh /vendor/bin/dcc-script-tuna.sh
+    class core
+    user root
+    disabled
+    oneshot

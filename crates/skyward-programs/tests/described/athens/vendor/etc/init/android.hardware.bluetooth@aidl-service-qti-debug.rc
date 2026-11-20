@@ -1,0 +1,6 @@
+service vendor.bluetooth-aidl-qti /vendor/bin/hw/android.hardware.bluetooth@aidl-service-qti
+    class hal
+    capabilities BLOCK_SUSPEND NET_ADMIN SYS_NICE
+    user bluetooth
+    group bluetooth system wakelock oem_2901 readtracefs net_raw oem_2912
+    task_profiles HighPerformance

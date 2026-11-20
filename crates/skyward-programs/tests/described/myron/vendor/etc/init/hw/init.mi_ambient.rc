@@ -1,0 +1,14 @@
+on charger
+    wait /sys/class/power_supply/usb/type
+    start mi_ambient
+on boot
+    wait /sys/class/power_supply/usb/type
+    start mi_ambient
+
+service mi_ambient /system/vendor/bin/mi_ambient
+    class main
+    user root
+    group system
+    oneshot
+    seclabel u:r:mi_ambient:s0
+    

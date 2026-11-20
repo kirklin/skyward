@@ -1,0 +1,4 @@
+service vendor.xiaomi.aidl.mipowerhal  /vendor/bin/hw/vendor.xiaomi.aidl.mipowerhal@1.0-service
+    class hal
+    user root
+    group system

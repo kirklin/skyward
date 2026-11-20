@@ -1,0 +1,17 @@
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# All rights reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+#
+on boot
+    #Create Throughput Latency Processing Daemon socket area
+    mkdir /dev/socket/tlpd 0750 radio radio
+
+on post-fs-data
+    #Create TLPD daemon dir
+    mkdir /data/vendor/tlpd 2750 radio system
+    chmod 2750 /data/vendor/tlpd
+
+service vendor.tlpd /system/vendor/bin/tlpd boot
+    class main
+    user radio
+    group radio

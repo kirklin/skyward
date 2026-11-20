@@ -1,0 +1,11 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/qcril-nr/qcril_qmi/vendor.qti.hardware.radio.uim.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.radio.uim</name>
+        <fqname>IUim/Uim0</fqname>
+        <fqname>IUim/Uim1</fqname>
+    </hal>
+</manifest>

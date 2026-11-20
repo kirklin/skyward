@@ -1,0 +1,10 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/memory/pasr/pasrd/vendor.qti.memory.pasrmanager-service.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.memory.pasrmanager</name>
+        <fqname>IPasrManager/default</fqname>
+    </hal>
+</manifest>

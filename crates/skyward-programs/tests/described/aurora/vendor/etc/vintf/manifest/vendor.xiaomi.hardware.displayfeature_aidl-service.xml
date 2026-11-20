@@ -1,0 +1,12 @@
+<!-- Copyright (c) 2019 Xiaomi Technologies, Inc.
+All Rights Reserved.
+Confidential and Proprietary - Xiaomi Technologies, Inc.
+-->
+<manifest version="1.0" type="device">
+<!-- DisplayFeature HAL service -->
+    <hal format="aidl">
+        <name>vendor.xiaomi.hardware.displayfeature_aidl</name>
+        <version>2</version>
+        <fqname>IDisplayFeature/default</fqname>
+    </hal>
+</manifest>

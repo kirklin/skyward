@@ -1,0 +1,192 @@
+on init
+    #create cpuset for camera background
+    mkdir /dev/cpuset/camera-daemon/limit-level0
+    copy /dev/cpuset/cpus /dev/cpuset/camera-daemon/limit-level0/cpus
+    copy /dev/cpuset/mems /dev/cpuset/camera-daemon/limit-level0/mems
+    mkdir /dev/cpuset/camera-daemon/limit-level1
+    copy /dev/cpuset/cpus /dev/cpuset/camera-daemon/limit-level1/cpus
+    copy /dev/cpuset/mems /dev/cpuset/camera-daemon/limit-level1/mems
+    mkdir /dev/cpuset/camera-daemon/limit-level2
+    copy /dev/cpuset/cpus /dev/cpuset/camera-daemon/limit-level2/cpus
+    copy /dev/cpuset/mems /dev/cpuset/camera-daemon/limit-level2/mems
+    mkdir /dev/cpuset/camera-daemon/limit-level3
+    copy /dev/cpuset/cpus /dev/cpuset/camera-daemon/limit-level3/cpus
+    copy /dev/cpuset/mems /dev/cpuset/camera-daemon/limit-level3/mems
+    mkdir /dev/cpuset/camera-daemon/limit-level4
+    copy /dev/cpuset/cpus /dev/cpuset/camera-daemon/limit-level4/cpus
+    copy /dev/cpuset/mems /dev/cpuset/camera-daemon/limit-level4/mems
+    mkdir /dev/cpuset/camera-daemon/limit-level5
+    copy /dev/cpuset/cpus /dev/cpuset/camera-daemon/limit-level5/cpus
+    copy /dev/cpuset/mems /dev/cpuset/camera-daemon/limit-level5/mems
+    mkdir /dev/cpuset/camera-daemon/limit-level6
+    copy /dev/cpuset/cpus /dev/cpuset/camera-daemon/limit-level6/cpus
+    copy /dev/cpuset/mems /dev/cpuset/camera-daemon/limit-level6/mems
+
+
+    chown system system /dev/cpuset/camera-daemon/limit-level0
+    chown system system /dev/cpuset/camera-daemon/limit-level0/tasks
+    chown system system /dev/cpuset/camera-daemon/limit-level0/cpus
+    chown system system /dev/cpuset/camera-daemon/limit-level0/cgroup.procs
+    chown system system /dev/cpuset/camera-daemon/limit-level1
+    chown system system /dev/cpuset/camera-daemon/limit-level1/tasks
+    chown system system /dev/cpuset/camera-daemon/limit-level1/cpus
+    chown system system /dev/cpuset/camera-daemon/limit-level1/cgroup.procs
+    chown system system /dev/cpuset/camera-daemon/limit-level2
+    chown system system /dev/cpuset/camera-daemon/limit-level2/tasks
+    chown system system /dev/cpuset/camera-daemon/limit-level2/cpus
+    chown system system /dev/cpuset/camera-daemon/limit-level2/cgroup.procs
+    chown system system /dev/cpuset/camera-daemon/limit-level3
+    chown system system /dev/cpuset/camera-daemon/limit-level3/tasks
+    chown system system /dev/cpuset/camera-daemon/limit-level3/cpus
+    chown system system /dev/cpuset/camera-daemon/limit-level3/cgroup.procs
+    chown system system /dev/cpuset/camera-daemon/limit-level4
+    chown system system /dev/cpuset/camera-daemon/limit-level4/tasks
+    chown system system /dev/cpuset/camera-daemon/limit-level4/cpus
+    chown system system /dev/cpuset/camera-daemon/limit-level4/cgroup.procs
+    chown system system /dev/cpuset/camera-daemon/limit-level5
+    chown system system /dev/cpuset/camera-daemon/limit-level5/tasks
+    chown system system /dev/cpuset/camera-daemon/limit-level5/cpus
+    chown system system /dev/cpuset/camera-daemon/limit-level5/cgroup.procs
+    chown system system /dev/cpuset/camera-daemon/limit-level6
+    chown system system /dev/cpuset/camera-daemon/limit-level6/tasks
+    chown system system /dev/cpuset/camera-daemon/limit-level6/cpus
+    chown system system /dev/cpuset/camera-daemon/limit-level6/cgroup.procs
+
+
+    chmod 0664 /dev/cpuset/camera-daemon/limit-level0/tasks
+    chmod 0664 /dev/cpuset/camera-daemon/limit-level0/cpus
+    chmod 0664 /dev/cpuset/camera-daemon/limit-level1/tasks
+    chmod 0664 /dev/cpuset/camera-daemon/limit-level1/cpus
+    chmod 0664 /dev/cpuset/camera-daemon/limit-level2/tasks
+    chmod 0664 /dev/cpuset/camera-daemon/limit-level2/cpus
+    chmod 0664 /dev/cpuset/camera-daemon/limit-level3/tasks
+    chmod 0664 /dev/cpuset/camera-daemon/limit-level3/cpus
+    chmod 0664 /dev/cpuset/camera-daemon/limit-level4/tasks
+    chmod 0664 /dev/cpuset/camera-daemon/limit-level4/cpus
+    chmod 0664 /dev/cpuset/camera-daemon/limit-level5/tasks
+    chmod 0664 /dev/cpuset/camera-daemon/limit-level5/cpus
+    chmod 0664 /dev/cpuset/camera-daemon/limit-level6/tasks
+    chmod 0664 /dev/cpuset/camera-daemon/limit-level6/cpus
+    chmod 0664 /dev/cpuset/camera-daemon/limit-level0/cgroup.procs
+    chmod 0664 /dev/cpuset/camera-daemon/limit-level1/cgroup.procs
+    chmod 0664 /dev/cpuset/camera-daemon/limit-level2/cgroup.procs
+    chmod 0664 /dev/cpuset/camera-daemon/limit-level3/cgroup.procs
+    chmod 0664 /dev/cpuset/camera-daemon/limit-level4/cgroup.procs
+    chmod 0664 /dev/cpuset/camera-daemon/limit-level5/cgroup.procs
+    chmod 0664 /dev/cpuset/camera-daemon/limit-level6/cgroup.procs
+
+    mkdir /dev/cpuctl/camera-daemon/limit-level0
+    chown system system /dev/cpuctl/camera-daemon/limit-level0
+    chown system system /dev/cpuctl/camera-daemon/limit-level0/tasks
+    chown system system /dev/cpuctl/camera-daemon/limit-level0/cgroup.procs
+    chown system system /dev/cpuctl/camera-daemon/limit-level0/cpu.shares
+    chmod 0660 /dev/cpuctl/camera-daemon/limit-level0/tasks
+    chmod 0660 /dev/cpuctl/camera-daemon/limit-level0/cgroup.procs
+    chmod 0660 /dev/cpuctl/camera-daemon/limit-level0/cpu.shares
+
+    mkdir /dev/cpuctl/camera-daemon/limit-level1
+    chown system system /dev/cpuctl/camera-daemon/limit-level1
+    chown system system /dev/cpuctl/camera-daemon/limit-level1/tasks
+    chown system system /dev/cpuctl/camera-daemon/limit-level1/cgroup.procs
+    chown system system /dev/cpuctl/camera-daemon/limit-level1/cpu.shares
+    chmod 0666 /dev/cpuctl/camera-daemon/limit-level1/tasks
+    chmod 0660 /dev/cpuctl/camera-daemon/limit-level1/cgroup.procs
+    chmod 0660 /dev/cpuctl/camera-daemon/limit-level1/cpu.shares
+
+    mkdir /dev/cpuctl/camera-daemon/limit-level2
+    chown system system /dev/cpuctl/camera-daemon/limit-level2
+    chown system system /dev/cpuctl/camera-daemon/limit-level2/tasks
+    chown system system /dev/cpuctl/camera-daemon/limit-level2/cgroup.procs
+    chown system system /dev/cpuctl/camera-daemon/limit-level2/cpu.shares
+    chmod 0666 /dev/cpuctl/camera-daemon/limit-level2/tasks
+    chmod 0660 /dev/cpuctl/camera-daemon/limit-level2/cgroup.procs
+    chmod 0660 /dev/cpuctl/camera-daemon/limit-level2/cpu.shares
+
+    mkdir /dev/cpuctl/camera-daemon/limit-level3
+    chown system system /dev/cpuctl/camera-daemon/limit-level3
+    chown system system /dev/cpuctl/camera-daemon/limit-level3/tasks
+    chown system system /dev/cpuctl/camera-daemon/limit-level3/cgroup.procs
+    chown system system /dev/cpuctl/camera-daemon/limit-level3/cpu.shares
+    chmod 0666 /dev/cpuctl/camera-daemon/limit-level3/tasks
+    chmod 0660 /dev/cpuctl/camera-daemon/limit-level3/cgroup.procs
+    chmod 0660 /dev/cpuctl/camera-daemon/limit-level3/cpu.shares
+
+
+    chown cameraserver cameraserver /dev/cpuctl/camera-daemon/cpu.shares
+    chown cameraserver cameraserver /dev/cpuctl/camera-daemon/tasks
+    chmod 0666 /dev/cpuctl/camera-daemon/cpu.shares
+    chmod 0666 /dev/cpuctl/camera-daemon/tasks
+
+    # Create a memcg group for camera processes
+    mkdir /dev/memcg/camera/ 0755 system system
+    write /dev/memcg/camera/memory.swappiness 100
+    write /dev/memcg/camera/memory.use_hierarchy 1
+    mkdir /dev/memcg/camera/app 0755 system system
+    mkdir /dev/memcg/camera/server 0755 system system
+    mkdir /dev/memcg/camera/provider 0755 system system
+    mkdir /dev/memcg/camera/limit 0755 system system
+    chmod 0666 /dev/memcg/camera/limit/cgroup.procs
+    chmod 0664 /sys/kernel/reserve_pool/config
+
+on late-init
+    write /dev/cpuset/camera-daemon/limit-level0/cpus 0-1
+    write /dev/cpuset/camera-daemon/limit-level1/cpus 0-2
+    write /dev/cpuset/camera-daemon/limit-level2/cpus 0-3
+    write /dev/cpuset/camera-daemon/limit-level3/cpus 0-4
+    write /dev/cpuset/camera-daemon/limit-level4/cpus 4-7
+    write /dev/cpuset/camera-daemon/limit-level5/cpus 0-5
+    write /dev/cpuset/camera-daemon/limit-level6/cpus 0-7
+    write /dev/cpuctl/camera-daemon/cpu.shares 4096
+    write /dev/cpuctl/camera-daemon/limit-level0/cpu.shares 8192
+    write /dev/cpuctl/camera-daemon/limit-level1/cpu.shares 16384
+    write /dev/cpuctl/camera-daemon/limit-level2/cpu.shares 8192
+    write /dev/cpuctl/camera-daemon/limit-level3/cpu.shares 32768
+    write /dev/cpuctl/camera-daemon/limit-level3/cpu.uclamp.min 50
+    write /dev/memcg/camera/provider/memory.soft_limit_in_bytes 36818038505472
+    write /dev/memcg/camera/limit/memory.limit_in_bytes 300m
+    write /dev/memcg/camera/limit/memory.oom_control 1
+
+on early-boot
+    mkdir /data/miuilog/camera 0775 system system
+
+on boot
+    chown system system /sys/kernel/mi_mempool/enable_cam_provider
+    chown system system /sys/kernel/mi_mempool/pool_size
+    chown system system /sys/kernel/reserve_pool/cam_reserved_pages
+    chown system system /sys/module/xr_heaps/parameters/system_pool_low_mark
+    chown system system /sys/module/xr_heaps/parameters/system_pool_fill_mark
+    chown system system /sys/module/xr_heaps/parameters/system_pool_resv_pages
+    chown system system /sys/module/xr_heaps/parameters/page_pool_dump
+    chown system system /sys/module/xr_heaps/parameters/system_pool_refill_record
+
+    chmod 0660 /sys/kernel/mi_mempool/enable_cam_provider
+    chmod 0660 /sys/kernel/mi_mempool/pool_size
+    chmod 0660 /sys/kernel/reserve_pool/cam_reserved_pages
+    chmod 0660 /sys/module/xr_heaps/parameters/system_pool_fill_mark
+    chmod 0660 /sys/module/xr_heaps/parameters/system_pool_low_mark
+    chmod 0660 /sys/module/xr_heaps/parameters/page_pool_dump
+    chmod 0660 /sys/module/xr_heaps/parameters/system_pool_resv_pages
+    chmod 0660 /sys/module/xr_heaps/parameters/system_pool_refill_record
+    chmod 0666 /dev/memcg/memory.reclaim_once
+
+on property:persist.vendor.camera.TriggerSimpleperf=1 && property:persist.vendor.camera.SimpleperfDebug=1
+  exec_background system/xbin/su -c "/system/bin/simpleperf record -p ${persist.vendor.camera.TriggerSimpleperfPid} --call-graph fp --duration 5 -o /data/vendor/camera/offlinelog/${persist.vendor.camera.TriggerSimpleperfPid}_${persist.vendor.camera.TriggerSimpleperfTime}_perf.data"
+
+on property:persist.vendor.camera.TriggerPerfettoStart=1 && property:persist.vendor.camera.PerfettoDebug=1
+exec_background /system/bin/perfetto --detach=traceur --txt -c /system_ext/etc/camera_perfetto.cfg -o /data/misc/perfetto-traces/trace_file${persist.vendor.camera.TriggerPerfettoTime}.perfetto-trace
+
+on property:persist.vendor.camera.TriggerPerfettoStop=1 && property:persist.vendor.camera.PerfettoDebug=1
+exec_background /system/bin/perfetto --stop --attach=traceur
+on property:persist.sys.miui.camera.boost.debug=true
+    setprop persist.sys.miui.cameraopt.debug true
+    setprop persist.vendor.camera.forceMFNR 1
+    setprop vendor.debug.camera.forceHWMFFixedNumOfFrames 5
+    setprop persist.vendor.sat.binningModeW 1
+    setprop persist.vendor.camera.mlshortGain 0.1
+    stop vendor.camera-provider
+    start vendor.camera-provider
+
+on load-bpf-programs
+    chmod 0755 /sys/kernel/tracing
+    chmod 0777 /sys/kernel/tracing/kprobe_events
+    chmod 0777 /sys/kernel/tracing/uprobe_events

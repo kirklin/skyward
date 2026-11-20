@@ -12,13 +12,20 @@ path = "src/main.rs"
 [dependencies]
 anyhow = { workspace = true }
 clap = { version = "4.5.51", features = ["derive"] }
+hex = { workspace = true }
+# Reads the filesystem of a partition where it lies in a package, through
+# whatever gives it the partition's bytes.
+rust-fs-core = "0.4.4"
+rust-fs-erofs = "0.6.0"
 sha2 = "0.10.9"
 skyward-bootimg = { path = "../skyward-bootimg" }
 skyward-config = { path = "../skyward-config" }
+skyward-programs = { path = "../skyward-programs" }
 tempfile = "3.27.0"
 # Takes the stock recovery partition out of a full update package on its
-# server, reading only what that partition takes.
-unpayload = { version = "0.1.1", default-features = false, features = ["http"] }
+# server, reading only what that partition takes, and reads the other
+# partitions where they lie in it.
+unpayload = { version = "0.1.2", default-features = false, features = ["http"] }
 
 [dev-dependencies]
 serde_json = "1.0.145"

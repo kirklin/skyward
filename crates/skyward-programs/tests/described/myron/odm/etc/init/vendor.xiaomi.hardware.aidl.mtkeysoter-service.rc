@@ -1,0 +1,5 @@
+service vendor.mtkeysoter /odm/bin/mtd_keysoter
+    interface aidl vendor.xiaomi.hardware.aidl.mtkeysoter.IMTKeysoterService/default
+    disabled
+    user root
+    group system drmrpc nfc

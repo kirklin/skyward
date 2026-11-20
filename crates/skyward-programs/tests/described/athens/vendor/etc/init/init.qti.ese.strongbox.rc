@@ -1,0 +1,14 @@
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# All rights reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+on early-init
+    exec u:r:vendor_init-qti-ese-strongbox-sh:s0 -- /vendor/bin/init.qti.ese.strongbox.sh
+
+on init && property:vendor.ese.strongbox=STM
+    enable vendor.keymint-strongbox_thales
+    enable vendor.weaver_thales
+
+on init && property:vendor.ese.strongbox=NXP
+    enable vendor.keymint-strongbox_nxp
+    enable vendor.weaver_nxp

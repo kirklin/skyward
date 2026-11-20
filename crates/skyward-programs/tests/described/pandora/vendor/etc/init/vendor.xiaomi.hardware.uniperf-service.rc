@@ -1,0 +1,11 @@
+service uniperf_halservice /vendor/bin/hw/vendor.xiaomi.hardware.uniperf-service
+    class hal
+    user root
+    group system root
+    interface aidl vendor.xiaomi.hardware.uniperf
+
+on property:persist.vendor.uniperf.debug.loglevel=* && property:persist.vendor.uniperf.debug.trace=*
+    start uniperf_halservice
+
+on property:init.svc.zygote=restarting
+    restart uniperf_halservice

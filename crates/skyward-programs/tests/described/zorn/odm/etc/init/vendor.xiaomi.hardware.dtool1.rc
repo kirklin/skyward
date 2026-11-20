@@ -1,0 +1,9 @@
+# Copyright (c) 2023 Xiaomi, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Xiaomi, Inc.
+#
+service getdump_hal /odm/bin/hw/vendor.xiaomi.hardware.dtool1-service
+    interface aidl vendor.xiaomi.hardware.dtool.IDtool/default
+    class late_start
+    user system
+    group system input

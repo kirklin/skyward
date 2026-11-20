@@ -1,0 +1,17 @@
+#! /bin/sh
+#
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# All rights reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+
+#qcom for internal devices and for gaming case not start in xm
+
+# service vendor.qt-service /vendor/bin/qt-service
+# 	class late_start
+# 	user system
+# 	group system
+# 	disabled
+
+# on property:sys.boot_completed=1
+# 	start vendor.qt-service

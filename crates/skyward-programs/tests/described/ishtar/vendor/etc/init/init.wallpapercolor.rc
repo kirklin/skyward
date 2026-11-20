@@ -1,0 +1,9 @@
+service wallpapercolor /vendor/bin/wallpapercolor
+    class late_start
+    user system
+    group system
+    oneshot
+
+
+on property:vendor.wallpaper.color.start=true
+    start wallpapercolor

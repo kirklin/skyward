@@ -1,0 +1,8 @@
+<manifest version="1.0" type="device">
+    <!-- Charging HAL service -->
+    <hal format="aidl">
+        <name>vendor.xiaomi.hardware.micharge</name>
+        <version>2</version>
+        <fqname>IMiCharge/default</fqname>
+    </hal>
+</manifest>

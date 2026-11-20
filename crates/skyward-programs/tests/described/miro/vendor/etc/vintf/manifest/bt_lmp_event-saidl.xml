@@ -1,0 +1,10 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/bluetooth/hidl_transport/btlmp_event/default/bt_lmp_event-saidl.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>android.hardware.bluetooth.lmp_event</name>
+        <fqname>IBluetoothLmpEvent/default</fqname>
+    </hal>
+</manifest>

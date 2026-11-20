@@ -1,0 +1,15 @@
+<!-- Copyright (c) 2023 Qualcomm Technologies, Inc.
+All Rights Reserved.
+Confidential and Proprietary - Qualcomm Technologies, Inc.
+-->
+<manifest version="1.0" type="device">
+    <!-- VPP Service -->
+    <hal format="aidl">
+        <name>vendor.qti.hardware.vpp</name>
+        <version>1</version>
+        <interface>
+            <name>IVppService</name>
+            <instance>default</instance>
+        </interface>
+   </hal>
+</manifest>

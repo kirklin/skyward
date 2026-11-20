@@ -7,6 +7,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 mod avb;
+mod described;
 
 use skyward_bootimg::{BootImage, Ramdisk};
 
@@ -83,6 +84,25 @@ enum Cmd {
         /// Where to write the stock recovery image.
         #[arg(long)]
         out: Option<PathBuf>,
+    },
+    /// Take what a device's own partitions say of the programs they carry
+    /// out of its stock build's full update package on its server: the
+    /// init scripts, the service descriptions, the accounts and the build
+    /// properties of each partition that carries such programs, written
+    /// under `out` as the partition and then the path in it. Only the
+    /// parts of the package that hold these files are downloaded, each
+    /// checked against the package's own sum of it.
+    Described {
+        /// The device configuration, devices/<codename>.toml.
+        #[arg(long)]
+        config: PathBuf,
+        /// A partition to take them out of; vendor, odm and system_ext
+        /// when none is named.
+        #[arg(long = "partition")]
+        partitions: Vec<String>,
+        /// The folder to write the files under, which is not there yet.
+        #[arg(long)]
+        out: PathBuf,
     },
 }
 
@@ -170,6 +190,11 @@ fn main() -> Result<()> {
                 None => Ok(()),
             }
         }
+        Cmd::Described { config, partitions, out } => {
+            let stock = skyward_config::DeviceConfig::load(&config)?.stock.with_context(|| format!("{} names no stock build", config.display()))?;
+            let partitions = if partitions.is_empty() { skyward_programs::phone::PARTITIONS.map(str::to_string).to_vec() } else { partitions };
+            described::take(&stock.package, &partitions, &out)
+        }
     }
 }
 
@@ -234,7 +259,7 @@ fn take_stock_recovery(stock: &skyward_config::Stock, out: &Path) -> Result<()> 
     };
     let taken = payload.extract(&options, &report).with_context(|| format!("take {RECOVERY} out of {}", stock.package))?;
     let image = taken.iter().find(|i| i.partition == RECOVERY).with_context(|| format!("{} holds no {RECOVERY} partition", stock.package))?;
-    let sum: String = image.sha256.as_deref().context("the package's own sum of the image was not checked")?.iter().map(|b| format!("{b:02x}")).collect();
+    let sum = hex::encode(image.sha256.as_deref().context("the package's own sum of the image was not checked")?);
     ensure!(sum == stock.recovery, "the {RECOVERY} partition in {} has the SHA-256 {sum}, where the configuration names {}", stock.package, stock.recovery);
     std::fs::rename(&image.path, out).with_context(|| format!("move {} to {}", image.path.display(), out.display()))?;
     println!("wrote {} ({} bytes), its SHA-256 the one the configuration names", out.display(), image.size);

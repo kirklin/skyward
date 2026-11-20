@@ -102,13 +102,13 @@ fn parse(args: &[OsString]) -> Result<Asked, String> {
 /// Set `name` to `value` through init, which sets a read-only property once
 /// only: setting one to the value it has already is no change.
 fn set(name: &str, value: &str) -> Result<(), String> {
-    if name.starts_with("ro.") {
-        if let Some(now) = skyward_sys::prop(name) {
-            if now == value {
-                return Ok(());
-            }
-            return Err(format!("{name} is read-only, and init has set it to {now:?} already"));
+    if name.starts_with("ro.")
+        && let Some(now) = skyward_sys::prop(name)
+    {
+        if now == value {
+            return Ok(());
         }
+        return Err(format!("{name} is read-only, and init has set it to {now:?} already"));
     }
     skyward_sys::set_prop(name, value).map_err(|e| format!("{e:#}"))
 }

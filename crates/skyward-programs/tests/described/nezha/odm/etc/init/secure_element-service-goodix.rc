@@ -1,0 +1,8 @@
+service secure_element_hal_service /odm/bin/hw/android.hardware.secure_element-service-goodix
+    class early_hal
+    user system
+    group system
+    disabled
+
+on property:ro.special_edition=true
+    start secure_element_hal_service

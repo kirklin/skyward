@@ -79,7 +79,7 @@ fn uevent(text: &str) -> Result<(String, Option<String>, (u32, u32))> {
 /// which bionic reads from /proc, and nothing has mounted /proc yet when
 /// the kernel starts the first program.
 #[cfg(all(target_os = "android", not(test)))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn main(argc: libc::c_int, argv: *const *const libc::c_char) -> libc::c_int {
     use std::os::unix::ffi::OsStrExt;
     let started_as = match argc {
@@ -625,10 +625,10 @@ mod sys {
         std::thread::Builder::new().name("watch".into()).spawn(watch).expect("a thread to watch the start");
         let Err(e) = start();
         step("telling the recovery why the start stopped");
-        if !Path::new(MISC_NODE).exists() {
-            if let Err(e) = partition("misc", MISC_NODE, PARTITION_TIMEOUT) {
-                log(&format!("{e:#}"));
-            }
+        if !Path::new(MISC_NODE).exists()
+            && let Err(e) = partition("misc", MISC_NODE, PARTITION_TIMEOUT)
+        {
+            log(&format!("{e:#}"));
         }
         report(&format!("{e:#}"));
         to_recovery(Otherwise::Restart)

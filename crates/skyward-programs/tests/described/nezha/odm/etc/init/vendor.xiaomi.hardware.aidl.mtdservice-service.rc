@@ -1,0 +1,4 @@
+service vendor.mtdservice /odm/bin/mtd
+    class hal
+    user root
+    group system drmrpc nfc

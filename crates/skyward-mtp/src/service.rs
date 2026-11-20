@@ -6,15 +6,15 @@ use crate::codes::{op, response};
 use crate::dataset::Command;
 use crate::responder::{Device, Incoming, Outgoing, Received, Reply, Responder, Storage, DATASET_MAX};
 use crate::usb::{Halt, Next, Port};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, ensure, Context, Result};
 use jiff::tz::TimeZone;
 use skyward_sys::kmsg;
+use skyward_sys::worker::{self, Teller, Told};
 use std::collections::VecDeque;
 use std::io;
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::fs::FileExt;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Sender};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -39,9 +39,8 @@ enum Message {
 
 /// What the phone has asked of the thread, kept until it can be done.
 struct Mailbox {
-    rx: Receiver<Message>,
     /// Readable while messages wait.
-    wake: OwnedFd,
+    asked: Told<Message>,
     pending: VecDeque<Message>,
     /// Set while the storage is wanted back, which ends long work on files.
     stop: Arc<AtomicBool>,
@@ -50,9 +49,7 @@ struct Mailbox {
 impl Mailbox {
     /// Take in what came.
     fn collect(&mut self) {
-        let mut drain = [0u8; 64];
-        while unsafe { libc::read(self.wake.as_raw_fd(), drain.as_mut_ptr().cast(), drain.len()) } > 0 {}
-        self.pending.extend(self.rx.try_iter());
+        self.pending.extend(self.asked.take());
     }
 
     /// Whether what came ends a transfer under way: the storage changes, or
@@ -64,9 +61,8 @@ impl Mailbox {
 
 /// MTP served on a thread of its own.
 pub struct Service {
-    messages: Sender<Message>,
-    /// The write end of the thread's wake pipe.
-    wake: OwnedFd,
+    /// What the phone asks of the thread, each of which wakes it.
+    messages: Teller<Message>,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<Result<()>>>,
 }
@@ -75,16 +71,11 @@ impl Service {
     /// Set the MTP function up and serve it: init can bind it from now on,
     /// and the computer finds no storage until one is offered.
     pub fn start(device: Device, zone: TimeZone) -> Result<Service> {
-        let mut fds = [0; 2];
-        if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) } != 0 {
-            return Err(io::Error::last_os_error()).context("make the MTP thread's wake pipe");
-        }
-        let (wake_read, wake) = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
-        let port = Port::open(wake_read.as_raw_fd())?;
+        let (messages, asked) = worker::telling().context("make the MTP thread's wake pipe")?;
+        let port = Port::open(asked.fd())?;
         let stop = Arc::new(AtomicBool::new(false));
         let responder = Responder::new(device, zone, stop.clone());
-        let (messages, rx) = mpsc::channel();
-        let mail = Mailbox { rx, wake: wake_read, pending: VecDeque::new(), stop: stop.clone() };
+        let mail = Mailbox { asked, pending: VecDeque::new(), stop: stop.clone() };
         skyward_sys::set_prop(READY, "1")?;
         let thread = thread::Builder::new()
             .name("mtp".into())
@@ -96,17 +87,17 @@ impl Service {
                     // The port loses the function with its descriptors, and
                     // with it adb, unless it offers adb alone first.
                     skyward_sys::usb::set_mtp(false);
-                    if skyward_sys::prop("sys.usb.state").as_deref() == Some("mtp,adb") {
-                        if let Err(e) = skyward_sys::usb::switch("adb", PORT_SWITCH) {
-                            let _ = kmsg(&format!("mtp: the port kept file transfer: {e:#}"));
-                        }
+                    if skyward_sys::prop("sys.usb.state").as_deref() == Some("mtp,adb")
+                        && let Err(e) = skyward_sys::usb::switch("adb", PORT_SWITCH)
+                    {
+                        let _ = kmsg(&format!("mtp: the port kept file transfer: {e:#}"));
                     }
                 }
                 drop(port);
                 served
             })
             .context("start the MTP thread")?;
-        Ok(Service { messages, wake, stop, thread: Some(thread) })
+        Ok(Service { messages, stop, thread: Some(thread) })
     }
 
     /// Whether the thread still serves; one that failed says why once
@@ -116,9 +107,7 @@ impl Service {
     }
 
     fn send(&self, message: Message) -> Result<()> {
-        self.messages.send(message).map_err(|_| anyhow!("the MTP thread has ended"))?;
-        // A full pipe wakes the thread already.
-        unsafe { libc::write(self.wake.as_raw_fd(), [1u8].as_ptr().cast(), 1) };
+        ensure!(self.messages.tell(message), "the MTP thread has ended");
         Ok(())
     }
 

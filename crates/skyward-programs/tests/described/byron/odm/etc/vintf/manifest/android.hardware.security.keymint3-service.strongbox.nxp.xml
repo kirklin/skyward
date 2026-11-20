@@ -1,0 +1,16 @@
+<!--
+    Input:
+        vendor/nxp/opensource/keymaster/keymint/KM_Common/android.hardware.security.keymint3-service.strongbox.nxp.xml
+-->
+<manifest version="9.0" type="device">
+    <hal format="aidl">
+        <name>android.hardware.security.keymint</name>
+        <version>3</version>
+        <fqname>IKeyMintDevice/strongbox</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>android.hardware.security.keymint</name>
+        <version>3</version>
+        <fqname>IRemotelyProvisionedComponent/strongbox</fqname>
+    </hal>
+</manifest>

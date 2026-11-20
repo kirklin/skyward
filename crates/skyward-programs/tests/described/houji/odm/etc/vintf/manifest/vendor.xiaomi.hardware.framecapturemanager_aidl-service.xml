@@ -1,0 +1,12 @@
+<!-- Copyright (c) 2019 Xiaomi Technologies, Inc.
+All Rights Reserved.
+Confidential and Proprietary - Xiaomi Technologies, Inc.
+-->
+<manifest version="1.0" type="device">
+<!-- FrameCaptureManager HAL service -->
+    <hal format="aidl">
+        <name>vendor.xiaomi.hardware.framecapturemanager</name>
+        <version>1</version>
+        <fqname>IFrameCaptureManager/default</fqname>
+    </hal>
+</manifest>

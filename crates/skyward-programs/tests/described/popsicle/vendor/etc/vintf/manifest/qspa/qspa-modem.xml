@@ -1,0 +1,96 @@
+<manifest version="1.0" type="device">
+<!--
+    Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+    All rights reserved.
+    Confidential and Proprietary - Qualcomm Technologies, Inc.
+-->
+
+<!--QTI HALs-->
+
+    <hal format="aidl" override="true">
+        <name>vendor.qti.hardware.radio.am</name>
+    </hal>
+
+    <hal format="aidl" override="true">
+        <name>vendor.qti.hardware.radio.atfwd</name>
+    </hal>
+
+    <hal format="aidl" override="true">
+        <name>vendor.qti.hardware.radio.ims</name>
+    </hal>
+
+    <hal format="aidl" override="true">
+        <name>vendor.qti.ims.datachannelservice</name>
+    </hal>
+
+    <hal format="aidl" override="true">
+        <name>vendor.qti.ims.factoryaidlservice</name>
+    </hal>
+
+    <hal format="aidl" override="true">
+        <name>vendor.qti.hardware.radio.internal.deviceinfo</name>
+    </hal>
+
+    <hal format="aidl" override="true">
+        <name>vendor.qti.hardware.radio.lpa</name>
+    </hal>
+
+    <hal format="aidl" override="true">
+        <name>vendor.qti.hardware.radio.qcrilhook</name>
+    </hal>
+
+    <hal format="aidl" override="true">
+        <name>vendor.qti.hardware.radio.qtiradio</name>
+    </hal>
+
+    <hal format="aidl" override="true">
+        <name>vendor.qti.hardware.radio.qtiradioconfig</name>
+    </hal>
+
+    <hal format="aidl" override="true">
+        <name>vendor.qti.hardware.radio.uim</name>
+    </hal>
+
+    <hal format="aidl" override="true">
+        <name>vendor.qti.hardware.radio.uim_remote_client</name>
+    </hal>
+
+    <hal format="aidl" override="true">
+        <name>vendor.qti.hardware.radio.uim_remote_server</name>
+    </hal>
+
+<!--AOSP HALs-->
+
+    <hal format="aidl" override="true">
+        <name>android.hardware.radio.config</name>
+    </hal>
+
+    <hal format="aidl" override="true">
+        <name>android.hardware.radio.data</name>
+    </hal>
+
+    <hal format="aidl" override="true">
+        <name>android.hardware.radio.messaging</name>
+    </hal>
+
+    <hal format="aidl" override="true">
+        <name>android.hardware.radio.modem</name>
+    </hal>
+
+    <hal format="aidl" override="true">
+        <name>android.hardware.radio.network</name>
+    </hal>
+
+    <hal format="aidl" override="true">
+        <name>android.hardware.radio.sap</name>
+    </hal>
+
+    <hal format="aidl" override="true">
+        <name>android.hardware.radio.sim</name>
+    </hal>
+
+    <hal format="aidl" override="true">
+        <name>android.hardware.radio.voice</name>
+    </hal>
+
+</manifest>

@@ -1,0 +1,12 @@
+service vendor.qti.hardware.display.allocator /vendor/bin/hw/vendor.qti.hardware.display.allocator-service
+    class hal animation
+    user system
+    group graphics drmrpc
+    capabilities SYS_NICE
+    onrestart restart surfaceflinger
+    # MIUI ADD: Performance_MemoryEnhance
+    writepid /sys/kernel/reserve_pool/pid /sys/kernel/mi_mempool/pids
+    # END Performance_MemoryEnhance
+    # MIUI ADD: Performance_turbosched
+    writepid /sys/module/metis/parameters/common_persist_vip_task
+    # END: Performance_turbosched

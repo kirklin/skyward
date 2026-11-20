@@ -1,0 +1,11 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/camera-sfw/service/provider/aidl/vendor.qti.camera.provider.xml
+-->
+<manifest version="9.0" type="device">
+    <hal format="aidl">
+        <name>android.hardware.camera.provider</name>
+        <version>3</version>
+        <fqname>ICameraProvider/vendor_qti/0</fqname>
+    </hal>
+</manifest>

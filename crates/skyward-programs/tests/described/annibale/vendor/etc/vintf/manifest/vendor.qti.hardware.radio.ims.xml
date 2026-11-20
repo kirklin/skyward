@@ -1,0 +1,12 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/qcril-nr/qcril_qmi/vendor.qti.hardware.radio.ims.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.radio.ims</name>
+        <version>16</version>
+        <fqname>IImsRadio/imsradio0</fqname>
+        <fqname>IImsRadio/imsradio1</fqname>
+    </hal>
+</manifest>

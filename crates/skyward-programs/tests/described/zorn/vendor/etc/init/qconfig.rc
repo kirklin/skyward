@@ -1,0 +1,17 @@
+ # Copyright (c) 2020, 2023 Qualcomm Technologies, Inc.
+ # All Rights Reserved.
+ # Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+service vendor.qconfig /vendor/bin/hw/qconfigservice
+    class hal
+    user mediacodec
+    group camera audio
+
+    # AIDL interfaces
+    interface aidl vendor.qti.hardware.qconfig.IQConfig/default
+
+    # auto restart (uncomment below to disable rebooting automatically)
+    # oneshot
+
+    # start only when requested (uncomment below to disable service at boot)
+    # disabled

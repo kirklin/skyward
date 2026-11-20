@@ -1,0 +1,12 @@
+service vendor.uwb-qti /odm/bin/hw/android.hardware.uwb@service-qti
+    interface aidl android.hardware.uwb.IUwb/default
+    class hal
+    user uwb
+    disabled
+    oneshot
+    group uwb system net_bt wakelock oem_2912
+    capabilities BLOCK_SUSPEND
+
+on post-fs-data
+    mkdir /data/vendor/uwb 0770 uwb uwb
+    mkdir /mnt/vendor/persist/uwb 0770 uwb uwb

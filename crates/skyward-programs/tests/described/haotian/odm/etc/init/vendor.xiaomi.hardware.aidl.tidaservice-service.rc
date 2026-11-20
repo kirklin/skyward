@@ -1,0 +1,5 @@
+service vendor.tidaservice /odm/bin/tidad
+    interface aidl vendor.xiaomi.hardware.aidl.tidaservice.ITidaService/default
+    class hal
+    user system
+    group system

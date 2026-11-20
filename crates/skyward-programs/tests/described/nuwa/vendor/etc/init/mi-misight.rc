@@ -1,0 +1,21 @@
+on boot
+    mkdir /data/vendor/bsplog 0775 system system
+    mkdir /data/vendor/bsplog/audio 0775 system system
+    mkdir /data/vendor/bsplog/camera 0775 system system
+    mkdir /data/vendor/bsplog/charge 0775 system system
+    mkdir /data/vendor/bsplog/modem 0775 system system
+    mkdir /data/vendor/bsplog/secure 0775 system system
+    mkdir /data/vendor/bsplog/sensor 0775 system system
+    mkdir /data/vendor/bsplog/touch 0775 system system
+    mkdir /data/vendor/bsplog/wlan 0775 system system
+    mkdir /data/vendor/bsplog/other 0775 system system
+
+on property:persist.sys.abreuse.abstatus=yes
+    mkdir /mnt/reuse/bsplog 0777 system system
+
+service vendor.mi_misight /vendor/bin/hw/vendor.xiaomi.hardware.misight.service
+    class main
+    user root
+    group system
+    onrestart restart misight
+

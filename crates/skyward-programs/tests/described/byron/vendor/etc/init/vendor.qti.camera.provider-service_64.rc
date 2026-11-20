@@ -1,0 +1,26 @@
+# Copyright (c) 2023 Qualcomm Technologies, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+service vendor.camera-provider /vendor/bin/hw/vendor.qti.camera.provider-service_64
+    interface aidl android.hardware.camera.provider.ICameraProvider/vendor_qti/0
+    interface aidl vendor.qti.hardware.camera.offlinecamera.IOfflineCameraService/default
+    interface aidl vendor.qti.hardware.camera.aon.IAONService/default
+    interface aidl vendor.xiaomi.hardware.aon.IAlwaysOn/miaonservicehal
+    interface aidl vendor.xiaomi.hardware.quickcamera.IQuickCameraService/default
+    class hal
+    user cameraserver
+    group system audio camera input drmrpc oem_2907 oem_2912 wakelock cameraserver readtracefs
+    ioprio rt 4
+    capabilities SYS_NICE SYS_ADMIN BLOCK_SUSPEND IPC_LOCK FOWNER
+    task_profiles CameraServiceCapacity CameraServicePerformance
+    # MIUI ADD : Performance_MemoryEnhance
+    writepid /sys/kernel/reserve_pool/pid
+    # END Performance_MemoryEnhance
+
+on boot
+    chown cameraserver camera /sys/module/camera/parameters/cam_event_inject
+    chmod 0666 /sys/power/wake_lock
+    chmod 0666 /sys/power/wake_unlock
+    chown cameraserver camera /sys/module/camera/parameters/xm_cam_dev_probe_skip_switch
+    chown cameraserver camera /sys/module/camera/parameters/xm_cam_dev_probe_skip_camera_id

@@ -1,0 +1,13 @@
+# Copyright (c) 2021-2022 Qualcomm Technologies, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+on property:sys.boot_completed=1
+    wait /dev/smcinvoke
+    start vendor.diagcommd
+
+service vendor.diagcommd /vendor/bin/diagcommd
+    class late_start
+    user system
+    group system
+

@@ -1,0 +1,12 @@
+# Copyright (c) 2023 Qualcomm Technologies, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+service vendor.qti.hardware.display.color-service /vendor/bin/hw/vendor.qti.hardware.display.color-service
+    interface aidl vendor.qti.hardware.display.color.IDisplayColor/default
+    interface aidl vendor.qti.hardware.display.postproc.IDisplayPostproc/default
+    class hal
+    user system
+    group system
+    oneshot
+    disabled

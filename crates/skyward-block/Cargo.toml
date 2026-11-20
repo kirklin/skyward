@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+hex = { workspace = true }
 libc = { workspace = true }
 serde = { workspace = true }
 zerocopy = { version = "0.8.63", features = ["derive"] }

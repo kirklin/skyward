@@ -1,3 +1,8 @@
+use std::ffi::CString;
+use std::io;
+use std::os::unix::ffi::OsStrExt;
+use std::path::Path;
+
 /// Filesystems Android puts on logical and metadata partitions, in the order
 /// a device's fstab lists alternatives for one mount point.
 pub const FILESYSTEMS: [&str; 3] = ["erofs", "ext4", "f2fs"];
@@ -46,6 +51,34 @@ pub struct Visible {
     /// (major, minor) of the mounted device.
     pub device: (u32, u32),
     pub filesystem: String,
+}
+
+/// The room in a filesystem, in bytes: all of it, what no file takes, and
+/// the part of that left for files other than the system's own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Space {
+    pub total: u64,
+    pub free: u64,
+    pub available: u64,
+}
+
+/// The room in the filesystem that holds `path`.
+pub fn space(path: &Path) -> io::Result<Space> {
+    let s = statvfs(path)?;
+    // The counts are 32 bits on some hosts and 64 on the phone.
+    #[allow(clippy::useless_conversion)]
+    let (blocks, free, available, size) = (u64::from(s.f_blocks), u64::from(s.f_bfree), u64::from(s.f_bavail), u64::from(s.f_frsize));
+    Ok(Space { total: blocks * size, free: free * size, available: available * size })
+}
+
+/// What the kernel says of the filesystem that holds `path`.
+fn statvfs(path: &Path) -> io::Result<libc::statvfs> {
+    let c = CString::new(path.as_os_str().as_bytes()).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(c.as_ptr(), &mut s) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(s)
 }
 
 #[cfg(target_os = "android")]
@@ -164,11 +197,7 @@ mod sys {
     /// Mount what shows at `target` again with the flags it has, writable
     /// or read-only. Going read-only writes all it holds out first.
     pub fn remount_writable(target: &Path, writable: bool) -> Result<()> {
-        let c = cstr(target)?;
-        let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
-        if unsafe { libc::statvfs(c.as_ptr(), &mut st) } != 0 {
-            return Err(os_error()).with_context(|| format!("look at the mount on {}", target.display()));
-        }
+        let st = super::statvfs(target).with_context(|| format!("look at the mount on {}", target.display()))?;
         let kept = [
             (libc::ST_NOSUID, libc::MS_NOSUID),
             (libc::ST_NODEV, libc::MS_NODEV),
@@ -485,5 +514,14 @@ mod tests {
         assert_eq!(own, "discard,reserve_root=32768,resgid=1065,fsync_mode=nobarrier,inlinecrypt,gc_merge,atgc");
         let (flags, own) = split_options(&["ro".into(), "defaults".into(), String::new()]);
         assert_eq!((flags, own.as_str()), (1, ""), "read-only, and nothing for the filesystem");
+    }
+
+    #[test]
+    fn a_filesystems_room_is_all_of_it_what_is_free_and_what_is_left_for_others() {
+        let room = space(&std::env::temp_dir()).unwrap();
+        assert!(room.total > 0);
+        assert!(room.total >= room.free && room.free >= room.available, "{room:?}");
+        assert_eq!(space(Path::new("/no/such/folder")).unwrap_err().kind(), io::ErrorKind::NotFound);
+        assert_eq!(space(Path::new("/tmp/a\0b")).unwrap_err().kind(), io::ErrorKind::InvalidInput);
     }
 }

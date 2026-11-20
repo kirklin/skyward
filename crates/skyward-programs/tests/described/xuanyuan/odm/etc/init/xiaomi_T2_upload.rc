@@ -1,0 +1,20 @@
+
+# new-build t2_md5sum/md5sum
+on post-fs-data
+    mkdir /data/vendor/t2_md5sum 0777 system system
+    mkdir /mnt/vendor/persist/t2_md5sum 0777 system system
+# getprop factorybuild
+on property:persist.radio.factorybuild=*
+    setprop persist.odm.radio.tchipfactorybuild ${persist.radio.factorybuild}
+
+# definition service
+service xiaomi_T2_upload /vendor/bin/sh /odm/bin/t2_flash.sh
+    class core
+    user system
+    group system
+    oneshot
+    disabled
+# wait for start xiaomi_T2_upload
+on property:sys.boot_completed=1
+    chmod 0666 /dev/i2c-1
+    start xiaomi_T2_upload

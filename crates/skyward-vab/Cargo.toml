@@ -8,6 +8,8 @@ license.workspace = true
 anyhow = { workspace = true }
 libc = { workspace = true }
 prost = "0.14.4"
-skyward-binder = { path = "../skyward-binder" }
 skyward-block = { path = "../skyward-block" }
 skyward-lp = { path = "../skyward-lp" }
+
+[target.'cfg(target_os = "android")'.dependencies]
+skyward-binder = { path = "../skyward-binder" }

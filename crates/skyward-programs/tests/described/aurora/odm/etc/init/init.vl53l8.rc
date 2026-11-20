@@ -1,0 +1,7 @@
+on boot
+    chmod 0666 /dev/stmvl53l5
+    chown system cameraserver /dev/stmvl53l5
+    chmod 0666 /mnt/vendor/persist/sensors/stmvl53l8_xtalk_grid_cal_data.bin
+    chown system system /mnt/vendor/persist/sensors/stmvl53l8_xtalk_grid_cal_data.bin
+    chmod 0666 /mnt/vendor/persist/sensors/stmvl53l8_xtalk_shape_cal_data.bin
+    chown system system /mnt/vendor/persist/sensors/stmvl53l8_xtalk_shape_cal_data.bin

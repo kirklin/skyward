@@ -1,0 +1,8 @@
+service vendor.qsap.dcfd /vendor/bin/qsap_dcfd
+    class main
+    user system
+    group system
+
+# nezha+cn: 禁用 dcfd
+on property:ro.product.device=nezha && property:ro.miui.build.region=cn
+    stop vendor.qsap.dcfd

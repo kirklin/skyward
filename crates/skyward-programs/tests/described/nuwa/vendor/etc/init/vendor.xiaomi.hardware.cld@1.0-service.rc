@@ -1,0 +1,10 @@
+service vendor.cld-hal-1-0 /vendor/bin/hw/vendor.xiaomi.hardware.cld@1.0-service
+    class hal
+    user root
+    group root
+
+on property:persist.sys.stability.smartgc.ctrl=*
+    setprop vendor.smartgc.ctrl ${persist.sys.stability.smartgc.ctrl}
+
+on property:persist.sys.stability.smartgc.count=*
+    setprop vendor.smartgc.count ${persist.sys.stability.smartgc.count}

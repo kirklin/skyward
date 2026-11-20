@@ -1,0 +1,11 @@
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# All Rights Reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+#
+
+service wfdhdcphalservice /vendor/bin/wfdhdcphalservice
+    interface aidl android.hardware.drm.IDrmFactory/wfdhdcp
+    class main
+    user system
+    disabled
+    oneshot

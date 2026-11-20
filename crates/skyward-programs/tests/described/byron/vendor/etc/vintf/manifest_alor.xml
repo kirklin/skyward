@@ -1,0 +1,13 @@
+<!--
+    Input:
+        device/xiaomi/mivendor/manifest_alor.xml
+-->
+<manifest version="9.0" type="device" target-level="202504">
+    <hal format="aidl">
+        <name>android.hardware.secure_element</name>
+        <fqname>ISecureElement/eSE1</fqname>
+    </hal>
+    <sepolicy>
+        <version>202504</version>
+    </sepolicy>
+</manifest>

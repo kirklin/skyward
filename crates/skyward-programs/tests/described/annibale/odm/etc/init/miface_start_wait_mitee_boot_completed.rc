@@ -1,0 +1,3 @@
+on property:ro.vendor.miface.started=true && property:sys.boot_completed=1 && property:vendor.mitee_vm.boot_completed=1
+    start odm.miface
+    start vendor.miface

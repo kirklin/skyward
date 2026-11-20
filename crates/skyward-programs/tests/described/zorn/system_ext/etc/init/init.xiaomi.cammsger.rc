@@ -1,0 +1,58 @@
+on post-fs-data
+    chmod 0666 /dev/cam_msger
+    chmod 0666 /dev/cam_intentaware_fsys
+
+on property:sys.boot_completed=1
+    mkdir /dev/cpuctl/camera-inhibit
+    chown system_cameramind system_cameramind /dev/cpuctl/camera-inhibit/tasks
+    chown system_cameramind system_cameramind /dev/cpuctl/camera-inhibit/cgroup.procs
+    chown system_cameramind system_cameramind /dev/cpuctl/camera-inhibit/cpu.shares
+    chmod 0664 /dev/cpuctl/camera-inhibit/cgroup.procs
+    chmod 0664 /dev/cpuctl/camera-inhibit/cpu.shares
+    chmod 0664 /dev/cpuctl/camera-inhibit/tasks
+
+    mkdir /dev/cpuctl/camera-inhibit/limit_group0
+    chown system_cameramind system_cameramind /dev/cpuctl/camera-inhibit/limit_group0/tasks
+    chown system_cameramind system_cameramind /dev/cpuctl/camera-inhibit/limit_group0/cgroup.procs
+    chown system_cameramind system_cameramind /dev/cpuctl/camera-inhibit/limit_group0/cpu.shares
+    chmod 0664 /dev/cpuctl/camera-inhibit/limit_group0/cgroup.procs
+    chmod 0664 /dev/cpuctl/camera-inhibit/limit_group0/cpu.shares
+    chmod 0664 /dev/cpuctl/camera-inhibit/limit_group0/tasks
+
+    mkdir /dev/cpuctl/camera-inhibit/limit_group1
+    chown system_cameramind system_cameramind /dev/cpuctl/camera-inhibit/limit_group1/tasks
+    chown system_cameramind system_cameramind /dev/cpuctl/camera-inhibit/limit_group1/cgroup.procs
+    chown system_cameramind system_cameramind /dev/cpuctl/camera-inhibit/limit_group1/cpu.shares
+    chmod 0664 /dev/cpuctl/camera-inhibit/limit_group1/cgroup.procs
+    chmod 0664 /dev/cpuctl/camera-inhibit/limit_group1/cpu.shares
+    chmod 0664 /dev/cpuctl/camera-inhibit/limit_group1/tasks
+
+    mkdir /dev/cpuctl/camera-inhibit/limit_group2
+    chown system_cameramind system_cameramind /dev/cpuctl/camera-inhibit/limit_group2/tasks
+    chown system_cameramind system_cameramind /dev/cpuctl/camera-inhibit/limit_group2/cgroup.procs
+    chown system_cameramind system_cameramind /dev/cpuctl/camera-inhibit/limit_group2/cpu.shares
+    chmod 0664 /dev/cpuctl/camera-inhibit/limit_group2/cgroup.procs
+    chmod 0664 /dev/cpuctl/camera-inhibit/limit_group2/cpu.shares
+    chmod 0664 /dev/cpuctl/camera-inhibit/limit_group2/tasks
+
+    mkdir /dev/cpuctl/camera-inhibit/limit_group3
+    chown system_cameramind system_cameramind /dev/cpuctl/camera-inhibit/limit_group3/tasks
+    chown system_cameramind system_cameramind /dev/cpuctl/camera-inhibit/limit_group3/cgroup.procs
+    chown system_cameramind system_cameramind /dev/cpuctl/camera-inhibit/limit_group3/cpu.shares
+    chmod 0664 /dev/cpuctl/camera-inhibit/limit_group3/cgroup.procs
+    chmod 0664 /dev/cpuctl/camera-inhibit/limit_group3/cpu.shares
+    chmod 0664 /dev/cpuctl/camera-inhibit/limit_group3/tasks
+
+
+on property:sys.camera.bgcpushare_factor=*
+    write /dev/cpuctl/background/cpu.shares ${sys.camera.bgcpushare_factor}
+
+on property:sys.camera.fgcpushare_factor=*
+    write /dev/cpuctl/foreground/cpu.shares ${sys.camera.fgcpushare_factor}
+
+on property:sys.camera.mind.dropcache=*
+    write /proc/sys/vm/drop_caches ${sys.camera.mind.dropcache}
+
+on property:sys.camera.mind.swappiness=*
+    write /proc/sys/vm/swappiness ${sys.camera.mind.swappiness}
+

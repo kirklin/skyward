@@ -1,0 +1,7 @@
+service vendor.xiaomi.cit.bluetooth  /vendor/bin/hw/vendor.xiaomi.cit.bluetooth-service
+    interface aidl vendor.xiaomi.cit.bluetooth.IBluetoothService/default
+    class hal
+    user root
+    group system
+    oneshot
+    disabled

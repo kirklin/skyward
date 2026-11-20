@@ -1,0 +1,15 @@
+service dfc-installd /system_ext/bin/DfcNativeService
+    class main
+    user root
+    group root
+    disabled
+    seclabel u:r:installd:s0
+
+on property:sys.dfcservice.ctrl=true
+    start dfc-installd
+on property:sys.dfcservice.ctrl=false
+    stop dfc-installd
+
+on post-fs-data
+    mkdir /data/local/fbo/dfc 0777 root root
+    mkdir /data/local/fbo/dfc/v2 0777 root root

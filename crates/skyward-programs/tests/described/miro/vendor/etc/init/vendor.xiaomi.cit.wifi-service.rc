@@ -1,0 +1,7 @@
+service vendor.xiaomi.cit.wifi-service  /vendor/bin/hw/vendor.xiaomi.cit.wifi-service
+    interface aidl vendor.xiaomi.cit.wifi.IWifiService/default
+    class hal
+    user root
+    group system
+    oneshot
+    disabled

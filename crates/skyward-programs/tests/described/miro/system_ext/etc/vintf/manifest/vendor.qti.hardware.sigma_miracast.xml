@@ -1,0 +1,12 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/commonsys/wfd-framework/hal/hidl/sigma_miracast_hal/1.0/default/vendor.qti.hardware.sigma_miracast.xml
+-->
+<manifest version="9.0" type="framework">
+    <hal format="hidl" max-level="8">
+        <name>vendor.qti.hardware.sigma_miracast</name>
+        <transport>hwbinder</transport>
+        <fqname>@1.0::Isigma_miracast/sigmahal</fqname>
+        <fqname>@1.0::Isigma_miracast/sigmahal64</fqname>
+    </hal>
+</manifest>

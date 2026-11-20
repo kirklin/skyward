@@ -1,0 +1,7 @@
+service vendor.ozonotify-default /vendor/bin/hw/vendor.ozoaudio.notify@1.0-service
+    interface aidl com.android.ozoaudio.notify.IOzoNotify/default
+    oneshot
+    disabled
+    class hal
+    user system
+    group system

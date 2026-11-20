@@ -1,0 +1,17 @@
+# Copyright (c) 2022, 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+service gnss_service /vendor/bin/hw/android.hardware.gnss-aidl-service-qti
+    interface aidl android.hardware.gnss.IGnss/default
+    interface aidl vendor.qti.gnss.ILocAidlGnss/default
+    class hal
+    user gps
+    group system gps radio vendor_qti_diag vendor_ssgtzd wakelock
+    capabilities WAKE_ALARM BLOCK_SUSPEND
+
+on post-fs-data
+    #Create directories for Location services
+    mkdir /data/vendor/location 0770 gps gps
+    mkdir /data/vendor/location/mq 0770 gps gps
+    mkdir /dev/socket/location 0770 gps gps
+    mkdir /dev/socket/location/mq 0770 gps gps

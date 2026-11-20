@@ -1,0 +1,8 @@
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# All rights reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+service lowi-server /vendor/bin/lowi-server
+    class late_start
+    user gps
+    group gps wifi inet oem_2901 logd

@@ -1,0 +1,26 @@
+<!--
+    Input:
+        vendor/qcom/opensource/audio-hal/primary-hal/hal/default/manifest_audiocorehal_default.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>android.hardware.audio.core</name>
+        <version>2</version>
+        <fqname>IConfig/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>android.hardware.audio.core</name>
+        <version>2</version>
+        <fqname>IModule/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>android.hardware.audio.core</name>
+        <version>2</version>
+        <fqname>IModule/r_submix</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>android.hardware.audio.core</name>
+        <version>2</version>
+        <fqname>IModule/usb</fqname>
+    </hal>
+</manifest>

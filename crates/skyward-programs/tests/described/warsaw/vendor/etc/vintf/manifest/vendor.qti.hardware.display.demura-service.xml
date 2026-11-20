@@ -1,0 +1,10 @@
+<!--
+    Input:
+        hardware/qcom/display/oem_services/vendor.qti.hardware.display.demura-service.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.display.demura</name>
+        <fqname>IDemuraFileFinder/default</fqname>
+    </hal>
+</manifest>

@@ -1,0 +1,11 @@
+service vendor.memoryCloudCtrl /vendor/bin/hw/memoryCloudCtrl
+    class main
+    user root
+    group root
+    disabled
+    oneshot
+
+
+on property:persist.sys.stability.memorycloudctrl.disable_ddr_maxfreq=*
+    setprop vendor.disable_ddr_maxfreq ${persist.sys.stability.memorycloudctrl.disable_ddr_maxfreq}
+    start vendor.memoryCloudCtrl

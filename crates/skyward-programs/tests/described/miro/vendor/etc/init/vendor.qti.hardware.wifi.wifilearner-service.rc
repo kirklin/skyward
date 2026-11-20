@@ -1,0 +1,15 @@
+#==============================================================================
+#       vendor.qti.wifi.wifilearner-service.rc
+#  Copyright (c) 2024 Qualcomm Technologies, Inc.
+#  All Rights Reserved.
+#  Confidential and Proprietary - Qualcomm Technologies, Inc.
+#===============================================================================
+service vendor.wifilearner /system/vendor/bin/wifilearner
+    class main
+    user wifi
+    # AIDL interfaces
+    interface aidl vendor.qti.hardware.wifi.wifilearner.IWifiStats/default
+    # don't auto restart
+    oneshot
+    # start only when requested
+    disabled

@@ -1,0 +1,16 @@
+
+on post-fs-data
+      mkdir /data/vendor/qms 0700 radio radio
+      mkdir /data/vendor/qms_logs 0700 radio radio
+      mkdir /data/vendor/qms_logs/main 0700 radio radio
+      mkdir /data/vendor/qms_logs/other 0700 radio radio
+      mkdir /data/vendor/qms_logs/config 0700 radio radio
+
+on boot
+      chown system system /sys/module/microdump_collector/parameters/enable_microdump
+      chown system system /sys/module/microdump_collector/parameters/start_qcomdump
+
+service vendor.qms /vendor/bin/qms
+      class main
+      user root
+      group radio wakelock wifi inet net_admin

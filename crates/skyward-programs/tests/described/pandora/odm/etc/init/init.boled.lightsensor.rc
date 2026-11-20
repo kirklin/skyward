@@ -1,0 +1,3 @@
+on boot
+    chown system system /mnt/vendor/persist/sensors/lightSensorCali.json
+    chown system system /mnt/vendor/persist/sensors/lightSensorCaliSec.json

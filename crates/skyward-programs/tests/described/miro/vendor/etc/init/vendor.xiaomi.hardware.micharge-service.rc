@@ -1,0 +1,188 @@
+on post-fs-data
+    chown system system /sys/class/xm_power/charger/wls_rev_charge/reverse_chg_mode
+    chown system system /sys/class/xm_power/wireless_master/bt_state
+    chown system system /sys/class/xm_power/wireless_master/rx_cr
+
+on property:dev.bootcomplete=1
+    chown system system /sys/class/xm_power/charger/charge_interface/charge_enable
+    chown system system /sys/class/xm_power/charger/charge_interface/input_suspend
+    chown system system /sys/class/xm_power/charger/charge_interface/iin_limit
+    chown system system /sys/class/xm_power/charger/smart_charge/smart_night
+    chown system system /sys/class/xm_power/charger/charge_interface/shipmode_count_reset
+    chown system system /sys/class/xm_power/charger/smart_charge/smart_batt
+    chown system system /sys/class/xm_power/fg_master/ui_soh
+    chown system system /sys/class/xm_power/fg_slave/ui_soh
+    chown system system /sys/class/xm_power/fg_master/rsoc
+    chown system system /sys/class/xm_power/fg_slave/rsoc
+    chown system system /sys/class/xm_power/fg_master/soh
+    chown system system /sys/class/xm_power/fg_slave/soh
+    chown system system /sys/class/xm_power/fg_master/batt_sn
+    chown system system /sys/class/xm_power/fg_slave/batt_sn
+    chown system system /sys/class/xm_power/fuelgauge/strategy_fg/manufacturing_date
+    chown system system /sys/class/xm_power/fuelgauge/strategy_fg/first_usage_date
+    chown system system /sys/class/xm_power/fg_master/cyclecount
+    chown system system /sys/class/xm_power/fg_slave/cyclecount
+    chown system system /sys/class/xm_power/fg_slave/design_capacity
+    chown system system /sys/class/xm_power/fg_master/design_capacity
+    chown system system /sys/class/xm_power/charger/wls_rev_charge/reverse_chg_mode
+    chown system system /sys/class/xm_power/wireless_master/bt_state
+    chown system system /sys/class/xm_power/wireless_master/rx_cr
+    chown system system /sys/class/xm_power/charger/wls_rev_charge/wireless_chip_fw
+    chown system system /sys/class/xm_power/wireless_master/bt_transfer_start
+    chown system system /sys/class/xm_power/wireless_master/wls_tx_speed
+    chown system system /sys/class/xm_power/typec/cc_toggle
+    chown system system /sys/class/xm_power/typec/otg_ui_support
+    chown system system /sys/class/xm_power/typec/cid_status
+    chown system system /sys/class/xm_power/hw_monitor/lpd/enable
+    chown system system /sys/class/xm_power/charger/smart_charge/smart_chg
+    chown system system /sys/class/xm_power/hw_monitor/lpd/lpd_charging
+    chown system system /sys/class/xm_power/hw_monitor/connector/mos_ctrl
+    chown system system /sys/class/xm_power/hw_monitor/connector/connector_temp_1
+    chown system system /sys/class/xm_power/hw_monitor/connector/connector_temp_2
+    chown system system /sys/class/xm_power/typec/strategy_pd_auth/adapter_id
+    chown system system /sys/class/xm_power/fuelgauge/strategy_fg/fast_charge
+    chown system system /sys/class/xm_power/fuelgauge/strategy_fg/soc_decimal
+    chown system system /sys/class/xm_power/fuelgauge/strategy_fg/soc_decimal_rate
+    chown system system /sys/class/xm_power/charger/smart_charge/smart_night
+    chown system system /sys/class/xm_power/wireless_master/rx_offset
+    chown system system /sys/class/xm_power/wireless_master/tx_adapter
+    chown system system /sys/class/xm_power/charger/wls_rev_charge/reverse_chg_mode
+    chown system system /sys/class/xm_power/charger/wls_rev_charge/reverse_chg_state
+    chown system system /sys/class/xm_power/wireless_master/rx_sleep_mode
+    chown system system /sys/class/xm_power/wireless_master/reverse_pen_soc
+    chown system system /sys/class/xm_power/wireless_master/pen_hall3_s
+    chown system system /sys/class/xm_power/wireless_master/pen_hall4_s
+    chown system system /sys/class/xm_power/wireless_master/pen_hall_ppe_n
+    chown system system /sys/class/xm_power/wireless_master/pen_hall_ppe_s
+    chown system system /sys/class/xm_power/charger/wls_basic_charge/wls_car_adapter
+    chown system system /sys/class/xm_power/charger/charger_thermal/wireless_ctrl_limit
+    chown system system /sys/class/xm_power/charger/charger_thermal/wls_quick_chg_control_limit
+    chown system system /sys/class/xm_power/charger/wls_rev_charge/wls_fw_state
+    chown system system /sys/class/xm_power/charger/wls_basic_charge/set_rx_sleep
+    chown system system /sys/class/xm_power/charger/charger_partition/charger_partition_poweroffmode
+    chown system system /sys/class/xm_power/charger/charger_partition/charger_partition_mishow
+    chown system system /sys/class/xm_power/fuelgauge/strategy_fg/battery_num
+    chown system system /sys/class/xm_power/typec/super_speed
+    chown system system /sys/class/xm_power/typec/has_dp
+    chown system system /sys/class/xm_power/charger/charger_thermal/wired_ctrl_limit
+    chown system system /sys/class/xm_power/charger/charger_common/plate_shock
+    chown system system /sys/class/xm_power/charger/wls_basic_charge/audio_phone_sts
+    chown system system /sys/class/xm_power/fg_master/peak_flag
+    chown system system /sys/class/xm_power/fg_master/current_deviation
+    chown system system /sys/class/xm_power/fg_master/power_deviation
+    chown system system /sys/class/xm_power/fg_master/average_current
+    chown system system /sys/class/xm_power/fg_slave/average_current
+    chown system system /sys/class/xm_power/fg_master/average_temperature
+    chown system system /sys/class/xm_power/fg_master/start_learning
+    chown system system /sys/class/xm_power/fg_slave/start_learning
+    chown system system /sys/class/xm_power/fg_master/stop_learning
+    chown system system /sys/class/xm_power/fg_slave/stop_learning
+    chown system system /sys/class/xm_power/fg_master/learning_power
+    chown system system /sys/class/xm_power/fg_slave/learning_power
+    chown system system /sys/class/xm_power/fg_master/action_power
+    chown system system /sys/class/xm_power/fg_slave/action_power
+    chown system system /sys/class/xm_power/fg_master/learning_power_dev
+    chown system system /sys/class/xm_power/fg_master/learning_time_dev
+    chown system system /sys/class/xm_power/fg_master/vbatt
+    chown system system /sys/class/xm_power/fg_slave/vbatt
+    chown system system /sys/class/xm_power/fg_master/constant_power
+    chown system system /sys/class/xm_power/fg_slave/constant_power
+    chown system system /sys/class/xm_power/fg_master/remaining_time
+    chown system system /sys/class/xm_power/fg_slave/remaining_time
+    chown system system /sys/class/xm_power/fg_master/referance_power
+    chown system system /sys/class/xm_power/fg_master/referance_current
+    chown system system /sys/class/xm_power/fg_master/nvt_referance_power
+    chown system system /sys/class/xm_power/fg_master/start_learning_b
+    chown system system /sys/class/xm_power/fg_slave/start_learning_b
+    chown system system /sys/class/xm_power/fg_master/stop_learning_b
+    chown system system /sys/class/xm_power/fg_slave/stop_learning_b
+    chown system system /sys/class/xm_power/fg_master/learning_power_b
+    chown system system /sys/class/xm_power/fg_slave/learning_power_b
+    chown system system /sys/class/xm_power/fg_master/rm
+    chown system system /sys/class/xm_power/fg_slave/rm
+    chown system system /sys/class/xm_power/fg_master/learning_power_dev_b
+    chown system system /sys/class/xm_power/fg_master/vendor
+    chown system system /sys/class/xm_power/charger/wls_rev_charge/reverse_chg_state
+    chown system system /sys/class/xm_power/fg_master/chip_ok
+    chown system system /sys/class/xm_power/fg_master/rel_soh
+    chown system system /sys/class/xm_power/fg_master/rel_soh_cyclecount
+    chown system system /sys/class/xm_power/fg_master/eis_soh
+    chown system system /sys/class/xm_power/fg_master/eis_soh_cyclecount
+    chown system system /sys/class/xm_power/fg_master/qmax
+    chown system system /sys/class/xm_power/fg_master/qmax_cyclecount
+    chown system system /sys/class/xm_power/fg_master/isc
+    chown system system /sys/class/xm_power/fg_master/batt_sh
+    chown system system /sys/class/xm_power/fg_master/batt_use_environment
+    chown system system /sys/class/xm_power/fg_master/max_life_vol
+    chown system system /sys/class/xm_power/fg_master/min_life_vol
+    chown system system /sys/class/xm_power/fg_master/max_life_temp
+    chown system system /sys/class/xm_power/fg_master/min_life_temp
+    chown system system /sys/class/xm_power/fg_master/over_vol_duration
+    chown system system /sys/class/xm_power/wireless_master/tx_uuid
+    chown system system /sys/class/xm_power/fuelgauge/strategy_fg/enable_rollback
+    chmod 0660 /sys/class/xm_power/hw_monitor/connector/connector_temp_1
+    chmod 0660 /sys/class/xm_power/hw_monitor/connector/connector_temp_2
+    chmod 0660 /sys/class/xm_power/typec/strategy_pd_auth/adapter_id
+    chown system system /sys/class/xm_power/fuelgauge/strategy_fg/calc_rvalue
+    chown system system /sys/class/xm_power/charger/charger_common/reverse_quick_charge
+    chown system system /sys/class/xm_power/charger/charger_common/revchg_bcl
+    chown system system /sys/class/xm_power/charger/charger_common/handle_state
+    chown system system /sys/class/xm_power/charger/charger_common/stop_handle_charge
+    chown system system /sys/class/xm_power/wireless_master/rx_iout
+    chown system system /sys/class/xm_power/wireless_master/rx_vout
+    chown system system /sys/class/xm_power/wireless_master/rx_vrect
+    chown system system /sys/class/xm_power/wireless_master/rx_ss
+    chown system system /sys/class/xm_power/fg_master/csd_flag
+    chown system system /sys/class/xm_power/fg_master/csd_r1
+    chown system system /sys/class/xm_power/fg_master/csd_r2
+    chown system system /sys/class/xm_power/fg_master/dcr_slope1
+    chown system system /sys/class/xm_power/fg_master/dcr_slope2
+    chown system system /sys/class/xm_power/fg_master/dcr_slope3
+    chown system system /sys/class/xm_power/fg_master/count_level1
+    chown system system /sys/class/xm_power/fg_master/count_level2
+    chown system system /sys/class/xm_power/fg_master/count_level3
+    chown system system /sys/class/xm_power/fg_master/charge_absoc
+    chown system system /sys/class/xm_power/fuelgauge/strategy_fg/audio_state
+    chown system system /sys/class/xm_power/typec/apdo_max
+    chown system system /sys/class/xm_power/cp_master/pogo_connect
+
+    chmod 0660 /sys/class/xm_power/charger/charger_partition/charger_partition_poweroffmode
+    chmod 0660 /sys/class/xm_power/charger/charger_partition/charger_partition_mishow
+    chmod 0660 /sys/class/xm_power/charger/charge_interface/charge_enable
+    chmod 0660 /sys/class/xm_power/charger/charge_interface/input_suspend
+    chmod 0660 /sys/class/xm_power/charger/charge_interface/iin_limit
+    chmod 0660 /sys/class/xm_power/charger/smart_charge/smart_night
+    chmod 0660 /sys/class/xm_power/charger/smart_charge/smart_batt
+    chmod 0660 /sys/class/xm_power/charger/charger_interface/shipmode_count_reset
+    chmod 0660 /sys/class/xm_power/fuelgauge/strategy_fg/manufacturing_date
+    chmod 0660 /sys/class/xm_power/fuelgauge/strategy_fg/first_usage_date
+    chmod 0660 /sys/class/xm_power/fg_master/ui_soh
+    chmod 0440 /sys/class/xm_power/fg_master/design_capacity
+    chmod 0440 /sys/class/xm_power/fg_slave/design_capacity
+    chmod 0660 /sys/class/xm_power/fg_master/soh
+    chmod 0660 /sys/class/xm_power/fg_slave/soh
+    chmod 0440 /sys/class/xm_power/fg_slave/batt_sn
+    chmod 0440 /sys/class/xm_power/fg_master/batt_sn
+    chmod 0440 /sys/class/xm_power/fg_master/design_capacity
+    chmod 0440 /sys/class/xm_power/fg_slave/design_capacity
+    chmod 0440 /sys/class/xm_power/fg_master/rsoc
+    chmod 0440 /sys/class/xm_power/fg_slave/rsoc
+
+    chmod 0660 /sys/class/xm_power/charger/wls_rev_charge/wireless_chip_fw
+    chmod 0660 /sys/class/xm_power/charger/wls_rev_charge/reverse_chg_mode
+    chmod 0660 /sys/class/xm_power/wireless_master/rx_cr
+    chmod 0660 /sys/class/xm_power/wireless_master/bt_transfer_start
+    chmod 0660 /sys/class/xm_power/wireless_master/wls_tx_speed
+    chmod 0660 /sys/class/xm_power/typec/cc_toggle
+    chmod 0440 /sys/class/xm_power/typec/otg_ui_support
+    chmod 0440 /sys/class/xm_power/typec/cid_status
+    chmod 0660 /sys/class/xm_power/hw_monitor/lpd/enable
+    chmod 0660 /sys/class/xm_power/hw_monitor/connector/mos_ctrl
+    chmod 0660 /sys/class/xm_power/charger/smart_charge/smart_chg
+    chmod 0660 /sys/class/xm_power/fuelgauge/strategy_fg/enable_rollback
+
+service micharge-hal /vendor/bin/hw/vendor.xiaomi.hardware.micharge-service
+    interface aidl vendor.xiaomi.hardware.micharge.IMiCharge/default
+    class hal
+    user system
+    group system

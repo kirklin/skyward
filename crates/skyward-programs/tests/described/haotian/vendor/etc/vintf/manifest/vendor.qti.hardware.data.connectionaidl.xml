@@ -1,0 +1,11 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/qcril-data-hal/vendor.qti.hardware.data.connectionaidl.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.data.connectionaidl</name>
+        <fqname>IDataConnection/slot1</fqname>
+        <fqname>IDataConnection/slot2</fqname>
+    </hal>
+</manifest>

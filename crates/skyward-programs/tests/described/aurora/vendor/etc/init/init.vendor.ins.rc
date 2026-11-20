@@ -1,0 +1,5 @@
+on post-fs-data
+    #sensors log dir
+    mkdir /data/vendor/ins 0764 gps system
+    #aon dum dir
+    mkdir /data/vendor/aon 0764 system system

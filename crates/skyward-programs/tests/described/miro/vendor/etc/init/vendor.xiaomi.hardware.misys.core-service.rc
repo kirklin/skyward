@@ -1,0 +1,7 @@
+service vendor.misys.core /vendor/bin/hw/vendor.xiaomi.hardware.misys.core-service
+    class hal
+    user root
+    group root system log
+    disabled
+    oneshot
+    interface aidl vendor.xiaomi.hardware.misys.core.IMiSysCore/default

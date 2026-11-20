@@ -1,0 +1,4 @@
+service weaver_hal_service /odm/bin/hw/android.hardware.weaver-service.thales
+    class hal
+    user  vendor_thales_weaver
+    group vendor_thales_weaver system drmrpc

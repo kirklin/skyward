@@ -1,0 +1,16 @@
+#Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+#All rights reserved.
+#Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+service qsguard /system_ext/bin/qsguard
+    class late_start
+    user system
+    group system readproc
+    capabilities KILL
+    disabled
+
+on property:persist.sf.vsync.enable=true
+    start qsguard
+
+on property:persist.sf.vsync.enable=false
+    stop qsguard

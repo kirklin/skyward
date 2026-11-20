@@ -1,0 +1,8 @@
+
+service vendor.mi_blackbox /vendor/bin/hw/vendor.xiaomi.hardware.blackbox.service
+    class main
+    user root
+    oneshot
+    disabled
+    group system media_rw everybody
+    interface aidl vendor.xiaomi.hardware.blackbox.IBlackboxImpl/default

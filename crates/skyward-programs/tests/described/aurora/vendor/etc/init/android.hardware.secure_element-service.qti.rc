@@ -1,0 +1,7 @@
+service vendor.secure_element /vendor/bin/hw/android.hardware.secure_element-service.qti
+    class early_hal
+    user system
+    group nfc system
+
+on boot && property:ro.boot.hardware.sku=flourite && property:ro.boot.hwc=CN
+    stop vendor.secure_element

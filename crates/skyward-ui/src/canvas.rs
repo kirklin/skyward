@@ -509,11 +509,11 @@ impl Canvas {
                         Cover::Solid => Some(255),
                         Cover::Partial => None,
                     };
-                    if let Some(a) = same.filter(|_| x + 16 <= w) {
-                        if px[x..x + 16].iter().all(|p| p[3] == a) {
-                            x += 16;
-                            continue;
-                        }
+                    if let Some(a) = same.filter(|_| x + 16 <= w)
+                        && px[x..x + 16].iter().all(|p| p[3] == a)
+                    {
+                        x += 16;
+                        continue;
                     }
                     let c = cover(px[x][3]);
                     if c != now {

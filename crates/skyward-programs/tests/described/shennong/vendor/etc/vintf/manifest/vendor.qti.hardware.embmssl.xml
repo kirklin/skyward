@@ -1,0 +1,18 @@
+<!--
+/*
+ * Copyright (c) 2023 Qualcomm Technologies, Inc.
+ * All Rights Reserved.
+ * Confidential and Proprietary - Qualcomm Technologies, Inc.
+ */
+-->
+
+<manifest version="1.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.embmssl</name>
+        <version>1</version>
+        <interface>
+            <name>IEmbms</name>
+            <instance>default</instance>
+        </interface>
+    </hal>
+</manifest>

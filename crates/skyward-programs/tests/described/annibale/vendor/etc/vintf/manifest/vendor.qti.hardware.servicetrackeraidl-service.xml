@@ -1,0 +1,10 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/fwk-utils/servicetracker/aidl/1.0/default/vendor.qti.hardware.servicetrackeraidl-service.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.servicetrackeraidl</name>
+        <fqname>IServicetracker/default</fqname>
+    </hal>
+</manifest>

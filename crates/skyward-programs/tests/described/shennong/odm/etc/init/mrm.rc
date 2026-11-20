@@ -1,0 +1,4 @@
+service vendor.mrmd /odm/bin/mrmd
+    class hal
+    user system
+    group system shell

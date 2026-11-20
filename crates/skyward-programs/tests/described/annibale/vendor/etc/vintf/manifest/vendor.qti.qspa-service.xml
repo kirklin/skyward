@@ -1,0 +1,10 @@
+<!--
+    Input:
+        vendor/qcom/opensource/core-utils-vendor/qspaservice/vendor.qti.qspa-service.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.qspa</name>
+        <fqname>IQspa/default</fqname>
+    </hal>
+</manifest>

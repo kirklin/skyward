@@ -1,0 +1,10 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/sensors-android/sensors-cal-service/src/vendor.qti.hardware.sensorscalibrate.xml
+-->
+<manifest version="9.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.sensorscalibrate</name>
+        <fqname>ISensorsCalibrate/default</fqname>
+    </hal>
+</manifest>

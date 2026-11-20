@@ -1,0 +1,7 @@
+service vendor.ir-default /vendor/bin/hw/android.hardware.ir-service.example
+    disabled
+    oneshot
+    interface aidl android.hardware.ir.IConsumerIr/default
+    class hal
+    user system
+    group system

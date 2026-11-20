@@ -1,0 +1,12 @@
+<!-- Copyright (c) 2023 Qualcomm Technologies, Inc.
+     All Rights Reserved.
+     Confidential and Proprietary - Qualcomm Technologies, Inc.
+-->
+
+<manifest version="1.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.ims.factoryaidlservice</name>
+        <version>1</version>
+        <fqname>IImsFactory/default</fqname>
+    </hal>
+</manifest>

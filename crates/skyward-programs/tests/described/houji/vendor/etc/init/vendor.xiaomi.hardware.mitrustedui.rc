@@ -1,0 +1,8 @@
+service vendor.mitrustedui /vendor/bin/hw/vendor.xiaomi.hardware.mitrustedui-service
+    class hal
+    user system
+    group system
+
+on post-fs-data
+    chown system system /mnt/vendor/persist/tui/sec_ind.png
+

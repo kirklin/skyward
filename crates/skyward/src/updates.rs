@@ -12,12 +12,11 @@ use skyward_net::http::{self, Servers};
 use skyward_net::reach::{self, Reach};
 use skyward_net::release::{self, Installed, Release, Unanswered};
 use skyward_vab::Slot;
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::RawFd;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
-use std::thread::{self, JoinHandle};
+use std::thread;
 use std::time::{Duration, Instant};
 
 /// The most often how far a download has come is told.
@@ -78,141 +77,127 @@ pub enum End {
 }
 
 pub struct Worker {
-    events: Receiver<Event>,
-    /// Readable while events wait.
-    wake: OwnedFd,
     stop: Arc<AtomicBool>,
     /// The connection in use, which stopping cuts at once.
     agent: Arc<Mutex<Option<ureq::Agent>>>,
-    thread: Option<JoinHandle<()>>,
+    /// The screen lets it go once the work has ended, or once it has been
+    /// told to stop.
+    worker: skyward_sys::worker::Worker<Event>,
 }
 
 impl Worker {
     pub fn start(task: Task, servers: Servers) -> Result<Worker> {
-        let mut fds = [0; 2];
-        if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) } != 0 {
-            return Err(std::io::Error::last_os_error()).context("make the update worker's wake pipe");
-        }
-        let (wake, signal) = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
-        let (tx, events) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
         let agent: Arc<Mutex<Option<ureq::Agent>>> = Arc::new(Mutex::new(None));
         let (stopping, using) = (stop.clone(), agent.clone());
-        let thread = thread::Builder::new()
-            .name("updates".into())
-            .spawn(move || {
-                let tell = |event: Event| {
-                    // The screen only stops listening once it has let the
-                    // worker go.
-                    let _ = tx.send(event);
-                    unsafe { libc::write(signal.as_raw_fd(), [1u8].as_ptr().cast(), 1) };
-                };
-                match task {
-                    // The package's exact length is asked of where it is
-                    // downloaded from: the server gives it rounded, in units
-                    // of 1024. Without it the rounded one shows.
-                    Task::Check { server, probe, installed } => {
-                        let a = http::agent(servers.clone());
-                        *using.lock().expect("the agent is not held by a thread that panicked") = Some(a.clone());
-                        let mut answer = release::ask(&a, &server, &installed).map_err(|e| unanswered(&e, &server, &probe, &servers));
-                        if let Ok(Some(r)) = &mut answer {
-                            match release::length(&a, &r.urls[0]) {
-                                Ok(length) => r.length = Some(length),
-                                Err(e) => {
-                                    let _ = skyward_sys::kmsg(&format!("how long {} is: {e:#}", r.name));
-                                }
+        let worker = skyward_sys::worker::Worker::start("updates", move |teller| {
+            let tell = |event: Event| {
+                teller.tell(event);
+            };
+            match task {
+                // The package's exact length is asked of where it is
+                // downloaded from: the server gives it rounded, in units
+                // of 1024. Without it the rounded one shows.
+                Task::Check { server, probe, installed } => {
+                    let a = http::agent(servers.clone());
+                    *using.lock().expect("the agent is not held by a thread that panicked") = Some(a.clone());
+                    let mut answer = release::ask(&a, &server, &installed).map_err(|e| unanswered(&e, &server, &probe, &servers));
+                    if let Ok(Some(r)) = &mut answer {
+                        match release::length(&a, &r.urls[0]) {
+                            Ok(length) => r.length = Some(length),
+                            Err(e) => {
+                                let _ = skyward_sys::kmsg(&format!("how long {} is: {e:#}", r.name));
                             }
                         }
-                        tell(Event::Checked(answer));
                     }
-                    // A signed address runs out a day after the server gave
-                    // it: once one is turned down, the server is asked again
-                    // for where the package is.
-                    Task::Download { server, installed, release, path } => {
-                        let mut asked_again = false;
-                        let mut refused = |a: &ureq::Agent| {
-                            if asked_again {
-                                return Again::Retry;
-                            }
-                            asked_again = true;
-                            match release::ask(a, &server, &installed) {
-                                Ok(Some(fresh)) if fresh.md5 == release.md5 => Again::From(fresh.urls),
-                                Ok(_) => Again::End(End::Failed(Failure::Changed)),
-                                Err(again) => {
-                                    let _ = skyward_sys::kmsg(&format!("asking where {} is: {again:#}", release.name));
-                                    Again::Retry
-                                }
-                            }
-                        };
-                        let sum = Sum::Md5(release.md5.clone());
-                        let end = fetch(&servers, release.urls.clone(), &sum, &release.name, &path, &stopping, &using, &tell, &mut refused);
-                        tell(Event::Ended(end));
-                    }
-                    Task::CheckSkyward { probe, codename } => {
-                        let a = http::agent(servers.clone());
-                        *using.lock().expect("the agent is not held by a thread that panicked") = Some(a.clone());
-                        let answer = github::ask(&a, &codename, skyward_info::VERSION).map_err(|e| unanswered(&e, github::LATEST, &probe, &servers));
-                        tell(Event::SkywardChecked(answer));
-                    }
-                    // GitHub's API hands the zip out at a short-lived address
-                    // of the file itself, which it gives again once one has
-                    // run out and is turned down; the release's link on
-                    // github.com is tried after it.
-                    Task::UpdateSkyward { build, codename, path } => {
-                        let a = http::agent(servers.clone());
-                        *using.lock().expect("the agent is not held by a thread that panicked") = Some(a.clone());
-                        let located = github::locate(&a, &build.url, skyward_info::VERSION)
-                            .inspect_err(|e| {
-                                let _ = skyward_sys::kmsg(&format!("asking GitHub where {} is: {e:#}", build.name));
-                            })
-                            .ok();
-                        let mut located_again = false;
-                        let mut refused = |a: &ureq::Agent| {
-                            if located_again {
-                                return Again::Retry;
-                            }
-                            located_again = true;
-                            match github::locate(a, &build.url, skyward_info::VERSION) {
-                                Ok(fresh) => Again::From(build.sources(Some(fresh))),
-                                Err(e) => {
-                                    let _ = skyward_sys::kmsg(&format!("asking GitHub again where {} is: {e:#}", build.name));
-                                    Again::Retry
-                                }
-                            }
-                        };
-                        let sum = Sum::Sha256(build.sha256.clone());
-                        let end = match fetch(&servers, build.sources(located), &sum, &build.name, &path, &stopping, &using, &tell, &mut refused) {
-                            // Stopping asked for as the last of it came is
-                            // stopping still: nothing is written.
-                            End::Downloaded if stopping.load(Ordering::Relaxed) => End::Stopped,
-                            End::Downloaded => write(&path, &codename, &tell),
-                            other => other,
-                        };
-                        // The zip is held in memory, and is done with once
-                        // whole; a part stays, to go on from.
-                        match std::fs::remove_file(&path) {
-                            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-                                let _ = skyward_sys::kmsg(&format!("delete {}: {e}", path.display()));
-                            }
-                            _ => {}
-                        }
-                        tell(Event::Ended(end));
-                    }
+                    tell(Event::Checked(answer));
                 }
-            })
-            .context("start the update worker")?;
-        Ok(Worker { events, wake, stop, agent, thread: Some(thread) })
+                // A signed address runs out a day after the server gave
+                // it: once one is turned down, the server is asked again
+                // for where the package is.
+                Task::Download { server, installed, release, path } => {
+                    let mut asked_again = false;
+                    let mut refused = |a: &ureq::Agent| {
+                        if asked_again {
+                            return Again::Retry;
+                        }
+                        asked_again = true;
+                        match release::ask(a, &server, &installed) {
+                            Ok(Some(fresh)) if fresh.md5 == release.md5 => Again::From(fresh.urls),
+                            Ok(_) => Again::End(End::Failed(Failure::Changed)),
+                            Err(again) => {
+                                let _ = skyward_sys::kmsg(&format!("asking where {} is: {again:#}", release.name));
+                                Again::Retry
+                            }
+                        }
+                    };
+                    let sum = Sum::Md5(release.md5.clone());
+                    let end = fetch(&servers, release.urls.clone(), &sum, &release.name, &path, &stopping, &using, &tell, &mut refused);
+                    tell(Event::Ended(end));
+                }
+                Task::CheckSkyward { probe, codename } => {
+                    let a = http::agent(servers.clone());
+                    *using.lock().expect("the agent is not held by a thread that panicked") = Some(a.clone());
+                    let answer = github::ask(&a, &codename, skyward_info::VERSION).map_err(|e| unanswered(&e, github::LATEST, &probe, &servers));
+                    tell(Event::SkywardChecked(answer));
+                }
+                // GitHub's API hands the zip out at a short-lived address
+                // of the file itself, which it gives again once one has
+                // run out and is turned down; the release's link on
+                // github.com is tried after it.
+                Task::UpdateSkyward { build, codename, path } => {
+                    let a = http::agent(servers.clone());
+                    *using.lock().expect("the agent is not held by a thread that panicked") = Some(a.clone());
+                    let located = github::locate(&a, &build.url, skyward_info::VERSION)
+                        .inspect_err(|e| {
+                            let _ = skyward_sys::kmsg(&format!("asking GitHub where {} is: {e:#}", build.name));
+                        })
+                        .ok();
+                    let mut located_again = false;
+                    let mut refused = |a: &ureq::Agent| {
+                        if located_again {
+                            return Again::Retry;
+                        }
+                        located_again = true;
+                        match github::locate(a, &build.url, skyward_info::VERSION) {
+                            Ok(fresh) => Again::From(build.sources(Some(fresh))),
+                            Err(e) => {
+                                let _ = skyward_sys::kmsg(&format!("asking GitHub again where {} is: {e:#}", build.name));
+                                Again::Retry
+                            }
+                        }
+                    };
+                    let sum = Sum::Sha256(build.sha256.clone());
+                    let end = match fetch(&servers, build.sources(located), &sum, &build.name, &path, &stopping, &using, &tell, &mut refused) {
+                        // Stopping asked for as the last of it came is
+                        // stopping still: nothing is written.
+                        End::Downloaded if stopping.load(Ordering::Relaxed) => End::Stopped,
+                        End::Downloaded => write(&path, &codename, &tell),
+                        other => other,
+                    };
+                    // The zip is held in memory, and is done with once
+                    // whole; a part stays, to go on from.
+                    match std::fs::remove_file(&path) {
+                        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                            let _ = skyward_sys::kmsg(&format!("delete {}: {e}", path.display()));
+                        }
+                        _ => {}
+                    }
+                    tell(Event::Ended(end));
+                }
+            }
+        })?;
+        Ok(Worker { stop, agent, worker })
     }
 
+    /// Readable while events wait.
     pub fn fd(&self) -> RawFd {
-        self.wake.as_raw_fd()
+        self.worker.fd()
     }
 
     /// The events since the last call.
     pub fn events(&self) -> Vec<Event> {
-        let mut drain = [0u8; 64];
-        while unsafe { libc::read(self.wake.as_raw_fd(), drain.as_mut_ptr().cast(), drain.len()) } > 0 {}
-        self.events.try_iter().collect()
+        self.worker.events()
     }
 
     /// Stop at once, cutting the connection in use.
@@ -220,16 +205,6 @@ impl Worker {
         self.stop.store(true, Ordering::Relaxed);
         if let Some(a) = self.agent.lock().expect("the agent is not held by a thread that panicked").take() {
             a.shutdown();
-        }
-    }
-}
-
-impl Drop for Worker {
-    /// The screen lets the worker go once its work has ended, or once it
-    /// has been told to stop.
-    fn drop(&mut self) {
-        if let Some(thread) = self.thread.take() {
-            thread.join().expect("the update worker does not panic");
         }
     }
 }

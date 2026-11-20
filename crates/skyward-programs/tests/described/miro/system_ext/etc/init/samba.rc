@@ -1,0 +1,27 @@
+on early-boot
+    mkdir /data/samba 0771 system system
+    mkdir /data/samba/share 0770 system system
+    mkdir /data/samba/tmp 0777 system system
+    mkdir /data/samba/etc 0770 system system
+    mkdir /data/samba/lib 0770 system system
+    mkdir /data/samba/private 0770 system system
+    mkdir /data/samba/var 0770 system system
+    mkdir /data/samba/var/cache 0770 system system
+    mkdir /data/samba/var/cores 0770 system system
+    mkdir /data/samba/var/lock 0770 system system
+    mkdir /data/samba/var/locks 0770 system system
+    mkdir /data/samba/var/run 0770 system system
+    mkdir /data/miuilog/samba 0775 system system
+
+service smbd /system_ext/bin/smbd -D
+    class late_start
+    gentle_kill
+    disabled
+    oneshot
+    user system
+    group system media_rw sdcard_rw inet everybody
+
+on property:sys.samba.smbd.ctrl=true
+    start smbd
+on property:sys.samba.smbd.ctrl=false
+    stop smbd

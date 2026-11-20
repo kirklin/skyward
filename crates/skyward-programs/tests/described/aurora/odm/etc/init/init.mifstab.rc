@@ -1,0 +1,3 @@
+on fs
+    # mount before vendor.qvirtservice_rs
+    mount_all /odm/etc/fstab.mi --early

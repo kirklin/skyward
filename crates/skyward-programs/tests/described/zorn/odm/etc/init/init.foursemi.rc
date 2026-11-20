@@ -1,0 +1,4 @@
+on fs
+    # if spkcal file owner is root, then give audio r/w permission
+    chmod 666 /mnt/vendor/persist/audio/fsalgo_rdc.bin
+    chmod 666 /mnt/vendor/persist/audio/fsalgo_rdc.txt

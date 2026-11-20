@@ -15,11 +15,9 @@ use skyward_install::wipe::{self as package, Wipe};
 use skyward_install::Refusal;
 use skyward_sys::{bcb, prop};
 use skyward_vab::Slot;
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::RawFd;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Receiver};
-use std::thread::{self, JoinHandle};
 
 /// Where e2fsck is put to run once the installed system it comes from is
 /// let go, as Android's own recovery puts it, with the libraries of its own
@@ -90,59 +88,35 @@ pub enum Event {
 }
 
 pub struct Worker {
-    events: Receiver<Event>,
-    /// Readable while events wait.
-    wake: OwnedFd,
-    thread: Option<JoinHandle<()>>,
+    /// The screen lets it go once the work has ended.
+    worker: skyward_sys::worker::Worker<Event>,
 }
 
 impl Worker {
     pub fn start(task: Task) -> Result<Worker> {
-        let mut fds = [0; 2];
-        if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) } != 0 {
-            return Err(std::io::Error::last_os_error()).context("make the partition worker's wake pipe");
-        }
-        let (wake, signal) = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
-        let (tx, events) = mpsc::channel();
-        let thread = thread::Builder::new()
-            .name("partitions".into())
-            .spawn(move || {
-                let mut tell = |event: Event| {
-                    // The screen only stops listening once it has let the
-                    // worker go.
-                    let _ = tx.send(event);
-                    unsafe { libc::write(signal.as_raw_fd(), [1u8].as_ptr().cast(), 1) };
-                };
-                let done = match task {
-                    Task::Disable { package_size } => disable(package_size, &mut tell),
-                    Task::Unshare { slot } => unshare(slot, &mut tell),
-                    Task::Repair(part) => repair(part, &mut tell),
-                    Task::Remake(part, filesystem) => remake(part, &filesystem, &mut tell),
-                };
-                tell(Event::Done(done));
-            })
-            .context("start the partition worker")?;
-        Ok(Worker { events, wake, thread: Some(thread) })
+        let worker = skyward_sys::worker::Worker::start("partitions", move |teller| {
+            let mut tell = |event: Event| {
+                teller.tell(event);
+            };
+            let done = match task {
+                Task::Disable { package_size } => disable(package_size, &mut tell),
+                Task::Unshare { slot } => unshare(slot, &mut tell),
+                Task::Repair(part) => repair(part, &mut tell),
+                Task::Remake(part, filesystem) => remake(part, &filesystem, &mut tell),
+            };
+            tell(Event::Done(done));
+        })?;
+        Ok(Worker { worker })
     }
 
+    /// Readable while events wait.
     pub fn fd(&self) -> RawFd {
-        self.wake.as_raw_fd()
+        self.worker.fd()
     }
 
     /// The events since the last call.
     pub fn events(&self) -> Vec<Event> {
-        let mut drain = [0u8; 64];
-        while unsafe { libc::read(self.wake.as_raw_fd(), drain.as_mut_ptr().cast(), drain.len()) } > 0 {}
-        self.events.try_iter().collect()
-    }
-}
-
-impl Drop for Worker {
-    /// The screen lets the worker go once its work has ended.
-    fn drop(&mut self) {
-        if let Some(thread) = self.thread.take() {
-            thread.join().expect("the partition worker does not panic");
-        }
+        self.worker.events()
     }
 }
 

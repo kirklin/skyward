@@ -20,6 +20,8 @@ struct Methods {
     /// Ask for a service without waiting for one that has not registered
     /// yet.
     check_service: u32,
+    /// Register a service.
+    add_service: u32,
     /// List the names registered at the dump priorities given.
     list_services: u32,
     /// Ask whether the phone says it has a service, whether or not it is
@@ -34,8 +36,8 @@ const LOOKUPS_DECLARED: u32 = 36;
 /// its methods.
 fn methods_of(sdk: u32) -> Methods {
     match sdk >= LOOKUPS_DECLARED {
-        true => Methods { check_service: 3, list_services: 6, is_declared: 9 },
-        false => Methods { check_service: 2, list_services: 4, is_declared: 7 },
+        true => Methods { check_service: 3, add_service: 5, list_services: 6, is_declared: 9 },
+        false => Methods { check_service: 2, add_service: 3, list_services: 4, is_declared: 7 },
     }
 }
 
@@ -47,8 +49,10 @@ fn methods() -> Result<Methods> {
     Ok(methods_of(sdk.parse().with_context(|| format!("{SDK} is {sdk:?}"))?))
 }
 
-/// Every dump priority a service can register at.
+/// Every dump priority a service can register at, and the one a service
+/// registers at that asks for none.
 const DUMP_PRIORITY_ALL: i32 = 0b1111;
+const DUMP_PRIORITY_DEFAULT: i32 = 0b1000;
 
 /// Ask any object which process serves it. libbinder answers this itself,
 /// for every object, before any interface sees the call.
@@ -90,6 +94,22 @@ pub fn find<'a>(binder: &'a crate::driver::Binder, name: &str) -> Result<Option<
         Some(handle) => Ok(Some(crate::driver::Handle::hold(binder, handle)?)),
         None => Ok(None),
     }
+}
+
+/// Register the object this program serves under `number`, through
+/// `binder`, as the service `name`: for every program to find, none of
+/// them in a sandbox, at no dump priority of its own. The directory takes
+/// a hardware service only where the phone's description names it.
+#[cfg(target_os = "android")]
+pub fn add(binder: &crate::driver::Binder, name: &str, number: u64) -> Result<()> {
+    let directory = binder.directory()?;
+    let mut call = Parcel::call(DIRECTORY);
+    call.string(name);
+    call.object(number);
+    call.bool(false);
+    call.i32(DUMP_PRIORITY_DEFAULT);
+    let reply = directory.transact(methods()?.add_service, &call).with_context(|| format!("register {name}"))?;
+    status::ok(&mut reply.read()).with_context(|| format!("register {name}"))
 }
 
 /// Every name registered with the directory, the directory's own among
@@ -147,9 +167,9 @@ mod tests {
     /// the first and the second of them.
     #[test]
     fn the_directory_of_android_16_numbers_its_methods_two_and_four_further_on() {
-        assert_eq!(methods_of(33), Methods { check_service: 2, list_services: 4, is_declared: 7 }, "the 13 Ultra's recovery");
+        assert_eq!(methods_of(33), Methods { check_service: 2, add_service: 3, list_services: 4, is_declared: 7 }, "the 13 Ultra's recovery");
         assert_eq!(methods_of(35), methods_of(33));
-        assert_eq!(methods_of(36), Methods { check_service: 3, list_services: 6, is_declared: 9 }, "the 17 Ultra's recovery");
+        assert_eq!(methods_of(36), Methods { check_service: 3, add_service: 5, list_services: 6, is_declared: 9 }, "the 17 Ultra's recovery");
         assert_eq!(methods_of(37), methods_of(36));
     }
 }

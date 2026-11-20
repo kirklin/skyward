@@ -1,0 +1,36 @@
+service vendor.qti.hardware.display.composer /vendor/bin/hw/vendor.qti.hardware.display.composer-service
+    class hal animation
+    user system
+    group graphics drmrpc
+    capabilities SYS_NICE
+    onrestart restart surfaceflinger
+    socket pps stream 0660 system system
+    writepid /dev/cpuset/system-background/tasks
+    # MIUI ADD: Performance_MemoryEnhance
+    writepid /sys/kernel/reserve_pool/pid /sys/kernel/mi_mempool/pids
+    # END Performance_MemoryEnhance
+
+on post-fs-data
+    # for primary panel
+    chown system system /sys/class/mi_display/disp-DSI-0/wp_info
+    chmod 0444 /sys/class/mi_display/disp-DSI-0/wp_info
+    chown system system /sys/class/mi_display/disp-DSI-0/brightness_clone
+    chmod 0664 /sys/class/mi_display/disp-DSI-0/brightness_clone
+    chown system system /sys/class/mi_display/disp-DSI-0/max_brightness_clone
+    chmod 0664 /sys/class/mi_display/disp-DSI-0/max_brightness_clone
+    # for secondary panel
+    chown system system /sys/class/mi_display/disp-DSI-1/wp_info
+    chmod 0444 /sys/class/mi_display/disp-DSI-1/wp_info
+    chown system system /sys/class/mi_display/disp-DSI-1/brightness_clone
+    chmod 0664 /sys/class/mi_display/disp-DSI-1/brightness_clone
+    chown system system /sys/class/mi_display/disp-DSI-1/max_brightness_clone
+    chmod 0664 /sys/class/mi_display/disp-DSI-1/max_brightness_clone
+    # display backlight sysfs node for ddsi and dp
+    chown system system /sys/class/backlight/panel2-backlight/brightness
+    chown system system /sys/class/backlight/panel2-backlight/max_brightness
+    chown system system /sys/class/backlight/panel3-backlight/brightness
+    chown system system /sys/class/backlight/panel3-backlight/max_brightness
+    chown system system /sys/class/backlight/DP1-backlight/brightness
+    chown system system /sys/class/backlight/DP1-backlight/max_brightness
+    chown system system /sys/class/backlight/DP2-backlight/brightness
+    chown system system /sys/class/backlight/DP2-backlight/max_brightness

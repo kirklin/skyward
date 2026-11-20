@@ -1,0 +1,9 @@
+# Copyright (c) 2024 Xiaomi Technologies, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Xiaomi Technologies, Inc.
+#
+service tofsensorservice  /odm/bin/hw/vendor.xiaomi.sensor.tofsensorservice.aidl
+    class late_start
+    user system
+    group system input readproc
+    capabilities SYS_NICE

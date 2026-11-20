@@ -1,0 +1,67 @@
+on post-fs-data
+    # for at cmd
+    chmod 0777 /dev/smd8
+    chown radio radio /dev/smd8
+    # for modem data file
+    mkdir /data/vendor/modem 0777 radio radio
+
+on early-boot
+    #exec u:r:vendor_qti_init_shell:s0 -- /vendor/bin/init.xiaomi.modem.sh
+
+service xiaomi_modem_sh /vendor/bin/init.xiaomi.modem.sh
+    class late_start
+    user root
+    group root system radio
+    oneshot
+
+service xiaomi_modem_cust_sh /vendor/bin/init.xiaomi.modem.cust.sh
+    class late_start
+    user root
+    group root system radio
+    oneshot
+
+service diag_mdlog_auto_start /vendor/bin/diag_mdlog -q 0x2006 -j 1 -u -c -i -n 50
+    class late_start
+    user system
+    group system oem_2902 oem_2905 sdcard_rw sdcard_r media_rw
+    disabled
+    oneshot
+
+service diag_mdlog_auto_stop /vendor/bin/diag_mdlog -k
+    class late_start
+    user system
+    group system oem_2902 oem_2905 sdcard_rw sdcard_r media_rw
+    disabled
+    oneshot
+
+on property:persist.vendor.radio.diag_log_trriger=modem
+    setprop debug.offline_log.enable true
+    setprop debug.offline_log.module ${persist.vendor.radio.diag_log_trriger}
+    start diag_mdlog_auto_start
+
+on property:persist.vendor.radio.diag_log_trriger=audio
+    setprop debug.offline_log.enable true
+    setprop debug.offline_log.module ${persist.vendor.radio.diag_log_trriger}
+    start diag_mdlog_auto_start
+
+on property:persist.vendor.radio.diag_log_trriger=gps
+    setprop debug.offline_log.enable true
+    setprop debug.offline_log.module ${persist.vendor.radio.diag_log_trriger}
+    start diag_mdlog_auto_start
+
+on property:persist.vendor.radio.diag_log_trriger=sensor
+    setprop debug.offline_log.enable true
+    setprop debug.offline_log.module ${persist.vendor.radio.diag_log_trriger}
+    start diag_mdlog_auto_start
+
+on property:persist.vendor.radio.close_wenkong=yes
+    stop mi_thermald
+
+on property:ro.vendor.oem.ctacode=*
+    setprop ro.ril.oem.ctacode ${ro.vendor.oem.ctacode}
+
+on property:debug.modem.mcrash_history_chmod=777
+    chmod 777 /data/vendor/ramdump/mcrash_history
+
+on property:debug.modem.modem_config_chmod=777
+    chmod 777 /data/vendor/modem_config

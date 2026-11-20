@@ -1,0 +1,6 @@
+service vendor.servicetrackeraidl /vendor/bin/hw/vendor.qti.hardware.servicetrackeraidl-service
+    class hal
+    disabled
+    user system
+    group system
+    interface aidl vendor.qti.hardware.servicetrackeraidl.IServicetracker/default

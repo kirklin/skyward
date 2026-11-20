@@ -1,0 +1,15 @@
+# MIUI ADD: Kernel_F2fsHybridUFS
+service hybrid_control /system_ext/bin/hybrid_control
+    class main
+    user root
+    group system
+    disabled
+    oneshot
+    seclabel u:r:hybrid_control:s0
+
+on property:persist.sys.stability.hybrid_enable=*
+    start hybrid_control
+on property:persist.sys.stability.hybrid_params=*
+    start hybrid_control
+
+# END Kernel_F2fsHybridUFS

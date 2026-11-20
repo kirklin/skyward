@@ -1,0 +1,11 @@
+#==============================================================================
+#       vendor.qti.syshealthmon-service.rc
+#
+#  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+#  All Rights Reserved.
+#  Confidential and Proprietary - Qualcomm Technologies, Inc.
+#===============================================================================
+service syshealthmon-service /vendor/bin/vendor.qti.syshealthmon-service
+    class hal
+    user system
+    group system

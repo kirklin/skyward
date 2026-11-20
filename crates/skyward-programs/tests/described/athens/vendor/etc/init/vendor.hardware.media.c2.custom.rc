@@ -1,0 +1,8 @@
+service vendor-mi-media-c2-hal /vendor/bin/hw/vendor.hardware.media.c2.custom
+    class hal
+    user mediacodec
+    group camera mediadrm drmrpc
+    ioprio rt 4
+    task_profiles ProcessCapacityHigh
+
+

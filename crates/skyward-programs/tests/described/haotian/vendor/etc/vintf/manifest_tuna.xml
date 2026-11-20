@@ -1,0 +1,28 @@
+<!--
+    Input:
+        device/qcom/sun/manifest_tuna.xml
+        vendor/xiaomi/proprietary/slm/port/src/manifest_aidl.xml
+        vendor/xiaomi/proprietary/miwillp/port/src/manifest_aidl.xml
+        vendor/xiaomi/proprietary/minet/port/src/manifest_aidl.xml
+-->
+<manifest version="8.0" type="device" target-level="202404">
+    <hal format="aidl">
+        <name>android.hardware.gatekeeper</name>
+        <fqname>IGatekeeper/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.qti.sla.service</name>
+        <fqname>ISlaAIDLService/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.xiaomi.aidl.minet</name>
+        <fqname>IMiNetAIDLService/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.xiaomi.aidl.miwill</name>
+        <fqname>IMiwillAIDLService/default</fqname>
+    </hal>
+    <sepolicy>
+        <version>202404</version>
+    </sepolicy>
+</manifest>

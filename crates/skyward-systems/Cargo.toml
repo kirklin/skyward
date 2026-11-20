@@ -6,15 +6,18 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+hex = { workspace = true }
 libc = { workspace = true }
 serde = { workspace = true }
 sha2 = "0.10.9"
 skyward-block = { path = "../skyward-block" }
 skyward-bootimg = { path = "../skyward-bootimg" }
-skyward-config = { path = "../skyward-config" }
 skyward-vab = { path = "../skyward-vab" }
 toml = { workspace = true }
 zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+skyward-config = { path = "../skyward-config" }
 
 [dev-dependencies]
 abootimg-oxide = "0.5.2"

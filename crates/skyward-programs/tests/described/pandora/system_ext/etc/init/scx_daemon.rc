@@ -1,0 +1,14 @@
+service scx_daemon /system_ext/bin/scx_daemon
+    class main
+    user root
+    group root system
+    capabilities SYS_ADMIN SYS_RESOURCE
+    rlimit rtprio 1 1
+    oneshot
+    disabled
+
+on property:sys.scx_daemon.enable=1
+    start scx_daemon
+
+on property:sys.scx_daemon.enable=0
+    stop scx_daemon

@@ -1,0 +1,5 @@
+service dvs-aidl-service /odm/bin/hw/dvs-aidl-service
+interface aidl vendor.dolby.dvs.IDvs/default
+class hal
+user mediacodec
+group camera mediadrm drmrpc

@@ -10,6 +10,7 @@ anyhow = { workspace = true }
 base64 = "0.22.1"
 cbc = { version = "0.1.2", features = ["alloc", "block-padding"] }
 dhcproto = "0.15.0"
+hex = { workspace = true }
 hickory-proto = { version = "0.26.3", default-features = false, features = ["std"] }
 httparse = "1.10.1"
 libc = { workspace = true }
@@ -18,6 +19,7 @@ semver = "1.0.28"
 serde = { workspace = true }
 serde_json = "1.0.154"
 sha2 = "0.10.9"
+skyward-block = { path = "../skyward-block" }
 # The resolver ureq takes is under its unversioned API, which may change
 # between any two releases.
 ureq = { version = "=3.5.0", default-features = false, features = ["rustls"] }

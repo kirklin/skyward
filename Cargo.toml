@@ -1,5 +1,5 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = [
     "crates/skyward",
     "crates/skyward-config",
@@ -8,6 +8,8 @@ members = [
     "crates/skyward-block",
     "crates/skyward-vab",
     "crates/skyward-modules",
+    "crates/skyward-omapi",
+    "crates/skyward-programs",
     "crates/skyward-ui",
     "crates/skyward-crypto",
     "crates/skyward-files",
@@ -25,14 +27,15 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.0"
-edition = "2021"
+version = "0.3.1"
+edition = "2024"
 license = "GPL-3.0-or-later"
 
 [workspace.dependencies]
 libc = "0.2.175"
 anyhow = "1.0.100"
-serde = { version = "1.0.228", features = ["derive"] }
+hex = "0.4.3"
+serde ={ version = "1.0.228", features = ["derive"] }
 toml = "0.9.8"
 
 [profile.release]

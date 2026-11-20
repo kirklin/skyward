@@ -1,0 +1,14 @@
+<!--/*
+ * Copyright (c) 2023 Qualcomm Technologies, Inc.
+ * All Rights Reserved.
+ * Confidential and Proprietary - Qualcomm Technologies, Inc.
+ */
+-->
+<manifest version="1.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.data.iwlandata</name>
+        <version>1</version>
+        <fqname>IIWlan/slot1</fqname>
+        <fqname>IIWlan/slot2</fqname>
+    </hal>
+</manifest>

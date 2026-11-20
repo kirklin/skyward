@@ -5,11 +5,11 @@
 
 use anyhow::{Context, Result};
 use skyward_binder::driver::Binder;
+use skyward_sys::worker::Worker;
 use skyward_vab::boot::BootControl;
 use skyward_vab::{Merge, Slot};
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
-use std::sync::mpsc::{self, Receiver};
-use std::thread::{self, JoinHandle};
+use std::os::fd::RawFd;
+use std::thread;
 use std::time::Duration;
 
 /// How often a merge under way is looked at, as libsnapshot looks.
@@ -51,61 +51,36 @@ pub enum Event {
 
 /// A merge followed on a thread of its own.
 pub struct Merger {
-    events: Receiver<Event>,
-    /// Readable while events wait.
-    wake: OwnedFd,
-    thread: Option<JoinHandle<()>>,
+    /// The screen lets it go once the merge has ended.
+    worker: Worker<Event>,
 }
 
 impl Merger {
     /// Follow the merge into `slot` as [`run`] does, starting it first where
     /// `start`.
     pub fn start(slot: Slot, start: bool) -> Result<Merger> {
-        let mut fds = [0; 2];
-        if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) } != 0 {
-            return Err(std::io::Error::last_os_error()).context("make the merger's wake pipe");
-        }
-        let (wake, signal) = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
-        let (tx, events) = mpsc::channel();
-        let thread = thread::Builder::new()
-            .name("merge".into())
-            .spawn(move || {
-                let tell = |event: Event| {
-                    // The screen only stops listening once it has let the
-                    // merger go.
-                    let _ = tx.send(event);
-                    unsafe { libc::write(signal.as_raw_fd(), [1u8].as_ptr().cast(), 1) };
-                };
-                if let Err(e) = run(slot, start, &mut |merge| tell(Event::Looked(*merge))) {
-                    tell(Event::Failed(format!("{e:#}")));
-                }
-            })
-            .context("start the merger")?;
-        Ok(Merger { events, wake, thread: Some(thread) })
+        let worker = Worker::start("merge", move |tell| {
+            if let Err(e) = run(slot, start, &mut |merge| {
+                tell.tell(Event::Looked(*merge));
+            }) {
+                tell.tell(Event::Failed(format!("{e:#}")));
+            }
+        })?;
+        Ok(Merger { worker })
     }
 
+    /// Readable while events wait.
     pub fn fd(&self) -> RawFd {
-        self.wake.as_raw_fd()
+        self.worker.fd()
     }
 
     /// The events since the last call.
     pub fn events(&self) -> Vec<Event> {
-        let mut drain = [0u8; 64];
-        while unsafe { libc::read(self.wake.as_raw_fd(), drain.as_mut_ptr().cast(), drain.len()) } > 0 {}
-        self.events.try_iter().collect()
+        self.worker.events()
     }
 
     /// Whether the merge is no longer followed: it ended, or failed.
     pub fn ended(&self) -> bool {
-        self.thread.as_ref().is_none_or(JoinHandle::is_finished)
-    }
-}
-
-impl Drop for Merger {
-    /// The screen lets the merger go once it has ended.
-    fn drop(&mut self) {
-        if let Some(thread) = self.thread.take() {
-            thread.join().expect("the merger does not panic");
-        }
+        self.worker.ended()
     }
 }

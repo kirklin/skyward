@@ -607,10 +607,10 @@ pub fn initiate(snaps: &Snapshots, current: Slot, md: &Metadata, tell: &dyn Fn(M
     snaps.write_update(&update, tell)?;
     let mut failure = FailureCode::Ok;
     for name in &group {
-        if let Err(code) = switch_to_merge(snaps, name) {
-            if failure == FailureCode::Ok {
-                failure = code;
-            }
+        if let Err(code) = switch_to_merge(snaps, name)
+            && failure == FailureCode::Ok
+        {
+            failure = code;
         }
     }
     if failure != FailureCode::Ok {
@@ -802,10 +802,10 @@ fn merge_second_phase(snaps: &Snapshots, current: Slot) -> FailureCode {
         if status.phase() != MergePhase::SecondPhase {
             continue;
         }
-        if let Err(code) = switch_to_merge(snaps, name) {
-            if result == FailureCode::Ok {
-                result = code;
-            }
+        if let Err(code) = switch_to_merge(snaps, name)
+            && result == FailureCode::Ok
+        {
+            result = code;
         }
     }
     result

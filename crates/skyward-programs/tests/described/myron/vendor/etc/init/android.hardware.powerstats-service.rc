@@ -1,0 +1,8 @@
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# All rights reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+
+service vendor.powerstats-hal /vendor/bin/hw/android.hardware.powerstats-service.qti
+	class hal
+	user system
+	group system

@@ -26,6 +26,25 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # A release goes by its tag to whoever downloads it, and a build by the
+  # version built into it, which is what it holds against the newest
+  # release's tag when it looks for an update: a tag naming another
+  # version than the one built would have every phone find an update in
+  # the very build it runs. Such a tag publishes nothing.
+  tag:
+    name: Check that the tag names the version built
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Hold the tag against the workspace's version
+        run: |
+          version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::the tag is $GITHUB_REF_NAME, and the workspace builds version $version"
+            exit 1
+          fi
+
   check:
     name: Lint and test
     runs-on: ubuntu-24.04
@@ -37,7 +56,7 @@ jobs:
       - name: Test
         run: cargo test --locked --workspace
       - name: Lint what runs on the phone
-        run: cargo ndk -t arm64-v8a --platform 30 clippy --locked -p skyward -p skyward-install -p skyward-systems -p skyward-system-init -- -D warnings
+        run: cargo ndk -t arm64-v8a --platform 30 clippy --locked --workspace --all-targets -- -D warnings
 
   tools:
     name: Build the recovery service and the packer
@@ -150,7 +169,7 @@ jobs:
   release:
     name: Publish the release
     if: github.ref_type == 'tag'
-    needs: [check, recovery]
+    needs: [tag, check, recovery]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

@@ -1,0 +1,10 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/wlan/common-tools/wifilearner/vendor.qti.hardware.wifi.wifilearner-service.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.wifi.wifilearner</name>
+        <fqname>IWifiStats/default</fqname>
+    </hal>
+</manifest>

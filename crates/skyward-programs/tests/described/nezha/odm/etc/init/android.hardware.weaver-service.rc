@@ -1,0 +1,9 @@
+service goodix_weaver_hal_service /odm/bin/hw/android.hardware.weaver-service
+    class hal
+    user  system
+    group system drmrpc
+    capabilities WAKE_ALARM
+    disabled
+
+on property:ro.special_edition=true
+    start goodix_weaver_hal_service

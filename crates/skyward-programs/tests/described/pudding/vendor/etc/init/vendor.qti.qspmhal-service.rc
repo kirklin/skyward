@@ -1,0 +1,16 @@
+#==============================================================================
+#       vendor.qti.qspmhal-service.rc
+#
+#  Copyright (c) 2019 Qualcomm Technologies, Inc.
+#  All Rights Reserved.
+#  Confidential and Proprietary - Qualcomm Technologies, Inc.
+#===============================================================================
+service qspmhal /vendor/bin/vendor.qti.qspmhal-service
+    class hal
+    user system
+    group system
+    interface aidl vendor.qti.qspmhal.IQspmhal/default
+
+on post-fs-data
+    #Create QSPM-hal deamon related dirs
+    mkdir /data/vendor/gaming 0770 root system

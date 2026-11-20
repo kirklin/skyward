@@ -1,0 +1,13 @@
+service videoservice-service /vendor/bin/hw/vendor.xiaomi.hardware.videoservice-service
+    class hal
+    user mediacodec
+    group system camera audio
+
+on post-fs-data
+    mkdir /data/vendor/video 0777 audio audio
+    write /data/vendor/video/vpuHalPid 0
+    chown audio audio /data/vendor/video/vpuHalPid
+    chmod 0777 /data/vendor/video/vpuHalPid
+    write /data/vendor/video/vpuSdkPid 0
+    chown audio audio /data/vendor/video/vpuSdkPid
+    chmod 0777 /data/vendor/video/vpuSdkPid

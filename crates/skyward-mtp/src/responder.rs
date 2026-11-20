@@ -8,6 +8,7 @@ use crate::dataset::{Command, Reader, Writer};
 use crate::store::{self, Change, Store, TOP};
 use crate::{format as formats, time};
 use jiff::tz::TimeZone;
+use skyward_block::mount;
 use skyward_files::{Clash, Ownership};
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -435,10 +436,10 @@ impl Responder {
             Received::Stopped => None,
         };
         // A file not sent whole is not left behind.
-        if let Err(e) = fs::remove_file(&sending.path) {
-            if let Some(reply) = &mut failed {
-                reply.why = Some(format!("{}; then delete {}: {e}", reply.why.take().unwrap_or_default(), sending.path.display()));
-            }
+        if let Err(e) = fs::remove_file(&sending.path)
+            && let Some(reply) = &mut failed
+        {
+            reply.why = Some(format!("{}; then delete {}: {e}", reply.why.take().unwrap_or_default(), sending.path.display()));
         }
         if let Some(store) = &mut self.store {
             store.remove(sending.handle);
@@ -617,8 +618,10 @@ impl Responder {
     fn storage_info(&self, cmd: &Command) -> Reply {
         let Some([id]) = cmd.take::<1>() else { return Reply::code(response::INVALID_PARAMETER) };
         let Some(s) = self.offered.as_ref().filter(|_| id == STORAGE_ID) else { return Reply::code(response::INVALID_STORAGE_ID) };
-        let (total, free) = match space(&s.top) {
-            Ok(space) => space,
+        // What is free is what is free for files other than the system's
+        // own.
+        let (total, free) = match mount::space(&s.top) {
+            Ok(room) => (room.total, room.available),
             Err(e) => return Reply::failed(response::GENERAL_ERROR, format!("look at {}: {e}", s.top.display())),
         };
         let mut w = Writer::new();
@@ -848,8 +851,8 @@ impl Responder {
         let into = store.path(folder).expect("a known folder has a path");
         let path = into.join(&info.name);
         if info.size != u32::MAX {
-            match space(&into) {
-                Ok((_, free)) if u64::from(info.size) > free => return Reply::code(response::STORAGE_FULL),
+            match mount::space(&into) {
+                Ok(room) if u64::from(info.size) > room.available => return Reply::code(response::STORAGE_FULL),
                 Ok(_) => {}
                 Err(e) => return Reply::failed(response::GENERAL_ERROR, format!("look at {}: {e}", into.display())),
             }
@@ -954,8 +957,8 @@ impl Responder {
         if fs::symlink_metadata(&target).is_ok() {
             return Reply::failed(response::GENERAL_ERROR, format!("{} is there already", target.display()));
         }
-        match space(&into) {
-            Ok((_, free)) if o.size() > free => return Reply::code(response::STORAGE_FULL),
+        match mount::space(&into) {
+            Ok(room) if o.size() > room.available => return Reply::code(response::STORAGE_FULL),
             Ok(_) => {}
             Err(e) => return Reply::failed(response::GENERAL_ERROR, format!("look at {}: {e}", into.display())),
         }
@@ -1076,21 +1079,6 @@ impl ObjectInfo {
         let modified = r.string()?;
         Some(ObjectInfo { format, size, name, modified })
     }
-}
-
-/// The bytes the filesystem holding `path` has, and those free for files
-/// other than the system's own.
-fn space(path: &Path) -> io::Result<(u64, u64)> {
-    use std::os::unix::ffi::OsStrExt;
-    let c = std::ffi::CString::new(path.as_os_str().as_bytes()).map_err(io::Error::other)?;
-    let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
-    if unsafe { libc::statvfs(c.as_ptr(), &mut s) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // The counts are 32 bits on some hosts and 64 on the phone.
-    #[allow(clippy::useless_conversion)]
-    let (blocks, available, size) = (u64::from(s.f_blocks), u64::from(s.f_bavail), u64::from(s.f_frsize));
-    Ok((blocks * size, available * size))
 }
 
 /// Give the entry at `path` the time it last changed.

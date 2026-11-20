@@ -1,0 +1,10 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/diag-router/vendor.qti.diag.hal.service.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.diaghal</name>
+        <fqname>Idiag/default</fqname>
+    </hal>
+</manifest>

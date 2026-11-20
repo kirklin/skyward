@@ -1,0 +1,14 @@
+<!--/*
+ * Copyright (c) 2023 Qualcomm Technologies, Inc.
+ * All Rights Reserved.
+ * Confidential and Proprietary - Qualcomm Technologies, Inc.
+ */
+-->
+<manifest version="1.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.radio.uim_remote_server</name>
+        <version>1</version>
+        <fqname>IUimRemoteServiceServer/uimRemoteServer0</fqname>
+        <fqname>IUimRemoteServiceServer/uimRemoteServer1</fqname>
+    </hal>
+</manifest>

@@ -1,0 +1,11 @@
+service swap-installd /system_ext/bin/SwapNativeService
+    class main
+    user root
+    group root
+    disabled
+    seclabel u:r:swapboost_native:s0
+
+on property:persist.sys.swapservice.ctrl=true
+    start swap-installd
+on property:persist.sys.swapservice.ctrl=false
+    stop swap-installd

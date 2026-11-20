@@ -1,0 +1,10 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/noship-cne/common/CACertService/jni/src/cacert-saidl.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.cacertaidlservice</name>
+        <fqname>IService/default</fqname>
+    </hal>
+</manifest>

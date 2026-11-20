@@ -1,0 +1,6 @@
+service sigmahal_aidl /system_ext/bin/sigma_miracasthalservice_aidl
+  class main
+  user system
+  group audio
+  oneshot
+  disabled

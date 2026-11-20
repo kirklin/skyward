@@ -1,0 +1,11 @@
+<!--
+    Input:
+        vendor/xiaomi/proprietary/miface/impl/res/vintf/android.hardware.biometrics.face-v4.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>android.hardware.biometrics.face</name>
+        <version>4</version>
+        <fqname>IFace/default</fqname>
+    </hal>
+</manifest>

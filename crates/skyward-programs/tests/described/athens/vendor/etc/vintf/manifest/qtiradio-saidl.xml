@@ -1,0 +1,12 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/qcril-nr/qcrild/qcrild/qtiradio-saidl.xml
+-->
+<manifest version="9.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.radio.qtiradio</name>
+        <version>16</version>
+        <fqname>IQtiRadioStable/slot1</fqname>
+        <fqname>IQtiRadioStable/slot2</fqname>
+    </hal>
+</manifest>

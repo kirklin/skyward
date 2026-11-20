@@ -1,0 +1,11 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/mm-audio/qasr/qasr_vintf.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.hardware.qasr</name>
+        <version>2</version>
+        <fqname>IQasr/default</fqname>
+    </hal>
+</manifest>

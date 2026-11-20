@@ -1,0 +1,19 @@
+<!--
+    Input:
+        vendor/qcom/proprietary/qms/daemon/android/src/qms-saidl.xml
+-->
+<manifest version="8.0" type="device">
+    <hal format="aidl">
+        <name>vendor.qti.data.dmapconsent</name>
+        <fqname>IService/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.qti.data.ntn</name>
+        <fqname>IQmsSatelliteService/default</fqname>
+    </hal>
+    <hal format="aidl">
+        <name>vendor.qti.data.txpwrservice</name>
+        <version>7</version>
+        <fqname>ITxPwrService/default</fqname>
+    </hal>
+</manifest>

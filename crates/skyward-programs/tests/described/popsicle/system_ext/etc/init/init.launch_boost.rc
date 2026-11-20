@@ -1,0 +1,24 @@
+service iorapd /system_ext/bin/iorapd
+    class main
+    user  system
+    group root
+    capabilities DAC_READ_SEARCH SYS_NICE
+    writepid /dev/cpuset/foreground/tasks
+
+# TODO: should this be something else like performance/tasks?
+# the main 'activity hint' thread needs to be fairly high priority to kick off
+# tracing or prefetching asap.
+
+on property:persist.sys.stability.PrereadEnable=false
+    stop iorapd
+
+on post-fs-data
+    # Create directory for iorapd (see iorapd_data_file in selinux file_contexts).
+    mkdir /data/misc/iorapd/ 0750 system root
+
+on property:sys.boot_completed=1
+    chmod 0751 /data/dalvik-cache/arm64
+
+# Start iorapd when either prefetching or tracing is enabled.
+on property:persist.sys.stability.PrereadEnable=true
+    start iorapd

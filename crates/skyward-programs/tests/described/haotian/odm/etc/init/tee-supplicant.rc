@@ -1,0 +1,28 @@
+# For MTK DRM integration:
+service tee-supplicant /odm/bin/tee-supplicant
+    class core
+    user root
+    group system secure_element nfc drmrpc
+    capabilities SYS_RAWIO
+    disabled
+
+on fs
+    write /proc/bootprof "init tee-supplicant"
+   # set SELinux security contexts on upgrade or policy update
+    restorecon_recursive /mnt/vendor/persist
+    chown root system /mnt/vendor/persist
+    chmod 0771 /mnt/vendor/persist
+    chmod 0660 /dev/0:0:0:49476
+    chmod 0666 /dev/kmsg
+    mkdir /mnt/vendor/persist/mitee 0775 root system
+    mkdir /mnt/vendor/persist/mitee/data 0775 root system
+
+# after firmware_mounts_complete to start oemvm
+on firmware_mounts_complete
+    chmod 0660 /dev/tee0
+    chmod 0660 /dev/teepriv0
+    chown system system /dev/tee0
+    chown system system /dev/teepriv0
+    start tee-supplicant
+    setprop vendor.teefs_state ready
+

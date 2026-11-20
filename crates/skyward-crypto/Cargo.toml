@@ -8,13 +8,14 @@ license.workspace = true
 anyhow = { workspace = true }
 sha2 = "0.10.9"
 aes-gcm = "0.10.3"
+hex = { workspace = true }
 hmac = "0.12.1"
 scrypt = { version = "0.11.0", default-features = false }
 skyward-binder = { path = "../skyward-binder" }
+skyward-block = { path = "../skyward-block" }
 # The phone's own stores are sqlite databases, read on the phone and in the
 # tests of the readers.
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 libc = { workspace = true }
-skyward-block = { path = "../skyward-block" }

@@ -1,0 +1,50 @@
+# Copyright (C) 2024 Xiaomi Corporation
+# SPDX-License-Identifier: Apache-2.0
+#
+# MiPatch Engine Service
+# This service loads patches during early-init stage
+
+service mipatch_engine_prepare /system_ext/bin/mipatch_engine --prepare /dev/mipatch/result.json
+    class core
+    user root
+    group root system
+    oneshot
+    setenv MIPATCH_MOUNT_DIR /mipatch
+    setenv MIPATCH_METADATA metadata.json
+    seclabel u:r:mipatch_engine:s0
+
+service mipatch_engine_finalize /system_ext/bin/mipatch_engine --finalize /dev/mipatch/result.json
+    class core
+    user root
+    group root system
+    oneshot
+    seclabel u:r:mipatch_engine:s0
+
+# mipatch_engine_prepare/finalize are started by exec_start in main init.rc
+# (system/core/rootdir/init.rc) before apexd-bootstrap.
+
+# Clear retry counter on boot complete
+on property:sys.boot_completed=1
+    xiaomi_clear_mipatch_retry
+
+# MiPatch Rebind Service
+# Re-execute bind mounts on top of overlay merged view (on post-fs)
+service mipatch_rebind /system_ext/bin/mipatch_engine --rebind
+    class core
+    user root
+    group root system
+    oneshot
+    setenv MIPATCH_MOUNT_DIR /mipatch
+    setenv MIPATCH_METADATA metadata.json
+    seclabel u:r:mipatch_engine:s0
+
+# MiPatch Install Service
+# Triggered by: setprop ctl.start mipatch_installer
+# Package path is read from persist.sys.mipatch.package property
+service mipatch_installer /system_ext/bin/mipatch_engine --install
+    class main
+    user root
+    group root system media_rw everybody
+    disabled
+    oneshot
+    seclabel u:r:mipatch_engine:s0

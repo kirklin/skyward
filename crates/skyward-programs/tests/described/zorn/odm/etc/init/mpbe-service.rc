@@ -1,0 +1,23 @@
+on post-fs-data
+    mkdir /data/odm/mpbe 0770 system system
+
+on property:sys.boot_completed=1
+    setprop vendor.mi.mpbe.stop 1
+    setprop vendor.mi.mpbe.enable 1
+    setprop persist.vendor.mi.mpbe.config.update 0
+    start mpbe
+
+service mpbe /odm/bin/mpbe_service
+    class main
+    user root
+    group system
+    seclabel u:r:mpbe:s0
+    disabled
+
+on property:vendor.mi.mpbe.stop=1
+    write /proc/mpbe/ctrl 0
+    stop mpbe
+
+on property:vendor.mi.mpbe.stop=0
+    write /proc/mpbe/ctrl 1
+    start mpbe

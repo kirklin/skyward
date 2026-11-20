@@ -1,0 +1,115 @@
+service perfobserve /system_ext/bin/perfobserve
+    class main
+    user root
+    # user system
+    group system readproc
+    capabilities SYS_PTRACE
+    seclabel u:r:perfetto:s0
+    disabled
+    oneshot
+
+# 预置 wake_tick，保证 PO 启动时 property 已入 area（pi 非 null）。
+# on init 早于所有 on property:* trigger；值 0 仅占位（PO 只看 serial）。
+on init
+    setprop sys.po.wake_tick 0
+
+# ---------------------------------------------------------------------------
+# 云控【启动】路径（sys.po.cloud_enabled=1）
+# PO 默认 disabled；init 监听 persist.sys.perf_turbo_type=* 起 po_helper.sh
+# read_cloud_bits 派生 sys.po.cloud_enabled。=1 触发本 block 拉起 PO。
+# ---------------------------------------------------------------------------
+on property:sys.po.cloud_enabled=1 && property:sys.boot_completed=1
+    start perfobserve
+
+# ---------------------------------------------------------------------------
+# 云控【关闭】路径（sys.po.cloud_enabled=0）— 故意**不写** stop 触发器
+# 原因：init 的 `stop perfobserve` 会发 SIGKILL，直接中断正在运行的 PO 服务
+#       （丢 trace 文件 + perfetto session 悬挂）。
+# 实际关闭由 PO main() 在进程内 graceful 处理：
+#   - main() 用 __system_property_wait 监听 sys.po.cloud_enabled，翻 "0" 时
+#     走 PerfObserveService::requestShutdown + waitForActiveTraces（30s 上限），
+#     等当前 trace 结束后进程正常 exit。
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# 运行时手动开关（仅限调试兜底）
+# ---------------------------------------------------------------------------
+on property:sys.perfobserve.enable=1 && property:sys.boot_completed=1
+    start perfobserve
+on property:sys.perfobserve.enable=true && property:sys.boot_completed=1
+    start perfobserve
+
+# PO main-loop 自行检测 enable=0 并优雅退出，不再由 init stop（避免 SIGKILL）
+on property:sys.perfobserve.enable=0
+    setprop sys.po.wake_tick 1
+on property:sys.perfobserve.enable=false
+    setprop sys.po.wake_tick 1
+
+# ---------------------------------------------------------------------------
+# 内测登录态启动路径（sys.jtom.login=1）
+# jtom app Application.onCreate() 在系统账号登录后 setprop 为 1。
+# J 团队代码未合入时该属性永远为空，此 trigger 不 fire，PO 行为等价现状。
+# ---------------------------------------------------------------------------
+on property:sys.jtom.login=1 && property:sys.boot_completed=1
+    start perfobserve
+
+# ---------------------------------------------------------------------------
+# 三源聚合唤醒：M/C/J 任一变化 → setprop sys.po.wake_tick → main 单线程响应。
+# wake_tick 的值无意义（统一写 "1"），仅作为 serial bump 载体；
+# 实际 enable 判定由 main() 的 shouldKeepRunning() 读三源真值完成。
+# 注：init 对 property 同值 setprop 不重复 fire，但 bionic 对任何 setprop 都 bump
+# serial，main 的 __system_property_wait 基于 serial 唤醒，所以 tick 恒为 "1" 不影响唤醒。
+# ---------------------------------------------------------------------------
+on property:sys.po.cloud_enabled=*
+    setprop sys.po.wake_tick 1
+
+on property:sys.jtom.login=*
+    setprop sys.po.wake_tick 1
+
+on property:sys.perfobserve.enable=*
+    setprop sys.po.wake_tick 1
+
+# ctrl_oneshot=1 同时匹配 =1 和 =* 两个 trigger（start + wake_tick bump），是预期行为：
+# start 负责拉起进程，wake_tick bump 统一四源聚合唤醒机制。
+on property:sys.po.ctrl_oneshot=1 && property:sys.boot_completed=1
+    start perfobserve
+
+on property:sys.po.ctrl_oneshot=*
+    setprop sys.po.wake_tick 1
+
+# po_ctrl_cloud accepted-state mirror: -1=default, 0=cloud-control off.
+# It only wakes the graceful main-loop; it must not start perfobserve by itself.
+on property:sys.po.ctrl_cloud=*
+    setprop sys.po.wake_tick 1
+
+on post-fs-data
+    mkdir /data/misc/perfobserve 0770 system system
+    mkdir /data/misc/perfobserve/configs 0770 system system
+    mkdir /data/misc/perfobserve/logs 0770 system system
+    mkdir /data/misc/perfobserve/traces 0770 system system
+    start perfobserve_cleanup
+    mkdir /data/misc/perfetto-configs 0770 system system
+
+# ---------------------------------------------------------------------------
+# 云控位派生：persist.sys.perf_turbo_type 变化时，po_helper.sh read_cloud_bits
+# 模式读 bit6/bit10/bit8 并 setprop sys.po.cloud_enabled / sys.po.lab_mode。
+# init 原生 property trigger 保证 setprop 100% 触发（包括 boot 时 persist 加载）；
+# 不依赖 Java framework callback（MIUI ROM 上 addChangeCallback 不可靠）。
+# ---------------------------------------------------------------------------
+on property:persist.sys.perf_turbo_type=*
+    start perfobserve_read_cloud_bits
+
+service perfobserve_cleanup /system/bin/find /data/misc/perfobserve/traces -mindepth 1 -delete
+    user root
+    group system
+    disabled
+    oneshot
+    seclabel u:r:perfetto:s0
+
+service perfobserve_read_cloud_bits /system_ext/bin/po_helper.sh read_cloud_bits
+    class main
+    user system
+    group system
+    disabled
+    oneshot
+    seclabel u:r:shell:s0

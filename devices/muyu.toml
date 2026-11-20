@@ -22,6 +22,9 @@ minimum_brightness = 1
 partition = "modem"
 remoteproc = "adsp"
 
+[partitions]
+mounted = ["persist"]
+
 [modules]
 sources = ["vendor_boot", "vendor_dlkm", "vendor", "system_dlkm"]
 load = ["nt36532_touch"]

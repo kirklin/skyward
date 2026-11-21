@@ -26,8 +26,11 @@ const READY: &str = "sys.usb.ffs.mtp.ready";
 /// How long the phone waits for the thread to give a storage back.
 const GIVE_BACK: Duration = Duration::from_secs(10);
 
-/// How long init may take to hand the port to adb alone.
-const PORT_SWITCH: Duration = Duration::from_secs(5);
+/// How long init may take to hand the port to adb alone. The descriptor is
+/// written once init says so, but the property that says adb has it comes
+/// later on a phone whose init is slow to switch, and waiting five seconds
+/// gave up on a switch that was still coming.
+const PORT_SWITCH: Duration = Duration::from_secs(15);
 
 enum Message {
     /// Offer this storage, or none; the sender hears once nothing is under

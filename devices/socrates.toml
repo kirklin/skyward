@@ -1,0 +1,89 @@
+[device]
+codename = "socrates"
+brand = "Redmi"
+model = "REDMI K60 Pro"
+ab = true
+soc = { hans = "第二代骁龙®8移动平台", hant = "Snapdragon® 8 Gen 2 行動平台", en = "Snapdragon® 8 Gen 2 Mobile Platform" }
+os_version_prop = "ro.mi.os.version.incremental"
+
+[display]
+# The M11 panel's native mode, also used by the Goodix input device.
+width = 1440
+height = 3200
+density = 560
+
+[modules]
+sources = ["vendor_boot", "vendor_dlkm", "vendor"]
+# The Goodix GT9916S and Xiaomi touch layer are needed for PIN entry.
+load = ["xiaomi_touch", "goodix_core"]
+
+# The stock touch init gives these raw-frame nodes to touch_report.
+[[owners]]
+user = "system"
+group = "system"
+mode = 0o664
+paths = [
+    "/dev/xiaomi-touch",
+    "/proc/tp_hal_version",
+    "/proc/tp_fw_version",
+    "/proc/tp_lockdown_info",
+    "/sys/class/touch/touch_dev/gesture_single_tap_state",
+    "/sys/class/touch/touch_dev/fod_press_status",
+    "/sys/class/touch/touch_dev/update_rawdata",
+    "/sys/class/touch/touch_dev/enable_touch_raw",
+    "/sys/class/touch/touch_dev/enable_touch_delta",
+    "/sys/class/touch/touch_dev/touch_thp_dump",
+    "/sys/class/touch/touch_dev/touch_thp_cmd",
+    "/sys/class/touch/touch_dev/suspend_state",
+    "/sys/class/touch/touch_dev/prox_sensor",
+    "/sys/class/touch/touch_dev/touch_thp_rx_num",
+    "/sys/class/touch/touch_dev/touch_thp_tx_num",
+    "/sys/class/touch/touch_dev/touch_thp_x_resolution",
+    "/sys/class/touch/touch_dev/touch_thp_y_resolution",
+    "/sys/class/touch/touch_dev/touch_thp_smooth",
+    "/sys/class/touch/touch_dev/touch_thp_noisefilter",
+    "/sys/class/touch/touch_dev/touch_thp_downthd",
+    "/sys/class/touch/touch_dev/touch_thp_upthd",
+    "/sys/class/touch/touch_dev/touch_thp_movethd",
+    "/sys/class/touch/touch_dev/touch_thp_islandthd",
+    "/sys/class/touch/touch_dev/touch_thp_cmd_data",
+    "/sys/class/touch/touch_dev/palm_sensor_data",
+    "/sys/class/touch/touch_dev/palm_sensor",
+    "/sys/class/touch/touch_dev/touch_active_status",
+    "/sys/class/touch/touch_dev/touch_finger_status",
+    "/sys/class/touch/touch_dev/touch_irq_no",
+    "/sys/class/touch/touch_dev/touch_sensor",
+    "/sys/class/touch/touch_dev/touch_sensor_ctrl",
+    "/sys/class/touch/touch_dev/touch_thp_mem_notify",
+    "/sys/class/touch/touch_dev/touch_thp_testmode",
+    "/sys/class/touch/touch_dev/touch_thp_testresult",
+    "/sys/class/touch/touch_dev/touch_thp_preset_point",
+    "/sys/class/touch/touch_dev/touch_thp_breakline_mode",
+    "/sys/class/touch/touch_dev/touch_thp_breakline_result",
+    "/sys/class/touch/touch_dev/touch_doze_analysis",
+    "/sys/class/touch/touch_dev/touch_thp_cmd_ready",
+    "/sys/class/touch/touch_dev/touch_ic_buffer",
+    "/sys/class/touch/touch_dev/abnormal_event",
+]
+
+# Let the CPUs use their normal governor while recovery is running.
+[[service]]
+path = "/vendor/bin/sh"
+args = ["/vendor/bin/init.kernel.post_boot.sh"]
+libraries = ["/system/lib64", "/vendor/lib64"]
+oneshot = true
+user = "root"
+groups = ["root", "system", "wakelock", "graphics"]
+
+# Convert the panel's raw reports into touches for the PIN screen.
+[[service]]
+path = "/odm/bin/touch_report"
+user = "system"
+groups = ["system", "uhid", "input"]
+capabilities = ["SYS_NICE"]
+
+# Official Android 16 OTA used as the recovery ramdisk base.
+[stock]
+version = "OS3.0.304.0.WMKCNXM"
+package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS3.0.304.0.WMKCNXM/socrates-ota_full-OS3.0.304.0.WMKCNXM-user-16.0-694e581e9e.zip"
+recovery = "a1ed92db62fb0915b20309c5fe80b9181c6cf3ecef7d76e68503a2e1e9ff8c88"

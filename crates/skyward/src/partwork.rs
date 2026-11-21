@@ -308,9 +308,9 @@ fn reach<T>(part: &Part, work: impl FnOnce(&Path) -> Result<T>) -> Result<T> {
     match part {
         Part::Data => {
             crate::wipe::release_data()?;
-            let mapped = crate::decrypt::with_key_service(data::map_unmounted).map_err(anyhow::Error::msg)?;
-            let done = work(&mapped);
-            data::unmap()?;
+            let reached = crate::decrypt::with_data_keys(data::reach_unmounted).map_err(anyhow::Error::msg)?;
+            let done = work(&reached.device);
+            reached.close()?;
             done
         }
         Part::Entry(entry) => {

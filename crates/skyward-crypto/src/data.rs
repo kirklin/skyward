@@ -2,9 +2,11 @@
 //! its storage hardware holds, and encrypts each user's files again with a
 //! key only that user's credential leads to. This is the first of the two:
 //! what it opens holds every file, with the names and contents of the ones
-//! that are a user's own still encrypted.
+//! that are a user's own still encrypted. A phone whose own table has the
+//! partition encrypted in neither way keeps it as the plain filesystem it
+//! is, which opens with no key and no key service.
 
-use crate::encryption::{key_dir, target, Encryption};
+use crate::encryption::{self, key_dir, target, Encryption};
 use crate::gatekeeper::Gatekeeper;
 use crate::keymint::KeyMint;
 use crate::keystore::{StoredKey, Unwrap};
@@ -51,9 +53,33 @@ fn hardware_key(service: &KeyMint, dir: &Path, wrapped: bool) -> Result<Vec<u8>>
     }
 }
 
+/// What the phone's own table says about its data partition: every entry
+/// it has for it, the one the system tries first first.
+fn table() -> Result<Vec<Entry>> {
+    let entries = skyward_block::fstab::read(MOUNT)?;
+    anyhow::ensure!(!entries.is_empty(), "the phone's own table says nothing about {MOUNT}");
+    Ok(entries)
+}
+
+/// Whether opening the data partition takes the phone's key service: it
+/// does where the phone's table has the partition encrypted whole or its
+/// files encrypted one by one. A partition the table has in neither way
+/// opens on a phone whose key service is not running.
+pub fn keyed() -> Result<bool> {
+    let entries = table()?;
+    Ok(encryption::whole(&entries)?.is_some() || encryption::files(&entries))
+}
+
+/// The key service a partition the phone encrypts is opened with.
+fn key_service<'a, 'b>(keys: Option<&'a KeyMint<'b>>) -> Result<&'a KeyMint<'b>> {
+    keys.context("the phone's table has its data partition encrypted, and the key service was not reached for it")
+}
+
 /// The data partition as [`open`] leaves it.
 pub struct Opened {
-    /// The device the partition is read and written through, decrypted.
+    /// The device the partition is read and written through: decrypted
+    /// where the phone encrypts the partition whole, and the partition
+    /// itself where it does not.
     pub mapped: PathBuf,
     pub filesystem: String,
     /// How the check before mounting ended, where the phone's table asks
@@ -61,82 +87,77 @@ pub struct Opened {
     pub checked: Option<Checked>,
 }
 
-/// Open the phone's data partition: unwrap the key it is encrypted with,
-/// give that to the storage hardware, check the filesystem where the
-/// phone's table asks for it, and mount it writable, as the phone mounts
-/// it. The names and contents of each user's own files stay encrypted
-/// until that user's key is let in as well. A partition that does not
-/// mount leaves no device behind.
-fn open(service: &KeyMint) -> Result<Opened> {
-    let (entries, mapped) = map(service)?;
+/// Open the phone's data partition: where the phone encrypts it whole,
+/// unwrap the key it is encrypted with and give that to the storage
+/// hardware; check the filesystem where the phone's table asks for it,
+/// and mount it writable, as the phone mounts it. The names and contents
+/// of each user's own files stay encrypted until that user's key is let in
+/// as well. A partition that does not mount leaves no device behind.
+fn open(keys: Option<&KeyMint>, entries: &[Entry]) -> Result<Opened> {
+    let reached = reach(keys, entries)?;
     let mounted = (|| -> Result<(Option<Checked>, String)> {
         // A phone that names the partition once per filesystem it might
         // hold mounts it with the entry of the one it holds.
-        let holds = skyward_block::probe::filesystem(&mapped)?;
+        let holds = skyward_block::probe::filesystem(&reached.device)?;
         let entry = entries.iter().find(|e| holds.as_ref() == Some(&e.filesystem)).unwrap_or(&entries[0]);
         let checked = match entry.extras.iter().any(|e| e == "check") {
-            true => Some(skyward_block::fsck::check(&mapped, &entry.filesystem)?),
+            true => Some(skyward_block::fsck::check(&reached.device, &entry.filesystem)?),
             false => None,
         };
         std::fs::create_dir_all(MOUNT).with_context(|| format!("make {MOUNT}"))?;
-        mount::mount(&mapped, Path::new(MOUNT), &entry.filesystem, &entry.options)?;
+        mount::mount(&reached.device, Path::new(MOUNT), &entry.filesystem, &entry.options)?;
         Ok((checked, entry.filesystem.clone()))
     })();
     match mounted {
-        Ok((checked, filesystem)) => Ok(Opened { mapped, filesystem, checked }),
-        Err(e) => match dm::status(MAPPED) {
-            Ok(Some(_)) => match dm::remove(MAPPED) {
-                Ok(()) => Err(e),
-                Err(r) => Err(e.context(format!("removing {MAPPED} afterwards failed too: {r:#}"))),
-            },
-            _ => Err(e),
+        Ok((checked, filesystem)) => Ok(Opened { mapped: reached.device, filesystem, checked }),
+        Err(e) => match reached.close() {
+            Ok(()) => Err(e),
+            Err(r) => Err(e.context(format!("removing {MAPPED} afterwards failed too: {r:#}"))),
         },
     }
 }
 
-/// Map the data partition decrypted, under the key the phone keeps for it,
-/// and give its table's entries, the first the one the key is found by,
-/// and the device the filesystem is read and written through.
-fn map(service: &KeyMint) -> Result<(Vec<Entry>, PathBuf)> {
-    let entries = skyward_block::fstab::read(MOUNT)?;
-    let entry = entries.first().with_context(|| format!("the phone's own table says nothing about {MOUNT}"))?;
-    // A phone whose own table names no whole-disk encryption keeps its
-    // data partition as the plain filesystem it is: nothing stands between
-    // it and the device the table points at.
-    if entries.iter().all(|e| e.extra("metadata_encryption").is_none()) {
-        let device = skyward_block::fstab::device(entry)?;
-        return Ok((entries, PathBuf::from(device)));
+/// The device the data partition's filesystem is read and written through,
+/// with nothing mounted from it.
+pub struct Reached {
+    pub device: PathBuf,
+    /// Whether the device was made for this, to read the partition
+    /// decrypted, and goes again once it is done with.
+    mapped: bool,
+}
+
+impl Reached {
+    /// Take the device away again where it was made for this; the
+    /// partition itself stays as it is.
+    pub fn close(self) -> Result<()> {
+        match self.mapped {
+            true => dm::remove(MAPPED),
+            false => Ok(()),
+        }
     }
-    let encryption = Encryption::of(entry)?;
-    let device = skyward_block::fstab::device(entry)?;
-    let key = storage_key(service, entry, &encryption)?;
+}
+
+/// Reach the device the data partition's filesystem is read and written
+/// through: the partition mapped decrypted, under the key the phone keeps
+/// for it, where an entry of its table has it encrypted whole, and the
+/// partition itself where none has.
+fn reach(keys: Option<&KeyMint>, entries: &[Entry]) -> Result<Reached> {
+    let device = skyward_block::fstab::device(&entries[0])?;
+    let Some((entry, encryption)) = encryption::whole(entries)? else {
+        return Ok(Reached { device: PathBuf::from(device), mapped: false });
+    };
+    let key = storage_key(key_service(keys)?, entry, &encryption)?;
     let sectors = skyward_block::size_bytes(&device)? / 512;
     let mapped = dm::create(MAPPED, &[target(&device, sectors, &key, &encryption)], false)?;
-    Ok((entries, mapped))
+    Ok(Reached { device: mapped, mapped: true })
 }
 
-/// Map the data partition decrypted without mounting it, for its
-/// filesystem to be repaired, and give the device it is reached through;
-/// [`unmap`] takes it away again. The partition is to be closed.
-pub fn map_unmounted(service: &KeyMint) -> Result<PathBuf> {
-    anyhow::ensure!(dm::status(MAPPED)?.is_none(), "the data partition is open");
-    map(service).map(|(_, mapped)| mapped)
-}
-
-/// Take away the mapping [`map_unmounted`] made, where it made one.
-pub fn unmap() -> Result<()> {
-    if dm::status(MAPPED)?.is_some() {
-        dm::remove(MAPPED)?;
-    }
-    Ok(())
-}
-
-/// Whether the phone's own table names no whole-disk encryption for its
-/// data partition, so that everything on it reads as the plain filesystem
-/// it is, once mounted.
-fn plain() -> Result<bool> {
-    let entries = skyward_block::fstab::read(MOUNT)?;
-    Ok(entries.iter().all(|e| e.extra("metadata_encryption").is_none()))
+/// Reach the data partition's filesystem without mounting it, for it to be
+/// repaired. The partition is to be closed, and what this gives is to be
+/// closed again once done with.
+pub fn reach_unmounted(keys: Option<&KeyMint>) -> Result<Reached> {
+    anyhow::ensure!(!mount::is_mount_point(Path::new(MOUNT))? && dm::status(MAPPED)?.is_none(), "the data partition is open");
+    reach(keys, &table()?)
 }
 
 /// Show the owner's shared storage at /sdcard; shown already, it stays.
@@ -188,18 +209,26 @@ pub struct Opening {
 /// belong to no one user and of each user's files readable before they
 /// sign in, and open the own files of every user who set no screen lock
 /// and, behind the owner's, of those whose credential the phone made up.
-pub fn open_without_credential(service: &KeyMint) -> Result<Opening> {
+/// `keys` is the phone's key service, which a partition the phone's table
+/// has encrypted in neither way is opened without.
+pub fn open_without_credential(keys: Option<&KeyMint>) -> Result<Opening> {
+    let entries = table()?;
     let mounted = match mount::is_mount_point(Path::new(MOUNT))? {
         true => None,
-        false => Some(open(service)?),
+        false => Some(open(keys, &entries)?),
     };
-    // A phone that names no whole-disk encryption keeps every file's name
-    // and content readable as they are: there is no key to let in, and so
-    // no user's own files stay closed.
-    if plain()? {
-        show_owner_storage()?;
+    // A phone whose table has no file of the partition encrypted reads
+    // every name and every file as it is: there is no key to let in, and
+    // nobody's own files stay closed. The owner's shared storage shows
+    // once the system has made it, which it has not on a partition made
+    // afresh that the phone has not started from yet.
+    if !encryption::files(&entries) {
+        if Path::new(SHARED_STORAGE).join(OWNER.to_string()).is_dir() {
+            show_owner_storage()?;
+        }
         return Ok(Opening { mounted, closed: Vec::new() });
     }
+    let service = key_service(keys)?;
     open_shared(service)?;
     let mut closed = Vec::new();
     let mut owner = Note::default();

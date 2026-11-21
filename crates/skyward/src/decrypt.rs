@@ -34,7 +34,7 @@ impl Decryptor {
     pub fn start(job: Job) -> Result<Decryptor> {
         let worker = Worker::start("decrypt", move |tell| {
             tell.tell(match job {
-                Job::Open => Ended::Opened(with_key_service(data::open_without_credential)),
+                Job::Open => Ended::Opened(with_data_keys(data::open_without_credential)),
                 Job::Unlock { closed, user, credential } => {
                     Ended::Unlocked(with_key_service(|service| data::unlock(service, &closed, user, &credential)))
                 }
@@ -61,6 +61,23 @@ pub fn with_key_service<T>(work: impl FnOnce(&KeyMint) -> Result<T>) -> Result<T
         let binder = Binder::open()?;
         let service = KeyMint::open(&binder)?;
         work(&service)
+    })();
+    done.map_err(|e| format!("{e:#}"))
+}
+
+/// Do `work` with what reaching the data partition takes: the phone's key
+/// service, reached afresh for it, where the phone's own table has the
+/// partition encrypted, and nothing where it has not, so that a partition
+/// kept as the plain filesystem it is opens on a phone whose key service
+/// does not start. Says why it failed in words for the page.
+pub fn with_data_keys<T>(work: impl FnOnce(Option<&KeyMint>) -> Result<T>) -> Result<T, String> {
+    let done = (|| {
+        if !data::keyed()? {
+            return work(None);
+        }
+        let binder = Binder::open()?;
+        let service = KeyMint::open(&binder)?;
+        work(Some(&service))
     })();
     done.map_err(|e| format!("{e:#}"))
 }

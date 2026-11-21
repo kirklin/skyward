@@ -1141,6 +1141,16 @@ fn main() -> Result<()> {
         println!("wrote {}", path.display());
     }
 
+    // The home page with a computer on the USB port, light and dark.
+    let plugged = DeviceInfo { usb: true, ..info.clone() };
+    for (name, dark) in [("190-home-usb-light", false), ("191-home-usb-dark", true)] {
+        let mut app = App::new(Screen::Home, w, h, ppd);
+        app.state.dark = dark;
+        let path = out.join(format!("{name}.png"));
+        write_png(&path, &whole_page(&mut app, &fonts, &plugged))?;
+        println!("wrote {}", path.display());
+    }
+
     // The status bar's battery in each state, light and dark, one bar a row.
     for (name, theme) in [("66-battery-light", light), ("67-battery-dark", Theme::dark(w, h, ppd))] {
         let path = out.join(format!("{name}.png"));
@@ -1161,7 +1171,7 @@ fn battery_states(f: &Fonts, t: &Theme) -> Canvas {
     for (k, &battery) in states.iter().enumerate() {
         let mut bar = Canvas::new(t.m.w, row);
         bar.clear(t.pal.bg);
-        widgets::status_bar(&mut bar, t, f, &Bar { clock: CLOCK, battery: Some(battery), wlan: None, data: None, slot: None, temp: None }, t.pal.status);
+        widgets::status_bar(&mut bar, t, f, &Bar { clock: CLOCK, battery: Some(battery), wlan: None, usb: false, data: None, slot: None, temp: None }, t.pal.status);
         sheet.put(&bar, (row as usize * k) as i32);
     }
     sheet
@@ -1563,6 +1573,7 @@ fn nezha(cfg: &DeviceConfig) -> DeviceInfo {
             quick: false,
             plugged: true,
         }),
+        usb: false,
         slot: Some(Slot::B),
         snapshot: SnapshotState::None,
         boot: Boot { unlocked: Some(true), verified: Some("orange".into()) },

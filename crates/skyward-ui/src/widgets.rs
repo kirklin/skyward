@@ -256,6 +256,8 @@ pub struct Bar<'a> {
     pub battery: Option<(u8, Option<Bolt>)>,
     /// The network joined, while it has an address.
     pub wlan: Option<WlanMark>,
+    /// Whether a computer has the USB port set up.
+    pub usb: bool,
     /// The data partition, open or not; nothing once it is wiped, when
     /// there is nothing in it to open.
     pub data: Option<bool>,
@@ -289,11 +291,12 @@ pub struct WlanMark {
 pub const LOW_BATTERY: u8 = 20;
 
 /// Clock on the left; on the right the battery as the stock status bar draws
-/// it, with a bolt past it while the cable is in, and before it the network
-/// joined and how fast data goes over it, the data partition's lock, the
-/// slot in a tag as the stock bar tags a VPN, and the battery's temperature
-/// in figures over their unit as the stock bar gives a speed. `ink` colours
-/// the clock and every mark but the battery.
+/// it, with a bolt past it while the cable is in, and before it the USB mark
+/// while a computer has the port, the network joined and how fast data goes
+/// over it, the data partition's lock, the slot in a tag as the stock bar
+/// tags a VPN, and the battery's temperature in figures over their unit as
+/// the stock bar gives a speed. `ink` colours the clock and every mark but
+/// the battery.
 pub fn status_bar(c: &mut Canvas, t: &Theme, f: &Fonts, bar: &Bar, ink: Rgba) {
     let m = &t.m;
     let cy = m.status_cy;
@@ -311,13 +314,19 @@ pub fn status_bar(c: &mut Canvas, t: &Theme, f: &Fonts, bar: &Bar, ink: Rgba) {
         c.lay(&art, ox, oy, 1.0);
         right -= m.dp(BATTERY_W_DP + BATTERY_CAP_DP);
     }
-    // From the battery leftwards: the network's fan, the data partition's
-    // lock, the slot's badge, the temperature, and leftmost, as the stock
-    // bar keeps it, how fast data goes.
+    // From the battery leftwards: the USB mark while a computer has the
+    // port, the network's fan, the data partition's lock, the slot's badge,
+    // the temperature, and leftmost, as the stock bar keeps it, how fast
+    // data goes.
     let gap = m.dp(MARK_GAP_DP);
     let mut left = right;
+    if bar.usb {
+        let (box_side, ink_w) = (m.dp(USB_BOX_DP), m.dp(USB_W_DP));
+        icons::glyph(c, Icon::Usb, left - gap - ink_w / 2.0, cy, box_side, ink);
+        left -= gap + ink_w;
+    }
     if let Some(w) = &bar.wlan {
-        left = wlan_mark(c, t, w, right, cy, ink);
+        left = wlan_mark(c, t, w, left, cy, ink);
     }
     if let Some(open) = bar.data {
         let (art, ox, oy, w) = lock_mark(t, open, left - gap, cy, ink);
@@ -340,6 +349,12 @@ pub fn status_bar(c: &mut Canvas, t: &Theme, f: &Fonts, bar: &Bar, ink: Rgba) {
 /// Room between the marks on the bar's right, as the stock bar leaves it
 /// after its network speed and before its battery, in dp.
 const MARK_GAP_DP: f32 = 4.33;
+
+// The USB mark, the plug the file transfer row draws, in dp: the box it is
+// drawn in, sized so its ink stands as tall as the bar's other marks, and
+// the width that ink takes, which is all it needs of the bar.
+const USB_BOX_DP: f32 = 18.5;
+const USB_W_DP: f32 = 7.4;
 
 /// The stock status bar icons' corners, which ease into their sides: from
 /// where a side starts to bend to where the next one is straight again,
@@ -3033,7 +3048,7 @@ mod tests {
         let f = crate::font::bundled();
         let draw = |mark: WlanMark| {
             let mut c = Canvas::filled(1200, 160, t.pal.bg);
-            let bar = Bar { clock: "01:27", battery: Some((40, Some(Bolt::Charging))), wlan: Some(mark), data: None, slot: None, temp: None };
+            let bar = Bar { clock: "01:27", battery: Some((40, Some(Bolt::Charging))), wlan: Some(mark), usb: false, data: None, slot: None, temp: None };
             status_bar(&mut c, &t, &f, &bar, t.pal.status);
             c
         };
@@ -3069,25 +3084,48 @@ mod tests {
         // its own the next.
         let t = Theme::dark(1200, 2608, 3.0);
         let f = crate::font::bundled();
-        let mut c = Canvas::filled(1200, 160, t.pal.bg);
-        let wlan = Some(WlanMark { level: 3, receiving: true, sending: true, speed: "0.00".into(), unit: "KB/s" });
-        let bar = Bar { clock: "01:27", battery: Some((40, None)), wlan, data: Some(false), slot: Some("B"), temp: Some(362) };
-        status_bar(&mut c, &t, &f, &bar, t.pal.status);
-        // Runs of inked columns on the bar's right half, those a few pixels
-        // apart taken as one mark.
-        let inked = |x: u32| (40..120).any(|y| c.data[((y * 1200 + x) * 4) as usize] > 60);
-        let mut marks: Vec<(u32, u32)> = Vec::new();
-        for x in (600..1200).filter(|&x| inked(x)) {
-            match marks.last_mut() {
-                Some(m) if x <= m.1 + 5 => m.1 = x + 1,
-                _ => marks.push((x, x + 1)),
+        for usb in [false, true] {
+            let mut c = Canvas::filled(1200, 160, t.pal.bg);
+            let wlan = Some(WlanMark { level: 3, receiving: true, sending: true, speed: "0.00".into(), unit: "KB/s" });
+            let bar = Bar { clock: "01:27", battery: Some((40, None)), wlan, usb, data: Some(false), slot: Some("B"), temp: Some(362) };
+            status_bar(&mut c, &t, &f, &bar, t.pal.status);
+            // Runs of inked columns on the bar's right half, those a few pixels
+            // apart taken as one mark.
+            let inked = |x: u32| (40..120).any(|y| c.data[((y * 1200 + x) * 4) as usize] > 60);
+            let mut marks: Vec<(u32, u32)> = Vec::new();
+            for x in (600..1200).filter(|&x| inked(x)) {
+                match marks.last_mut() {
+                    Some(m) if x <= m.1 + 5 => m.1 = x + 1,
+                    _ => marks.push((x, x + 1)),
+                }
+            }
+            let want = if usb { 7 } else { 6 };
+            assert_eq!(marks.len(), want, "speed, temperature, badge, lock, fan, USB and battery: {marks:?}");
+            for k in 0..marks.len() - 2 {
+                let gap = marks[k + 1].0 - marks[k].1;
+                assert!((gap as i32 - 13).abs() <= 1, "mark {k} stands 13 pixels short of the next: {marks:?}");
             }
         }
-        assert_eq!(marks.len(), 6, "speed, temperature, badge, lock, fan and battery: {marks:?}");
-        for k in 0..4 {
-            let gap = marks[k + 1].0 - marks[k].1;
-            assert!((gap as i32 - 13).abs() <= 1, "mark {k} stands 13 pixels short of the next: {marks:?}");
-        }
+    }
+
+    #[test]
+    fn a_computer_on_the_port_shows_the_usb_mark_left_of_the_battery() {
+        let t = Theme::dark(1200, 2608, 3.0);
+        let f = crate::font::bundled();
+        let draw = |usb: bool| {
+            let mut c = Canvas::filled(1200, 160, t.pal.bg);
+            let bar = Bar { clock: "01:27", battery: Some((40, None)), wlan: None, usb, data: None, slot: None, temp: None };
+            status_bar(&mut c, &t, &f, &bar, t.pal.status);
+            c
+        };
+        let plugged = draw(true);
+        let usb = ink_box(&plugged, Rect::new(960.0, 40.0, 50.0, 80.0), |p| p[0] > 60);
+        assert!((usb.3 - usb.1 - 38.0).abs() <= 1.0, "as tall as the bar's marks: {usb:?}");
+        assert!((usb.2 - usb.0 - 22.0).abs() <= 1.5, "as wide as the plug's ink: {usb:?}");
+        assert!(usb.2 < 1011.0, "left of the battery: {usb:?}");
+        let plain = draw(false);
+        let none = ink_box(&plain, Rect::new(960.0, 40.0, 50.0, 80.0), |p| p[0] > 60);
+        assert_eq!(none.0, f32::MAX, "no mark while no computer is on the port");
     }
 
     #[test]
@@ -3143,7 +3181,7 @@ mod tests {
         let f = crate::font::bundled();
         let draw = |kind| {
             let mut c = Canvas::filled(1200, 160, Rgba::rgb(0, 0, 0));
-            let bar = Bar { clock: "01:27", battery: Some((64, Some(kind))), wlan: None, data: None, slot: None, temp: None };
+            let bar = Bar { clock: "01:27", battery: Some((64, Some(kind))), wlan: None, usb: false, data: None, slot: None, temp: None };
             status_bar(&mut c, &t, &f, &bar, t.pal.status);
             c
         };

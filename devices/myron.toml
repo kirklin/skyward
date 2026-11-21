@@ -16,7 +16,16 @@ density = 480
 sources = ["vendor_boot", "vendor_dlkm", "vendor", "system_dlkm"]
 # The touchscreen: FocalTech's, over SPI behind Xiaomi's touch layer, the
 # one touch driver the phone's own modules.load lists.
-load = ["focaltech_touch_3683"]
+# The embedded secure element used by NXP Weaver also needs the NFC driver.
+load = ["focaltech_touch_3683", "nxp-nci"]
+
+# The phone's ueventd gives this device to NFC. It appears after the
+# driver is loaded, so apply the stock ownership before starting eSE.
+[[owners]]
+user = "nfc"
+group = "nfc"
+mode = 0o660
+paths = ["/dev/nq-nci"]
 
 # As on the 17 Ultra, the controller comes back from its reset sending raw
 # frames for /odm/lib64/libtouchreport.so, which a recovery runs none of;

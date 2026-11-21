@@ -161,6 +161,14 @@ pub struct Firmware {
     /// read-only while the file is read.
     #[serde(default)]
     pub partition: Option<String>,
+    /// Other paths in the same partition or recovery, tried in order when
+    /// an earlier file is absent.
+    #[serde(default)]
+    pub alternatives: Vec<String>,
+    /// Continue bringing the driver up if every source is absent. Read
+    /// errors other than a missing file still stop initialization.
+    #[serde(default)]
+    pub optional: bool,
 }
 
 /// The phone maker's update server, which the stock updater asks about the
@@ -586,17 +594,19 @@ impl DeviceConfig {
                 let name = Path::new(&file.name);
                 let plain = name.components().all(|c| matches!(c, std::path::Component::Normal(_)));
                 ensure!(plain && !file.name.is_empty(), "[wlan] firmware: {} is not a name from the top of the loader's folders", file.name);
-                let path = Path::new(&file.path);
-                match &file.partition {
-                    Some(partition) => {
-                        let plain = path.components().all(|c| matches!(c, std::path::Component::Normal(_)));
-                        ensure!(
-                            !partition.is_empty() && !partition.contains('/'),
-                            "[wlan] firmware: {partition} is not a partition's name"
-                        );
-                        ensure!(plain && !file.path.is_empty(), "[wlan] firmware: {} is not a path from the top of {partition}", file.path);
+                for source in std::iter::once(&file.path).chain(&file.alternatives) {
+                    let path = Path::new(source);
+                    match &file.partition {
+                        Some(partition) => {
+                            let plain = path.components().all(|c| matches!(c, std::path::Component::Normal(_)));
+                            ensure!(
+                                !partition.is_empty() && !partition.contains('/'),
+                                "[wlan] firmware: {partition} is not a partition's name"
+                            );
+                            ensure!(plain && !source.is_empty(), "[wlan] firmware: {source} is not a path from the top of {partition}");
+                        }
+                        None => ensure!(path.is_absolute(), "[wlan] firmware: {source} is not an absolute path"),
                     }
-                    None => ensure!(path.is_absolute(), "[wlan] firmware: {} is not an absolute path", file.path),
                 }
             }
         }
@@ -896,6 +906,8 @@ mod tests {
         assert_eq!(wlan.firmware[0].partition, None);
         assert_eq!(wlan.firmware[1].partition.as_deref(), Some("persist"));
         assert_eq!(wlan.firmware[1].path, "kiwi_v2/wlan_mac.bin");
+        assert!(wlan.firmware[1].alternatives.is_empty());
+        assert!(!wlan.firmware[1].optional, "existing firmware entries remain required");
         assert_eq!(wlan.interface, "wlan0");
         assert_eq!(wlan.service, "android.hardware.wifi.supplicant.ISupplicant/default");
         assert_eq!(wlan.probe, "http://connect.rom.miui.com/generate_204");
@@ -934,6 +946,19 @@ mod tests {
         assert!(with("{ name = \"a.ini\", path = \"vendor/etc/a.ini\" }").is_err());
         assert!(with("{ name = \"mac.bin\", partition = \"persist\", path = \"/kiwi/mac.bin\" }").is_err());
         assert!(with("{ name = \"mac.bin\", partition = \"by-name/persist\", path = \"mac.bin\" }").is_err());
+    }
+
+    #[test]
+    fn firmware_alternatives_use_the_same_path_rules() {
+        let base = "[device]\ncodename = \"x\"\n[wlan]\nmodules = []\ninterface = \"wlan0\"\nsupplicant = \"/s\"\nservice = \"a/b\"\nprobe = \"http://p/\"\n";
+        let with = |source: &str| DeviceConfig::parse(&format!("{base}firmware = [{{ name = \"wlan/mac.bin\", partition = \"persist\", path = \"wlan/mac.bin\", alternatives = [\"{source}\"], optional = true }}]\n"));
+        let cfg = with("kiwi_v2/wlan_mac.bin").unwrap();
+        let file = &cfg.wlan.unwrap().firmware[0];
+        assert_eq!(file.alternatives, ["kiwi_v2/wlan_mac.bin"]);
+        assert!(file.optional);
+        for bad in ["../mac.bin", "/mac.bin", "wlan/../mac.bin", ""] {
+            assert!(with(bad).is_err(), "{bad} is not a path from the partition's top");
+        }
     }
 
     #[test]

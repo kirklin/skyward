@@ -79,7 +79,11 @@ read and set properties.
 ### Other features
 
 - Reboot to system, recovery, fastboot, bootloader or EDL, and switch slots
-- Light and dark themes; Simplified Chinese, Traditional Chinese and English
+- Light and dark themes
+- 15 languages: 简体中文, 繁體中文, English, Türkçe, Русский, Українська, Español,
+  Português (Brasil), Bahasa Indonesia, Tiếng Việt, Deutsch, Français, Italiano,
+  Polski and 日本語. Skyward starts in the system's language where it speaks it,
+  and in English otherwise
 
 ### Without a system
 
@@ -263,6 +267,20 @@ such as `en` or `zh-TW`:
 ```sh
 cargo run --release -p skyward-preview -- target/preview --lang en
 ```
+
+### Translations
+
+Each language's texts are one file in `crates/skyward-ui/locales`, named by its
+locale: `tr.toml`, `pt-BR.toml`. `en.toml` is the reference, with a comment on
+where each text shows. The build reads every file and stops on a text that is
+missing, or that names a value in braces the English text does not.
+
+To correct a translation, change its text in the language's file. To check how it
+looks, draw the pages in that language with `skyward-preview --lang`. With each
+page, it says which texts did not fit their place: `cut short in` for a text that
+ends in an ellipsis, `set at 80% in` for a label set smaller to fit its key, button
+or slider, `past the edge in` for a text that runs off the screen, and `overlap in`
+for two texts that run into each other.
 
 ## License
 

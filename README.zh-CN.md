@@ -75,7 +75,8 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 ### 其他功能
 
 - 重启到系统、recovery、fastboot、bootloader 和 EDL，切换启动槽位
-- 浅色和深色模式，简体中文、繁体中文和英文
+- 浅色和深色模式
+- 15 种语言：简体中文、繁體中文、English、Türkçe、Русский、Українська、Español、Português (Brasil)、Bahasa Indonesia、Tiếng Việt、Deutsch、Français、Italiano、Polski 和日本語。系统语言在这些语言之中时，Skyward 启动后使用系统语言，其他情况使用英文
 
 ### 没有系统时
 
@@ -201,6 +202,12 @@ cargo ndk -t arm64-v8a --platform 30 test -p skyward -p skyward-block -p skyward
 ```sh
 cargo run --release -p skyward-preview -- target/preview --lang en
 ```
+
+### 翻译
+
+每种语言的文字是 `crates/skyward-ui/locales` 里的一个文件，以地区代码命名，例如 `tr.toml`、`pt-BR.toml`。`en.toml` 是参照文件，每条文字上方的注释说明它显示在哪里。构建时会读取全部文件，缺少某条文字，或者花括号里的名称和英文不一致，构建就会停止。
+
+修正翻译时，直接修改对应语言文件里的文字。用 `skyward-preview --lang` 把页面按这种语言绘制出来检查效果：每绘制完一个页面，它会列出这个页面上显示不下的文字：`cut short in` 是以省略号结尾的文字，`set at 80% in` 是为了放进按键、按钮或滑动条而缩小了字号的文字，`past the edge in` 是超出屏幕的文字，`overlap in` 是互相重叠的两段文字。
 
 ## 许可证
 

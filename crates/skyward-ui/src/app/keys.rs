@@ -16,10 +16,8 @@ impl App {
                 self.adjusting = !self.adjusting;
                 if self.adjusting {
                     let said = match which {
-                        Slider::Brightness => ["按音量键调节亮度，按电源键完成", "按音量鍵調整亮度，按電源鍵完成", "Set the brightness with the volume keys, then press the power key"],
-                        Slider::Vibration => {
-                            ["按音量键调节振动强度，按电源键完成", "按音量鍵調整震動強度，按電源鍵完成", "Set the vibration with the volume keys, then press the power key"]
-                        }
+                        Slider::Brightness => texts::toast::BRIGHTNESS_KEYS,
+                        Slider::Vibration => texts::toast::VIBRATION_KEYS,
                     };
                     self.say(l.pick(said), now);
                 }
@@ -29,7 +27,7 @@ impl App {
             Stop::Dot(i) if self.state.pattern.last() == Some(&i) => self.drawn(now),
             Stop::Dot(i) => {
                 if self.state.pattern.is_empty() {
-                    self.say(l.pick(["连接完成后，在最后一个点上再按一次电源键", "連接完成後，在最後一個點上再按一次電源鍵", "When the pattern is done, press the power key again on its last dot"]), now);
+                    self.say(l.pick(texts::toast::PATTERN_KEYS), now);
                 }
                 self.join(&self.theme(), i);
                 Vec::new()
@@ -44,7 +42,7 @@ impl App {
         let drawn = std::mem::take(&mut self.state.pattern);
         self.repaint_pattern(&self.theme());
         if drawn.len() < 4 {
-            self.say(self.state.lang.pick(["请至少连接 4 个点", "請至少連接 4 個點", "Connect at least 4 dots"]), now);
+            self.say(self.state.lang.pick(texts::toast::PATTERN_SHORT), now);
             return Vec::new();
         }
         self.unlock(drawn.iter().map(|i| (b'1' + *i as u8) as char).collect())

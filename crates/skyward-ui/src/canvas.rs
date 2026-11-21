@@ -1,6 +1,75 @@
 use crate::color::{blend_over, blend_px, Rgba};
 use crate::font::{Face, SUBPIXELS};
 use ab_glyph::{Font, GlyphId, PxScale, ScaleFont};
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, MutexGuard};
+use std::thread::ThreadId;
+
+/// Whether a preview has asked for the texts drawn on any thread: the
+/// recovery asks for none, and keeps none.
+static WATCHING: AtomicBool = AtomicBool::new(false);
+
+/// What is kept of the texts drawn, for each thread a preview has asked
+/// for its texts on.
+static WATCHED: Mutex<Vec<(ThreadId, Watched)>> = Mutex::new(Vec::new());
+
+fn watches() -> MutexGuard<'static, Vec<(ThreadId, Watched)>> {
+    WATCHED.lock().expect("no thread stops while it notes a text")
+}
+
+/// Note what a text drawn did, where a preview watches this thread's.
+fn watched(note: impl FnOnce(&mut Watched)) {
+    if !WATCHING.load(Ordering::Relaxed) {
+        return;
+    }
+    let me = std::thread::current().id();
+    if let Some((_, mine)) = watches().iter_mut().find(|(thread, _)| *thread == me) {
+        note(mine);
+    }
+}
+
+/// What a preview is told of the texts drawn: by it, it tells of a
+/// translation too long for its place.
+#[derive(Default)]
+pub struct Watched {
+    /// The texts that did not fit the room they were given, and were cut
+    /// short with an ellipsis.
+    pub cut: BTreeSet<String>,
+    /// The texts set smaller than their place sets them, to fit it, and
+    /// the smallest part of their size each was set at.
+    pub smaller: BTreeMap<String, f32>,
+    /// Every text drawn, with where its ink lies.
+    pub drawn: Vec<Drawn>,
+}
+
+/// A text drawn, and the box its ink lies in on a canvas `canvas` wide and
+/// tall: from the baseline up to the height of its capitals.
+pub struct Drawn {
+    pub text: String,
+    pub canvas: (u32, u32),
+    pub left: f32,
+    pub right: f32,
+    pub top: f32,
+    pub bottom: f32,
+}
+
+/// Keep what is drawn of texts on this thread from now on, for
+/// [`take_watched`].
+pub fn watch_texts() {
+    let me = std::thread::current().id();
+    let mut watches = watches();
+    watches.retain(|(thread, _)| *thread != me);
+    watches.push((me, Watched::default()));
+    WATCHING.store(true, Ordering::Relaxed);
+}
+
+/// What was drawn of texts on this thread since this was last asked.
+pub fn take_watched() -> Watched {
+    let mut taken = Watched::default();
+    watched(|mine| taken = std::mem::take(mine));
+    taken
+}
 
 /// A straight-alpha RGBA8 raster target. All primitives are antialiased via
 /// signed-distance coverage so the same code produces crisp output on the
@@ -227,10 +296,20 @@ impl Canvas {
         for px in self.data.as_chunks_mut::<4>().0 {
             *px = [color.r, color.g, color.b, color.a];
         }
+        self.covered(0.0, 0.0, self.w as f32, self.h as f32);
+    }
+
+    /// The texts drawn in this box are under a colour now: a preview
+    /// watching the texts drawn is no longer told of them.
+    fn covered(&self, x: f32, y: f32, w: f32, h: f32) {
+        let size = (self.w, self.h);
+        let under = |d: &Drawn| d.canvas == size && d.left >= x && d.right <= x + w && d.top >= y && d.bottom <= y + h;
+        watched(|w| w.drawn.retain(|drawn| !under(drawn)));
     }
 
     /// Overwrite a pixel-aligned rectangle with `color`.
     pub fn fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: Rgba) {
+        self.covered(x, y, w, h);
         let (x0, x1) = self.columns(x.floor().max(0.0) as i32, (x + w).ceil().max(0.0) as i32);
         let (y0, y1) = self.rows(y.floor().max(0.0) as i32, (y + h).ceil().max(0.0) as i32);
         if x0 >= x1 {
@@ -541,6 +620,9 @@ impl Canvas {
 
     /// A rounded rectangle in one colour.
     pub fn fill_round_rect(&mut self, x: f32, y: f32, w: f32, h: f32, r: f32, color: Rgba) {
+        if color.a == 255 {
+            self.covered(x, y, w, h);
+        }
         self.fill_round_rect_graded(x, y, w, h, r, &|_| color);
     }
 
@@ -973,7 +1055,8 @@ impl Canvas {
         let scale = face.scale(px);
         let sf = face.font.as_scaled(scale);
         let (ell, ell_w) = face.glyph('…', scale);
-        let limit = max_w.map(|m| x + m);
+        // A text that fits is drawn whole; one that does not ends in "…".
+        let limit = max_w.filter(|&m| self.text_width(face, text, px) > m).map(|m| x + m);
         let chars: Vec<char> = text.chars().collect();
         let mut pen = x;
         let mut prev: Option<GlyphId> = None;
@@ -987,6 +1070,9 @@ impl Canvas {
                 if pen + aw + if more { ell_w } else { 0.0 } > lim {
                     self.glyph(face, ell, scale, pen, baseline, ink);
                     pen += ell_w;
+                    watched(|w| {
+                        w.cut.insert(text.to_string());
+                    });
                     break;
                 }
             }
@@ -994,6 +1080,10 @@ impl Canvas {
             pen += aw;
             prev = Some(id);
         }
+        watched(|w| {
+            let (text, canvas) = (text.to_string(), (self.w, self.h));
+            w.drawn.push(Drawn { text, canvas, left: x, right: pen, top: baseline - face.cap(px), bottom: baseline });
+        });
         pen - x
     }
 
@@ -1013,6 +1103,29 @@ impl Canvas {
     pub fn text_center(&mut self, face: &Face, text: &str, cx: f32, cy: f32, px: f32, color: Rgba) {
         let w = self.text_width(face, text, px);
         self.text_vc(face, text, cx - w / 2.0, cy, px, color, None);
+    }
+
+    /// Text centred on (`cx`, `cy`) in a room `max_w` wide, as a button's
+    /// label is: one wider than the room at `px` is set as much smaller
+    /// as fits it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn text_center_in(&mut self, face: &Face, text: &str, cx: f32, cy: f32, px: f32, color: Rgba, max_w: f32) {
+        self.text_center(face, text, cx, cy, self.fitting(face, text, px, max_w), color);
+    }
+
+    /// The size `text` is set at in a room `max_w` wide: `px`, or as much
+    /// smaller as fits it there.
+    pub fn fitting(&self, face: &Face, text: &str, px: f32, max_w: f32) -> f32 {
+        let w = self.text_width(face, text, px);
+        if w <= max_w {
+            return px;
+        }
+        let part = max_w / w;
+        watched(|w| {
+            let least = w.smaller.entry(text.to_string()).or_insert(part);
+            *least = least.min(part);
+        });
+        px * part
     }
 
     /// Glyph `id` with its pen position at (`x`, `baseline`), from its ink

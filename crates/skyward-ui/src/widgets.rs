@@ -6,8 +6,10 @@ use crate::geom::Rect;
 use crate::icons::{self, Icon};
 use crate::lang::Lang;
 use crate::sprite::Sprite;
+use crate::texts;
 use crate::theme::Theme;
 use std::f32::consts::FRAC_PI_4;
+use unicode_script::{Script, UnicodeScript};
 
 /// Where a drawn card ends and where each of its rows lies, for hit testing.
 pub struct Block {
@@ -126,59 +128,120 @@ fn chevron(c: &mut Canvas, t: &Theme, right: f32, cy: f32, color: Rgba) {
 }
 
 /// Punctuation that never starts a line; at the end of a full line it hangs
-/// past the edge instead.
-const NO_LINE_START: &str = "，。、；：！？）」』》%,.;:!?)]>”";
+/// past the edge instead. Japanese holds its small kana and the mark that
+/// lengthens a sound to the same.
+const NO_LINE_START: &str = "，。、；：！？）」』》%,.;:!?)]>”…ーぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮ";
 
 /// Opening punctuation that never ends a line; it moves down with what it
 /// opens.
-const NO_LINE_END: &str = "（「『《([<“";
+const NO_LINE_END: &str = "（「『《([<“¿¡";
+
+/// What a character is to the line it ends up on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Edge {
+    /// It opens what follows, and never ends a line.
+    Opens,
+    /// It closes what came before, and never starts a line.
+    Closes,
+    Neither,
+}
+
+/// What each character of a text is to the line it ends up on. A quotation
+/// mark is read by the one it pairs with: German closes „ with the “ that
+/// English opens with, and its » opens what « closes, where French and
+/// Russian open with « and close with ».
+fn edges(text: &[char]) -> Vec<Edge> {
+    let (mut low, mut left, mut right) = (false, false, false);
+    text.iter()
+        .map(|&ch| match ch {
+            '„' => {
+                low = true;
+                Edge::Opens
+            }
+            '“' | '”' if low => {
+                low = false;
+                Edge::Closes
+            }
+            '«' if right => {
+                right = false;
+                Edge::Closes
+            }
+            '«' => {
+                left = true;
+                Edge::Opens
+            }
+            '»' if left => {
+                left = false;
+                Edge::Closes
+            }
+            '»' => {
+                right = true;
+                Edge::Opens
+            }
+            ch if NO_LINE_END.contains(ch) => Edge::Opens,
+            ch if NO_LINE_START.contains(ch) => Edge::Closes,
+            _ => Edge::Neither,
+        })
+        .collect()
+}
+
+/// Whether a line breaks around `ch` only with the whole word it is in:
+/// a letter or digit of a script that sets spaces between its words, as
+/// Chinese characters and kana do not; what file names and links are
+/// written with; an apostrophe; and a space that holds its neighbours
+/// together, as French sets one before its colons.
+fn in_word(ch: char) -> bool {
+    let spaced = ch.is_alphanumeric() && !matches!(ch.script(), Script::Han | Script::Hiragana | Script::Katakana);
+    spaced || matches!(ch, '_' | '-' | '.' | '/' | ':' | '\'' | '’' | '\u{a0}' | '\u{202f}')
+}
 
 pub(crate) fn wrap(c: &Canvas, face: &Face, text: &str, px: f32, max_w: f32) -> Vec<String> {
+    let text: Vec<char> = text.chars().collect();
+    let edges = edges(&text);
+    let said = |line: &[usize]| line.iter().map(|&k| text[k]).collect::<String>();
     let mut lines = Vec::new();
-    let mut line = String::new();
-    for ch in text.chars() {
-        let mut probe = line.clone();
+    // The line being filled, by where each of its characters is in the text.
+    let mut line: Vec<usize> = Vec::new();
+    for (i, &ch) in text.iter().enumerate() {
+        let mut probe = said(&line);
         probe.push(ch);
         if !line.is_empty() && c.text_width(face, &probe, px) > max_w {
-            if NO_LINE_START.contains(ch) {
-                line.push(ch);
+            if edges[i] == Edge::Closes {
+                line.push(i);
                 continue;
             }
-            // A Latin word, file names, links and English words with an
-            // apostrophe among them, moves to the next line whole, unless it
-            // fills the line alone: then a path breaks after the last of its
-            // slashes on the line, and any other word where the line ends.
-            // An opening bracket in front of what moves goes with it.
-            let word = |r: char| r.is_ascii_alphanumeric() || matches!(r, '_' | '-' | '.' | '/' | ':' | '\'');
+            // A word, file names and links among them, moves to the next
+            // line whole, unless it fills the line alone: then a path
+            // breaks after the last of its slashes on the line, and any
+            // other word where the line ends. An opening bracket in front
+            // of what moves goes with it.
             let mut split = line.len();
-            if word(ch) {
-                let start = line.char_indices().rev().take_while(|&(_, r)| word(r)).last().map(|(at, _)| at);
-                match start {
-                    Some(at) if at > 0 => split = at,
-                    Some(_) => {
-                        if let Some(slash) = line.rfind('/').filter(|&s| s > 0) {
+            if in_word(ch) {
+                let run = line.iter().rev().take_while(|&&k| in_word(text[k])).count();
+                match (run, line.len() - run) {
+                    (0, _) => {}
+                    (_, 0) => {
+                        if let Some(slash) = line.iter().rposition(|&k| text[k] == '/').filter(|&s| s > 0) {
                             split = slash + 1;
                         }
                     }
-                    None => {}
+                    (_, start) => split = start,
                 }
             }
-            if let Some((at, before)) = line[..split].char_indices().last()
-                && at > 0
-                && NO_LINE_END.contains(before)
-            {
-                split = at;
+            if split > 1 && edges[line[split - 1]] == Edge::Opens {
+                split -= 1;
             }
             let rest = line.split_off(split);
-            lines.push(line.trim_end().to_string());
+            lines.push(said(&line).trim_end().to_string());
             line = rest;
             if !(line.is_empty() && ch == ' ') {
-                line.push(ch);
+                line.push(i);
             }
         } else {
-            line.push(ch);
+            line.push(i);
         }
     }
+    let line = said(&line);
     if !line.is_empty() {
         lines.push(line);
     }
@@ -752,21 +815,30 @@ fn blur_room(t: &Theme) -> f32 {
 pub fn big_title(t: &Theme, f: &Fonts, title: &str) -> Sprite {
     let m = &t.m;
     let pad = blur_room(t);
-    let w = Canvas::new(0, 0).text_width(&f.title, title, m.title_px);
+    // A title too long for the screen is set smaller, on the same line.
+    let px = Canvas::new(0, 0).fitting(&f.title, title, m.title_px, m.w as f32 - m.title_x - m.margin);
+    let w = Canvas::new(0, 0).text_width(&f.title, title, px);
+    let top = if px == m.title_px { m.title_top } else { m.title_top - f.title.ink(m.title_px).0 + f.title.ink(px).0 };
     let (x, y) = (m.title_x - pad, m.title_top - pad);
     let size = ((w + pad * 2.0).ceil() as u32, (m.title_px * 1.4 + pad * 2.0).ceil() as u32);
     Sprite::capture(x, y, size.0, size.1, |c, dx, dy| {
-        c.text_top(&f.title, title, m.title_x + dx, m.title_top + dy, m.title_px, Rgba::rgb(0, 0, 0), None);
+        c.text_top(&f.title, title, m.title_x + dx, top + dy, px, Rgba::rgb(0, 0, 0), None);
     })
 }
+
+/// The room, in dp, the bar keeps clear on each side of the title centred
+/// in it.
+const SMALL_TITLE_SIDE: f32 = 60.0;
 
 /// The page title centred in the bar over a scrolled page, as ink that
 /// fades and sharpens in.
 pub fn small_title(t: &Theme, f: &Fonts, title: &str) -> Sprite {
     let m = &t.m;
-    let (px, pad) = (m.account_title_px, blur_room(t));
+    let pad = blur_room(t);
+    // A title that would reach the way back beside it is set smaller.
+    let px = Canvas::new(0, 0).fitting(&f.heading, title, m.account_title_px, m.w as f32 - m.dp(SMALL_TITLE_SIDE) * 2.0);
     let w = Canvas::new(0, 0).text_width(&f.heading, title, px);
-    let h = px * 1.5;
+    let h = m.account_title_px * 1.5;
     let (x, y) = ((m.w as f32 - w) / 2.0 - pad, m.back_cy - h / 2.0 - pad);
     Sprite::capture(x, y, (w + pad * 2.0).ceil() as u32, (h + pad * 2.0).ceil() as u32, |c, dx, dy| {
         c.text_center(&f.heading, title, m.w as f32 / 2.0 + dx, m.back_cy + dy, px, Rgba::rgb(0, 0, 0));
@@ -915,15 +987,32 @@ fn chip(t: &Theme, (cx, cy, r): (f32, f32, f32)) -> (Canvas, i32, i32) {
     (c, x0, y0)
 }
 
-/// A short message in a dark capsule above the bottom edge.
+/// A short message in a dark capsule above the bottom edge, on as many
+/// lines as it takes between the screen's margins.
 pub fn toast(c: &mut Canvas, t: &Theme, f: &Fonts, text: &str) {
     let m = &t.m;
     let px = m.sub_px;
-    let w = c.text_width(&f.heading, text, px) + m.dp(40.0);
-    let h = m.dp(44.0);
+    let (side, line_h) = (m.dp(20.0), m.dp(44.0));
+    let lines = wrap(c, &f.heading, text, px, m.w as f32 - m.margin * 2.0 - side * 2.0);
+    let widest = lines.iter().map(|line| c.text_width(&f.heading, line, px)).fold(0.0, f32::max);
+    let (w, h) = (widest + side * 2.0, line_h + m.sub_pitch * lines.len().saturating_sub(1) as f32);
     let (x, y) = ((m.w as f32 - w) / 2.0, m.h as f32 - m.dp(120.0));
-    c.fill_round_rect(x, y, w, h, h / 2.0, Rgba::rgb(30, 30, 30).with_alpha(235));
-    c.text_center(&f.heading, text, m.w as f32 / 2.0, y + h / 2.0, px, Rgba::rgb(255, 255, 255));
+    c.fill_round_rect(x, y, w, h, line_h / 2.0, Rgba::rgb(30, 30, 30).with_alpha(235));
+    for (k, line) in lines.iter().enumerate() {
+        c.text_center(&f.heading, line, m.w as f32 / 2.0, y + line_h / 2.0 + m.sub_pitch * k as f32, px, Rgba::rgb(255, 255, 255));
+    }
+}
+
+/// A text centred on `cx`, on as many lines as it takes in `max_w`, the
+/// first centred on `cy` and each `pitch` under the one before. Returns
+/// how far the last line is under the first.
+#[allow(clippy::too_many_arguments)]
+pub fn centred(c: &mut Canvas, face: &Face, text: &str, cx: f32, cy: f32, px: f32, pitch: f32, color: Rgba, max_w: f32) -> f32 {
+    let lines = wrap(c, face, text, px, max_w);
+    for (k, line) in lines.iter().enumerate() {
+        c.text_center(face, line, cx, cy + pitch * k as f32, px, color);
+    }
+    pitch * lines.len().saturating_sub(1) as f32
 }
 
 /// The home page's search bar in `r`, at `level` of its strength, without
@@ -1286,7 +1375,7 @@ pub fn dock_bar(t: &Theme, f: &Fonts, bg: Rgba, labels: &[&str]) -> (Canvas, Vec
         let x = m.margin + k as f32 * (w + gap);
         let (fill, ink) = if k + 1 == labels.len() { (t.pal.accent, Rgba::rgb(255, 255, 255)) } else { (t.pal.search, t.pal.text) };
         c.fill_round_rect(x, pad, w, h, h / 2.0, fill);
-        c.text_center(&f.heading, label, x + w / 2.0, pad + h / 2.0, m.row_title_px, ink);
+        c.text_center_in(&f.heading, label, x + w / 2.0, pad + h / 2.0, m.row_title_px, ink, w - h / 2.0);
         rects.push(Rect::new(x, pad, w, h));
     }
     (c, rects)
@@ -1331,7 +1420,7 @@ pub fn button(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, label: &str) -> Re
     let m = &t.m;
     let (x, w, h) = (m.margin, m.w as f32 - m.margin * 2.0, m.dp(48.0));
     c.fill_round_rect(x, top, w, h, h / 2.0, t.pal.accent);
-    c.text_center(&f.heading, label, x + w / 2.0, top + h / 2.0, m.row_title_px, Rgba::rgb(255, 255, 255));
+    c.text_center_in(&f.heading, label, x + w / 2.0, top + h / 2.0, m.row_title_px, Rgba::rgb(255, 255, 255), w - h / 2.0);
     Rect::new(x, top, w, h)
 }
 
@@ -1400,8 +1489,56 @@ impl<'a> Row<'a> {
 struct Layout {
     text_x: f32,
     text_max: f32,
+    /// The title on the lines it takes.
+    title_lines: Vec<String>,
+    /// The value at the row's end on the lines it takes, how wide they
+    /// run, and the room they end in where a line has less than it takes.
+    value_lines: Vec<String>,
+    value_w: f32,
+    value_max: Option<f32>,
     sub_lines: Vec<String>,
     h: f32,
+}
+
+impl Layout {
+    /// The value's lines, each ending at `right`, centred together on `cy`.
+    fn draw_value(&self, c: &mut Canvas, t: &Theme, f: &Fonts, right: f32, cy: f32, color: Rgba) {
+        let m = &t.m;
+        let first = cy - (self.value_lines.len() as f32 - 1.0) * m.sub_pitch / 2.0;
+        for (k, line) in self.value_lines.iter().enumerate() {
+            let w = c.text_width(&f.value, line, m.sub_px).min(self.value_w);
+            c.text_vc(&f.value, line, right - w, first + m.sub_pitch * k as f32, m.sub_px, color, self.value_max);
+        }
+    }
+
+    /// How tall the title and the lines under it are together, ink to ink.
+    fn block(&self, t: &Theme, f: &Fonts) -> f32 {
+        let m = &t.m;
+        let (tt, tb) = f.heading.ink(m.row_title_px);
+        let title = (tb - tt) + (self.title_lines.len() as f32 - 1.0) * title_pitch(t);
+        if self.sub_lines.is_empty() {
+            return title;
+        }
+        let (st, sb) = f.body.ink(m.sub_px);
+        title + m.sub_gap + (self.sub_lines.len() as f32 - 1.0) * m.sub_pitch + (sb - st)
+    }
+}
+
+/// How far apart the lines of a title on more than one line are, as far
+/// for its size as the lines under it are for theirs.
+fn title_pitch(t: &Theme) -> f32 {
+    t.m.row_title_px * t.m.sub_pitch / t.m.sub_px
+}
+
+/// A title, caption or value on the lines it takes in `max_w`. One with a
+/// word wider than that, as a file's name is, stays on one line, which
+/// ends where its room does.
+fn fitted(c: &Canvas, face: &Face, text: &str, px: f32, max_w: f32) -> Vec<String> {
+    let fits = |text: &str| c.text_width(face, text, px) <= max_w;
+    if fits(text) || !text.split(|ch: char| !in_word(ch)).all(fits) {
+        return vec![text.to_string()];
+    }
+    wrap(c, face, text, px, max_w)
 }
 
 fn layout(c: &Canvas, t: &Theme, f: &Fonts, r: &Row) -> Layout {
@@ -1412,34 +1549,73 @@ fn layout(c: &Canvas, t: &Theme, f: &Fonts, r: &Row) -> Layout {
         (None, Some(_)) => m.inner + m.icon + m.icon_gap,
         (None, None) => m.inner,
     };
-    let trail_w = match r.trail {
+    // What the row's end takes beside its value.
+    let end = match r.trail {
         Trail::None => m.inner,
         Trail::Arrow => m.chevron_inset + m.chevron_w + m.value_gap,
-        Trail::Value(s) => m.chevron_inset + m.chevron_w + m.value_gap * 2.0 + c.text_width(&f.value, s, m.sub_px),
-        Trail::Text(s) => m.inner + m.value_gap + c.text_width(&f.value, s, m.sub_px),
+        Trail::Value(_) => m.chevron_inset + m.chevron_w + m.value_gap * 2.0,
+        Trail::Text(_) => m.inner + m.value_gap,
         Trail::Switch(_) => m.inner + m.switch_w + m.value_gap,
         Trail::Badge(_) => m.inner + m.badge_w + m.value_gap,
         Trail::Check(_) => m.inner + m.dp(24.0) + m.value_gap,
         Trail::Network { locked } => {
             m.inner + m.dp(ROUND_D) + m.value_gap + if locked { m.dp(LOCK_GAP + LOCK_W) } else { 0.0 }
         }
-        Trail::Choice(s) => m.dp(UPDOWN_RIGHT + UPDOWN_W + UPDOWN_VALUE_GAP) + m.value_gap + c.text_width(&f.value, s, m.sub_px),
+        Trail::Choice(_) => m.dp(UPDOWN_RIGHT + UPDOWN_W + UPDOWN_VALUE_GAP) + m.value_gap,
     };
-    let text_max = card_w - text_x - trail_w;
+    // A name with a fan or a tag stays on the line they are on.
+    let one_line = r.fan.is_some() || r.tag.is_some();
+    let width = |text: &str| c.text_width(&f.heading, text, m.row_title_px);
+    let title_w = width(r.title) + tag_room(c, t, f, r);
+    // A value has the room the title leaves it. Where the two do not fit
+    // side by side, the title goes onto lines as narrow as its longest
+    // word, and no narrower than a third of the row, and the value has
+    // the rest, and no less than half the row, on as many lines as it
+    // takes there.
+    let (value_lines, value_w, value_max) = match r.trail {
+        Trail::Value(s) | Trail::Text(s) | Trail::Choice(s) => {
+            let room = card_w - text_x - end;
+            let narrowest = if one_line {
+                title_w
+            } else {
+                let word = r.title.split(|ch: char| !in_word(ch)).map(width).fold(0.0, f32::max);
+                title_w.min(word.max(room / 3.0))
+            };
+            let has = (room - narrowest).max(room / 2.0);
+            let lines = fitted(c, &f.value, s, m.sub_px, has);
+            let widest = lines.iter().map(|line| c.text_width(&f.value, line, m.sub_px)).fold(0.0, f32::max);
+            if widest > has {
+                (lines, has, Some(has))
+            } else {
+                (lines, widest, None)
+            }
+        }
+        _ => (Vec::new(), 0.0, None),
+    };
+    let text_max = card_w - text_x - (end + value_w);
+    let title_lines = if one_line { vec![r.title.to_string()] } else { fitted(c, &f.heading, r.title, m.row_title_px, text_max) };
     let sub_lines = r.sub.map(|s| wrap(c, &f.body, s, m.sub_px, text_max)).unwrap_or_default();
-    let h = if sub_lines.is_empty() {
+    let mut lay = Layout { text_x, text_max, title_lines, value_lines, value_w, value_max, sub_lines, h: 0.0 };
+    lay.h = if lay.title_lines.len() == 1 && lay.sub_lines.is_empty() {
         if r.fan.is_some() {
             m.dp(FAN_ROW_H)
         } else {
             m.row_h
         }
     } else {
-        let (tt, tb) = f.heading.ink(m.row_title_px);
-        let (st, sb) = f.body.ink(m.sub_px);
-        let block = (tb - tt) + m.sub_gap + (sub_lines.len() as f32 - 1.0) * m.sub_pitch + (sb - st);
-        (block + m.row_pad_v * 2.0).max(m.row_h)
+        (lay.block(t, f) + m.row_pad_v * 2.0).max(m.row_h)
     };
-    Layout { text_x, text_max, sub_lines, h }
+    if lay.value_lines.len() > 1 {
+        let (vt, vb) = f.value.ink(m.sub_px);
+        let value = (vb - vt) + (lay.value_lines.len() as f32 - 1.0) * m.sub_pitch;
+        lay.h = lay.h.max(value + m.row_pad_v * 2.0);
+    }
+    lay
+}
+
+/// The room a row's tag takes after its title.
+fn tag_room(c: &Canvas, t: &Theme, f: &Fonts, r: &Row) -> f32 {
+    r.tag.map_or(0.0, |tag| c.text_width(&f.body, tag, t.m.dp(TAG_PX)) + t.m.dp(TAG_PAD * 2.0 + TAG_GAP))
 }
 
 fn draw_row(c: &mut Canvas, t: &Theme, f: &Fonts, r: &Row, lay: &Layout, top: f32, tone: &Tone) {
@@ -1456,19 +1632,23 @@ fn draw_row(c: &mut Canvas, t: &Theme, f: &Fonts, r: &Row, lay: &Layout, top: f3
     let tx = card_x + lay.text_x;
     let color = r.tint.unwrap_or(tone.text);
     // A tag takes its room from the title's.
-    let tag_w = r.tag.map_or(0.0, |tag| c.text_width(&f.body, tag, m.dp(TAG_PX)) + m.dp(TAG_PAD * 2.0 + TAG_GAP));
-    let title_room = (lay.text_max - tag_w).max(0.0);
+    let title_room = (lay.text_max - tag_room(c, t, f, r)).max(0.0);
     let title_max = Some(title_room);
     let (tt, tb) = f.heading.ink(m.row_title_px);
-    let title_cy = if lay.sub_lines.is_empty() {
+    let title_cy = if lay.title_lines.len() == 1 && lay.sub_lines.is_empty() {
         c.text_vc(&f.heading, r.title, tx, cy, m.row_title_px, color, title_max);
         cy
     } else {
-        let (st, sb) = f.body.ink(m.sub_px);
-        let block = (tb - tt) + m.sub_gap + (lay.sub_lines.len() as f32 - 1.0) * m.sub_pitch + (sb - st);
-        let ink_top = cy - block / 2.0;
-        c.text_top(&f.heading, r.title, tx, ink_top, m.row_title_px, color, title_max);
-        let mut st_top = ink_top + (tb - tt) + m.sub_gap;
+        let ink_top = cy - lay.block(t, f) / 2.0;
+        let pitch = title_pitch(t);
+        let mut line_top = ink_top;
+        // A title on lines of its own has been fitted to them already.
+        let line_max = title_max.filter(|_| lay.title_lines.len() == 1);
+        for line in &lay.title_lines {
+            c.text_top(&f.heading, line, tx, line_top, m.row_title_px, color, line_max);
+            line_top += pitch;
+        }
+        let mut st_top = line_top - pitch + (tb - tt) + m.sub_gap;
         for line in &lay.sub_lines {
             c.text_top(&f.body, line, tx, st_top, m.sub_px, tone.sub, None);
             st_top += m.sub_pitch;
@@ -1488,16 +1668,12 @@ fn draw_row(c: &mut Canvas, t: &Theme, f: &Fonts, r: &Row, lay: &Layout, top: f3
     match r.trail {
         Trail::None => {}
         Trail::Arrow => chevron(c, t, right - m.chevron_inset, cy, tone.chevron),
-        Trail::Value(s) => {
+        Trail::Value(_) => {
             let chev_left = right - m.chevron_inset - m.chevron_w;
             chevron(c, t, right - m.chevron_inset, cy, tone.chevron);
-            let w = c.text_width(&f.value, s, m.sub_px);
-            c.text_vc(&f.value, s, chev_left - m.value_gap - w, cy, m.sub_px, tone.value, None);
+            lay.draw_value(c, t, f, chev_left - m.value_gap, cy, tone.value);
         }
-        Trail::Text(s) => {
-            let w = c.text_width(&f.value, s, m.sub_px);
-            c.text_vc(&f.value, s, right - m.inner - w, cy, m.sub_px, tone.value, None);
-        }
+        Trail::Text(_) => lay.draw_value(c, t, f, right - m.inner, cy, tone.value),
         Trail::Switch(on) => switch(c, t, right - m.inner, cy, on),
         Trail::Badge(s) => {
             let (bw, bh) = (m.badge_w, m.badge_h);
@@ -1519,11 +1695,10 @@ fn draw_row(c: &mut Canvas, t: &Theme, f: &Fonts, r: &Row, lay: &Layout, top: f3
                 padlock(c, round.x - m.dp(LOCK_GAP + LOCK_W / 2.0), cy, m.dp(LOCK_H), tone.value);
             }
         }
-        Trail::Choice(s) => {
+        Trail::Choice(_) => {
             let arrows = right - m.dp(UPDOWN_RIGHT);
             updown(c, t, arrows, cy, tone.updown);
-            let w = c.text_width(&f.value, s, m.sub_px);
-            c.text_vc(&f.value, s, arrows - m.dp(UPDOWN_W + UPDOWN_VALUE_GAP) - w, cy, m.sub_px, tone.value, None);
+            lay.draw_value(c, t, f, arrows - m.dp(UPDOWN_W + UPDOWN_VALUE_GAP), cy, tone.value);
         }
     }
 }
@@ -1788,7 +1963,8 @@ pub fn confirm(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, label: &str, dang
     let accent = if danger { t.pal.danger } else { t.pal.accent };
     let (x, w, h) = (m.margin, m.w as f32 - m.margin * 2.0, m.dp(56.0));
     c.fill_round_rect(x, top, w, h, h / 2.0, if danger { t.pal.danger_soft } else { t.pal.badge });
-    c.text_center(&f.heading, label, x + w / 2.0 + h / 4.0, top + h / 2.0, m.row_title_px, accent);
+    // The label stands between the knob at rest and the track's end.
+    c.text_center_in(&f.heading, label, x + w / 2.0 + h / 4.0, top + h / 2.0, m.row_title_px, accent, w - h * 2.0);
     let k = h - m.dp(8.0);
     let kcx = x + h / 2.0 + (w - h) * progress.clamp(0.0, 1.0);
     let kcy = top + h / 2.0;
@@ -1865,6 +2041,8 @@ pub fn pattern_lock(c: &mut Canvas, t: &Theme, cx: f32, cy: f32, span: f32, path
 
 /// The round keys a screen lock's code is typed on.
 const PAD_KEY_DP: f32 = 76.0;
+/// How far in from a round key's sides, in dp, the word on it stays.
+const PAD_WORD_INSET_DP: f32 = 6.0;
 const PAD_GAP_X_DP: f32 = 30.0;
 const PAD_GAP_Y_DP: f32 = 18.0;
 const PAD_TOP_DP: f32 = 10.0;
@@ -1921,8 +2099,11 @@ pub fn keypad(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32, pressed: 
         }
         match cap {
             Cap::Char(ch) => c.text_center(&f.heading, &ch.to_string(), cx, cy, m.dp(34.0), t.pal.text),
-            Cap::Backspace => c.text_center(&f.body, l.pick(["删除", "刪除", "Delete"]), cx, cy, m.row_title_px, t.pal.accent),
-            _ => c.text_center(&f.heading, l.pick(["解密", "解密", "Decrypt"]), cx, cy, m.row_title_px, Rgba::rgb(255, 255, 255)),
+            Cap::Backspace => c.text_center_in(&f.body, l.pick(texts::keyboard::DELETE), cx, cy, m.row_title_px, t.pal.accent, r.w),
+            _ => {
+                let room = r.w - m.dp(PAD_WORD_INSET_DP) * 2.0;
+                c.text_center_in(&f.heading, l.pick(texts::keyboard::CONFIRM), cx, cy, m.row_title_px, Rgba::rgb(255, 255, 255), room);
+            }
         }
     }
     keys
@@ -2102,37 +2283,49 @@ pub struct Detail<'a> {
 }
 
 /// Two-column grid of icon, title and the value under it, as the stock
-/// network details lay them out; values keep their own line breaks and
-/// wrap to their column.
+/// network details lay them out; a title wraps to its column, and values
+/// keep their own line breaks and wrap to theirs.
 pub fn detail_grid(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, items: &[Detail]) -> f32 {
     let m = &t.m;
     let (card_x, right) = (m.margin, m.w as f32 - m.margin);
     let cols = [card_x + m.inner, card_x + (right - card_x) * 0.5];
     let widths = [cols[1] - cols[0] - m.inner, right - m.inner - cols[1]];
     let (to_title, to_value, after, pitch) = (m.dp(30.0), m.dp(23.3), m.dp(44.0), m.dp(18.7));
-    let cells: Vec<Vec<String>> = items
+    let title_pitch = title_pitch(t);
+    // Each box's title and value, on the lines they take.
+    let cells: Vec<(Vec<String>, Vec<String>)> = items
         .iter()
         .enumerate()
-        .map(|(i, d)| d.value.split('\n').flat_map(|l| wrap(c, &f.body, l, m.sub_px, widths[i % 2])).collect())
+        .map(|(i, d)| {
+            let width = widths[i % 2];
+            let value = d.value.split('\n').flat_map(|l| wrap(c, &f.body, l, m.sub_px, width)).collect();
+            (fitted(c, &f.heading, d.title, m.row_title_px, width), value)
+        })
         .collect();
+    // How far a box's last line is below the first line of its title.
+    let depth = |(title, value): &(Vec<String>, Vec<String>)| {
+        title_pitch * (title.len() - 1) as f32 + to_value + pitch * value.len().saturating_sub(1) as f32
+    };
     let mut centres = Vec::new();
     let mut icy = top + m.dp(28.0);
     let mut last = icy;
     for pair in cells.chunks(2) {
         centres.push(icy);
-        let lines = pair.iter().map(Vec::len).max().unwrap_or(1).max(1);
-        last = icy + to_title + to_value + pitch * (lines - 1) as f32;
+        last = icy + to_title + pair.iter().map(depth).fold(to_value, f32::max);
         icy = last + after;
     }
     let bottom = last + to_value;
     c.fill_round_rect(card_x, top, right - card_x, bottom - top, m.card_radius, t.pal.card);
-    for (i, (d, lines)) in items.iter().zip(&cells).enumerate() {
+    for (i, (d, (title, value))) in items.iter().zip(&cells).enumerate() {
         let (x, icy) = (cols[i % 2], centres[i / 2]);
         outline_in(c, t, d.icon, x + m.dp(10.0), icy, t.pal.spec_label);
         let title_cy = icy + to_title;
-        c.text_vc(&f.heading, d.title, x, title_cy, m.row_title_px, t.pal.text, Some(widths[i % 2]));
-        for (k, l) in lines.iter().enumerate() {
-            c.text_vc(&f.body, l, x, title_cy + to_value + pitch * k as f32, m.sub_px, t.pal.spec_label, None);
+        for (k, l) in title.iter().enumerate() {
+            c.text_vc(&f.heading, l, x, title_cy + title_pitch * k as f32, m.row_title_px, t.pal.text, Some(widths[i % 2]));
+        }
+        let value_cy = title_cy + title_pitch * (title.len() - 1) as f32 + to_value;
+        for (k, l) in value.iter().enumerate() {
+            c.text_vc(&f.body, l, x, value_cy + pitch * k as f32, m.sub_px, t.pal.spec_label, None);
         }
     }
     bottom
@@ -2308,29 +2501,40 @@ pub fn spec_grid(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, items: &[Spec])
     let widths = [cols[1] - cols[0] - m.inner, right - m.inner - cols[1]];
     let (value_px, pitch) = (m.dp(16.0), m.dp(21.5));
     let (to_label, to_value) = (m.dp(30.8), m.dp(23.0));
-    let cells: Vec<Vec<String>> = items
+    // Each cell's caption and value, on the lines they take.
+    let cells: Vec<(Vec<String>, Vec<String>)> = items
         .iter()
         .enumerate()
-        .map(|(i, s)| s.value.split('\n').flat_map(|l| wrap(c, &f.heading, l, value_px, widths[i % 2])).collect())
+        .map(|(i, s)| {
+            let width = widths[i % 2];
+            let value = s.value.split('\n').flat_map(|l| wrap(c, &f.heading, l, value_px, width)).collect();
+            (fitted(c, &f.body, s.label, m.sub_px, width), value)
+        })
         .collect();
+    // How far a cell's last line is below the first line of its caption.
+    let depth = |(label, value): &(Vec<String>, Vec<String>)| {
+        m.sub_pitch * (label.len() - 1) as f32 + to_value + pitch * value.len().saturating_sub(1) as f32
+    };
     let mut centres = Vec::new();
     let mut cy = top + m.dp(38.2);
     let mut last = cy;
     for pair in cells.chunks(2) {
         centres.push(cy);
-        let lines = pair.iter().map(Vec::len).max().unwrap_or(1).max(1);
-        last = cy + to_label + to_value + pitch * (lines - 1) as f32;
+        last = cy + to_label + pair.iter().map(depth).fold(to_value, f32::max);
         cy = last + m.dp(28.3);
     }
     let bottom = last + m.dp(19.7);
     c.fill_round_rect(card_x, top, right - card_x, bottom - top, m.card_radius, t.pal.card);
-    for (i, (s, lines)) in items.iter().zip(&cells).enumerate() {
+    for (i, (s, (label, value))) in items.iter().zip(&cells).enumerate() {
         let (x, icy) = (cols[i % 2], centres[i / 2]);
         outline(c, t, s.icon, x + m.dp(11.5), icy);
         let label_base = icy + to_label;
-        c.text(&f.body, s.label, x, label_base, m.sub_px, t.pal.subtitle, Some(widths[i % 2]));
-        for (k, l) in lines.iter().enumerate() {
-            c.text(&f.heading, l, x, label_base + to_value + pitch * k as f32, value_px, t.pal.info, None);
+        for (k, l) in label.iter().enumerate() {
+            c.text(&f.body, l, x, label_base + m.sub_pitch * k as f32, m.sub_px, t.pal.subtitle, Some(widths[i % 2]));
+        }
+        let value_base = label_base + m.sub_pitch * (label.len() - 1) as f32 + to_value;
+        for (k, l) in value.iter().enumerate() {
+            c.text(&f.heading, l, x, value_base + pitch * k as f32, value_px, t.pal.info, None);
         }
     }
     bottom
@@ -2446,7 +2650,7 @@ pub fn theme_picker(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32) -> 
     let caption_base = top + slot_w + m.dp(11.0) - ink_top;
     let bottom = caption_base + ink_bottom;
     let mut rects = Vec::new();
-    let modes = [(["浅色模式", "淺色模式", "Light mode"], false), (["深色模式", "深色模式", "Dark mode"], true)];
+    let modes = [(texts::settings::LIGHT_MODE, false), (texts::settings::DARK_MODE, true)];
     for (i, (label, dark)) in modes.map(|(label, dark)| (l.pick(label), dark)).into_iter().enumerate() {
         let sx = m.margin + (slot_w + gap) * i as f32;
         let on = t.dark == dark;
@@ -2599,6 +2803,8 @@ const KEY_H_DP: f32 = 44.0;
 /// How round a key's corners are.
 pub const KEY_RADIUS_DP: f32 = 6.0;
 const KEY_GAP_X_DP: f32 = 5.5;
+/// How far in from a key's sides, in dp, the word on it stays.
+const KEY_WORD_INSET_DP: f32 = 8.0;
 const KEY_GAP_Y_DP: f32 = 11.0;
 const KEYBOARD_PAD_X_DP: f32 = 3.5;
 const KEYBOARD_TOP_DP: f32 = 9.0;
@@ -2661,7 +2867,10 @@ pub fn keyboard(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32, layer: 
         Layer::Letters | Layer::Shifted => Cap::Show(Layer::Digits),
         Layer::Digits | Layer::Symbols => Cap::Show(Layer::Letters),
     };
-    let enter_w = kw * 2.2;
+    // The return key is as wide as its word takes, of the room the space
+    // bar can spare it.
+    let inset = m.dp(KEY_WORD_INSET_DP);
+    let enter_w = (c.text_width(&f.heading, enter, m.sub_px) + inset * 2.0).clamp(kw * 2.2, kw * 3.6);
     let space_x = left + side_w + gx + kw + gx;
     let space_w = w - pad - enter_w - gx - kw - gx - space_x;
     keys.push((Rect::new(left, row_top(3), side_w, kh), switch));
@@ -2691,8 +2900,8 @@ pub fn keyboard(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32, layer: 
                 let label = if layer == Layer::Shifted { ch.to_ascii_uppercase() } else { ch };
                 c.text_center(&f.heading, &label.to_string(), cx, cy, glyph_px, ink);
             }
-            Cap::Space => c.text_center(&f.body, l.pick(["空格", "空格", "Space"]), cx, cy, m.sub_px, ink),
-            Cap::Enter => c.text_center(&f.heading, enter, cx, cy, m.sub_px, Rgba::rgb(255, 255, 255)),
+            Cap::Space => c.text_center_in(&f.body, l.pick(texts::keyboard::SPACE), cx, cy, m.sub_px, ink, r.w - inset * 2.0),
+            Cap::Enter => c.text_center_in(&f.heading, enter, cx, cy, m.sub_px, Rgba::rgb(255, 255, 255), r.w - inset * 2.0),
             Cap::Show(Layer::Digits) => c.text_center(&f.heading, "123", cx, cy, m.sub_px, ink),
             Cap::Show(Layer::Symbols) => c.text_center(&f.heading, "#+=", cx, cy, m.sub_px, ink),
             Cap::Show(_) => c.text_center(&f.heading, "abc", cx, cy, m.sub_px, ink),
@@ -3105,6 +3314,43 @@ mod tests {
     }
 
     #[test]
+    fn every_language_s_words_and_quotation_marks_stay_with_their_text() {
+        let f = crate::font::bundled();
+        let c = Canvas::new(1, 1);
+        let px = 40.0;
+        // A text, what closes in it and so starts no line, and what opens
+        // in it and so ends none.
+        let texts = [
+            ("Güncelleme birleştirilene kadar super içindeki bölümler yazılmaz. Lütfen işlem bitene kadar kapatmayın.", ".,", ""),
+            ("Разделы в super не прошиваются, пока обновление не объединено. Выключите «Проверять подписи» и повторите.", ".,»", "«"),
+            ("Dieses Zip ist nicht signiert. Schalte „Zip-Signaturen prüfen“ aus und versuche es dann erneut.", ".“", "„"),
+            ("Ce zip n’est pas signé. Désactivez «\u{a0}Vérifier les signatures\u{a0}» puis réessayez\u{a0}: rien n’a été écrit.", ".»", "«"),
+            ("Gói này không có chữ ký. Hãy tắt “Xác minh chữ ký zip” rồi thử lại.", ".”", "“"),
+            ("このパッケージは署名されていません。「署名を検証」をオフにして、もういちどインストールしてください。", "。、」ー", "「"),
+        ];
+        for (text, closes, opens) in texts {
+            for ems in 6..30 {
+                let max_w = ems as f32 * px;
+                let lines = wrap(&c, &f.body, text, px, max_w);
+                for l in &lines {
+                    assert!(!(l.chars().count() > 1 && l.ends_with(|ch| opens.contains(ch))), "{l:?} ends on what opens: {lines:?}");
+                    assert!(!l.starts_with(|ch| closes.contains(ch)), "{l:?} starts with what closes: {lines:?}");
+                }
+                let squeezed = |s: &str| s.chars().filter(|ch| *ch != ' ').collect::<String>();
+                assert_eq!(squeezed(&lines.concat()), squeezed(text), "nothing lost at {ems} em");
+                for word in text.split(|ch: char| !in_word(ch)).filter(|w| !w.is_empty()) {
+                    if c.text_width(&f.body, word, px) <= max_w {
+                        assert!(lines.iter().any(|l| l.contains(word)), "{word:?} broken at {ems} em: {lines:?}");
+                    }
+                }
+            }
+        }
+        // Kana set no spaces, and break wherever the line is full.
+        let kana = wrap(&c, &f.body, "インストールしてください", px, 6.0 * px);
+        assert!(kana.len() > 1 && kana.iter().all(|l| c.text_width(&f.body, l, px) <= 7.0 * px), "{kana:?}");
+    }
+
+    #[test]
     fn a_path_too_long_for_a_line_breaks_after_a_slash() {
         let f = crate::font::bundled();
         let c = Canvas::new(1, 1);
@@ -3117,5 +3363,113 @@ mod tests {
         let broken = lines.iter().position(|l| l.ends_with("com.android.art/")).expect("the long path breaks after a slash");
         assert!(lines[broken].starts_with("/data/misc/"), "the path starts its own line: {lines:?}");
         assert!(lines[broken + 1].starts_with("dalvik-cache"), "and goes on with what follows the slash: {lines:?}");
+    }
+
+    #[test]
+    fn a_title_too_long_for_its_row_goes_onto_more_lines_and_a_name_stays_on_one() {
+        let t = Theme::light(1200, 2608, 3.0);
+        let f = crate::font::bundled();
+        let c = Canvas::new(1, 1);
+        let width = |line: &String| c.text_width(&f.heading, line, t.m.row_title_px);
+        let short = layout(&c, &t, &f, &Row::new("Install from internal storage"));
+        assert_eq!((short.title_lines.len(), short.h), (1, t.m.row_h), "a title that fits keeps its line and the row its height");
+        let title = "Aus dem internen Speicher installieren und danach in das System neu starten";
+        let long = layout(&c, &t, &f, &Row::new(title));
+        assert!(long.title_lines.len() > 1 && long.title_lines.join(" ") == title, "all of it, on lines: {:?}", long.title_lines);
+        assert!(long.title_lines.iter().all(|line| width(line) <= long.text_max), "each line in the row: {:?}", long.title_lines);
+        assert!(long.h > t.m.row_h, "the row grows with its lines");
+        let under = layout(&c, &t, &f, &Row::new(title).subtitle("Vom Telefon"));
+        assert!(under.h > long.h, "and has the line under the title below them");
+        // A file's name is one word, and ends where the row does.
+        let name = "OTA_ishtar_OS3.0.305.0.WMACNXM_20260412_full_package_signed_for_recovery_install.zip";
+        let file = layout(&c, &t, &f, &Row::new(name));
+        assert_eq!((file.title_lines.as_slice(), file.h), ([name.to_string()].as_slice(), t.m.row_h));
+        // A network's name stays beside its fan, whatever it is called.
+        let network = layout(&c, &t, &f, &Row::new("The network of the house at the end of the long road").fan(2).trail(Trail::Network { locked: true }));
+        assert_eq!(network.title_lines.len(), 1);
+    }
+
+    #[test]
+    fn a_value_too_long_beside_its_title_has_the_room_the_title_leaves_it() {
+        let t = Theme::light(1200, 2608, 3.0);
+        let f = crate::font::bundled();
+        let c = Canvas::new(1, 1);
+        let fits = layout(&c, &t, &f, &Row::new("Time zone").trail(Trail::Value("China Standard Time")));
+        assert_eq!((fits.title_lines.len(), fits.value_lines.len(), fits.value_max, fits.h), (1, 1, None, t.m.row_h), "side by side where they fit");
+        // Neither is cut short where both can go onto lines.
+        let (title, value) = ("Часовой пояс устройства", "Всемирное координированное время");
+        let tight = layout(&c, &t, &f, &Row::new(title).trail(Trail::Value(value)));
+        assert_eq!((tight.title_lines.join(" "), tight.value_lines.join(" ")), (title.to_string(), value.to_string()));
+        assert!(tight.title_lines.len() > 1 && tight.value_lines.len() > 1 && tight.value_max.is_none(), "{:?} {:?}", tight.title_lines, tight.value_lines);
+        assert!(tight.title_lines.iter().all(|line| c.text_width(&f.heading, line, t.m.row_title_px) <= tight.text_max));
+        assert!(tight.value_lines.iter().all(|line| c.text_width(&f.value, line, t.m.sub_px) <= tight.value_w));
+        assert!(tight.h > t.m.row_h, "the row grows with them");
+        // A value of one long word ends where its room does, and leaves
+        // the title whole.
+        let name = "OTA_ishtar_OS3.0.305.0.WMACNXM_20260412_full_package_signed_for_recovery_install.zip";
+        let file = layout(&c, &t, &f, &Row::new("Package").trail(Trail::Text(name)));
+        assert_eq!((file.title_lines.as_slice(), file.value_lines.len()), (["Package".to_string()].as_slice(), 1));
+        assert_eq!(file.value_max, Some(file.value_w), "cut short at its room");
+    }
+
+    #[test]
+    fn a_word_too_long_for_its_place_is_set_smaller_and_a_message_goes_onto_lines() {
+        let t = Theme::light(1200, 2608, 3.0);
+        let f = crate::font::bundled();
+        let mut c = Canvas::filled(1200, 2608, t.pal.bg);
+        let px = t.m.row_title_px;
+        assert_eq!(c.fitting(&f.heading, "Join", px, 300.0), px, "a word that fits keeps its size");
+        let smaller = c.fitting(&f.heading, "Подключиться к этой сети", px, 300.0);
+        assert!(smaller < px && (c.text_width(&f.heading, "Подключиться к этой сети", smaller) - 300.0).abs() < 1.0, "{smaller}");
+        // The return key takes room from the space bar for a long word.
+        let enter = |keys: &[(Rect, Cap)]| keys.iter().find(|(_, cap)| *cap == Cap::Enter).unwrap().0;
+        let space = |keys: &[(Rect, Cap)]| keys.iter().find(|(_, cap)| *cap == Cap::Space).unwrap().0;
+        let top = 2608.0 - keyboard_height(&t);
+        let plain = keyboard(&mut c, &t, &f, Lang::En, top, Layer::Letters, None, "Join");
+        let wide = keyboard(&mut c, &t, &f, Lang::Ru, top, Layer::Letters, None, "Расшифровка");
+        assert!(enter(&wide).w > enter(&plain).w && space(&wide).w < space(&plain).w);
+        assert_eq!(enter(&wide).x + enter(&wide).w, enter(&plain).x + enter(&plain).w, "from the same right end");
+        assert!(space(&wide).w > enter(&wide).w, "and the space bar stays the widest key");
+        // A message too long for a line of the screen takes more.
+        let dark = |c: &Canvas| ink_box(c, Rect::new(0.0, 2000.0, 1200.0, 608.0), |p| p[0] < 80);
+        let mut c = Canvas::filled(1200, 2608, t.pal.bg);
+        toast(&mut c, &t, &f, "Saved");
+        let one = dark(&c);
+        let mut c = Canvas::filled(1200, 2608, t.pal.bg);
+        toast(&mut c, &t, &f, "Снимок экрана сохранён во внутренней памяти телефона, в папке Pictures/Screenshots");
+        let two = dark(&c);
+        assert!(two.0 >= t.m.margin && two.2 <= 1200.0 - t.m.margin, "between the screen's margins: {two:?}");
+        assert!(two.3 - two.1 > one.3 - one.1 && two.1 == one.1, "taller, from the same top: {one:?} {two:?}");
+    }
+
+    #[test]
+    fn every_language_s_words_on_keys_and_sliders_stay_legible() {
+        let t = Theme::light(1200, 2608, 3.0);
+        let f = crate::font::bundled();
+        let mut c = Canvas::filled(1200, 2608, t.pal.bg);
+        let locales = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("locales");
+        crate::canvas::watch_texts();
+        for l in Lang::ALL {
+            let file: toml::Table = std::fs::read_to_string(locales.join(format!("{}.toml", l.tag()))).unwrap().parse().unwrap();
+            let enters =
+                [texts::page::DECRYPT, texts::wlan::CONNECT, texts::common::DONE, texts::search::SEARCH, texts::keyboard::ENTER, texts::keyboard::NEW_LINE];
+            for enter in enters {
+                keyboard(&mut c, &t, &f, l, 1000.0, Layer::Letters, None, l.pick(enter));
+            }
+            keypad(&mut c, &t, &f, l, 1000.0, None);
+            let slides: Vec<&str> = file["confirm"].as_table().unwrap().values().map(|text| text.as_str().unwrap()).collect();
+            assert!(slides.len() > 10, "the sliders' words of {l:?} are read");
+            for label in slides {
+                confirm(&mut c, &t, &f, 400.0, label, false, 0.0);
+            }
+            dock_bar(&t, &f, t.pal.bg, &[l.pick(texts::common::CANCEL), l.pick(texts::files::COPY_HERE)]);
+            dock_bar(&t, &f, t.pal.bg, &[l.pick(texts::common::CANCEL), l.pick(texts::files::MOVE_HERE)]);
+            button(&mut c, &t, &f, 400.0, l.pick(texts::common::TRY_AGAIN));
+            button(&mut c, &t, &f, 400.0, l.pick(texts::logs::EXPORT));
+            // At seven tenths of its size a label is still larger than the
+            // captions the pages set.
+            let small: Vec<(String, f32)> = crate::canvas::take_watched().smaller.into_iter().filter(|(_, part)| *part < 0.7).collect();
+            assert!(small.is_empty(), "too long for their place in {l:?}: {small:?}");
+        }
     }
 }

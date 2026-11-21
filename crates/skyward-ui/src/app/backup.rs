@@ -3,12 +3,7 @@
 use super::*;
 
 /// What a backup can take, in the order the backup page lists it.
-pub const BACKUP_PARTS: [Text; 4] = [
-    ["启动分区", "啟動分割區", "Boot partitions"],
-    ["系统分区", "系統分割區", "System partitions"],
-    ["data 分区", "data 分割區", "data partition"],
-    ["基带与 EFS", "基頻與 EFS", "Modem and EFS"],
-];
+pub const BACKUP_PARTS: [Text; 4] = [texts::backup::part::BOOT, texts::backup::part::SYSTEM, texts::backup::part::DATA, texts::backup::part::MODEM];
 
 /// A backup found in a place's Skyward/backups folder.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -164,11 +159,11 @@ impl App {
                     self.settle_page();
                 }
                 self.refresh();
-                self.say(self.state.lang.pick(["已删除", "已刪除", "Deleted"]), now);
+                self.say(self.state.lang.pick(texts::toast::DELETED), now);
                 vec![self.find_backups()]
             }
             Err(why) => {
-                self.report(&tr!(self.state.lang, "删除失败：{why}", "刪除失敗：{why}", "Couldn't delete it: {why}"), now);
+                self.report(&texts::files::job::delete_failed(self.state.lang, why), now);
                 Vec::new()
             }
         }

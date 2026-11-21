@@ -5,14 +5,14 @@ use super::*;
 
 /// What work that needs the data partition is told while it is being
 /// opened.
-pub const DATA_OPENING: Text = ["正在打开 data 分区，请稍后再试", "正在開啟 data 分割區，請稍後再試", "Opening the data partition. Try again shortly"];
+pub const DATA_OPENING: Text = texts::toast::DATA_OPENING;
 
 /// What work on the data partition is told once it has been erased whole.
-pub const DATA_ERASED: Text = ["data 分区已清除", "data 分割區已清除", "The data partition was wiped"];
+pub const DATA_ERASED: Text = texts::data::ERASED;
 
 /// What work on internal storage is told before the data partition is
 /// decrypted.
-pub const DECRYPT_FIRST: Text = ["请先完成「解密」", "請先完成「解密」", "Decrypt first"];
+pub const DECRYPT_FIRST: Text = texts::toast::DECRYPT_FIRST;
 
 /// Which control answers a user's screen lock, by the kind of lock it is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

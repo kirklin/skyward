@@ -2,8 +2,7 @@ use crate::app::{
     Action, BackupAt, BackupEnd, BackupJob, Check, ClashChoice, Confirm, Damage, Data, Dock, DownloadEnd, EraseStop, Field, FileKind,
     FileOp, FileTask, Fold, Folder, Frame, FsAction, FsChoice, FsRow, Have, HeroArt, Hit, Install, JobEnd, Keys, Pick, Place, Rows, Screen,
     SkywardCheck, SkywardEnd, SkywardJob, SkywardStage, Slider, Source, State, Switch, SystemsWork, Target, UsbDrive, UsbLink, Wipe, ADDABLE,
-    BACKUP_PARTS, DATA_ERASED, DATA_PARTITION, DOWNLOADS, FASTBOOT_CHOICES, SCREEN_OFF, TARGETS, TIME_ZONES, USB_DRIVE_UNREADABLE,
-    USB_DRIVE_WANTED, WIPES, installs, starting,
+    BACKUP_PARTS, DATA_PARTITION, DOWNLOADS, FASTBOOT_CHOICES, SCREEN_OFF, TARGETS, TIME_ZONES, WIPES, installs, starting,
 };
 use crate::canvas::Canvas;
 use crate::color::Rgba;
@@ -12,11 +11,11 @@ use crate::files;
 use crate::fmt::{self, Verb};
 use crate::font::Fonts;
 use crate::geom::Rect;
-use crate::lang::{Lang, Text};
+use crate::lang::{same, Lang, Text};
 use crate::search;
 use crate::term::{self, Term};
+use crate::texts;
 use crate::theme::Theme;
-use crate::tr;
 use crate::icons::{self, Icon};
 use crate::widgets::{self, Caption, Detail, Fact, Outline, Row, Spec, SystemCard, SystemMark, Tone, Trail};
 use skyward_info::{DeviceInfo, VERSION};
@@ -115,66 +114,45 @@ pub fn render(screen: Screen, cx: &Ctx) -> Frame {
 /// Label and colour of each swipe-to-confirm control: the filesystem
 /// page's as `s` says what it is to do.
 pub fn confirm_label(which: Confirm, s: &State) -> (&'static str, bool) {
-    const INSTALL: Text = ["滑动以安装", "滑動以安裝", "Slide to install"];
+    use texts::confirm;
     let (label, danger) = match which {
         Confirm::Filesystem => match s.fs_action {
-            FsAction::Repair => (["滑动以修复", "滑動以修復", "Slide to repair"], true),
-            FsAction::Remake(_) => (["滑动以更换", "滑動以更換", "Slide to change"], true),
+            FsAction::Repair => (confirm::REPAIR, true),
+            FsAction::Remake(_) => (confirm::CHANGE, true),
         },
-        Confirm::Reboot => (["滑动以重启", "滑動以重新啟動", "Slide to reboot"], false),
-        Confirm::Wipe => (["滑动以清除", "滑動以清除", "Slide to wipe"], true),
-        Confirm::Flash => (["滑动以刷入", "滑動以刷入", "Slide to flash"], true),
-        Confirm::Backup => (["滑动以备份", "滑動以備份", "Slide to back up"], false),
-        Confirm::Restore => (["滑动以恢复", "滑動以還原", "Slide to restore"], true),
-        Confirm::Slot => (["滑动以切换", "滑動以切換", "Slide to switch"], true),
-        Confirm::FactoryReset => (["滑动以恢复出厂设置", "滑動以恢復原廠設定", "Slide to factory reset"], true),
-        Confirm::DeleteEntry | Confirm::DeleteBackup => (["滑动以删除", "滑動以刪除", "Slide to delete"], true),
-        Confirm::Install => (INSTALL, false),
-        Confirm::InstallWipe => (["滑动以安装并清除", "滑動以安裝並清除", "Slide to install and wipe"], true),
-        Confirm::RunScript => (INSTALL, true),
-        Confirm::Merge => (["滑动以合并", "滑動以合併", "Slide to merge"], true),
-        Confirm::Relabel => (["滑动以修复", "滑動以修復", "Slide to fix"], true),
-        Confirm::SwitchSystem => (["滑动以切换并重启", "滑動以切換並重新啟動", "Slide to switch and reboot"], false),
-        Confirm::RemoveSystem => (["滑动以删除", "滑動以刪除", "Slide to remove"], true),
-        Confirm::InstallSystem => (INSTALL, false),
+        Confirm::Reboot => (confirm::REBOOT, false),
+        Confirm::Wipe => (confirm::WIPE, true),
+        Confirm::Flash => (confirm::FLASH, true),
+        Confirm::Backup => (confirm::BACK_UP, false),
+        Confirm::Restore => (confirm::RESTORE, true),
+        Confirm::Slot => (confirm::SWITCH, true),
+        Confirm::FactoryReset => (confirm::FACTORY_RESET, true),
+        Confirm::DeleteEntry | Confirm::DeleteBackup => (confirm::DELETE, true),
+        Confirm::Install => (confirm::INSTALL, false),
+        Confirm::InstallWipe => (confirm::INSTALL_AND_WIPE, true),
+        Confirm::RunScript => (confirm::INSTALL, true),
+        Confirm::Merge => (confirm::MERGE, true),
+        Confirm::Relabel => (confirm::FIX, true),
+        Confirm::SwitchSystem => (confirm::SWITCH_AND_REBOOT, false),
+        Confirm::RemoveSystem => (confirm::REMOVE, true),
+        Confirm::InstallSystem => (confirm::INSTALL, false),
     };
     (s.lang.pick(label), danger)
 }
 
-/// The home page's large title, and what its search bar and the search
-/// page's field say while nothing is typed.
+/// The home page's large title.
 pub const HOME_TITLE: &str = "Skyward";
-pub const SEARCH_HINT: Text = ["搜索功能与分区", "搜尋功能與分割區", "Search features and partitions"];
 
+/// Where the phone can restart to, and what is said under the name of one
+/// that wants it.
 const REBOOT_TARGETS: [(Text, Option<Text>); 6] = [
-    (["系统", "系統", "System"], None),
-    (["恢复模式", "復原模式", "Recovery"], None),
-    (["Fastboot"; 3], Some(["用户空间 fastbootd", "使用者空間 fastbootd", "Userspace fastbootd"])),
-    (["Bootloader"; 3], None),
-    (["EDL"; 3], Some(["高通紧急下载模式", "高通緊急下載模式", "Qualcomm emergency download"])),
-    (["关机", "關機", "Power off"], None),
+    (texts::reboot::target::SYSTEM, None),
+    (texts::reboot::target::RECOVERY, None),
+    (same("Fastboot"), Some(texts::reboot::target::FASTBOOT_NOTE)),
+    (same("Bootloader"), None),
+    (same("EDL"), Some(texts::reboot::target::EDL_NOTE)),
+    (texts::reboot::target::POWER_OFF, None),
 ];
-
-/// What pages are called both on the rows that open them and in their own
-/// titles.
-const WLAN: Text = ["WLAN", "Wi-Fi", "Wi-Fi"];
-const DECRYPT: Text = ["解密", "解密", "Decrypt"];
-const ADVANCED: Text = ["高级", "進階", "Advanced"];
-const SETTINGS: Text = ["设置", "設定", "Settings"];
-const REBOOT: Text = ["重启", "重新啟動", "Reboot"];
-const ABOUT: Text = ["关于本机", "關於手機", "About phone"];
-const SPECS: Text = ["全部参数与信息", "全部規格與資訊", "All specs"];
-const LOGS: Text = ["导出日志", "匯出記錄", "Export logs"];
-const SCREEN_TIMEOUT: Text = ["息屏时间", "螢幕自動關閉", "Screen timeout"];
-const UPDATE: Text = ["系统更新", "系統更新", "System update"];
-const SKYWARD_UPDATE: Text = ["Skyward 更新", "Skyward 更新", "Skyward update"];
-const FILES: Text = ["文件管理", "檔案管理", "File manager"];
-const TERMINAL: Text = ["终端", "終端機", "Terminal"];
-const LANGUAGE: Text = ["语言", "語言", "Language"];
-const TIME_ZONE: Text = ["时区", "時區", "Time zone"];
-const LICENSE: Text = ["开源许可", "開放原始碼授權", "Open source licenses"];
-const FONTS: Text = ["界面字体", "介面字型", "UI fonts"];
-const DUAL_BOOT: Text = ["双系统", "雙系統", "Dual boot"];
 
 /// A canvas for a page `h` tall in the colour `bg`, holding the rows `cx`
 /// asks to be drawn.
@@ -221,7 +199,7 @@ pub fn home(cx: &Ctx) -> Frame {
     let bar = Rect::new(t.m.margin, t.m.content_top, t.m.w as f32 - t.m.margin * 2.0, t.m.search_h);
     let mut y = bar.y + bar.h + t.m.after_search;
     let cards_top = y;
-    let fold = Fold { bar, hint: l.pick(SEARCH_HINT), span: cards_top - bar.y };
+    let fold = Fold { bar, hint: l.pick(texts::search::HINT), span: cards_top - bar.y };
     out.push(Hit { rect: bar, action: Action::Open(Screen::Search) });
 
     let sub = match &i.os_version {
@@ -254,8 +232,8 @@ pub fn home(cx: &Ctx) -> Frame {
         opens.push(Some(Action::Open(Screen::Slot)));
     }
     if cx.state.system_notice.is_some() {
-        let why = l.pick(["点按查看原因", "點按查看原因", "Tap to see why"]);
-        rows.push(Row::new(l.pick(SECOND_FAILED)).icon(RED, Icon::Systems).subtitle(why).trail(Trail::Arrow));
+        let why = l.pick(texts::home::TAP_TO_SEE_WHY);
+        rows.push(Row::new(l.pick(texts::systems::SECOND_FAILED)).icon(RED, Icon::Systems).subtitle(why).trail(Trail::Arrow));
         opens.push(Some(Action::Open(Screen::Systems)));
     }
     let card = widgets::device_card(&mut c, t, f, y, &i.model, &sub, &rows);
@@ -268,12 +246,12 @@ pub fn home(cx: &Ctx) -> Frame {
     let mut rows = Vec::new();
     let mut opens = Vec::new();
     if let Some(w) = &cx.state.wlan {
-        rows.push(Row::new(l.pick(WLAN)).icon(BLUE, Icon::Wlan).trail(Trail::Value(fmt::wlan_value(l, w))));
+        rows.push(Row::new(l.pick(texts::page::WLAN)).icon(BLUE, Icon::Wlan).trail(Trail::Value(fmt::wlan_value(l, w))));
         opens.push(Action::Open(Screen::Wlan));
     }
     let starts = systems_value(cx);
     if cx.state.offers(Screen::Systems) {
-        let row = Row::new(l.pick(DUAL_BOOT)).icon(PURPLE, Icon::Systems);
+        let row = Row::new(l.pick(texts::page::DUAL_BOOT)).icon(PURPLE, Icon::Systems);
         rows.push(match &starts {
             Some(value) => row.trail(Trail::Value(value)),
             None => row,
@@ -286,11 +264,11 @@ pub fn home(cx: &Ctx) -> Frame {
         y = first.bottom + t.m.card_gap;
     }
     let tools = widgets::list(&mut c, t, f, y, &[
-        Row::new(l.pick(["安装", "安裝", "Install"])).icon(GREEN, Icon::Install),
-        Row::new(l.pick(["备份", "備份", "Backup"])).icon(BLUE, Icon::Backup),
-        Row::new(l.pick(["恢复", "還原", "Restore"])).icon(PURPLE, Icon::Restore),
-        Row::new(l.pick(["挂载", "掛載", "Mount"])).icon(SLATE, Icon::Mount),
-        Row::new(l.pick(DECRYPT)).icon(BLUE, Icon::Lock).trail(Trail::Value(fmt::data(l, &cx.state.data))),
+        Row::new(l.pick(texts::page::INSTALL)).icon(GREEN, Icon::Install),
+        Row::new(l.pick(texts::page::BACKUP)).icon(BLUE, Icon::Backup),
+        Row::new(l.pick(texts::page::RESTORE)).icon(PURPLE, Icon::Restore),
+        Row::new(l.pick(texts::page::MOUNT)).icon(SLATE, Icon::Mount),
+        Row::new(l.pick(texts::page::DECRYPT)).icon(BLUE, Icon::Lock).trail(Trail::Value(fmt::data(l, &cx.state.data))),
     ]);
     out.extend(hits(&tools.rows, &[
         Action::Open(Screen::Install),
@@ -302,10 +280,10 @@ pub fn home(cx: &Ctx) -> Frame {
     y = tools.bottom + t.m.card_gap;
     let target = l.pick(REBOOT_TARGETS[cx.state.reboot].0);
     let system = widgets::list(&mut c, t, f, y, &[
-        Row::new(l.pick(["清除数据", "清除資料", "Wipe data"])).icon(RED, Icon::Wipe),
-        Row::new(l.pick(ADVANCED)).icon(SLATE, Icon::More),
-        Row::new(l.pick(SETTINGS)).icon(SLATE, Icon::Gear),
-        Row::new(l.pick(REBOOT)).icon(ORANGE, Icon::Power).trail(Trail::Value(target)),
+        Row::new(l.pick(texts::page::WIPE)).icon(RED, Icon::Wipe),
+        Row::new(l.pick(texts::page::ADVANCED)).icon(SLATE, Icon::More),
+        Row::new(l.pick(texts::page::SETTINGS)).icon(SLATE, Icon::Gear),
+        Row::new(l.pick(texts::page::REBOOT)).icon(ORANGE, Icon::Power).trail(Trail::Value(target)),
     ]);
     out.extend(hits(&system.rows, &[
         Action::Open(Screen::Wipe),
@@ -325,7 +303,7 @@ fn systems_value(cx: &Ctx) -> Option<String> {
     let l = cx.state.lang;
     match &cx.state.systems {
         Some(Ok(systems)) => Some(match (&systems.other, starting(systems)) {
-            (None, _) => l.pick(["未安装第二系统", "未安裝第二系統", "No second system"]).into(),
+            (None, _) => l.pick(texts::home::NO_SECOND_SYSTEM).into(),
             (Some(_), Who::Installed) => systems.installed.name.clone(),
             (Some(other), Who::Other) => other.name.clone(),
         }),
@@ -339,10 +317,10 @@ fn systems_value(cx: &Ctx) -> Option<String> {
 fn update_value(cx: &Ctx) -> &'static str {
     let (s, l) = (cx.state, cx.state.lang);
     if s.downloading() {
-        return l.pick(DOWNLOADING);
+        return l.pick(texts::update::DOWNLOADING);
     }
     if s.newest().is_some_and(|r| cx.info.os_version.as_deref() != Some(r.version.as_str())) {
-        return l.pick(["有新版本", "有新版本", "New version"]);
+        return l.pick(texts::update::NEW_VERSION);
     }
     fmt::update_value(l, &s.update)
 }
@@ -355,44 +333,39 @@ pub fn settings(cx: &Ctx) -> Frame {
     let top = t.m.content_top;
     let themes = widgets::theme_picker(&mut c, t, f, l, top + t.m.dp(8.9));
     out.extend(hits(&themes.rows, &[Action::Theme { dark: false }, Action::Theme { dark: true }]));
-    let mut y = widgets::section(&mut c, t, f, themes.bottom, l.pick(["亮度", "亮度", "Brightness"]));
+    let mut y = widgets::section(&mut c, t, f, themes.bottom, l.pick(texts::settings::BRIGHTNESS));
     let off = fmt::screen_off(l, SCREEN_OFF[s.screen_off]);
-    let below = Row::new(l.pick(SCREEN_TIMEOUT)).trail(Trail::Value(&off));
-    let slider = widgets::slider_card(&mut c, t, f, y, Caption::Sun, l.pick(["屏幕亮度", "螢幕亮度", "Screen brightness"]), s.brightness, Some(below));
+    let below = Row::new(l.pick(texts::page::SCREEN_TIMEOUT)).trail(Trail::Value(&off));
+    let slider = widgets::slider_card(&mut c, t, f, y, Caption::Sun, l.pick(texts::settings::SCREEN_BRIGHTNESS), s.brightness, Some(below));
     out.push(Hit { rect: slider.track, action: Action::Slider(Slider::Brightness) });
     if let Some(r) = slider.below {
         out.push(Hit { rect: r, action: Action::Open(Screen::ScreenOff) });
     }
-    y = widgets::section(&mut c, t, f, slider.bottom, l.pick(["振动", "震動", "Vibration"]));
-    let below = Row::new(l.pick(["触摸振动", "觸控震動", "Touch vibration"])).trail(Trail::Switch(s.vibrate));
-    let vibration = widgets::slider_card(&mut c, t, f, y, Caption::Vibrate, l.pick(["振动强度", "震動強度", "Vibration intensity"]), s.vibration, Some(below));
+    y = widgets::section(&mut c, t, f, slider.bottom, l.pick(texts::settings::VIBRATION));
+    let below = Row::new(l.pick(texts::settings::TOUCH_VIBRATION)).trail(Trail::Switch(s.vibrate));
+    let vibration = widgets::slider_card(&mut c, t, f, y, Caption::Vibrate, l.pick(texts::settings::VIBRATION_INTENSITY), s.vibration, Some(below));
     out.push(Hit { rect: vibration.track, action: Action::Slider(Slider::Vibration) });
     if let Some(r) = vibration.below {
         out.push(Hit { rect: r, action: Action::Toggle(Switch::Vibrate) });
     }
-    y = widgets::section(&mut c, t, f, vibration.bottom, l.pick(["通用", "一般", "General"]));
+    y = widgets::section(&mut c, t, f, vibration.bottom, l.pick(texts::settings::GENERAL));
     let general = widgets::list(&mut c, t, f, y, &[
-        Row::new(l.pick(LANGUAGE)).icon(BLUE, Icon::Globe).trail(Trail::Value(l.name())),
-        Row::new(l.pick(TIME_ZONE)).icon(ORANGE, Icon::Clock).trail(Trail::Value(l.pick(TIME_ZONES[s.time_zone].0))),
+        Row::new(l.pick(texts::page::LANGUAGE)).icon(BLUE, Icon::Globe).trail(Trail::Value(l.name())),
+        Row::new(l.pick(texts::page::TIME_ZONE)).icon(ORANGE, Icon::Clock).trail(Trail::Value(l.pick(TIME_ZONES[s.time_zone].0))),
     ]);
     out.extend(hits(&general.rows, &[Action::Open(Screen::Language), Action::Open(Screen::TimeZone)]));
     y = widgets::section(&mut c, t, f, general.bottom, "USB");
-    let usb = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(["文件传输", "檔案傳輸", "File transfer"])).icon(BLUE, Icon::Usb).trail(Trail::Switch(s.file_transfer))]);
+    let usb = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(texts::settings::FILE_TRANSFER)).icon(BLUE, Icon::Usb).trail(Trail::Switch(s.file_transfer))]);
     out.extend(hits(&usb.rows, &[Action::Toggle(Switch::FileTransfer)]));
-    let note = l.pick([
-        "开启后，可在电脑上管理内部存储中的文件，需先完成「解密」。",
-        "開啟後，可在電腦上管理內部儲存空間中的檔案，需先完成「解密」。",
-        "When on, a computer can manage the files in internal storage, once it is decrypted.",
-    ]);
-    y = widgets::footnote(&mut c, t, f, usb.bottom, note);
-    y = widgets::section(&mut c, t, f, y, l.pick(["调试", "偵錯", "Debugging"]));
-    let debug = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(TERMINAL)).icon(SLATE, Icon::Terminal)]);
+    y = widgets::footnote(&mut c, t, f, usb.bottom, l.pick(texts::settings::FILE_TRANSFER_NOTE));
+    y = widgets::section(&mut c, t, f, y, l.pick(texts::settings::DEBUGGING));
+    let debug = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(texts::page::TERMINAL)).icon(SLATE, Icon::Terminal)]);
     out.extend(hits(&debug.rows, &[Action::Open(Screen::Terminal)]));
-    y = widgets::section(&mut c, t, f, debug.bottom, l.pick(["关于", "關於", "About"]));
-    let mut rows = vec![Row::new(l.pick(ABOUT)).trail(Trail::Value(VERSION))];
+    y = widgets::section(&mut c, t, f, debug.bottom, l.pick(texts::settings::ABOUT));
+    let mut rows = vec![Row::new(l.pick(texts::page::ABOUT)).trail(Trail::Value(VERSION))];
     let mut opens = vec![Action::Open(Screen::About)];
     if s.offers(Screen::SkywardUpdate) {
-        let row = Row::new(l.pick(SKYWARD_UPDATE));
+        let row = Row::new(l.pick(texts::page::SKYWARD_UPDATE));
         rows.push(match skyward_value(cx) {
             Some(value) => row.trail(Trail::Value(value)),
             None => row,
@@ -401,7 +374,7 @@ pub fn settings(cx: &Ctx) -> Frame {
     }
     let about = widgets::list(&mut c, t, f, y, &rows);
     out.extend(hits(&about.rows, &opens));
-    Frame::new(t, fit(c, t, about.bottom), out, l.pick(SETTINGS), top)
+    Frame::new(t, fit(c, t, about.bottom), out, l.pick(texts::page::SETTINGS), top)
 }
 
 /// What the settings page says beside its Skyward update entry: an update
@@ -409,11 +382,11 @@ pub fn settings(cx: &Ctx) -> Frame {
 fn skyward_value(cx: &Ctx) -> Option<&'static str> {
     let (s, l) = (cx.state, cx.state.lang);
     if s.updating_skyward() {
-        return Some(l.pick(["正在更新", "正在更新", "Updating"]));
+        return Some(l.pick(texts::skyward_update::UPDATING));
     }
     match (s.skyward_newest(), &s.skyward_job) {
-        (_, Some(SkywardJob { outcome: Some(SkywardEnd::Updated(_)), .. })) => Some(l.pick(["已更新", "已更新", "Updated"])),
-        (Some(n), _) if n.newer && n.build.is_some() => Some(l.pick(["有新版本", "有新版本", "New version"])),
+        (_, Some(SkywardJob { outcome: Some(SkywardEnd::Updated(_)), .. })) => Some(l.pick(texts::skyward_update::UPDATED)),
+        (Some(n), _) if n.newer && n.build.is_some() => Some(l.pick(texts::update::NEW_VERSION)),
         _ => None,
     }
 }
@@ -428,21 +401,11 @@ pub fn screen_off(cx: &Ctx) -> Frame {
     let rows: Vec<Row> = labels.iter().enumerate().map(|(k, label)| Row::new(label).trail(Trail::Check(s.screen_off == k))).collect();
     let times = widgets::list(&mut c, t, f, top, &rows);
     let picks: Vec<Action> = (0..SCREEN_OFF.len()).map(Action::ScreenOff).collect();
-    let note = l.pick([
-        "超过所选时间未操作，屏幕将变暗并熄灭，按电源键即可点亮。",
-        "超過所選時間未操作，螢幕將變暗並關閉，按電源鍵即可喚醒。",
-        "After the time chosen with nothing touched, the screen dims and turns off. Press the power key to light it again.",
-    ]);
-    let y = widgets::footnote(&mut c, t, f, times.bottom, note);
+    let y = widgets::footnote(&mut c, t, f, times.bottom, l.pick(texts::screen_off::NOTE));
     if SCREEN_OFF[s.screen_off].is_none() {
-        let note = l.pick([
-            "屏幕将保持常亮，长时间显示同一画面可能留下残影。",
-            "螢幕將保持恆亮，長時間顯示同一畫面可能留下殘影。",
-            "The screen stays on. Showing the same image for long may leave it burnt in.",
-        ]);
-        widgets::footnote(&mut c, t, f, y, note);
+        widgets::footnote(&mut c, t, f, y, l.pick(texts::screen_off::STAYS_ON));
     }
-    Frame::new(t, c, hits(&times.rows, &picks), l.pick(SCREEN_TIMEOUT), top)
+    Frame::new(t, c, hits(&times.rows, &picks), l.pick(texts::page::SCREEN_TIMEOUT), top)
 }
 
 /// Mount manager: the slot's partitions, each with a switch to mount it
@@ -454,31 +417,26 @@ pub fn mount(cx: &Ctx) -> Frame {
     let mut out = Vec::new();
     let top = t.m.content_top;
 
-    let y = widgets::section_first(&mut c, t, f, top, l.pick(["分区", "分割區", "Partitions"]));
+    let y = widgets::section_first(&mut c, t, f, top, l.pick(texts::mount::PARTITIONS));
     let bottom = match &s.mounts {
         Err(why) => {
-            let y = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(["无法读取分区", "無法讀取分割區", "Couldn't read the partitions"])).trail(Trail::None)]).bottom;
+            let y = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(texts::mount::UNREADABLE)).trail(Trail::None)]).bottom;
             widgets::footnote(&mut c, t, f, y, why)
         }
-        Ok(mounts) if mounts.is_empty() => {
-            widgets::list(&mut c, t, f, y, &[Row::new(l.pick(["暂无可挂载的分区", "沒有可掛載的分割區", "No partitions to mount"])).trail(Trail::None)]).bottom
-        }
+        Ok(mounts) if mounts.is_empty() => widgets::list(&mut c, t, f, y, &[Row::new(l.pick(texts::mount::NONE)).trail(Trail::None)]).bottom,
         Ok(mounts) => {
             let subs: Vec<String> = mounts
                 .iter()
-                .map(|m| {
-                    let (point, holders) = (&m.point, m.holders.join(l.pick(["、", "、", ", "])));
-                    match m.holders.is_empty() {
-                        true => point.clone(),
-                        false => tr!(l, "{point} · {holders} 正在使用", "{point} · {holders} 正在使用", "{point} · in use by {holders}"),
-                    }
+                .map(|m| match m.holders.is_empty() {
+                    true => m.point.clone(),
+                    false => texts::mount::in_use_by(l, &m.point, m.holders.join(l.pick(texts::list::SEPARATOR))),
                 })
                 .collect();
             let rows: Vec<Row> = mounts
                 .iter()
                 .zip(&subs)
                 .map(|(m, sub)| {
-                    let trail = if m.holders.is_empty() { Trail::Switch(m.mounted) } else { Trail::Text(l.pick(["使用中", "使用中", "In use"])) };
+                    let trail = if m.holders.is_empty() { Trail::Switch(m.mounted) } else { Trail::Text(l.pick(texts::mount::IN_USE)) };
                     Row::new(&m.base).subtitle(sub).trail(trail)
                 })
                 .collect();
@@ -486,7 +444,7 @@ pub fn mount(cx: &Ctx) -> Frame {
             out.extend(list.rows.iter().zip(mounts).enumerate().map(|(i, (&rect, m))| {
                 let action = match m.holders.is_empty() {
                     true => Action::MountToggle(i),
-                    false => Action::Unavailable(l.pick(["无法卸载正在使用的分区", "無法卸載正在使用的分割區", "A partition in use can't be unmounted"])),
+                    false => Action::Unavailable(l.pick(texts::mount::CANT_UNMOUNT_IN_USE)),
                 };
                 Hit { rect, action }
             }));
@@ -495,21 +453,14 @@ pub fn mount(cx: &Ctx) -> Frame {
                 None => list.bottom,
             };
             let about = match cx.info.slot.map(|s| s.letter()) {
-                Some(slot) => tr!(
-                    l,
-                    "仅显示当前槽位 {slot} 在 super 中的分区，挂载后均为只读。",
-                    "僅顯示目前槽位 {slot} 在 super 中的分割區，掛載後均為唯讀。",
-                    "Only the current slot {slot}'s partitions in super show here, all mounted read-only."
-                ),
-                None => l
-                    .pick(["仅显示 super 中的分区，挂载后均为只读。", "僅顯示 super 中的分割區，掛載後均為唯讀。", "Only partitions in super show here, all mounted read-only."])
-                    .into(),
+                Some(slot) => texts::mount::shows_slot(l, slot),
+                None => l.pick(texts::mount::SHOWS).into(),
             };
             widgets::footnote(&mut c, t, f, y, &about)
         }
     };
 
-    Frame::new(t, fit(c, t, bottom), out, l.pick(["挂载", "掛載", "Mount"]), top)
+    Frame::new(t, fit(c, t, bottom), out, l.pick(texts::page::MOUNT), top)
 }
 
 /// Who made the recovery, as the About page names them under its version.
@@ -534,24 +485,13 @@ pub fn about(cx: &Ctx) -> Frame {
         author: widgets::author_line(t, f, AUTHOR),
         runs: canvas.runs(),
     };
-    Frame { header: false, hero: Some(art), ..Frame::new(t, canvas, out, cx.state.lang.pick(ABOUT), summary_top) }
+    Frame { header: false, hero: Some(art), ..Frame::new(t, canvas, out, cx.state.lang.pick(texts::page::ABOUT), summary_top) }
 }
-
-const MODEL: Text = ["设备型号", "裝置型號", "Model"];
-const PROCESSOR: Text = ["处理器", "處理器", "Processor"];
-const RAM: Text = ["运行内存", "記憶體", "RAM"];
-const BATTERY_CAPACITY: Text = ["电池容量", "電池容量", "Battery capacity"];
-const SCREEN_SIZE: Text = ["屏幕尺寸", "螢幕尺寸", "Screen size"];
-const RESOLUTION: Text = ["分辨率", "解析度", "Resolution"];
-const OS_VERSION: Text = ["OS 版本", "OS 版本", "OS version"];
-const ANDROID_VERSION: Text = ["Android 版本", "Android 版本", "Android version"];
-const CURRENT_SLOT: Text = ["当前槽位", "目前槽位", "Current slot"];
-const DATA_PART: Text = ["data 分区", "data 分割區", "data partition"];
 
 /// The phone's processor by its marketing name in `l`, from the phone's
 /// settings, or else by its cores.
 fn soc(l: Lang, i: &DeviceInfo) -> Option<&str> {
-    i.soc.as_ref().map(|n| l.pick([n.hans.as_str(), n.hant.as_str(), n.en.as_str()]))
+    i.soc.as_ref().map(|n| l.among(n.hans.as_str(), n.hant.as_str(), n.en.as_str()))
 }
 
 /// The About page's cards on `c`: what touching them does, where the
@@ -564,31 +504,31 @@ fn about_cards(cx: &Ctx, c: &mut Canvas) -> (Vec<Hit>, f32, f32) {
 
     let storage = fmt::storage_used(&i.storage).unwrap_or_else(|| fmt::capacity(i.storage.total));
     let mut facts = vec![
-        Fact { title: l.pick(MODEL), value: i.model.clone(), link: false },
-        Fact { title: l.pick(["存储空间", "儲存空間", "Storage"]), value: storage, link: true },
+        Fact { title: l.pick(texts::specs::MODEL), value: i.model.clone(), link: false },
+        Fact { title: l.pick(texts::specs::STORAGE), value: storage, link: true },
     ];
     if let Some(v) = &i.os_version {
-        facts.push(Fact { title: l.pick(OS_VERSION), value: v.clone(), link: false });
+        facts.push(Fact { title: l.pick(texts::specs::OS_VERSION), value: v.clone(), link: false });
     }
     if let Some(r) = &i.android {
-        facts.push(Fact { title: l.pick(ANDROID_VERSION), value: r.clone(), link: false });
+        facts.push(Fact { title: l.pick(texts::specs::ANDROID_VERSION), value: r.clone(), link: false });
     }
     let summary = widgets::facts(c, t, f, m.dp(490.7), &facts, &tone);
     out.push(Hit { rect: summary.rows[1], action: Action::Open(Screen::Specs) });
 
     let processor = soc(l, i).map_or_else(|| fmt::cpu(l, &i.cpu), str::to_string);
-    let mut specs = vec![(l.pick(PROCESSOR), processor), (l.pick(RAM), fmt::ram(i.ram_kib))];
+    let mut specs = vec![(l.pick(texts::specs::PROCESSOR), processor), (l.pick(texts::specs::RAM), fmt::ram(i.ram_kib))];
     if let Some(design) = i.battery.as_ref().and_then(|b| b.design) {
-        specs.push((l.pick(BATTERY_CAPACITY), fmt::mah(design)));
+        specs.push((l.pick(texts::specs::BATTERY_CAPACITY), fmt::mah(design)));
     }
     if let Some(d) = i.screen {
-        specs.push((l.pick(SCREEN_SIZE), fmt::inches(d)));
+        specs.push((l.pick(texts::specs::SCREEN_SIZE), fmt::inches(d)));
     }
     if let Some(p) = i.panel {
-        specs.push((l.pick(RESOLUTION), fmt::panel(p)));
+        specs.push((l.pick(texts::specs::RESOLUTION), fmt::panel(p)));
     }
     let y = widgets::spec_card(c, t, f, summary.bottom + m.card_gap, &fmt::model_lines(&i.model), &specs, &tone);
-    let links = widgets::list_toned(c, t, f, y + m.card_gap, &[Row::new(l.pick(SPECS)), Row::new(l.pick(LOGS))], &tone);
+    let links = widgets::list_toned(c, t, f, y + m.card_gap, &[Row::new(l.pick(texts::page::SPECS)), Row::new(l.pick(texts::page::LOGS))], &tone);
     out.extend(hits(&links.rows, &[Action::Open(Screen::Specs), Action::Open(Screen::Logs)]));
     (out, summary.rows[0].y, links.bottom)
 }
@@ -602,81 +542,81 @@ pub fn specs(cx: &Ctx) -> Frame {
     // This page leaves more room under the title than the settings pages.
     let top = t.m.dp(188.0);
 
-    let mut grid = vec![Spec { icon: Outline::Phone, label: l.pick(MODEL), value: fmt::model_lines(&i.model) }];
+    let mut grid = vec![Spec { icon: Outline::Phone, label: l.pick(texts::specs::MODEL), value: fmt::model_lines(&i.model) }];
     if let Some(design) = i.battery.as_ref().and_then(|b| b.design) {
-        grid.push(Spec { icon: Outline::Battery, label: l.pick(BATTERY_CAPACITY), value: fmt::mah(design) });
+        grid.push(Spec { icon: Outline::Battery, label: l.pick(texts::specs::BATTERY_CAPACITY), value: fmt::mah(design) });
     }
     let cpu = match soc(l, i) {
         Some(soc) => format!("{soc}\n{}", fmt::cpu(l, &i.cpu)),
         None => fmt::cpu(l, &i.cpu),
     };
-    grid.push(Spec { icon: Outline::Chip, label: l.pick(PROCESSOR), value: cpu });
-    grid.push(Spec { icon: Outline::Memory, label: l.pick(RAM), value: fmt::ram(i.ram_kib) });
+    grid.push(Spec { icon: Outline::Chip, label: l.pick(texts::specs::PROCESSOR), value: cpu });
+    grid.push(Spec { icon: Outline::Memory, label: l.pick(texts::specs::RAM), value: fmt::ram(i.ram_kib) });
     if let Some(p) = i.panel {
-        grid.push(Spec { icon: Outline::Resolution, label: l.pick(RESOLUTION), value: fmt::panel(p) });
+        grid.push(Spec { icon: Outline::Resolution, label: l.pick(texts::specs::RESOLUTION), value: fmt::panel(p) });
     }
     if let Some(d) = i.screen {
-        grid.push(Spec { icon: Outline::Screen, label: l.pick(SCREEN_SIZE), value: fmt::inches(d) });
+        grid.push(Spec { icon: Outline::Screen, label: l.pick(texts::specs::SCREEN_SIZE), value: fmt::inches(d) });
     }
-    grid.push(Spec { icon: Outline::Storage, label: l.pick(["存储容量", "儲存容量", "Storage capacity"]), value: fmt::capacity(i.storage.total) });
-    grid.push(Spec { icon: Outline::Tag, label: l.pick(["设备代号", "裝置代號", "Codename"]), value: i.codename.clone() });
+    grid.push(Spec { icon: Outline::Storage, label: l.pick(texts::specs::STORAGE_CAPACITY), value: fmt::capacity(i.storage.total) });
+    grid.push(Spec { icon: Outline::Tag, label: l.pick(texts::specs::CODENAME), value: i.codename.clone() });
     let mut y = widgets::spec_grid(&mut c, t, f, top, &grid);
 
     if let Some(v) = &i.os_version {
-        y = widgets::info_card(&mut c, t, f, y + gap, &[(l.pick(OS_VERSION), v.clone())]);
+        y = widgets::info_card(&mut c, t, f, y + gap, &[(l.pick(texts::specs::OS_VERSION), v.clone())]);
     }
     if let Some(r) = &i.android {
-        y = widgets::info_card(&mut c, t, f, y + gap, &[(l.pick(ANDROID_VERSION), fmt::android(l, r, i.security_patch.as_ref()))]);
+        y = widgets::info_card(&mut c, t, f, y + gap, &[(l.pick(texts::specs::ANDROID_VERSION), fmt::android(l, r, i.security_patch.as_ref()))]);
     }
     y = widgets::info_card(&mut c, t, f, y + gap, &[
-        (l.pick(["Recovery 版本", "Recovery 版本", "Recovery version"]), format!("Skyward {VERSION}")),
-        (l.pick(["内核版本", "核心版本", "Kernel version"]), i.kernel.clone()),
+        (l.pick(texts::specs::RECOVERY_VERSION), format!("Skyward {VERSION}")),
+        (l.pick(texts::specs::KERNEL_VERSION), i.kernel.clone()),
     ]);
 
     let mut boot = Vec::new();
     if let Some(s) = i.slot {
-        boot.push((l.pick(CURRENT_SLOT), s.letter().to_string()));
-        boot.push((l.pick(UPDATE), fmt::snapshot(l, &i.snapshot).to_string()));
+        boot.push((l.pick(texts::slot::CURRENT), s.letter().to_string()));
+        boot.push((l.pick(texts::page::UPDATE), fmt::snapshot(l, &i.snapshot).to_string()));
     }
     if let Some(unlocked) = i.boot.unlocked {
-        let state = if unlocked { ["已解锁", "已解鎖", "Unlocked"] } else { ["已锁定", "已鎖定", "Locked"] };
+        let state = if unlocked { texts::specs::UNLOCKED } else { texts::specs::LOCKED };
         boot.push(("Bootloader", l.pick(state).to_string()));
     }
     if let Some(v) = &i.boot.verified {
-        boot.push((l.pick(["验证启动", "驗證開機", "Verified boot"]), fmt::verified(l, v)));
+        boot.push((l.pick(texts::specs::VERIFIED_BOOT), fmt::verified(l, v)));
     }
-    boot.push((l.pick(DATA_PART), fmt::data(l, &cx.state.data).to_string()));
+    boot.push((l.pick(texts::specs::DATA_PARTITION), fmt::data(l, &cx.state.data).to_string()));
     y = widgets::info_card(&mut c, t, f, y + gap, &boot);
 
     if let Some(b) = &i.battery {
-        let mut rows = vec![(l.pick(["电量", "電量", "Level"]), fmt::level(l, b))];
+        let mut rows = vec![(l.pick(texts::specs::LEVEL), fmt::level(l, b))];
         if let Some(v) = b.temp {
-            rows.push((l.pick(["温度", "溫度", "Temperature"]), fmt::celsius(v)));
+            rows.push((l.pick(texts::specs::TEMPERATURE), fmt::celsius(v)));
         }
         if let Some(v) = fmt::wear(l, b) {
-            rows.push((l.pick(["健康", "健康狀態", "Health"]), v));
+            rows.push((l.pick(texts::specs::HEALTH), v));
         }
         if let Some(v) = b.cycles {
-            rows.push((l.pick(["充电循环", "充電循環", "Charge cycles"]), tr!(l, "{v} 次", "{v} 次", "{v}")));
+            rows.push((l.pick(texts::specs::CHARGE_CYCLES), texts::specs::cycles(l, v)));
         }
         if let Some(v) = b.voltage {
-            rows.push((l.pick(["电压", "電壓", "Voltage"]), fmt::volts(v)));
+            rows.push((l.pick(texts::specs::VOLTAGE), fmt::volts(v)));
         }
         y = widgets::info_card(&mut c, t, f, y + gap, &rows);
     }
 
     let total = fmt::capacity(i.storage.total);
     let storage = match i.storage.free.map(fmt::gb) {
-        Some(free) => tr!(l, "可用存储 {free} / 总存储 {total}", "可用空間 {free} / 總容量 {total}", "{free} free of {total}"),
-        None => tr!(l, "总存储 {total} · data 分区未挂载", "總容量 {total} · data 分割區未掛載", "{total} in all · data partition not mounted"),
+        Some(free) => texts::specs::free_of(l, free, total),
+        None => texts::specs::total_unmounted(l, total),
     };
-    y = widgets::info_card(&mut c, t, f, y + gap, &[(l.pick(["机身存储", "內建儲存空間", "Internal storage"]), storage)]);
+    y = widgets::info_card(&mut c, t, f, y + gap, &[(l.pick(texts::specs::INTERNAL_STORAGE), storage)]);
     let links = widgets::list(&mut c, t, f, y + gap, &[
-        Row::new(l.pick(LICENSE)).trail(Trail::Value("GPL-3.0")),
-        Row::new(l.pick(FONTS)).trail(Trail::Value("MiSans")),
+        Row::new(l.pick(texts::page::LICENSE)).trail(Trail::Value("GPL-3.0")),
+        Row::new(l.pick(texts::page::FONTS)).trail(Trail::Value("MiSans")),
     ]);
     out.extend(hits(&links.rows, &[Action::Open(Screen::License), Action::Open(Screen::FontLicense)]));
-    Frame::new(t, fit(c, t, links.bottom), out, l.pick(SPECS), top)
+    Frame::new(t, fit(c, t, links.bottom), out, l.pick(texts::page::SPECS), top)
 }
 
 /// The data partition and its users' own files. The page opens the
@@ -691,29 +631,19 @@ pub fn decrypt(cx: &Ctx) -> Frame {
             cx,
             c,
             Icon::Lock,
-            l.pick(["解密 data 分区", "解密 data 分割區", "Decrypt the data partition"]),
-            Some(l.pick(["正在读取锁屏方式", "正在讀取螢幕鎖定方式", "Reading the screen lock"])),
+            l.pick(texts::decrypt::DATA_PARTITION),
+            Some(l.pick(texts::decrypt::READING_LOCK)),
             None,
         ),
-        Data::Open => data_status(
-            cx,
-            c,
-            Icon::Folder,
-            l.pick(["data 分区已解密", "data 分割區已解密", "The data partition is decrypted"]),
-            Some(l.pick(["你可以在「文件管理」中查看本机文件", "你可以在「檔案管理」中查看本機檔案", "You can see the phone's files in File manager"])),
-            None,
-        ),
-        Data::Failed(why) => data_status(cx, c, Icon::Lock, l.pick(["未能打开 data 分区", "無法開啟 data 分割區", "Couldn't open the data partition"]), None, Some(why)),
-        Data::Erased => data_status(
-            cx,
-            c,
-            Icon::Wipe,
-            l.pick(DATA_ERASED),
-            Some(l.pick(["下次开机时将重新创建", "下次開機時將重新建立", "It's made anew when the phone next starts"])),
-            None,
-        ),
+        Data::Open => data_status(cx, c, Icon::Folder, l.pick(texts::decrypt::DECRYPTED), Some(l.pick(texts::decrypt::SEE_FILES)), None),
+        Data::Failed(why) => data_status(cx, c, Icon::Lock, l.pick(texts::decrypt::FAILED), None, Some(why)),
+        Data::Erased => data_status(cx, c, Icon::Wipe, l.pick(texts::data::ERASED), Some(l.pick(texts::decrypt::MADE_ANEW)), None),
     }
 }
+
+/// How far apart, in dp, the lines of the Decrypt page's title are where
+/// it takes more than one.
+const TITLE_PITCH: f32 = 32.0;
 
 /// Where the partition stands, under its sign: a line on it, or why it
 /// did not open and a way to try again; then the way off the page.
@@ -724,29 +654,24 @@ fn data_status(cx: &Ctx, mut c: Canvas, icon: Icon, title: &str, note: Option<&s
     let sign_cy = m.dp(150.0);
     c.fill_circle(x, sign_cy, m.dp(30.0), t.pal.card);
     icons::glyph(&mut c, icon, x, sign_cy, m.dp(40.0), t.pal.accent);
-    c.text_center(&f.heading, title, x, sign_cy + m.dp(64.0), m.dp(24.0), t.pal.text);
+    // What stands under the title moves down by the lines the title takes.
+    let room = m.w as f32 - m.title_x * 2.0;
+    let more = widgets::centred(&mut c, &f.heading, title, x, sign_cy + m.dp(64.0), m.dp(24.0), m.dp(TITLE_PITCH), t.pal.text, room);
     if let Some(note) = note {
-        c.text_center(&f.body, note, x, sign_cy + m.dp(98.0), m.sub_px, t.pal.subtitle);
+        widgets::centred(&mut c, &f.body, note, x, sign_cy + m.dp(98.0) + more, m.sub_px, m.sub_pitch, t.pal.subtitle, room);
     }
     let mut out = Vec::new();
     if let Some(why) = why {
-        widgets::paragraph(&mut c, t, f, sign_cy + m.dp(88.0), why);
-        let again = widgets::button(&mut c, t, f, m.h as f32 * 0.62, l.pick(["重试", "重試", "Try again"]));
+        widgets::paragraph(&mut c, t, f, sign_cy + m.dp(88.0) + more, why);
+        let again = widgets::button(&mut c, t, f, m.h as f32 * 0.62, l.pick(texts::common::TRY_AGAIN));
         out.push(Hit { rect: again, action: Action::OpenData });
     }
     let leave_cy = m.h as f32 - m.dp(64.0);
-    let leave = l.pick(if matches!(cx.state.data, Data::Open | Data::Erased) { ["完成", "完成", "Done"] } else { NOT_NOW });
+    let leave = l.pick(if matches!(cx.state.data, Data::Open | Data::Erased) { texts::common::DONE } else { texts::decrypt::NOT_NOW });
     c.text_center(&f.heading, leave, x, leave_cy, m.row_title_px, t.pal.accent);
     out.push(Hit { rect: Rect::new(x - m.dp(80.0), leave_cy - m.dp(24.0), m.dp(160.0), m.dp(48.0)), action: Action::Skip });
-    Frame { header: false, ..Frame::new(t, c, out, l.pick(DECRYPT), 0.0) }
+    Frame { header: false, ..Frame::new(t, c, out, l.pick(texts::page::DECRYPT), 0.0) }
 }
-
-/// What leaves the decrypt page with the data partition left as it is.
-const NOT_NOW: Text = ["暂不解密", "暫不解密", "Not now"];
-
-/// What a row whose work waits on the data partition says under it until
-/// that is decrypted.
-const DECRYPT_NEEDED: Text = ["需先完成「解密」", "需先完成「解密」", "Decrypt first"];
 
 /// A user's own files wait on their screen lock: the control it is
 /// answered with, which takes nothing while what was entered is checked.
@@ -756,19 +681,20 @@ fn code(cx: &Ctx, mut c: Canvas, user: u32, keys: Keys, checking: bool) -> Frame
     let x = m.w as f32 / 2.0;
     let mut out = Vec::new();
     let title = match (keys == Keys::Pattern, user) {
-        (true, 0) => l.pick(["绘制锁屏图案", "繪製螢幕鎖定圖案", "Draw the screen lock pattern"]).to_string(),
-        (true, user) => tr!(l, "绘制用户 {user} 的锁屏图案", "繪製使用者 {user} 的螢幕鎖定圖案", "Draw user {user}'s screen lock pattern"),
-        (false, 0) => l.pick(["输入锁屏密码", "輸入螢幕鎖定密碼", "Enter the screen lock"]).to_string(),
-        (false, user) => tr!(l, "输入用户 {user} 的锁屏密码", "輸入使用者 {user} 的螢幕鎖定密碼", "Enter user {user}'s screen lock"),
+        (true, 0) => l.pick(texts::decrypt::DRAW_PATTERN).to_string(),
+        (true, user) => texts::decrypt::draw_pattern_of(l, user),
+        (false, 0) => l.pick(texts::decrypt::ENTER_LOCK).to_string(),
+        (false, user) => texts::decrypt::enter_lock_of(l, user),
     };
-    let note = l.pick(if checking { ["正在验证", "正在驗證", "Checking"] } else { ["解密后可查看本机文件", "解密後可查看本機檔案", "Decrypt to see the phone's files"] });
-    c.text_center(&f.heading, &title, x, m.dp(130.0), m.dp(24.0), t.pal.text);
-    c.text_center(&f.body, note, x, m.dp(166.0), m.sub_px, t.pal.subtitle);
+    let note = l.pick(if checking { texts::decrypt::CHECKING } else { texts::decrypt::TO_SEE_FILES });
+    let room = m.w as f32 - m.title_x * 2.0;
+    let more = widgets::centred(&mut c, &f.heading, &title, x, m.dp(130.0), m.dp(24.0), m.dp(TITLE_PITCH), t.pal.text, room);
+    widgets::centred(&mut c, &f.body, note, x, m.dp(166.0) + more, m.sub_px, m.sub_pitch, t.pal.subtitle, room);
     let mut pattern = None;
     let bottom = match keys {
         Keys::Letters => {
             let top = m.h as f32 - widgets::keyboard_height(t);
-            let caps = widgets::keyboard(&mut c, t, f, l, top, s.layer, s.key_held(), l.pick(DECRYPT));
+            let caps = widgets::keyboard(&mut c, t, f, l, top, s.layer, s.key_held(), l.pick(texts::page::DECRYPT));
             if !checking {
                 out.extend(caps.into_iter().map(|(rect, cap)| Hit { rect, action: Action::Type(cap) }));
             }
@@ -799,13 +725,10 @@ fn code(cx: &Ctx, mut c: Canvas, user: u32, keys: Keys, checking: bool) -> Frame
         widgets::code_dots(&mut c, t, x, bottom - m.dp(92.0), s.code.chars().count());
     }
     let skip_cy = bottom - m.dp(34.0);
-    c.text_center(&f.heading, l.pick(NOT_NOW), x, skip_cy, m.row_title_px, t.pal.accent);
+    c.text_center(&f.heading, l.pick(texts::decrypt::NOT_NOW), x, skip_cy, m.row_title_px, t.pal.accent);
     out.push(Hit { rect: Rect::new(x - m.dp(80.0), skip_cy - m.dp(24.0), m.dp(160.0), m.dp(48.0)), action: Action::Skip });
-    Frame { header: false, pattern, ..Frame::new(t, c, out, l.pick(DECRYPT), 0.0) }
+    Frame { header: false, pattern, ..Frame::new(t, c, out, l.pick(texts::page::DECRYPT), 0.0) }
 }
-
-/// What a slot is shown as where the boot control could not be read.
-const UNREADABLE: Text = ["无法读取", "無法讀取", "Unreadable"];
 
 /// Reboot target picker with a swipe-to-confirm control.
 pub fn reboot(cx: &Ctx) -> Frame {
@@ -813,7 +736,7 @@ pub fn reboot(cx: &Ctx) -> Frame {
     let mut c = page(cx);
     let mut out = Vec::new();
     let top = t.m.content_top;
-    let mut y = widgets::section_first(&mut c, t, f, top, l.pick(["重启到", "重新啟動到", "Reboot to"]));
+    let mut y = widgets::section_first(&mut c, t, f, top, l.pick(texts::reboot::TO));
     let rows: Vec<Row> = REBOOT_TARGETS
         .iter()
         .enumerate()
@@ -831,23 +754,20 @@ pub fn reboot(cx: &Ctx) -> Frame {
     y = targets.bottom;
     if let Some(slot) = cx.info.slot {
         let next = match &s.boot_slots {
-            Some(Ok(slots)) if slots.active == slot => {
-                let slot = slot.letter();
-                tr!(l, "{slot}（当前）", "{slot}（目前）", "{slot} (current)")
-            }
+            Some(Ok(slots)) if slots.active == slot => texts::reboot::current(l, slot.letter()),
             Some(Ok(slots)) => slots.active.letter().to_string(),
-            Some(Err(_)) => l.pick(UNREADABLE).to_string(),
+            Some(Err(_)) => l.pick(texts::common::UNREADABLE).to_string(),
             None => String::new(),
         };
-        y = widgets::section(&mut c, t, f, y, l.pick(["槽位", "槽位", "Slot"]));
-        let slots = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(["下次启动", "下次啟動", "Next boot"])).trail(Trail::Value(&next))]);
+        y = widgets::section(&mut c, t, f, y, l.pick(texts::slot::TITLE));
+        let slots = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(texts::reboot::NEXT_BOOT)).trail(Trail::Value(&next))]);
         out.extend(hits(&slots.rows, &[Action::Open(Screen::Slot)]));
         y = slots.bottom;
     }
     let (label, danger) = confirm_label(Confirm::Reboot, cx.state);
     let track = widgets::confirm(&mut c, t, f, y + t.m.dp(28.0), label, danger, s.confirm);
     out.push(Hit { rect: track, action: Action::Confirm(Confirm::Reboot) });
-    Frame::new(t, c, out, l.pick(REBOOT), top)
+    Frame::new(t, c, out, l.pick(texts::page::REBOOT), top)
 }
 
 /// Installing, opened from the home page: the system on the phone now, and
@@ -858,21 +778,19 @@ pub fn install(cx: &Ctx) -> Frame {
     let top = t.m.content_top;
     let mut facts = Vec::new();
     if let Some(v) = &i.os_version {
-        facts.push((l.pick(["当前系统", "目前系統", "Current system"]), v.clone()));
+        facts.push((l.pick(texts::install::CURRENT_SYSTEM), v.clone()));
     }
     if let Some(p) = &i.security_patch {
-        facts.push((l.pick(SECURITY_PATCH), fmt::patch(l, p)));
+        facts.push((l.pick(texts::install::SECURITY_PATCH), fmt::patch(l, p)));
     }
     if let Some(s) = i.slot {
-        let (slot, other) = (s.letter(), s.other().letter());
-        let detail = tr!(l, "{slot}，系统更新将安装到槽位 {other}", "{slot}，系統更新將安裝到槽位 {other}", "{slot}, and a system update installs to slot {other}");
-        facts.push((l.pick(CURRENT_SLOT), detail));
+        facts.push((l.pick(texts::slot::CURRENT), texts::install::slot_detail(l, s.letter(), s.other().letter())));
     }
-    let ways = l.pick(["安装方式", "安裝方式", "Ways to install"]);
+    let ways = l.pick(texts::install::WAYS);
     let y = if facts.is_empty() {
         widgets::section_first(&mut c, t, f, top, ways)
     } else {
-        let y = widgets::section_first(&mut c, t, f, top, l.pick(["本机", "本機", "This phone"]));
+        let y = widgets::section_first(&mut c, t, f, top, l.pick(texts::common::THIS_PHONE));
         let y = widgets::info_card(&mut c, t, f, y, &facts);
         widgets::section(&mut c, t, f, y, ways)
     };
@@ -884,84 +802,66 @@ pub fn install(cx: &Ctx) -> Frame {
     // page opens or tells why it does not.
     let data = &cx.state.data;
     let (storage, from_storage) = if data.storage_open() {
-        (
-            ["选择内部存储中的更新包或镜像", "選擇內部儲存空間中的更新檔或映像檔", "Choose a package or image in internal storage"],
-            Action::Open(Screen::Choose(Place::Storage)),
-        )
+        (texts::install::CHOOSE_IN_STORAGE, Action::Open(Screen::Choose(Place::Storage)))
     } else if *data == Data::Erased {
-        (DATA_ERASED, Action::Open(Screen::Decrypt))
+        (texts::data::ERASED, Action::Open(Screen::Decrypt))
     } else {
-        (DECRYPT_NEEDED, Action::Open(Screen::Decrypt))
+        (texts::decrypt::NEEDED, Action::Open(Screen::Decrypt))
     };
     // The drive's page waits for one to be plugged in, and says why one
     // that is cannot be read.
     let usb = match &cx.state.usb_drive {
-        Some(UsbDrive::Shown) => ["选择 U 盘中的更新包或镜像", "選擇 USB 隨身碟中的更新檔或映像檔", "Choose a package or image on the USB drive"],
-        Some(UsbDrive::Unreadable(_)) => USB_DRIVE_UNREADABLE,
-        None => USB_DRIVE_WANTED,
+        Some(UsbDrive::Shown) => texts::install::CHOOSE_ON_USB_DRIVE,
+        Some(UsbDrive::Unreadable(_)) => texts::usb_drive::UNREADABLE,
+        None => texts::usb_drive::WANTED,
     };
     rows.push(Row::new(install_title(l, Source::File(Place::Storage))).icon(BLUE, Icon::Phone).subtitle(l.pick(storage)));
     rows.push(Row::new(install_title(l, Source::File(Place::UsbDrive))).icon(PURPLE, Icon::UsbDrive).subtitle(l.pick(usb)));
-    let sideload = l.pick(["在电脑上运行 adb sideload", "在電腦上執行 adb sideload", "Run adb sideload on the computer"]);
+    let sideload = l.pick(texts::install::SIDELOAD);
     rows.push(Row::new(install_title(l, Source::Computer)).icon(GREEN, Icon::Usb).subtitle(sideload));
     let methods = widgets::list(&mut c, t, f, y, &rows);
     let from_usb = Action::Open(Screen::Choose(Place::UsbDrive));
     let mut out = hits(&methods.rows[methods.rows.len() - 3..], &[from_storage, from_usb, Action::Sideload]);
     // A phone that can hold a second system installs one from here too.
     let what = l.pick(match cx.state.dual_boot {
-        true => [
-            "支持安装 A/B 完整更新包、带安装脚本的刷机包和第二系统的安装包，以及刷入 boot、init_boot、vendor_boot、recovery、dtbo、vbmeta 分区镜像。系统更新将安装到另一个槽位，重启后从该槽位启动；第二系统安装在 data 分区中，可在「双系统」中切换。选择文件时仅列出文件夹以及 .zip、.img 文件。",
-            "支援安裝 A/B 完整更新檔、帶有安裝指令碼的刷機包和第二系統的安裝檔，以及刷入 boot、init_boot、vendor_boot、recovery、dtbo、vbmeta 分割區映像檔。系統更新將安裝到另一個槽位，重新啟動後從該槽位啟動；第二系統安裝在 data 分割區中，可在「雙系統」中切換。選擇檔案時僅列出資料夾以及 .zip、.img 檔案。",
-            "Installs A/B full OTA packages, flashable zips with an install script and second systems' packages, and flashes boot, init_boot, vendor_boot, recovery, dtbo and vbmeta partition images. A system update installs to the other slot, which starts after a reboot; a second system installs into the data partition, and Dual boot switches to it. Choosing a file lists only folders and .zip and .img files.",
-        ],
-        false => [
-            "支持安装 A/B 完整更新包和带安装脚本的刷机包，以及刷入 boot、init_boot、vendor_boot、recovery、dtbo、vbmeta 分区镜像。系统更新将安装到另一个槽位，重启后从该槽位启动。选择文件时仅列出文件夹以及 .zip、.img 文件。",
-            "支援安裝 A/B 完整更新檔和帶有安裝指令碼的刷機包，以及刷入 boot、init_boot、vendor_boot、recovery、dtbo、vbmeta 分割區映像檔。系統更新將安裝到另一個槽位，重新啟動後從該槽位啟動。選擇檔案時僅列出資料夾以及 .zip、.img 檔案。",
-            "Installs A/B full OTA packages and flashable zips with an install script, and flashes boot, init_boot, vendor_boot, recovery, dtbo and vbmeta partition images. A system update installs to the other slot, which starts after a reboot. Choosing a file lists only folders and .zip and .img files.",
-        ],
+        true => texts::install::WHAT_WITH_SECOND_SYSTEM,
+        false => texts::install::WHAT,
     });
     let y = widgets::footnote(&mut c, t, f, methods.bottom, what);
-    let y = widgets::section(&mut c, t, f, y, l.pick(["选项", "選項", "Options"]));
-    let check = Row::new(l.pick(["验证刷机包签名", "驗證刷機包簽章", "Verify zip signatures"])).trail(Trail::Switch(cx.state.check_signature));
+    let y = widgets::section(&mut c, t, f, y, l.pick(texts::common::OPTIONS));
+    let check = Row::new(l.pick(texts::install::VERIFY_SIGNATURES)).trail(Trail::Switch(cx.state.check_signature));
     let signature = widgets::list(&mut c, t, f, y, &[check]);
     out.extend(hits(&signature.rows, &[Action::Toggle(Switch::Signature)]));
-    let note = l.pick(["开启后，仅安装带有本机官方签名的刷机包。", "開啟後，僅安裝帶有本機官方簽章的刷機包。", "When on, only zips signed with this phone's official keys install."]);
-    let mut y = widgets::footnote(&mut c, t, f, signature.bottom, note);
+    let mut y = widgets::footnote(&mut c, t, f, signature.bottom, l.pick(texts::install::VERIFY_SIGNATURES_NOTE));
     if cx.state.recovery_partitions {
-        let row = Row::new(l.pick(["自动重新刷入 Skyward", "自動重新刷入 Skyward", "Flash Skyward again"])).trail(Trail::Switch(cx.state.keep_recovery));
+        let row = Row::new(l.pick(texts::install::FLASH_SKYWARD_AGAIN)).trail(Trail::Switch(cx.state.keep_recovery));
         let options = widgets::list(&mut c, t, f, y + t.m.card_gap, &[row]);
         out.extend(hits(&options.rows, &[Action::Toggle(Switch::KeepRecovery)]));
-        let note = l.pick([
-            "开启后，安装系统更新或刷机包时被覆盖的 recovery 分区将重新刷入 Skyward。",
-            "開啟後，安裝系統更新或刷機包時被覆寫的 recovery 分割區將重新刷入 Skyward。",
-            "When on, Skyward goes back into the recovery partitions a system update or flashable zip writes over.",
-        ]);
-        y = widgets::footnote(&mut c, t, f, options.bottom, note);
+        y = widgets::footnote(&mut c, t, f, options.bottom, l.pick(texts::install::FLASH_SKYWARD_AGAIN_NOTE));
     }
-    Frame::new(t, fit(c, t, y), out, l.pick(["安装", "安裝", "Install"]), top)
+    Frame::new(t, fit(c, t, y), out, l.pick(texts::page::INSTALL), top)
 }
-
-const SECURITY_PATCH: Text = ["安全补丁", "安全性修補程式", "Security patch"];
 
 /// How installing from `source` is named: on the install page, and as the
 /// title of the page that installs.
 fn install_title(l: Lang, source: Source) -> &'static str {
+    use texts::install::title;
     l.pick(match source {
-        Source::Computer => ["通过电脑安装", "透過電腦安裝", "Install from a computer"],
-        Source::File(Place::Storage) => ["从内部存储安装", "從內部儲存空間安裝", "Install from internal storage"],
-        Source::File(Place::UsbDrive) => ["从 U 盘安装", "從 USB 隨身碟安裝", "Install from a USB drive"],
-        Source::Opened { .. } => ["从文件管理安装", "從檔案管理安裝", "Install from File manager"],
-        Source::Asked { security: false } => ["安装系统更新", "安裝系統更新", "Install a system update"],
-        Source::Asked { security: true } => ["安装安全更新", "安裝安全性更新", "Install a security update"],
-        Source::Rescue => ["救援模式", "救援模式", "Rescue mode"],
+        Source::Computer => title::FROM_COMPUTER,
+        Source::File(Place::Storage) => title::FROM_STORAGE,
+        Source::File(Place::UsbDrive) => title::FROM_USB_DRIVE,
+        Source::Opened { .. } => title::FROM_FILES,
+        Source::Asked { security: false } => title::SYSTEM_UPDATE,
+        Source::Asked { security: true } => title::SECURITY_UPDATE,
+        Source::Rescue => title::RESCUE,
     })
 }
 
 /// What a place is called at the top of its folders.
 fn place_name(l: Lang, place: Place) -> &'static str {
     l.pick(match place {
-        Place::Storage => ["内部存储", "內部儲存空間", "Internal storage"],
-        Place::UsbDrive => ["U 盘", "USB 隨身碟", "USB drive"],
+        Place::Storage => texts::place::STORAGE,
+        Place::UsbDrive => texts::place::USB_DRIVE,
     })
 }
 
@@ -987,18 +887,15 @@ fn update_stage(l: Lang, stage: Option<&Stage>) -> (String, Option<f32>) {
     match stage {
         Some(Stage::Writing { done, total }) => {
             let s = share(*done, *total);
-            let p = percent(s);
-            (tr!(l, "第 1 步，共 3 步：写入新系统 {p}%", "第 1 步，共 3 步：寫入新系統 {p}%", "Step 1 of 3: writing the new system {p}%"), Some(s))
+            (texts::installing::update_writing(l, percent(s)), Some(s))
         }
         Some(Stage::Verifying { index, count, partition }) => {
-            let n = index + 1;
-            let said = tr!(l, "第 2 步，共 3 步：校验 {partition}（{n}/{count}）", "第 2 步，共 3 步：驗證 {partition}（{n}/{count}）", "Step 2 of 3: verifying {partition} ({n}/{count})");
-            (said, Some(*index as f32 / *count as f32))
+            (texts::installing::update_verifying(l, partition, index + 1, count), Some(*index as f32 / *count as f32))
         }
-        Some(Stage::Finishing) => (l.pick(["第 3 步，共 3 步：完成安装", "第 3 步，共 3 步：完成安裝", "Step 3 of 3: finishing"]).into(), None),
-        Some(Stage::Reflashing { done, total }) => (l.pick(REFLASHING).into(), Some(*done as f32 / *total as f32)),
+        Some(Stage::Finishing) => (l.pick(texts::installing::UPDATE_FINISHING).into(), None),
+        Some(Stage::Reflashing { done, total }) => (l.pick(texts::installing::REFLASHING).into(), Some(*done as f32 / *total as f32)),
         Some(Stage::Flashing { .. } | Stage::Script { .. } | Stage::Signature { .. } | Stage::Allocating { .. } | Stage::Root { .. } | Stage::Storing) | None => {
-            (l.pick(GETTING_READY).into(), None)
+            (l.pick(texts::installing::GETTING_READY).into(), None)
         }
     }
 }
@@ -1009,33 +906,29 @@ fn system_stage(l: Lang, stage: Option<&Stage>) -> (String, Option<f32>) {
     match stage {
         Some(Stage::Allocating { done, total }) => {
             let s = share(*done, *total);
-            let p = percent(s);
-            (tr!(l, "第 1 步，共 3 步：在 data 分区中分配空间 {p}%", "第 1 步，共 3 步：在 data 分割區中分配空間 {p}%", "Step 1 of 3: setting room aside in the data partition {p}%"), Some(s))
+            (texts::installing::system_allocating(l, percent(s)), Some(s))
         }
         Some(Stage::Root { done, total }) => {
             let s = share(*done, *total);
-            let p = percent(s);
             let said = match done * 2 <= *total {
-                true => tr!(l, "第 2 步，共 3 步：写入系统 {p}%", "第 2 步，共 3 步：寫入系統 {p}%", "Step 2 of 3: writing the system {p}%"),
-                false => tr!(l, "第 2 步，共 3 步：校验系统 {p}%", "第 2 步，共 3 步：驗證系統 {p}%", "Step 2 of 3: verifying the system {p}%"),
+                true => texts::installing::system_writing(l, percent(s)),
+                false => texts::installing::system_verifying(l, percent(s)),
             };
             (said, Some(s))
         }
-        Some(Stage::Storing) => (l.pick(["第 3 步，共 3 步：保存启动镜像", "第 3 步，共 3 步：儲存啟動映像檔", "Step 3 of 3: keeping its boot images"]).into(), None),
-        _ => (l.pick(GETTING_READY).into(), None),
+        Some(Stage::Storing) => (l.pick(texts::installing::SYSTEM_STORING).into(), None),
+        _ => (l.pick(texts::installing::GETTING_READY).into(), None),
     }
 }
-
-const REFLASHING: Text = ["正在重新刷入 Skyward", "正在重新刷入 Skyward", "Flashing Skyward again"];
 
 /// What the card says while an install script runs, and how far it is: the
 /// last line the script showed and how far it says it is, then Skyward
 /// going back into the recovery partitions it wrote over.
 fn script_stage<'a>(l: Lang, stage: Option<&Stage>, said: &'a [String]) -> (&'a str, Option<f32>) {
-    let running = l.pick(["正在运行安装脚本", "正在執行安裝指令碼", "Running the install script"]);
+    let running = l.pick(texts::installing::RUNNING_SCRIPT);
     let last = said.iter().rev().map(|line| line.trim()).find(|line| !line.is_empty()).unwrap_or(running);
     match stage {
-        Some(Stage::Reflashing { done, total }) => (l.pick(REFLASHING), Some(*done as f32 / *total as f32)),
+        Some(Stage::Reflashing { done, total }) => (l.pick(texts::installing::REFLASHING), Some(*done as f32 / *total as f32)),
         Some(Stage::Script { thousandths }) => (last, Some(f32::from(*thousandths) / 1000.0)),
         _ => (last, None),
     }
@@ -1048,16 +941,15 @@ fn reflashed(c: &mut Canvas, cx: &Ctx, y: f32) -> f32 {
     match &cx.state.reflash {
         None => y,
         Some(Reflash::Written(written)) => {
-            let slots = fmt::slots(l, written);
-            let said = match (l, written.len()) {
-                (Lang::En, 1) => format!("Skyward went back into {slots}'s recovery partition."),
-                _ => tr!(l, "已将 Skyward 重新刷入{slots} 的 recovery 分区。", "已將 Skyward 重新刷入{slots} 的 recovery 分割區。", "Skyward went back into the recovery partitions of {slots}."),
+            let said = match written.as_slice() {
+                [slot] => texts::installing::reflashed_one(l, slot.letter()),
+                [a, b] => texts::installing::reflashed_two(l, a.letter(), b.letter()),
+                other => unreachable!("a phone has two slots, and Skyward went back into {other:?}"),
             };
             widgets::footnote(c, t, f, y, &said)
         }
         Some(Reflash::Failed(why)) => {
-            let note = l.pick(["未能将 Skyward 重新刷入 recovery 分区。", "無法將 Skyward 重新刷入 recovery 分割區。", "Couldn't flash Skyward back into the recovery partitions."]);
-            let y = widgets::footnote(c, t, f, y, note);
+            let y = widgets::footnote(c, t, f, y, l.pick(texts::installing::REFLASH_FAILED));
             widgets::footnote(c, t, f, y, why)
         }
     }
@@ -1070,29 +962,22 @@ fn script_output(c: &mut Canvas, cx: &Ctx, y: f32, rows: &mut Option<Rows>) -> f
     if lines.is_empty() {
         return y;
     }
-    let y = widgets::section(c, cx.t, cx.f, y, cx.state.lang.pick(["安装脚本输出", "安裝指令碼輸出", "Install script output"]));
+    let y = widgets::section(c, cx.t, cx.f, y, cx.state.lang.pick(texts::installing::SCRIPT_OUTPUT));
     *rows = Some(Rows { edges: widgets::output_edges(c, cx.t, cx.f, y, lines), action: None });
     y
 }
 
+/// The slots an image can be flashed to, each by its letter where the
+/// slot the phone runs from is known.
 fn pick_title(l: Lang, pick: Pick, current: Option<Slot>) -> String {
-    let letter = |s: Option<Slot>| s.map(|s| format!(" {}", s.letter())).unwrap_or_default();
-    match pick {
-        Pick::Current => format!("{}{}", l.pick(CURRENT_SLOT), letter(current)),
-        Pick::Other => format!("{}{}", l.pick(["另一个槽位", "另一個槽位", "Other slot"]), letter(current.map(Slot::other))),
-        Pick::Both => l.pick(["两个槽位", "兩個槽位", "Both slots"]).into(),
+    match (pick, current) {
+        (Pick::Current, Some(slot)) => texts::flash::current_slot(l, slot.letter()),
+        (Pick::Current, None) => l.pick(texts::slot::CURRENT).into(),
+        (Pick::Other, Some(slot)) => texts::flash::other_slot(l, slot.other().letter()),
+        (Pick::Other, None) => l.pick(texts::flash::OTHER_SLOT_UNNAMED).into(),
+        (Pick::Both, _) => l.pick(texts::flash::BOTH_SLOTS).into(),
     }
 }
-
-/// Words the installing page says of more than one of its steps.
-const SWITCHING_USB: Text = ["正在切换 USB 模式", "正在切換 USB 模式", "Switching USB mode"];
-const READING_FILE: Text = ["正在读取文件", "正在讀取檔案", "Reading the file"];
-const WAITING: Text = ["等待电脑发送", "等待電腦傳送", "Waiting for the computer"];
-const CONNECT: Text = ["请用数据线连接电脑，并在电脑上运行以下命令", "請用傳輸線連接電腦，並在電腦上執行以下指令", "Connect a computer with a cable, and run these commands on it"];
-const RUN_ON_COMPUTER: Text = ["在电脑上运行", "在電腦上執行", "Run on the computer"];
-const KEEP_CABLE: Text = ["读取完成前，请不要断开数据线。", "讀取完成前，請不要拔除傳輸線。", "Keep the cable in until it's read."];
-const KEEP_DRIVE: Text = ["读取完成前，请不要拔出 U 盘。", "讀取完成前，請不要拔出 USB 隨身碟。", "Keep the USB drive in until it's read."];
-const GETTING_READY: Text = ["正在准备", "正在準備", "Getting ready"];
 
 /// Installing a package step by step: receiving what the computer sends
 /// with `adb sideload`, or reading the file chosen, then installing it.
@@ -1104,114 +989,73 @@ pub fn installing(cx: &Ctx) -> Frame {
     let computer = s.source == Source::Computer;
     let bottom = match &s.install {
         Install::Idle | Install::Starting | Install::Ending if computer => {
-            let row = standing(l.pick(SWITCHING_USB), GREEN, Icon::Usb, l.pick(["从 adb 调试切换到 sideload 模式", "從 adb 偵錯切換到 sideload 模式", "From adb debugging to sideload"]));
+            let row = standing(l.pick(texts::installing::SWITCHING_USB), GREEN, Icon::Usb, l.pick(texts::installing::TO_SIDELOAD));
             widgets::list(&mut c, t, f, top, &[row]).bottom
         }
         Install::Idle | Install::Starting | Install::Ending if s.source == Source::Rescue => {
-            let row = standing(l.pick(SWITCHING_USB), GREEN, Icon::Usb, l.pick(["从 adb 调试切换到救援模式", "從 adb 偵錯切換到救援模式", "From adb debugging to rescue mode"]));
+            let row = standing(l.pick(texts::installing::SWITCHING_USB), GREEN, Icon::Usb, l.pick(texts::installing::TO_RESCUE));
             widgets::list(&mut c, t, f, top, &[row]).bottom
         }
         Install::Idle | Install::Starting | Install::Ending => {
-            widgets::list(&mut c, t, f, top, &[Row::new(l.pick(READING_FILE)).icon(GREEN, Icon::Install).trail(Trail::None)]).bottom
+            widgets::list(&mut c, t, f, top, &[Row::new(l.pick(texts::installing::READING_FILE)).icon(GREEN, Icon::Install).trail(Trail::None)]).bottom
         }
         Install::Opening => {
-            let opening = Row::new(l.pick(["正在打开 data 分区", "正在開啟 data 分割區", "Opening the data partition"])).icon(GREEN, Icon::Lock).trail(Trail::None);
+            let opening = Row::new(l.pick(texts::installing::OPENING_DATA)).icon(GREEN, Icon::Lock).trail(Trail::None);
             let y = widgets::list(&mut c, t, f, top, &[opening]).bottom;
             asked_package(&mut c, cx, y)
         }
         Install::Locked(_) => {
-            let row = standing(l.pick(["暂无法读取更新包", "暫時無法讀取更新檔", "The package can't be read yet"]), ORANGE, Icon::Lock, l.pick(DECRYPT_NEEDED));
+            let row = standing(l.pick(texts::installing::CANT_READ_YET), ORANGE, Icon::Lock, l.pick(texts::decrypt::NEEDED));
             let y = widgets::list(&mut c, t, f, top, &[row]).bottom;
-            let open = widgets::list(&mut c, t, f, y + t.m.card_gap, &[Row::new(l.pick(DECRYPT))]);
+            let open = widgets::list(&mut c, t, f, y + t.m.card_gap, &[Row::new(l.pick(texts::page::DECRYPT))]);
             out.extend(hits(&open.rows, &[Action::Open(Screen::Decrypt)]));
-            let y = widgets::footnote(&mut c, t, f, open.bottom, l.pick(["解密后将自动安装。", "解密後將自動安裝。", "It installs once the data partition is decrypted."]));
+            let y = widgets::footnote(&mut c, t, f, open.bottom, l.pick(texts::installing::INSTALLS_ONCE_DECRYPTED));
             asked_package(&mut c, cx, y)
         }
         Install::Waiting if s.source == Source::Rescue => {
-            let row = standing(l.pick(WAITING), GREEN, Icon::Usb, l.pick(CONNECT));
+            let row = standing(l.pick(texts::installing::WAITING), GREEN, Icon::Usb, l.pick(texts::installing::CONNECT));
             let y = widgets::list(&mut c, t, f, top, &[row]).bottom;
-            let y = widgets::section(&mut c, t, f, y, l.pick(RUN_ON_COMPUTER));
+            let y = widgets::section(&mut c, t, f, y, l.pick(texts::installing::RUN_ON_COMPUTER));
             let y = widgets::info_card(&mut c, t, f, y, &[
-                (
-                    l.pick(["adb rescue install 文件名", "adb rescue install 檔案名稱", "adb rescue install <file>"]),
-                    l.pick([
-                        "将文件名替换为系统更新包、刷机包或分区镜像",
-                        "將檔案名稱替換為系統更新檔、刷機包或分割區映像檔",
-                        "With a system update package, flashable zip or partition image as <file>",
-                    ])
-                    .into(),
-                ),
-                ("adb rescue getprop", l.pick(["读取本机的版本和设备信息", "讀取本機的版本和裝置資訊", "Reads this phone's versions and device details"]).into()),
-                ("adb rescue wipe userdata", l.pick(["清除本机的全部数据", "清除本機的全部資料", "Wipes all of this phone's data"]).into()),
+                (l.pick(texts::installing::RESCUE_INSTALL), l.pick(texts::installing::RESCUE_INSTALL_NOTE).into()),
+                ("adb rescue getprop", l.pick(texts::installing::RESCUE_GETPROP_NOTE).into()),
+                ("adb rescue wipe userdata", l.pick(texts::installing::RESCUE_WIPE_NOTE).into()),
             ]);
-            let note = l.pick([
-                "需在电脑上安装 Android SDK Platform-Tools。返回后将退出救援模式，并将 USB 切换回 adb 调试。",
-                "需在電腦上安裝 Android SDK Platform-Tools。返回後將結束救援模式，並將 USB 切換回 adb 偵錯。",
-                "The computer needs Android SDK Platform-Tools. Going back leaves rescue mode and switches USB back to adb debugging.",
-            ]);
-            widgets::footnote(&mut c, t, f, y, note)
+            widgets::footnote(&mut c, t, f, y, l.pick(texts::installing::RESCUE_NOTE))
         }
         Install::Waiting => {
-            let row = standing(l.pick(WAITING), GREEN, Icon::Usb, l.pick(CONNECT));
+            let row = standing(l.pick(texts::installing::WAITING), GREEN, Icon::Usb, l.pick(texts::installing::CONNECT));
             let y = widgets::list(&mut c, t, f, top, &[row]).bottom;
-            let y = widgets::section(&mut c, t, f, y, l.pick(RUN_ON_COMPUTER));
-            let y = widgets::info_card(&mut c, t, f, y, &[(
-                l.pick(["adb sideload 文件名", "adb sideload 檔案名稱", "adb sideload <file>"]),
-                l.pick([
-                    "将文件名替换为系统更新包、刷机包或分区镜像，例如 boot.img",
-                    "將檔案名稱替換為系統更新檔、刷機包或分割區映像檔，例如 boot.img",
-                    "With a system update package, flashable zip or partition image as <file>, such as boot.img",
-                ])
-                .into(),
-            )]);
-            let note = l.pick([
-                "需在电脑上安装 Android SDK Platform-Tools。返回后将停止等待，并将 USB 切换回 adb 调试。",
-                "需在電腦上安裝 Android SDK Platform-Tools。返回後將停止等待，並將 USB 切換回 adb 偵錯。",
-                "The computer needs Android SDK Platform-Tools. Going back stops waiting and switches USB back to adb debugging.",
-            ]);
-            widgets::footnote(&mut c, t, f, y, note)
+            let y = widgets::section(&mut c, t, f, y, l.pick(texts::installing::RUN_ON_COMPUTER));
+            let y = widgets::info_card(&mut c, t, f, y, &[(l.pick(texts::installing::SIDELOAD), l.pick(texts::installing::SIDELOAD_FILE_NOTE).into())]);
+            widgets::footnote(&mut c, t, f, y, l.pick(texts::installing::SIDELOAD_NOTE))
         }
         Install::Checking { stage: Some(Stage::Signature { done, total }), .. } => {
             let read = share(*done, *total);
-            let p = percent(read);
-            let detail = tr!(l, "已读取 {p}%", "已讀取 {p}%", "{p}% read");
-            let y = widgets::progress_card(&mut c, t, f, top, l.pick(["正在验证签名", "正在驗證簽章", "Verifying the signature"]), &detail, Some(read));
+            let detail = texts::installing::read(l, percent(read));
+            let y = widgets::progress_card(&mut c, t, f, top, l.pick(texts::installing::VERIFYING_SIGNATURE), &detail, Some(read));
             let note = l.pick(match s.source {
-                Source::Computer => [
-                    "读取完成前，请不要断开数据线。返回将取消安装，并结束电脑上的 adb sideload。",
-                    "讀取完成前，請不要拔除傳輸線。返回將取消安裝，並結束電腦上的 adb sideload。",
-                    "Keep the cable in until it's read. Going back cancels the install and ends adb sideload on the computer.",
-                ],
-                Source::Rescue => [
-                    "读取完成前，请不要断开数据线。返回将取消安装，并退出救援模式。",
-                    "讀取完成前，請不要拔除傳輸線。返回將取消安裝，並結束救援模式。",
-                    "Keep the cable in until it's read. Going back cancels the install and leaves rescue mode.",
-                ],
-                Source::File(Place::Storage) | Source::Opened { drive: false } | Source::Asked { .. } => ["返回将取消安装。", "返回將取消安裝。", "Going back cancels the install."],
-                Source::File(Place::UsbDrive) | Source::Opened { drive: true } => [
-                    "读取完成前，请不要拔出 U 盘。返回将取消安装。",
-                    "讀取完成前，請不要拔出 USB 隨身碟。返回將取消安裝。",
-                    "Keep the USB drive in until it's read. Going back cancels the install.",
-                ],
+                Source::Computer => texts::installing::CANCEL_ENDS_SIDELOAD,
+                Source::Rescue => texts::installing::CANCEL_LEAVES_RESCUE,
+                Source::File(Place::Storage) | Source::Opened { drive: false } | Source::Asked { .. } => texts::installing::CANCEL,
+                Source::File(Place::UsbDrive) | Source::Opened { drive: true } => texts::installing::CANCEL_KEEP_USB_DRIVE,
             });
             widgets::footnote(&mut c, t, f, y, note)
         }
         Install::Checking { size, .. } => {
-            let size = fmt::bytes(*size);
-            let detail = tr!(l, "文件大小 {size}", "檔案大小 {size}", "File size {size}");
-            let y = widgets::list(&mut c, t, f, top, &[standing(l.pick(READING_FILE), GREEN, Icon::Install, &detail)]).bottom;
+            let detail = texts::installing::file_size(l, fmt::bytes(*size));
+            let y = widgets::list(&mut c, t, f, top, &[standing(l.pick(texts::installing::READING_FILE), GREEN, Icon::Install, &detail)]).bottom;
             match s.source {
-                Source::Computer | Source::Rescue => widgets::footnote(&mut c, t, f, y, l.pick(KEEP_CABLE)),
+                Source::Computer | Source::Rescue => widgets::footnote(&mut c, t, f, y, l.pick(texts::installing::KEEP_CABLE)),
                 Source::File(Place::Storage) | Source::Opened { drive: false } | Source::Asked { .. } => y,
-                Source::File(Place::UsbDrive) | Source::Opened { drive: true } => widgets::footnote(&mut c, t, f, y, l.pick(KEEP_DRIVE)),
+                Source::File(Place::UsbDrive) | Source::Opened { drive: true } => widgets::footnote(&mut c, t, f, y, l.pick(texts::installing::KEEP_USB_DRIVE)),
             }
         }
         Install::Choosing(choice) => {
             let (name, holds) = fmt::image_kind(l, choice.kind);
-            let size = fmt::bytes(choice.size);
-            let detail = tr!(l, "{size}，{holds}", "{size}，{holds}", "{size} · {holds}");
+            let detail = texts::installing::size_and_holds(l, fmt::bytes(choice.size), holds);
             let y = widgets::list(&mut c, t, f, top, &[standing(name, GREEN, Icon::Install, &detail)]).bottom;
-            let y = widgets::section(&mut c, t, f, y, l.pick(["分区", "分割區", "Partition"]));
+            let y = widgets::section(&mut c, t, f, y, l.pick(texts::flash::PARTITION));
             let rows: Vec<Row> = choice
                 .partitions
                 .iter()
@@ -1221,7 +1065,7 @@ pub fn installing(cx: &Ctx) -> Frame {
             let parts = widgets::list(&mut c, t, f, y, &rows);
             let choose: Vec<Action> = (0..choice.partitions.len()).map(Action::FlashPartition).collect();
             out.extend(hits(&parts.rows, &choose));
-            let y = widgets::section(&mut c, t, f, parts.bottom, l.pick(["槽位", "槽位", "Slot"]));
+            let y = widgets::section(&mut c, t, f, parts.bottom, l.pick(texts::slot::TITLE));
             let titles = Pick::ALL.map(|p| pick_title(l, p, i.slot));
             let rows: Vec<Row> =
                 Pick::ALL.iter().zip(&titles).map(|(p, title)| Row::new(title).trail(Trail::Check(*p == choice.pick))).collect();
@@ -1231,45 +1075,30 @@ pub fn installing(cx: &Ctx) -> Frame {
             let track = widgets::confirm(&mut c, t, f, picks.bottom + t.m.dp(28.0), label, danger, s.confirm);
             out.push(Hit { rect: track, action: Action::Confirm(Confirm::Flash) });
             let note = l.pick(match s.source {
-                Source::Computer => [
-                    "刷入将覆盖分区中的原有内容。返回将取消刷入，并结束电脑上的 adb sideload。",
-                    "刷入將覆寫分割區中的原有內容。返回將取消刷入，並結束電腦上的 adb sideload。",
-                    "Flashing writes over what the partition holds. Going back cancels it and ends adb sideload on the computer.",
-                ],
-                Source::Rescue => [
-                    "刷入将覆盖分区中的原有内容。返回将取消刷入，并退出救援模式。",
-                    "刷入將覆寫分割區中的原有內容。返回將取消刷入，並結束救援模式。",
-                    "Flashing writes over what the partition holds. Going back cancels it and leaves rescue mode.",
-                ],
-                Source::File(_) | Source::Opened { .. } | Source::Asked { .. } => [
-                    "刷入将覆盖分区中的原有内容。返回将取消刷入。",
-                    "刷入將覆寫分割區中的原有內容。返回將取消刷入。",
-                    "Flashing writes over what the partition holds. Going back cancels it.",
-                ],
+                Source::Computer => texts::flash::OVERWRITES_ENDS_SIDELOAD,
+                Source::Rescue => texts::flash::OVERWRITES_LEAVES_RESCUE,
+                Source::File(_) | Source::Opened { .. } | Source::Asked { .. } => texts::flash::OVERWRITES,
             });
             widgets::footnote(&mut c, t, f, track.y + track.h, note)
         }
         Install::Confirming { version, wipe } => {
+            use texts::installing::confirm;
             let (title, color, icon, detail, which) = if *wipe {
-                let reset = factory_reset(s);
-                let detail = match version {
-                    Some(v) => tr!(l, "安装 {v} 后将{reset}。", "安裝 {v} 後將{reset}。", "Installing {v} then {reset}."),
-                    None => tr!(l, "安装该更新后将{reset}。", "安裝這個更新後將{reset}。", "Installing this update then {reset}."),
+                let detail = match (version, s.cache_partition) {
+                    (Some(v), true) => confirm::version_resets_with_cache(l, v),
+                    (Some(v), false) => confirm::version_resets(l, v),
+                    (None, true) => l.pick(confirm::UPDATE_RESETS_WITH_CACHE).into(),
+                    (None, false) => l.pick(confirm::UPDATE_RESETS).into(),
                 };
-                (l.pick(["需清除全部数据", "需清除全部資料", "All data has to be wiped"]).to_string(), ORANGE, Icon::Wipe, detail, Confirm::InstallWipe)
+                (l.pick(confirm::WIPE_NEEDED).to_string(), ORANGE, Icon::Wipe, detail, Confirm::InstallWipe)
             } else {
                 let title = match version {
-                    Some(v) => tr!(l, "安装 {v}", "安裝 {v}", "Install {v}"),
-                    None => l.pick(["安装系统更新", "安裝系統更新", "Install the system update"]).into(),
+                    Some(v) => confirm::version(l, v),
+                    None => l.pick(confirm::UPDATE).into(),
                 };
                 let detail = match i.slot.map(|s| s.other().letter()) {
-                    Some(slot) => tr!(
-                        l,
-                        "新系统将安装到槽位 {slot}，重启后将从该槽位启动。",
-                        "新系統將安裝到槽位 {slot}，重新啟動後將從該槽位啟動。",
-                        "The new system installs to slot {slot}, which starts after a reboot."
-                    ),
-                    None => l.pick(["重启后将从新系统启动。", "重新啟動後將從新系統啟動。", "The new system starts after a reboot."]).into(),
+                    Some(slot) => confirm::to_slot(l, slot),
+                    None => l.pick(confirm::STARTS_AFTER_REBOOT).into(),
                 };
                 (title, GREEN, Icon::Install, detail, Confirm::Install)
             };
@@ -1277,29 +1106,23 @@ pub fn installing(cx: &Ctx) -> Frame {
             let (label, danger) = confirm_label(which, cx.state);
             let track = widgets::confirm(&mut c, t, f, y + t.m.dp(28.0), label, danger, s.confirm);
             out.push(Hit { rect: track, action: Action::Confirm(which) });
-            let note = l.pick(["返回将取消安装，不会写入任何内容。", "返回將取消安裝，不會寫入任何內容。", "Going back cancels the install without writing anything."]);
-            widgets::footnote(&mut c, t, f, track.y + track.h, note)
+            widgets::footnote(&mut c, t, f, track.y + track.h, l.pick(texts::installing::CANCEL_WRITES_NOTHING))
         }
         Install::Updating { version, stage, overwriting } => {
             let title = match version {
-                Some(v) => tr!(l, "正在安装 {v}", "正在安裝 {v}", "Installing {v}"),
-                None => l.pick(["正在安装系统更新", "正在安裝系統更新", "Installing the system update"]).into(),
+                Some(v) => texts::installing::named(l, v),
+                None => l.pick(texts::installing::UPDATE).into(),
             };
             let (detail, done) = update_stage(l, stage.as_ref());
             let y = widgets::progress_card(&mut c, t, f, top, &title, &detail, done);
             let until = until_installed(l, s.source);
             let note = match i.slot.map(|s| s.other().letter()) {
-                Some(slot) => tr!(l, "{until}新系统将安装到槽位 {slot}。", "{until}新系統將安裝到槽位 {slot}。", "{until} The new system installs to slot {slot}."),
+                Some(slot) => texts::installing::until_and_slot(l, until, slot),
                 None => until.to_string(),
             };
             let y = widgets::footnote(&mut c, t, f, y, &note);
             if *overwriting {
-                let note = l.pick([
-                    "正在覆盖当前系统，安装完成前重启将无法进入系统。",
-                    "正在覆寫目前的系統，安裝完成前重新啟動將無法進入系統。",
-                    "The current system is being written over, so a reboot before the install finishes starts no system.",
-                ]);
-                widgets::footnote(&mut c, t, f, y, note)
+                widgets::footnote(&mut c, t, f, y, l.pick(texts::installing::OVERWRITING))
             } else {
                 y
             }
@@ -1308,35 +1131,28 @@ pub fn installing(cx: &Ctx) -> Frame {
             let (detail, done) = match stage {
                 Some(Stage::Flashing { done, total }) => {
                     let s = share(*done, *total);
-                    let p = percent(s);
                     let detail = match done * 2 < *total {
-                        true => tr!(l, "正在写入 {p}%", "正在寫入 {p}%", "Writing {p}%"),
-                        false => tr!(l, "正在校验 {p}%", "正在驗證 {p}%", "Verifying {p}%"),
+                        true => texts::flash::writing(l, percent(s)),
+                        false => texts::flash::verifying(l, percent(s)),
                     };
                     (detail, Some(s))
                 }
-                _ => (l.pick(GETTING_READY).into(), None),
+                _ => (l.pick(texts::installing::GETTING_READY).into(), None),
             };
-            let title = tr!(l, "正在刷入 {partition}", "正在刷入 {partition}", "Flashing {partition}");
-            let y = widgets::progress_card(&mut c, t, f, top, &title, &detail, done);
+            let y = widgets::progress_card(&mut c, t, f, top, &texts::flash::flashing(l, partition), &detail, done);
             let keep = l.pick(match s.source {
-                Source::Computer | Source::Rescue => ["刷入完成前，请不要断开数据线。", "刷入完成前，請不要拔除傳輸線。", "Keep the cable in until it's flashed."],
-                Source::File(Place::Storage) | Source::Opened { drive: false } | Source::Asked { .. } => {
-                    ["刷入完成前，请不要关机。", "刷入完成前，請不要關機。", "Don't power off until it's flashed."]
-                }
-                Source::File(Place::UsbDrive) | Source::Opened { drive: true } => {
-                    ["刷入完成前，请不要拔出 U 盘。", "刷入完成前，請不要拔出 USB 隨身碟。", "Keep the USB drive in until it's flashed."]
-                }
+                Source::Computer | Source::Rescue => texts::flash::KEEP_CABLE,
+                Source::File(Place::Storage) | Source::Opened { drive: false } | Source::Asked { .. } => texts::flash::KEEP_POWER,
+                Source::File(Place::UsbDrive) | Source::Opened { drive: true } => texts::flash::KEEP_USB_DRIVE,
             });
             widgets::footnote(&mut c, t, f, y, keep)
         }
         Install::SystemChoosing(choice) => {
-            let version = &choice.version;
-            let detail = tr!(l, "{version}，将安装为第二系统", "{version}，將安裝為第二系統", "{version}, to install as the second system");
+            let detail = texts::installing::as_second_system(l, &choice.version);
             let y = widgets::list(&mut c, t, f, top, &[standing(&choice.name, PURPLE, Icon::Systems, &detail)]).bottom;
-            let y = widgets::section(&mut c, t, f, y, l.pick(["分配空间", "分配空間", "Room for it"]));
+            let y = widgets::section(&mut c, t, f, y, l.pick(texts::installing::ROOM));
             let sizes: Vec<String> = choice.sizes.iter().map(|&b| fmt::bytes(b)).collect();
-            let least = l.pick(["系统所需的最小空间", "系統所需的最小空間", "The least the system takes"]);
+            let least = l.pick(texts::installing::LEAST_ROOM);
             let rows: Vec<Row> = sizes
                 .iter()
                 .enumerate()
@@ -1348,31 +1164,20 @@ pub fn installing(cx: &Ctx) -> Frame {
             let list = widgets::list(&mut c, t, f, y, &rows);
             let picks: Vec<Action> = (0..choice.sizes.len()).map(Action::SystemSize).collect();
             out.extend(hits(&list.rows, &picks));
-            let note = l.pick([
-                "所选空间将从 data 分区中划出，供第二系统存放文件，安装后无法更改；删除第二系统后归还。主系统的分区不会被写入。",
-                "所選空間將從 data 分割區中劃出，供第二系統存放檔案，安裝後無法變更；刪除第二系統後歸還。主系統的分割區不會被寫入。",
-                "The room chosen is set aside in the data partition for the second system's files, can't be changed once it's installed, and comes back when the second system is removed. Nothing of the main system's partitions is written.",
-            ]);
-            let y = widgets::footnote(&mut c, t, f, list.bottom, note);
+            let y = widgets::footnote(&mut c, t, f, list.bottom, l.pick(texts::installing::ROOM_NOTE));
             let (label, danger) = confirm_label(Confirm::InstallSystem, cx.state);
             let track = widgets::confirm(&mut c, t, f, y + t.m.dp(24.0), label, danger, s.confirm);
             out.push(Hit { rect: track, action: Action::Confirm(Confirm::InstallSystem) });
-            let note = l.pick(["返回将取消安装，不会写入任何内容。", "返回將取消安裝，不會寫入任何內容。", "Going back cancels the install without writing anything."]);
-            widgets::footnote(&mut c, t, f, track.y + track.h, note)
+            widgets::footnote(&mut c, t, f, track.y + track.h, l.pick(texts::installing::CANCEL_WRITES_NOTHING))
         }
         Install::Systeming { name, stage } => {
-            let title = tr!(l, "正在安装 {name}", "正在安裝 {name}", "Installing {name}");
             let (detail, done) = system_stage(l, stage.as_ref());
-            let y = widgets::progress_card(&mut c, t, f, top, &title, &detail, done);
+            let y = widgets::progress_card(&mut c, t, f, top, &texts::installing::named(l, name), &detail, done);
             widgets::footnote(&mut c, t, f, y, until_installed(l, s.source))
         }
         Install::ConfirmingScript => {
-            let name = s.package_name.as_deref().unwrap_or(l.pick(["刷机包", "刷機包", "Flashable zip"]));
-            let detail = l.pick([
-                "该刷机包将运行其中的安装脚本，安装脚本可以改写本机的任何分区。",
-                "這個刷機包將執行其中的安裝指令碼，安裝指令碼可以改寫本機的任何分割區。",
-                "This zip runs the install script it holds, which can rewrite any partition of this phone.",
-            ]);
+            let name = s.package_name.as_deref().unwrap_or(l.pick(texts::installing::FLASHABLE_ZIP));
+            let detail = l.pick(texts::installing::SCRIPT_WARNING);
             let mut y = widgets::list(&mut c, t, f, top, &[standing(name, ORANGE, Icon::Install, detail)]).bottom;
             if let Some(note) = fmt::snapshot_script_note(l, &i.snapshot) {
                 y = widgets::footnote(&mut c, t, f, y, note);
@@ -1380,82 +1185,54 @@ pub fn installing(cx: &Ctx) -> Frame {
             let (label, danger) = confirm_label(Confirm::RunScript, cx.state);
             let track = widgets::confirm(&mut c, t, f, y + t.m.dp(28.0), label, danger, s.confirm);
             out.push(Hit { rect: track, action: Action::Confirm(Confirm::RunScript) });
-            let note = l.pick(["返回将取消安装，不会运行安装脚本。", "返回將取消安裝，不會執行安裝指令碼。", "Going back cancels the install without running the script."]);
-            widgets::footnote(&mut c, t, f, track.y + track.h, note)
+            widgets::footnote(&mut c, t, f, track.y + track.h, l.pick(texts::installing::CANCEL_RUNS_NOTHING))
         }
         Install::Scripting { stage, .. } => {
             let (detail, done) = script_stage(l, stage.as_ref(), &s.script_output);
-            let y = widgets::progress_card(&mut c, t, f, top, l.pick(["正在安装", "正在安裝", "Installing"]), detail, done);
+            let y = widgets::progress_card(&mut c, t, f, top, l.pick(texts::installing::SCRIPT), detail, done);
             let y = widgets::footnote(&mut c, t, f, y, until_installed(l, s.source));
             script_output(&mut c, cx, y, &mut rows)
         }
         Install::Wiping => {
-            let y = widgets::progress_card(&mut c, t, f, top, l.pick(WIPING), &capitalized(l, &factory_reset(s)), None);
-            widgets::footnote(&mut c, t, f, y, l.pick(KEEP_POWER))
+            let y = widgets::progress_card(&mut c, t, f, top, l.pick(texts::wipe::WIPING), factory_reset(s), None);
+            widgets::footnote(&mut c, t, f, y, l.pick(texts::wipe::KEEP_POWER))
         }
         Install::Wiped(Ok(())) => {
-            let made_anew = l.pick(["下次开机时将重新创建 data 分区", "下次開機時將重新建立 data 分割區", "The data partition is made anew when the phone next starts"]);
-            let y = widgets::list(&mut c, t, f, top, &[standing(l.pick(["已清除", "已清除", "Wiped"]), GREEN, Icon::Wipe, made_anew)]).bottom;
-            widgets::footnote(&mut c, t, f, y, l.pick(MORE_COMMANDS))
+            let made_anew = l.pick(texts::installing::DATA_MADE_ANEW);
+            let y = widgets::list(&mut c, t, f, top, &[standing(l.pick(texts::wipe::WIPED), GREEN, Icon::Wipe, made_anew)]).bottom;
+            widgets::footnote(&mut c, t, f, y, l.pick(texts::installing::MORE_COMMANDS))
         }
         Install::Wiped(Err(stop)) => {
             let (what, detail) = fmt::erase_stop(l, stop);
-            let mut y = widgets::list(&mut c, t, f, top, &[standing(l.pick(WIPE_INCOMPLETE), RED, Icon::Wipe, &what)]).bottom;
+            let mut y = widgets::list(&mut c, t, f, top, &[standing(l.pick(texts::wipe::INCOMPLETE), RED, Icon::Wipe, &what)]).bottom;
             if let Some(d) = detail {
                 y = widgets::footnote(&mut c, t, f, y, &d);
             }
-            widgets::footnote(&mut c, t, f, y, l.pick(MORE_COMMANDS))
+            widgets::footnote(&mut c, t, f, y, l.pick(texts::installing::MORE_COMMANDS))
         }
         Install::Finished { outcome, damage } => finished(&mut c, cx, top, outcome, *damage, &mut out, &mut rows),
     };
     // What the system asked for says why, where it said.
     let bottom = match (s.source, &s.asked.reason) {
-        (Source::Asked { .. }, Some(reason)) => widgets::info_card(&mut c, t, f, bottom + t.m.dp(12.0), &[(l.pick(REASON), reason.clone())]),
+        (Source::Asked { .. }, Some(reason)) => widgets::info_card(&mut c, t, f, bottom + t.m.dp(12.0), &[(l.pick(texts::installing::REASON), reason.clone())]),
         _ => bottom,
     };
     Frame { rows, ..Frame::new(t, fit(c, t, bottom), out, install_title(l, s.source), top) }
 }
 
-/// What a request the system made gives as why.
-const REASON: Text = ["原因", "原因", "Reason"];
-
-const WIPING: Text = ["正在清除", "正在清除", "Wiping"];
-const WIPE_INCOMPLETE: Text = ["清除未完成", "清除未完成", "Wipe incomplete"];
-const KEEP_POWER: Text = ["清除完成前，请不要关机。", "清除完成前，請不要關機。", "Don't power off until it's wiped."];
-
-/// What rescue says once a command is done with: the computer may send
-/// another.
-const MORE_COMMANDS: Text = ["你可以继续在电脑上发送命令。", "你可以繼續在電腦上傳送指令。", "You can send more commands from the computer."];
-
 /// The package the system asked for, by the path it gave, at `y`.
 fn asked_package(c: &mut Canvas, cx: &Ctx, y: f32) -> f32 {
     let name = cx.state.package_name.clone().unwrap_or_default();
-    widgets::info_card(c, cx.t, cx.f, y + cx.t.m.dp(12.0), &[(cx.state.lang.pick(["更新包", "更新檔", "Package"]), name)])
+    widgets::info_card(c, cx.t, cx.f, y + cx.t.m.dp(12.0), &[(cx.state.lang.pick(texts::installing::PACKAGE), name)])
 }
 
 /// What not to do while a package from `source` is installed.
 fn until_installed(l: Lang, source: Source) -> &'static str {
     l.pick(match source {
-        Source::Computer | Source::Rescue => {
-            ["安装完成前，请不要断开数据线或关机。", "安裝完成前，請不要拔除傳輸線或關機。", "Keep the cable in and don't power off until it's installed."]
-        }
-        Source::File(Place::Storage) | Source::Opened { drive: false } | Source::Asked { .. } => {
-            ["安装完成前，请不要关机。", "安裝完成前，請不要關機。", "Don't power off until it's installed."]
-        }
-        Source::File(Place::UsbDrive) | Source::Opened { drive: true } => {
-            ["安装完成前，请不要拔出 U 盘或关机。", "安裝完成前，請不要拔出 USB 隨身碟或關機。", "Keep the USB drive in and don't power off until it's installed."]
-        }
+        Source::Computer | Source::Rescue => texts::installing::UNTIL_KEEP_CABLE,
+        Source::File(Place::Storage) | Source::Opened { drive: false } | Source::Asked { .. } => texts::installing::UNTIL_KEEP_POWER,
+        Source::File(Place::UsbDrive) | Source::Opened { drive: true } => texts::installing::UNTIL_KEEP_USB_DRIVE,
     })
-}
-
-/// A phrase that opens a line on its own: in English with its first letter
-/// a capital.
-fn capitalized(l: Lang, phrase: &str) -> String {
-    let mut chars = phrase.chars();
-    match (l, chars.next()) {
-        (Lang::En, Some(first)) => first.to_uppercase().chain(chars).collect(),
-        _ => phrase.to_string(),
-    }
 }
 
 /// How an install ended, and where to go from there: another package from
@@ -1471,39 +1248,37 @@ fn finished(
 ) -> f32 {
     let (t, f, source, l) = (cx.t, cx.f, cx.state.source, cx.state.lang);
     let gap = t.m.card_gap;
-    let choose_another = ["选择其他文件", "選擇其他檔案", "Choose another file"];
+    use texts::installed;
+    let choose_another = installed::CHOOSE_ANOTHER;
     let (again, another) = match source {
-        Source::Computer => (Row::new(l.pick(["再次发送", "再次傳送", "Send again"])).icon(GREEN, Icon::Usb), Action::Sideload),
+        Source::Computer => (Row::new(l.pick(installed::SEND_AGAIN)).icon(GREEN, Icon::Usb), Action::Sideload),
         Source::File(_) | Source::Opened { .. } => (Row::new(l.pick(choose_another)).icon(GREEN, Icon::Folder), Action::Back),
         Source::Asked { .. } => (Row::new(l.pick(choose_another)).icon(GREEN, Icon::Folder), Action::Open(Screen::Install)),
-        Source::Rescue => (Row::new(l.pick(["退出救援模式", "結束救援模式", "Leave rescue mode"])).icon(GREEN, Icon::Usb), Action::Back),
+        Source::Rescue => (Row::new(l.pick(installed::LEAVE_RESCUE)).icon(GREEN, Icon::Usb), Action::Back),
     };
-    let restart = Row::new(l.pick(["重启到系统", "重新啟動到系統", "Reboot to system"])).icon(ORANGE, Icon::Power);
-    let installed = l.pick(["安装成功", "安裝成功", "Installed"]);
-    let nothing_written = l.pick(["未写入任何内容。", "未寫入任何內容。", "Nothing was written."]);
+    let restart = Row::new(l.pick(installed::REBOOT_TO_SYSTEM)).icon(ORANGE, Icon::Power);
+    let done = l.pick(installed::INSTALLED);
+    let nothing_written = l.pick(installed::NOTHING_WRITTEN);
     match outcome {
         Outcome::Installed { slot, .. } => {
-            let slot = slot.letter();
-            let detail = tr!(
-                l,
-                "新系统已安装到槽位 {slot}，重启后将从该槽位启动。",
-                "新系統已安裝到槽位 {slot}，重新啟動後將從該槽位啟動。",
-                "The new system is installed to slot {slot}, which starts after a reboot."
-            );
-            let y = widgets::list(c, t, f, top, &[standing(installed, GREEN, Icon::Install, &detail)]).bottom;
+            let detail = installed::to_slot(l, slot.letter());
+            let y = widgets::list(c, t, f, top, &[standing(done, GREEN, Icon::Install, &detail)]).bottom;
             let next = widgets::list(c, t, f, y + gap, &[restart]);
             out.extend(hits(&next.rows, &[Action::RebootTo(Target::System)]));
             let y = reflashed(c, cx, next.bottom);
             afterwards_of(c, cx, y, true)
         }
         Outcome::Flashed { partition, slots } => {
-            let slots = fmt::slots(l, slots);
-            let detail = tr!(l, "{partition} 已刷入{slots}。", "{partition} 已刷入{slots}。", "Flashed to {partition} in {slots}.");
-            let y = widgets::list(c, t, f, top, &[standing(l.pick(["刷入成功", "刷入成功", "Flashed"]), GREEN, Icon::Install, &detail)]).bottom;
+            let detail = match slots.as_slice() {
+                [slot] => installed::flashed_one(l, partition, slot.letter()),
+                [a, b] => installed::flashed_two(l, partition, a.letter(), b.letter()),
+                other => unreachable!("a phone has two slots, and the image went to {other:?}"),
+            };
+            let y = widgets::list(c, t, f, top, &[standing(l.pick(installed::FLASHED), GREEN, Icon::Install, &detail)]).bottom;
             let mut rows = vec![restart];
             let mut acts = vec![Action::RebootTo(Target::System)];
             if *partition == "recovery" {
-                rows.push(Row::new(l.pick(["重启到恢复模式", "重新啟動到復原模式", "Reboot to recovery"])).icon(ORANGE, Icon::Power));
+                rows.push(Row::new(l.pick(installed::REBOOT_TO_RECOVERY)).icon(ORANGE, Icon::Power));
                 acts.push(Action::RebootTo(Target::Recovery));
             }
             rows.push(again);
@@ -1513,8 +1288,8 @@ fn finished(
             afterwards_of(c, cx, next.bottom, true)
         }
         Outcome::Ran { .. } => {
-            let ran = l.pick(["安装脚本已运行完成。", "安裝指令碼已執行完成。", "The install script ran to its end."]);
-            let y = widgets::list(c, t, f, top, &[standing(installed, GREEN, Icon::Install, ran)]).bottom;
+            let ran = l.pick(installed::SCRIPT_RAN);
+            let y = widgets::list(c, t, f, top, &[standing(done, GREEN, Icon::Install, ran)]).bottom;
             let next = widgets::list(c, t, f, y + gap, &[restart, again]);
             out.extend(hits(&next.rows, &[Action::RebootTo(Target::System), another]));
             let y = reflashed(c, cx, next.bottom);
@@ -1522,26 +1297,21 @@ fn finished(
             script_output(c, cx, y, rows)
         }
         Outcome::SystemInstalled { name } => {
-            let detail = tr!(
-                l,
-                "{name} 已安装为第二系统，可在「双系统」中切换。",
-                "{name} 已安裝為第二系統，可在「雙系統」中切換。",
-                "{name} is installed as the second system. Switch to it from Dual boot."
-            );
-            let y = widgets::list(c, t, f, top, &[standing(installed, GREEN, Icon::Systems, &detail)]).bottom;
-            let next = widgets::list(c, t, f, y + gap, &[Row::new(l.pick(DUAL_BOOT)).icon(PURPLE, Icon::Systems)]);
+            let detail = installed::second_system(l, name);
+            let y = widgets::list(c, t, f, top, &[standing(done, GREEN, Icon::Systems, &detail)]).bottom;
+            let next = widgets::list(c, t, f, y + gap, &[Row::new(l.pick(texts::page::DUAL_BOOT)).icon(PURPLE, Icon::Systems)]);
             out.extend(hits(&next.rows, &[Action::Open(Screen::Systems)]));
             afterwards_of(c, cx, next.bottom, true)
         }
         Outcome::Cancelled => {
-            let y = widgets::list(c, t, f, top, &[standing(l.pick(["已取消", "已取消", "Cancelled"]), SLATE, Icon::Install, nothing_written)]).bottom;
+            let y = widgets::list(c, t, f, top, &[standing(l.pick(installed::CANCELLED), SLATE, Icon::Install, nothing_written)]).bottom;
             let next = widgets::list(c, t, f, y + gap, &[again]);
             out.extend(hits(&next.rows, &[another]));
             next.bottom
         }
         Outcome::Refused(r) => {
             let reason = fmt::refusal(l, r, &cx.info.codename, source, cx.state.time_zone);
-            let y = widgets::list(c, t, f, top, &[standing(l.pick(["无法安装", "無法安裝", "Can't install"]), ORANGE, Icon::Install, &reason)]).bottom;
+            let y = widgets::list(c, t, f, top, &[standing(l.pick(installed::CANT_INSTALL), ORANGE, Icon::Install, &reason)]).bottom;
             // What the system asked for and did not go in leaves the phone
             // where it was, from which it may go back to the system.
             let (rows, acts) = match source {
@@ -1555,35 +1325,19 @@ fn finished(
         }
         Outcome::Failed(failure) => {
             let (what, detail) = fmt::failure(l, failure, source);
-            let y = widgets::list(c, t, f, top, &[standing(l.pick(["安装失败", "安裝失敗", "Install failed"]), RED, Icon::Install, &what)]).bottom;
+            let y = widgets::list(c, t, f, top, &[standing(l.pick(installed::FAILED), RED, Icon::Install, &what)]).bottom;
             let next = widgets::list(c, t, f, y + gap, &[again, restart]);
             out.extend(hits(&next.rows, &[another, Action::RebootTo(Target::System)]));
             // The package is sent again, or installed or flashed again.
-            let (install, flash) = match source {
-                Source::Computer | Source::Rescue => (["重新发送", "重新傳送", "Send"], ["重新发送", "重新傳送", "Send"]),
-                Source::File(_) | Source::Opened { .. } | Source::Asked { .. } => (["重新安装", "重新安裝", "Install"], ["重新刷入", "重新刷入", "Flash"]),
-            };
-            let (install, flash) = (l.pick(install), l.pick(flash));
-            let warning = match damage {
-                Some(Damage::System) => tr!(
-                    l,
-                    "当前系统已被部分覆盖，重启后将无法进入系统。请{install}完整更新包，安装完成后再重启。",
-                    "目前的系統已被部分覆寫，重新啟動後將無法進入系統。請{install}完整更新檔，安裝完成後再重新啟動。",
-                    "The current system was partly written over, so a reboot starts no system. {install} the full OTA package again, and reboot once it's installed."
-                ),
-                Some(Damage::Partition(p)) => tr!(
-                    l,
-                    "{p} 仅写入了部分内容，重启后可能无法正常启动。请{flash}该镜像，刷入完成后再重启。",
-                    "{p} 僅寫入了部分內容，重新啟動後可能無法正常啟動。請{flash}這個映像檔，刷入完成後再重新啟動。",
-                    "{p} was only partly written, so the phone may not start properly after a reboot. {flash} the image again, and reboot once it's flashed."
-                ),
-                Some(Damage::Script) => tr!(
-                    l,
-                    "本机的分区可能已被部分改写，重启后可能无法正常启动。请{install}该刷机包，安装完成后再重启。",
-                    "本機的分割區可能已被部分改寫，重新啟動後可能無法正常啟動。請{install}這個刷機包，安裝完成後再重新啟動。",
-                    "This phone's partitions may have been partly rewritten, so it may not start properly after a reboot. {install} the zip again, and reboot once it's installed."
-                ),
-                None => l.pick(["当前系统未受影响。", "目前的系統未受影響。", "The current system is untouched."]).into(),
+            let sent = matches!(source, Source::Computer | Source::Rescue);
+            let warning = match (damage, sent) {
+                (Some(Damage::System), true) => l.pick(installed::damage::SYSTEM_SEND).into(),
+                (Some(Damage::System), false) => l.pick(installed::damage::SYSTEM_INSTALL).into(),
+                (Some(Damage::Partition(p)), true) => installed::damage::partition_send(l, p),
+                (Some(Damage::Partition(p)), false) => installed::damage::partition_flash(l, p),
+                (Some(Damage::Script), true) => l.pick(installed::damage::SCRIPT_SEND).into(),
+                (Some(Damage::Script), false) => l.pick(installed::damage::SCRIPT_INSTALL).into(),
+                (None, _) => l.pick(installed::damage::NONE).to_string(),
             };
             let mut y = widgets::footnote(c, t, f, next.bottom, &warning);
             if let Some(d) = detail {
@@ -1602,11 +1356,11 @@ fn finished(
 fn afterwards_of(c: &mut Canvas, cx: &Ctx, y: f32, installed: bool) -> f32 {
     let l = cx.state.lang;
     let leaving = match cx.state.asked.shutdown_after {
-        true => ["即将自动关机。", "即將自動關機。", "Powering off shortly."],
-        false => ["即将自动重启。", "即將自動重新啟動。", "Rebooting shortly."],
+        true => texts::installed::leaving::POWER_OFF,
+        false => texts::installed::leaving::REBOOT,
     };
     match cx.state.source {
-        Source::Rescue => widgets::footnote(c, cx.t, cx.f, y, l.pick(MORE_COMMANDS)),
+        Source::Rescue => widgets::footnote(c, cx.t, cx.f, y, l.pick(texts::installing::MORE_COMMANDS)),
         Source::Asked { .. } if installed => widgets::footnote(c, cx.t, cx.f, y, l.pick(leaving)),
         _ => y,
     }
@@ -1615,94 +1369,37 @@ fn afterwards_of(c: &mut Canvas, cx: &Ctx, y: f32, installed: bool) -> f32 {
 /// What the wipe page lists of [`WIPES`] beyond everything, under the
 /// partition each is in.
 const WIPE_GROUPS: [(Text, &[Wipe]); 2] = [
-    (DATA_PART, &[Wipe::AppData, Wipe::Media, Wipe::AppCaches, Wipe::SystemCaches, Wipe::Art, Wipe::Logs, Wipe::Updates]),
-    (["cache 分区", "cache 分割區", "cache partition"], &[Wipe::Cache]),
+    (texts::wipe::part::DATA, &[Wipe::AppData, Wipe::Media, Wipe::AppCaches, Wipe::SystemCaches, Wipe::Art, Wipe::Logs, Wipe::Updates]),
+    (texts::wipe::part::CACHE, &[Wipe::Cache]),
 ];
 
-/// What a factory reset erases, as the wipe page and an update that asks
-/// for one tell it; in English as it goes on from what leads to it, its
-/// first letter small.
-fn factory_reset(s: &State) -> String {
-    let also = s.lang.pick(match s.cache_partition {
-        true => ["metadata 和 cache 分区", "metadata 和 cache 分割區", "the metadata and cache partitions"],
-        false => ["metadata 分区", "metadata 分割區", "the metadata partition"],
-    });
-    tr!(
-        s.lang,
-        "清空 data 分区，包括应用、账户、设置和内部存储，并格式化 {also}",
-        "清空 data 分割區，包括應用程式、帳戶、設定和內部儲存空間，並格式化 {also}",
-        "empties the data partition, apps, accounts, settings and internal storage included, and formats {also}"
-    )
+/// What a factory reset erases, as the wipe page tells it of its first
+/// choice, and the page that carries one out for the system tells it.
+fn factory_reset(s: &State) -> &'static str {
+    s.lang.pick(match s.cache_partition {
+        true => texts::wipe::factory_reset::WITH_CACHE,
+        false => texts::wipe::factory_reset::WITHOUT_CACHE,
+    })
 }
 
 /// A choice of the wipe page as it lists it: its title, and exactly what it
 /// erases.
 fn wipe_row(w: Wipe, s: &State) -> (&'static str, String) {
+    use texts::wipe::{part, what};
     let l = s.lang;
     let (title, what): (Text, String) = match w {
-        Wipe::All => (["全部数据", "全部資料", "All data"], capitalized(l, &factory_reset(s))),
-        Wipe::AppData => (
-            ["应用数据", "應用程式資料", "App data"],
-            l.pick([
-                "/data/data、/data/user、/data/user_de，以及内部存储中的 Android/data、Android/media，应用将恢复到初始状态",
-                "/data/data、/data/user、/data/user_de，以及內部儲存空間中的 Android/data、Android/media，應用程式將恢復到初始狀態",
-                "/data/data, /data/user, /data/user_de, and Android/data and Android/media in internal storage. Apps go back to how they were first installed",
-            ])
-            .into(),
-        ),
-        Wipe::Media => (
-            ["内部存储", "內部儲存空間", "Internal storage"],
-            l.pick(["/data/media，即 /sdcard 中的照片、视频和文件", "/data/media，即 /sdcard 中的相片、影片和檔案", "/data/media: the photos, videos and files in /sdcard"]).into(),
-        ),
-        Wipe::AppCaches => (
-            ["应用缓存", "應用程式快取", "App caches"],
-            l.pick([
-                "各应用数据中的 cache、code_cache，以及 Android/data 中的 cache，应用将按需重新生成",
-                "各應用程式資料中的 cache、code_cache，以及 Android/data 中的 cache，應用程式將視需要重新產生",
-                "cache and code_cache in each app's data, and cache in Android/data. Apps make them again as they need them",
-            ])
-            .into(),
-        ),
-        Wipe::SystemCaches => (
-            ["系统缓存", "系統快取", "System caches"],
-            l.pick([
-                "/data/system/package_cache、/data/resource-cache、/data/cache，下次开机时重新生成",
-                "/data/system/package_cache、/data/resource-cache、/data/cache，下次開機時重新產生",
-                "/data/system/package_cache, /data/resource-cache and /data/cache, made again at the next start",
-            ])
-            .into(),
-        ),
-        Wipe::Art => (
-            ["ART 缓存", "ART 快取", "ART cache"],
-            l.pick([
-                "/data/dalvik-cache、/data/misc/apexdata/com.android.art/dalvik-cache、/data/ota，下次开机时重新编译，启动时间较长",
-                "/data/dalvik-cache、/data/misc/apexdata/com.android.art/dalvik-cache、/data/ota，下次開機時重新編譯，啟動時間較長",
-                "/data/dalvik-cache, /data/misc/apexdata/com.android.art/dalvik-cache and /data/ota, compiled again at the next start, which then takes longer",
-            ])
-            .into(),
-        ),
-        Wipe::Logs => {
-            let own = match (l, s.phone_logs) {
-                (_, 0) => String::new(),
-                (Lang::En, 1) => ", and this phone's own log folder".into(),
-                (_, n) => tr!(l, "，以及本机的 {n} 个日志文件夹", "，以及本機的 {n} 個記錄資料夾", ", and this phone's own {n} log folders"),
-            };
-            let what = tr!(
-                l,
-                "/data/tombstones、/data/anr、/data/system/dropbox、/data/misc/logd 等系统日志和崩溃记录，各用户的错误报告{own}",
-                "/data/tombstones、/data/anr、/data/system/dropbox、/data/misc/logd 等系統記錄和當機記錄，各使用者的錯誤報告{own}",
-                "System logs and crash records, such as /data/tombstones, /data/anr, /data/system/dropbox and /data/misc/logd, each user's bug reports{own}"
-            );
-            (["日志", "記錄", "Logs"], what)
-        }
-        Wipe::Updates => (
-            ["下载的更新包", "下載的更新檔", "Downloaded updates"],
-            l.pick(["/data/ota_package 中的系统更新包", "/data/ota_package 中的系統更新檔", "System update packages in /data/ota_package"]).into(),
-        ),
-        Wipe::Cache => (
-            ["全部内容", "全部內容", "Everything"],
-            l.pick(["格式化 cache 分区，保留 recovery 文件夹中的日志", "格式化 cache 分割區，保留 recovery 資料夾中的記錄", "Formats the cache partition, keeping the logs in its recovery folder"]).into(),
-        ),
+        Wipe::All => (texts::wipe::ALL, factory_reset(s).into()),
+        Wipe::AppData => (part::APP_DATA, l.pick(what::APP_DATA).into()),
+        Wipe::Media => (part::MEDIA, l.pick(what::MEDIA).into()),
+        Wipe::AppCaches => (part::APP_CACHES, l.pick(what::APP_CACHES).into()),
+        Wipe::SystemCaches => (part::SYSTEM_CACHES, l.pick(what::SYSTEM_CACHES).into()),
+        Wipe::Art => (part::ART, l.pick(what::ART).into()),
+        Wipe::Logs => match s.phone_logs {
+            0 => (part::LOGS, l.pick(what::LOGS).into()),
+            n => (part::LOGS, what::logs_and_own(l, n as u64)),
+        },
+        Wipe::Updates => (part::UPDATES, l.pick(what::UPDATES).into()),
+        Wipe::Cache => (texts::wipe::EVERYTHING, l.pick(what::CACHE).into()),
     };
     (l.pick(title), what)
 }
@@ -1716,39 +1413,29 @@ pub fn wipe(cx: &Ctx) -> Frame {
     let mut c = long_page(cx);
     let mut out = Vec::new();
     let top = t.m.content_top;
-    let y = widgets::section_first(&mut c, t, f, top, l.pick(["恢复出厂设置", "恢復原廠設定", "Factory reset"]));
+    let y = widgets::section_first(&mut c, t, f, top, l.pick(texts::wipe::RESET));
     let (name, sub) = wipe_row(Wipe::All, s);
     let all = widgets::list(&mut c, t, f, y, &[Row::new(name).subtitle(&sub).trail(Trail::Check(chosen(Wipe::All)))]);
     out.extend(hits(&all.rows, &[Action::WipeItem(Wipe::All)]));
-    let note = l.pick([
-        "系统和已安装的更新不受影响，清除后需重新设置手机。",
-        "系統和已安裝的更新不受影響，清除後需重新設定手機。",
-        "The system and installed updates stay. The phone has to be set up again afterwards.",
-    ]);
-    let mut y = widgets::footnote(&mut c, t, f, all.bottom, note);
+    let mut y = widgets::footnote(&mut c, t, f, all.bottom, l.pick(texts::wipe::STAYS));
     for (title, items) in WIPE_GROUPS {
         let shown: Vec<Wipe> = items.iter().copied().filter(|&w| w != Wipe::Cache || s.cache_partition).collect();
         if shown.is_empty() {
             continue;
         }
         let below = widgets::section(&mut c, t, f, y, l.pick(title));
-        let texts: Vec<(&str, String)> = shown.iter().map(|&w| wipe_row(w, s)).collect();
+        let lines: Vec<(&str, String)> = shown.iter().map(|&w| wipe_row(w, s)).collect();
         let rows: Vec<Row> =
-            shown.iter().zip(&texts).map(|(&w, (name, sub))| Row::new(name).subtitle(sub).trail(Trail::Check(chosen(w)))).collect();
+            shown.iter().zip(&lines).map(|(&w, (name, sub))| Row::new(name).subtitle(sub).trail(Trail::Check(chosen(w)))).collect();
         let list = widgets::list(&mut c, t, f, below, &rows);
         out.extend(hits(&list.rows, &shown.iter().map(|&w| Action::WipeItem(w)).collect::<Vec<_>>()));
         y = list.bottom;
     }
-    let note = l.pick([
-        "清除应用数据和应用缓存前，需先完成「解密」。清除后无法恢复。",
-        "清除應用程式資料和應用程式快取前，需先完成「解密」。清除後無法復原。",
-        "Wiping app data or app caches needs the data partition decrypted first. What is wiped can't be brought back.",
-    ]);
-    let y = widgets::footnote(&mut c, t, f, y, note);
+    let y = widgets::footnote(&mut c, t, f, y, l.pick(texts::wipe::NOTE));
     let (label, danger) = confirm_label(Confirm::Wipe, cx.state);
     let track = widgets::confirm(&mut c, t, f, y + t.m.dp(24.0), label, danger, s.confirm);
     out.push(Hit { rect: track, action: Action::Confirm(Confirm::Wipe) });
-    Frame::new(t, fit(c, t, track.y + track.h), out, l.pick(["清除数据", "清除資料", "Wipe data"]), top)
+    Frame::new(t, fit(c, t, track.y + track.h), out, l.pick(texts::page::WIPE), top)
 }
 
 /// A page laid out above the on-screen keyboard: where the keyboard's top
@@ -1769,23 +1456,17 @@ pub fn search(cx: &Ctx) -> Frame {
     let mut c = page(cx);
     let mut out = Vec::new();
     let (at, cancel) = widgets::search_layout(t);
-    let field = widgets::search_field(&mut c, t, f, at.x, at.w, at.y + at.h / 2.0, &s.search, l.pick(SEARCH_HINT));
+    let field = widgets::search_field(&mut c, t, f, at.x, at.w, at.y + at.h / 2.0, &s.search, l.pick(texts::search::HINT));
     widgets::cancel_button(&mut c, t, cancel);
     out.push(Hit { rect: cancel, action: Action::CloseSearch });
     let top = field.field.y + field.field.h + m.dp(12.0);
     let kb_top = m.h as f32 - widgets::keyboard_height(t);
     if s.search.trim().is_empty() {
-        let how = l.pick([
-            "输入功能或分区名称，支持拼音全拼和首字母，例如输入 bf 可找到「备份」。",
-            "輸入功能或分割區名稱，支援英文和漢語拼音的全拼與首字母，例如輸入 bf 可找到「備份」。",
-            "Type the name of a feature or partition, such as backup to find Backup.",
-        ]);
-        widgets::footnote(&mut c, t, f, top, how);
+        widgets::footnote(&mut c, t, f, top, l.pick(texts::search::HOW));
     } else {
         let found = search::find_on(&s.search, l, |screen| s.offers(screen));
         if found.is_empty() {
-            let typed = s.search.trim();
-            let none = tr!(l, "未找到\"{typed}\"", "找不到「{typed}」", "Nothing found for “{typed}”");
+            let none = texts::search::none(l, s.search.trim());
             widgets::list(&mut c, t, f, top, &[Row::new(&none).trail(Trail::None)]);
         } else {
             let rows: Vec<Row> = found.iter().map(|e| Row::new(l.pick(e.title)).subtitle(l.pick(e.place))).collect();
@@ -1795,7 +1476,7 @@ pub fn search(cx: &Ctx) -> Frame {
             out.extend(shown.map(|(&rect, e)| Hit { rect, action: Action::Open(e.screen) }));
         }
     }
-    let find = l.pick(["搜索", "搜尋", "Search"]);
+    let find = l.pick(texts::search::SEARCH);
     keyboard_hits(&mut c, t, f, s, find, &mut out);
     if let Some(rect) = field.clear {
         out.push(Hit { rect, action: Action::ClearSearch });
@@ -1809,18 +1490,14 @@ pub fn backup(cx: &Ctx) -> Frame {
     let mut c = long_page(cx);
     let mut out = Vec::new();
     let top = t.m.content_top;
-    let y = widgets::section_first(&mut c, t, f, top, l.pick(["备份内容", "備份內容", "Contents"]));
-    let system = fmt::snapshot_backup_note(l, &i.snapshot).unwrap_or(l.pick(["当前槽位在 super 中的分区", "目前槽位在 super 中的分割區", "The current slot's partitions in super"]));
+    let y = widgets::section_first(&mut c, t, f, top, l.pick(texts::backup::CONTENTS));
+    let system = fmt::snapshot_backup_note(l, &i.snapshot).unwrap_or(l.pick(texts::backup::SYSTEM_HOLDS));
     let data = l.pick(match s.data == Data::Open {
-        true => ["应用、账户和设置，不包括内部存储、锁屏密码和指纹", "應用程式、帳戶和設定，不包括內部儲存空間、螢幕鎖定密碼和指紋", "Apps, accounts and settings, without internal storage, the screen lock or fingerprints"],
-        false => [
-            "应用、账户和设置，不包括内部存储、锁屏密码和指纹，需先完成「解密」",
-            "應用程式、帳戶和設定，不包括內部儲存空間、螢幕鎖定密碼和指紋，需先完成「解密」",
-            "Apps, accounts and settings, without internal storage, the screen lock or fingerprints. Decrypt first",
-        ],
+        true => texts::backup::DATA_HOLDS,
+        false => texts::backup::DATA_HOLDS_LOCKED,
     });
-    let boot = l.pick(["boot、init_boot、vendor_boot、dtbo、vbmeta 和 recovery", "boot、init_boot、vendor_boot、dtbo、vbmeta 和 recovery", "boot, init_boot, vendor_boot, dtbo, vbmeta and recovery"]);
-    let modem = l.pick(["IMEI、基带设置和传感器校准数据", "IMEI、基頻設定和感應器校正資料", "IMEI, modem settings and sensor calibration"]);
+    let boot = l.pick(texts::backup::BOOT_HOLDS);
+    let modem = l.pick(texts::backup::MODEM_HOLDS);
     let subs = [boot, system, data, modem];
     let rows: Vec<Row> = BACKUP_PARTS
         .iter()
@@ -1830,39 +1507,34 @@ pub fn backup(cx: &Ctx) -> Frame {
         .collect();
     let parts = widgets::list(&mut c, t, f, y, &rows);
     out.extend(hits(&parts.rows, &[0, 1, 2, 3].map(Action::BackupPart)));
-    let y = widgets::section(&mut c, t, f, parts.bottom, l.pick(["存放位置", "存放位置", "Save to"]));
+    let y = widgets::section(&mut c, t, f, parts.bottom, l.pick(texts::backup::SAVE_TO));
     let storage = match (s.data.storage_open(), i.storage.free.map(fmt::gb)) {
-        (true, Some(free)) => tr!(l, "剩余 {free}", "剩餘 {free}", "{free} free"),
-        (true, None) => l.pick(["无法读取剩余空间", "無法讀取剩餘空間", "Free space unknown"]).to_string(),
-        (false, _) if s.data == Data::Erased => l.pick(DATA_ERASED).to_string(),
-        (false, _) => l.pick(DECRYPT_NEEDED).to_string(),
+        (true, Some(free)) => texts::backup::free(l, free),
+        (true, None) => l.pick(texts::backup::FREE_UNKNOWN).to_string(),
+        (false, _) if s.data == Data::Erased => l.pick(texts::data::ERASED).to_string(),
+        (false, _) => l.pick(texts::decrypt::NEEDED).to_string(),
     };
     let usb = l.pick(match &s.usb_drive {
-        Some(UsbDrive::Shown) => ["已连接", "已連接", "Connected"],
-        Some(UsbDrive::Unreadable(_)) => USB_DRIVE_UNREADABLE,
-        None => USB_DRIVE_WANTED,
+        Some(UsbDrive::Shown) => texts::backup::CONNECTED,
+        Some(UsbDrive::Unreadable(_)) => texts::usb_drive::UNREADABLE,
+        None => texts::usb_drive::WANTED,
     });
     let places = widgets::list(&mut c, t, f, y, &[
         Row::new(place_name(l, Place::Storage)).subtitle(&storage).trail(Trail::Check(s.backup_to == Place::Storage)),
         Row::new(place_name(l, Place::UsbDrive)).subtitle(usb).trail(Trail::Check(s.backup_to == Place::UsbDrive)),
     ]);
     out.extend(hits(&places.rows, &[Action::BackupTo(Place::Storage), Action::BackupTo(Place::UsbDrive)]));
-    let y = widgets::section(&mut c, t, f, places.bottom, l.pick(["选项", "選項", "Options"]));
+    let y = widgets::section(&mut c, t, f, places.bottom, l.pick(texts::common::OPTIONS));
     let options = widgets::list(&mut c, t, f, y, &[
-        Row::new(l.pick(["压缩", "壓縮", "Compress"])).subtitle(l.pick(["备份更小，耗时更长", "備份更小，耗時更長", "Smaller, and slower to make"])).trail(Trail::Switch(s.compress)),
-        Row::new(l.pick(["完成后校验", "完成後驗證", "Verify when done"])).subtitle(l.pick(["确认备份文件完整", "確認備份檔案完整", "Checks the backup's files are whole"])).trail(Trail::Switch(s.verify)),
+        Row::new(l.pick(texts::backup::COMPRESS)).subtitle(l.pick(texts::backup::COMPRESS_NOTE)).trail(Trail::Switch(s.compress)),
+        Row::new(l.pick(texts::backup::VERIFY)).subtitle(l.pick(texts::backup::VERIFY_NOTE)).trail(Trail::Switch(s.verify)),
     ]);
     out.extend(hits(&options.rows, &[Action::Toggle(Switch::Compress), Action::Toggle(Switch::Verify)]));
-    let note = l.pick([
-        "备份将保存在 Skyward/backups 文件夹中，以开始备份的时间命名。",
-        "備份將儲存在 Skyward/backups 資料夾中，以開始備份的時間命名。",
-        "Backups go in the Skyward/backups folder, named by when they began.",
-    ]);
-    let y = widgets::footnote(&mut c, t, f, options.bottom, note);
+    let y = widgets::footnote(&mut c, t, f, options.bottom, l.pick(texts::backup::NOTE));
     let (label, danger) = confirm_label(Confirm::Backup, cx.state);
     let track = widgets::confirm(&mut c, t, f, y + t.m.dp(24.0), label, danger, s.confirm);
     out.push(Hit { rect: track, action: Action::Confirm(Confirm::Backup) });
-    Frame::new(t, fit(c, t, track.y + track.h), out, l.pick(["备份", "備份", "Backup"]), top)
+    Frame::new(t, fit(c, t, track.y + track.h), out, l.pick(texts::page::BACKUP), top)
 }
 
 /// The backups found, newest first, to restore one; those that cannot be
@@ -1872,30 +1544,25 @@ pub fn restore(cx: &Ctx) -> Frame {
     let mut c = long_page(cx);
     let mut out = Vec::new();
     let top = t.m.content_top;
-    let y = widgets::section_first(&mut c, t, f, top, l.pick(["备份", "備份", "Backups"]));
+    let y = widgets::section_first(&mut c, t, f, top, l.pick(texts::restore::BACKUPS));
     let bottom = if s.backups.is_empty() {
-        widgets::list(&mut c, t, f, y, &[Row::new(l.pick(["暂无备份", "沒有備份", "No backups"])).trail(Trail::None)]).bottom
+        widgets::list(&mut c, t, f, y, &[Row::new(l.pick(texts::restore::NONE)).trail(Trail::None)]).bottom
     } else {
-        let texts: Vec<(String, String)> = s
+        let lines: Vec<(String, String)> = s
             .backups
             .iter()
             .map(|b| match &b.held {
                 Ok(h) => (fmt::datetime(l, h.made, s.time_zone), format!("{} · {} · {}", fmt::parts(l, &h.parts), fmt::bytes(h.size), place_name(l, b.place))),
-                Err(_) => (b.name.clone(), format!("{} · {}", l.pick(UNREADABLE), place_name(l, b.place))),
+                Err(_) => (b.name.clone(), format!("{} · {}", l.pick(texts::common::UNREADABLE), place_name(l, b.place))),
             })
             .collect();
-        let rows: Vec<Row> = texts.iter().map(|(title, sub)| Row::new(title).subtitle(sub)).collect();
+        let rows: Vec<Row> = lines.iter().map(|(title, sub)| Row::new(title).subtitle(sub)).collect();
         let list = widgets::list(&mut c, t, f, y, &rows);
         out.extend(list.rows.iter().enumerate().map(|(k, &rect)| Hit { rect, action: Action::OpenBackup(k) }));
         list.bottom
     };
-    let note = l.pick([
-        "将在内部存储和 U 盘中的 Skyward/backups 文件夹查找备份，查找内部存储需先完成「解密」。",
-        "將在內部儲存空間和 USB 隨身碟中的 Skyward/backups 資料夾尋找備份，尋找內部儲存空間需先完成「解密」。",
-        "Backups are looked for in the Skyward/backups folders of internal storage and the USB drive. Internal storage needs the data partition decrypted first.",
-    ]);
-    let bottom = widgets::footnote(&mut c, t, f, bottom, note);
-    Frame::new(t, fit(c, t, bottom), out, l.pick(["恢复", "還原", "Restore"]), top)
+    let bottom = widgets::footnote(&mut c, t, f, bottom, l.pick(texts::restore::NOTE));
+    Frame::new(t, fit(c, t, bottom), out, l.pick(texts::page::RESTORE), top)
 }
 
 /// One backup: when and where it was made, and which of its parts to
@@ -1907,56 +1574,37 @@ pub fn restore_backup(cx: &Ctx) -> Frame {
     let mut c = long_page(cx);
     let mut out = Vec::new();
     let top = t.m.content_top;
-    let location = l.pick(["位置", "位置", "Location"]);
+    let location = l.pick(texts::common::LOCATION);
     let y = match &entry.held {
         Err(why) => {
-            let facts = [(l.pick(["文件夹", "資料夾", "Folder"]), entry.name.clone()), (location, place_name(l, entry.place).to_string())];
+            let facts = [(l.pick(texts::restore::FOLDER), entry.name.clone()), (location, place_name(l, entry.place).to_string())];
             let y = widgets::info_card(&mut c, t, f, top, &facts);
-            let note = tr!(
-                l,
-                "无法读取该备份，备份可能未完成或已损坏。{why}",
-                "無法讀取這份備份，備份可能未完成或已損壞。{why}",
-                "This backup can't be read. It may not have finished, or it may be damaged. {why}"
-            );
-            widgets::footnote(&mut c, t, f, y, &note)
+            widgets::footnote(&mut c, t, f, y, &texts::restore::unreadable(l, why))
         }
         Ok(held) => {
             let mut facts = vec![
-                (l.pick(["备份时间", "備份時間", "Made"]), fmt::datetime(l, held.made, s.time_zone)),
-                (l.pick(["大小", "大小", "Size"]), fmt::bytes(held.size)),
+                (l.pick(texts::restore::MADE), fmt::datetime(l, held.made, s.time_zone)),
+                (l.pick(texts::common::SIZE), fmt::bytes(held.size)),
                 (location, place_name(l, entry.place).to_string()),
             ];
             if let Some(system) = &held.system {
-                facts.push((l.pick(["系统版本", "系統版本", "System version"]), system.clone()));
+                facts.push((l.pick(texts::restore::SYSTEM_VERSION), system.clone()));
             }
             if let Some(slot) = held.slot {
-                facts.push((l.pick(["槽位", "槽位", "Slot"]), slot.letter().to_string()));
+                facts.push((l.pick(texts::slot::TITLE), slot.letter().to_string()));
             }
             let y = widgets::info_card(&mut c, t, f, top, &facts);
             if held.device != i.codename {
-                let device = &held.device;
-                let note = tr!(
-                    l,
-                    "该备份来自其他设备（{device}），无法恢复到本机。",
-                    "這份備份來自其他裝置（{device}），無法還原到本機。",
-                    "This backup is from another device ({device}) and can't be restored to this phone."
-                );
-                widgets::footnote(&mut c, t, f, y, &note)
+                widgets::footnote(&mut c, t, f, y, &texts::backup::refused::other_phone(l, &held.device))
             } else {
-                let y = widgets::section(&mut c, t, f, y, l.pick(["恢复内容", "還原內容", "Contents"]));
+                let y = widgets::section(&mut c, t, f, y, l.pick(texts::restore::CONTENTS));
                 let kept: Vec<usize> = (0..BACKUP_PARTS.len()).filter(|&k| held.parts[k]).collect();
                 let rows: Vec<Row> = kept.iter().map(|&k| Row::new(l.pick(BACKUP_PARTS[k])).trail(Trail::Check(chosen[k]))).collect();
                 let list = widgets::list(&mut c, t, f, y, &rows);
                 out.extend(list.rows.iter().zip(&kept).map(|(&rect, &k)| Hit { rect, action: Action::RestorePart(k) }));
-                let note = l.pick(["恢复后，所选内容的现有数据将被备份覆盖。", "還原後，所選內容的現有資料將被備份覆寫。", "Restoring writes the backup over what the parts chosen hold now."]);
-                let mut y = widgets::footnote(&mut c, t, f, list.bottom, note);
+                let mut y = widgets::footnote(&mut c, t, f, list.bottom, l.pick(texts::restore::OVERWRITES));
                 if chosen[2] {
-                    let note = l.pick([
-                        "data 分区将恢复应用、账户和设置，内部存储、锁屏密码和指纹保持不变。恢复出厂设置后，无法再恢复此前的 data 分区备份。",
-                        "data 分割區將還原應用程式、帳戶和設定，內部儲存空間、螢幕鎖定密碼和指紋保持不變。恢復原廠設定後，無法再還原此前的 data 分割區備份。",
-                        "The data partition gets its apps, accounts and settings back, and internal storage, the screen lock and fingerprints stay as they are. After a factory reset, an earlier backup of the data partition can't be restored.",
-                    ]);
-                    y = widgets::footnote(&mut c, t, f, y, note);
+                    y = widgets::footnote(&mut c, t, f, y, l.pick(texts::restore::DATA_NOTE));
                 }
                 // The boot partitions' vbmeta checks the system's: one of
                 // another version without the other may not start.
@@ -1964,13 +1612,7 @@ pub fn restore_backup(cx: &Ctx) -> Frame {
                     && was != now
                     && chosen[0] != chosen[1]
                 {
-                    let warn = tr!(
-                        l,
-                        "该备份来自 {was}，本机当前为 {now}。仅恢复启动分区或系统分区中的一项，可能导致无法开机。",
-                        "這份備份來自 {was}，本機目前為 {now}。僅還原啟動分割區或系統分割區中的一項，可能導致無法開機。",
-                        "This backup is from {was}, and this phone runs {now}. Restoring only one of the boot and system partitions may keep the phone from starting."
-                    );
-                    y = widgets::footnote(&mut c, t, f, y, &warn);
+                    y = widgets::footnote(&mut c, t, f, y, &texts::restore::other_version(l, was, now));
                 }
                 let (label, danger) = confirm_label(Confirm::Restore, cx.state);
                 let track = widgets::confirm(&mut c, t, f, y + t.m.dp(24.0), label, danger, s.confirm);
@@ -1979,18 +1621,17 @@ pub fn restore_backup(cx: &Ctx) -> Frame {
             }
         }
     };
-    let delete = widgets::list(&mut c, t, f, y + t.m.dp(28.0), &[Row::new(l.pick(["删除备份", "刪除備份", "Delete backup"])).tint(t.pal.danger).trail(Trail::None)]);
+    let delete = widgets::list(&mut c, t, f, y + t.m.dp(28.0), &[Row::new(l.pick(texts::restore::DELETE)).tint(t.pal.danger).trail(Trail::None)]);
     out.extend(hits(&delete.rows, &[Action::AskDelete]));
     let mut bottom = delete.bottom;
     if s.asking_delete {
-        let ask = l.pick(["删除该备份？删除后无法恢复。", "刪除這份備份？刪除後無法復原。", "Delete this backup? It can't be brought back."]);
-        let y = widgets::footnote(&mut c, t, f, delete.bottom, ask);
+        let y = widgets::footnote(&mut c, t, f, delete.bottom, l.pick(texts::restore::ASK_DELETE));
         let (label, danger) = confirm_label(Confirm::DeleteBackup, cx.state);
         let track = widgets::confirm(&mut c, t, f, y + t.m.dp(24.0), label, danger, s.confirm);
         out.push(Hit { rect: track, action: Action::Confirm(Confirm::DeleteBackup) });
         bottom = track.y + track.h;
     }
-    Frame::new(t, fit(c, t, bottom), out, l.pick(["恢复备份", "還原備份", "Restore backup"]), top)
+    Frame::new(t, fit(c, t, bottom), out, l.pick(texts::restore::TITLE), top)
 }
 
 /// The share of its pass the part under way has done.
@@ -2016,45 +1657,98 @@ fn job_progress(job: &BackupJob, a: &BackupAt) -> (f32, u64) {
     (over as f32, passed as u64)
 }
 
-/// What a backup, or a restore, has done to a part, and does to it, in
-/// each language.
-fn job_words(restore: bool) -> (Text, Text) {
-    match restore {
-        true => (["已恢复", "已還原", "Restored"], ["正在恢复", "正在還原", "Restoring"]),
-        false => (["已备份", "已備份", "Backed up"], ["正在备份", "正在備份", "Backing up"]),
-    }
+/// What a backup or a restore does to a part as it goes through them:
+/// takes it, puts it back, or checks it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Pass {
+    BackUp,
+    Restore,
+    Verify,
 }
 
-const VERIFIED: Text = ["已校验", "已驗證", "Verified"];
-const VERIFYING: Text = ["正在校验", "正在驗證", "Verifying"];
-const WAITING_TURN: Text = ["等待中", "等待中", "Waiting"];
-const DONE: Text = ["完成", "完成", "Done"];
+impl Pass {
+    /// The pass that writes: a restore's, or a backup's.
+    fn writing(restore: bool) -> Pass {
+        if restore { Pass::Restore } else { Pass::BackUp }
+    }
+
+    /// The pass a job is on at `a`.
+    fn at(job: &BackupJob, a: &BackupAt) -> Pass {
+        if a.checking { Pass::Verify } else { Pass::writing(job.restore) }
+    }
+
+    /// Under way: 正在备份, Backing up.
+    fn doing(self) -> Text {
+        match self {
+            Pass::BackUp => texts::backup::job::BACKING_UP,
+            Pass::Restore => texts::backup::job::RESTORING,
+            Pass::Verify => texts::backup::job::VERIFYING,
+        }
+    }
+
+    /// Done to a part: 已备份, Backed up.
+    fn done(self) -> Text {
+        match self {
+            Pass::BackUp => texts::backup::job::BACKED_UP,
+            Pass::Restore => texts::backup::job::RESTORED,
+            Pass::Verify => texts::backup::job::VERIFIED,
+        }
+    }
+
+    /// Under way on the part `name`: 正在备份 boot.
+    fn doing_part(self, l: Lang, name: &str) -> String {
+        match self {
+            Pass::BackUp => texts::backup::job::backing_up_part(l, name),
+            Pass::Restore => texts::backup::job::restoring_part(l, name),
+            Pass::Verify => texts::backup::job::verifying_part(l, name),
+        }
+    }
+
+    /// Under way on a part, `p` hundredths of it done: 正在备份 37%.
+    fn doing_share(self, l: Lang, p: u32) -> String {
+        match self {
+            Pass::BackUp => texts::backup::job::backing_up_share(l, p),
+            Pass::Restore => texts::backup::job::restoring_share(l, p),
+            Pass::Verify => texts::backup::job::verifying_share(l, p),
+        }
+    }
+
+    /// How much of the whole is done: 已备份 1.2GB，共 5.0GB.
+    fn done_of(self, l: Lang, passed: &str, total: &str) -> String {
+        match self {
+            Pass::BackUp => texts::backup::job::backed_up_of(l, passed, total),
+            Pass::Restore => texts::backup::job::restored_of(l, passed, total),
+            Pass::Verify => texts::backup::job::verified_of(l, passed, total),
+        }
+    }
+}
 
 /// Where part `k` of a backup or restore stands, as its row says it.
 fn part_state(l: Lang, job: &BackupJob, k: usize) -> String {
     use std::cmp::Ordering;
-    let (did, doing) = job_words(job.restore);
+    use texts::backup::job as said;
+    let wrote = Pass::writing(job.restore).done();
     let ended = job.outcome.is_some();
     let a = match (&job.outcome, job.at) {
-        (Some(BackupEnd::Saved(_)), _) => return l.pick(if job.checks { VERIFIED } else { did }).to_string(),
-        (Some(BackupEnd::Restored { .. }), _) => return l.pick(did).to_string(),
-        (_, None) => return l.pick(if ended { ["未开始", "未開始", "Not started"] } else { WAITING_TURN }).to_string(),
+        (Some(BackupEnd::Saved(_)), _) => return l.pick(if job.checks { said::VERIFIED } else { wrote }).to_string(),
+        (Some(BackupEnd::Restored { .. }), _) => return l.pick(wrote).to_string(),
+        (_, None) => return l.pick(if ended { said::NOT_STARTED } else { texts::common::WAITING }).to_string(),
         (_, Some(a)) => a,
     };
     let state = match k.cmp(&a.item) {
-        Ordering::Less if a.checking => VERIFIED,
-        Ordering::Less => did,
-        Ordering::Equal if ended => ["未完成", "未完成", "Unfinished"],
-        Ordering::Equal => return format!("{} {}%", l.pick(if a.checking { VERIFYING } else { doing }), percent(part_share(&a))),
+        Ordering::Less if a.checking => said::VERIFIED,
+        Ordering::Less => wrote,
+        Ordering::Equal if ended => texts::common::UNFINISHED,
+        Ordering::Equal => return Pass::at(job, &a).doing_share(l, percent(part_share(&a))),
         // Ahead of the pass under way: a backup checks its parts once all
         // are written, and a restore writes them once all are checked.
         Ordering::Greater => match (a.checking, job.restore, ended) {
-            (true, false, false) => did,
-            (true, false, true) => ["未校验", "未驗證", "Not verified"],
-            (false, false, false) | (true, true, false) => WAITING_TURN,
-            (false, false, true) => ["未备份", "未備份", "Not backed up"],
-            (false, true, false) => VERIFIED,
-            (_, true, true) => ["未恢复", "未還原", "Not restored"],
+            (true, false, false) => wrote,
+            (true, false, true) => said::NOT_VERIFIED,
+            (false, false, false) | (true, true, false) => texts::common::WAITING,
+            (false, false, true) => said::NOT_BACKED_UP,
+            (false, true, false) => said::VERIFIED,
+            (_, true, true) => said::NOT_RESTORED,
         },
     };
     l.pick(state).to_string()
@@ -2069,7 +1763,7 @@ pub fn backup_job(cx: &Ctx) -> Frame {
     let mut c = long_page(cx);
     let mut out = Vec::new();
     let top = t.m.content_top;
-    let (did, doing) = job_words(job.restore);
+    use texts::backup::job as said;
     let icon = if job.restore { Icon::Restore } else { Icon::Backup };
     let writing = job.at.is_some_and(|a| !a.checking);
     let mut y = match &job.outcome {
@@ -2078,66 +1772,50 @@ pub fn backup_job(cx: &Ctx) -> Frame {
                 Some(a) => {
                     let (over, passed) = job_progress(job, &a);
                     let total = fmt::bytes(job.plan.iter().map(|(_, n)| n).sum());
-                    let (verb, past) = if a.checking { (l.pick(VERIFYING), l.pick(VERIFIED)) } else { (l.pick(doing), l.pick(did)) };
-                    let (name, passed) = (&job.plan[a.item].0, fmt::bytes(passed));
-                    (format!("{verb} {name}"), tr!(l, "{past} {passed}，共 {total}", "{past} {passed}，共 {total}", "{past} {passed} of {total}"), over)
+                    let pass = Pass::at(job, &a);
+                    (pass.doing_part(l, &job.plan[a.item].0), pass.done_of(l, &fmt::bytes(passed), &total), over)
                 }
-                None if job.restore => (
-                    l.pick(["正在读取备份", "正在讀取備份", "Reading the backup"]).to_string(),
-                    l.pick(["正在核对备份与本机", "正在核對備份與本機", "Checking the backup against this phone"]).to_string(),
-                    0.0,
-                ),
-                None => (l.pick(GETTING_READY).to_string(), l.pick(["正在计算备份大小", "正在計算備份大小", "Working out the backup's size"]).to_string(), 0.0),
+                None if job.restore => (l.pick(said::READING).to_string(), l.pick(said::CHECKING).to_string(), 0.0),
+                None => (l.pick(texts::installing::GETTING_READY).to_string(), l.pick(said::SIZING).to_string(), 0.0),
             };
             widgets::progress_card(&mut c, t, f, top, &title, &detail, Some(done))
         }
         Some(end) => {
-            let gone = l.pick(if job.restore { ["未写入任何内容。", "未寫入任何內容。", "Nothing was written."] } else { ["未保存任何备份。", "未儲存任何備份。", "No backup was saved."] });
-            let failed = l.pick(if job.restore { RESTORE_FAILED } else { ["备份失败", "備份失敗", "Backup failed"] });
+            let gone = l.pick(if job.restore { texts::installed::NOTHING_WRITTEN } else { said::NOTHING_SAVED });
+            let failed = l.pick(if job.restore { said::RESTORE_FAILED } else { said::BACKUP_FAILED });
             let (title, color, detail) = match end {
                 BackupEnd::Saved(name) => {
                     let saved = match job.place {
-                        Place::Storage => tr!(l, "已保存到内部存储的 Skyward/backups/{name}", "已儲存到內部儲存空間的 Skyward/backups/{name}", "Saved to Skyward/backups/{name} in internal storage"),
-                        Place::UsbDrive => tr!(l, "已保存到 U 盘的 Skyward/backups/{name}", "已儲存到 USB 隨身碟的 Skyward/backups/{name}", "Saved to Skyward/backups/{name} on the USB drive"),
+                        Place::Storage => said::saved_to_storage(l, name),
+                        Place::UsbDrive => said::saved_to_usb_drive(l, name),
                     };
-                    (l.pick(BACKUP_COMPLETE), GREEN, saved)
+                    (l.pick(said::BACKUP_COMPLETE), GREEN, saved)
                 }
-                BackupEnd::Restored { .. } => {
-                    (l.pick(RESTORE_COMPLETE), GREEN, l.pick(["重启手机后，将使用恢复的内容。", "重新啟動手機後，將使用還原的內容。", "The phone uses what was restored once it reboots."]).to_string())
-                }
-                BackupEnd::Stopped => (l.pick(["已停止", "已停止", "Stopped"]), SLATE, gone.to_string()),
+                BackupEnd::Restored { .. } => (l.pick(said::RESTORE_COMPLETE), GREEN, l.pick(said::USES_RESTORED).to_string()),
+                BackupEnd::Stopped => (l.pick(texts::common::STOPPED), SLATE, gone.to_string()),
                 BackupEnd::Refused(r) => {
-                    let title = l.pick(if job.restore { ["无法恢复", "無法還原", "Can't restore"] } else { ["无法备份", "無法備份", "Can't back up"] });
+                    let title = l.pick(if job.restore { said::CANT_RESTORE } else { said::CANT_BACK_UP });
                     (title, ORANGE, fmt::backup_refusal(l, r, job.restore))
                 }
-                BackupEnd::Failed(_) if job.restore && writing => {
-                    let detail = l.pick([
-                        "部分内容已写入，重启后可能无法正常启动。请重新恢复，完成后再重启。",
-                        "部分內容已寫入，重新啟動後可能無法正常啟動。請重新還原，完成後再重新啟動。",
-                        "Part of it was written, so the phone may not start properly after a reboot. Restore again, and reboot once it's done.",
-                    ]);
-                    (failed, RED, detail.to_string())
-                }
+                BackupEnd::Failed(_) if job.restore && writing => (failed, RED, l.pick(said::PARTLY_WRITTEN).to_string()),
                 BackupEnd::Failed(_) => (failed, RED, gone.to_string()),
             };
             widgets::list(&mut c, t, f, top, &[standing(title, color, icon, &detail)]).bottom
         }
     };
-    let keep = l.pick(match job.place {
-        Place::Storage => ["请不要关机。", "請不要關機。", "Don't power off"],
-        Place::UsbDrive => ["请不要拔出 U 盘或关机。", "請不要拔出 USB 隨身碟或關機。", "Keep the USB drive in and don't power off"],
-    });
     match &job.outcome {
         None => {
-            let note = match (job.restore, job.at) {
-                (false, _) => tr!(l, "备份完成前，{keep}停止后将删除未完成的备份。", "備份完成前，{keep}停止後將刪除未完成的備份。", "{keep} until the backup is done. Stopping deletes the unfinished backup."),
-                (true, Some(a)) if !a.checking => tr!(l, "恢复完成前，{keep}", "還原完成前，{keep}", "{keep} until the restore is done."),
-                (true, _) => l.pick(["校验备份完成前，不会写入任何内容。", "驗證備份完成前，不會寫入任何內容。", "Nothing is written until the backup is verified."]).to_string(),
+            let note = match (job.restore, job.at, job.place) {
+                (false, _, Place::Storage) => said::BACKUP_KEEP_POWER,
+                (false, _, Place::UsbDrive) => said::BACKUP_KEEP_USB_DRIVE,
+                (true, Some(a), Place::Storage) if !a.checking => said::RESTORE_KEEP_POWER,
+                (true, Some(a), Place::UsbDrive) if !a.checking => said::RESTORE_KEEP_USB_DRIVE,
+                (true, _, _) => said::NOTHING_UNTIL_VERIFIED,
             };
-            y = widgets::footnote(&mut c, t, f, y, &note);
+            y = widgets::footnote(&mut c, t, f, y, l.pick(note));
             // A restore that has begun writing goes on to its end.
             if !(job.restore && writing) {
-                let label = l.pick(if job.stopping { ["正在停止", "正在停止", "Stopping"] } else { STOP });
+                let label = l.pick(if job.stopping { texts::common::STOPPING } else { texts::common::STOP });
                 let stop = widgets::list(&mut c, t, f, y + t.m.card_gap, &[Row::new(label).trail(Trail::None)]);
                 if !job.stopping {
                     out.extend(hits(&stop.rows, &[Action::StopBackup]));
@@ -2148,13 +1826,7 @@ pub fn backup_job(cx: &Ctx) -> Frame {
         Some(end) => {
             match end {
                 BackupEnd::Restored { unmade } if !unmade.is_empty() => {
-                    let folders = unmade.join(l.pick(["、", "、", ", "]));
-                    let note = tr!(
-                        l,
-                        "以下文件夹所属的用户已不存在，其中的内容未恢复：{folders}",
-                        "以下資料夾所屬的使用者已不存在，其中的內容未還原：{folders}",
-                        "The users these folders belonged to no longer exist, so what they hold wasn't restored: {folders}"
-                    );
+                    let note = said::users_gone(l, unmade.join(l.pick(texts::list::SEPARATOR)));
                     y = widgets::footnote(&mut c, t, f, y, &note);
                 }
                 BackupEnd::Failed(why) => y = widgets::footnote(&mut c, t, f, y, why),
@@ -2162,10 +1834,10 @@ pub fn backup_job(cx: &Ctx) -> Frame {
             }
             let (rows, acts): (Vec<Row>, Vec<Action>) = match end {
                 BackupEnd::Restored { .. } => (
-                    vec![Row::new(l.pick(["重启到系统", "重新啟動到系統", "Reboot to system"])).icon(ORANGE, Icon::Power), Row::new(l.pick(DONE)).trail(Trail::None)],
+                    vec![Row::new(l.pick(texts::installed::REBOOT_TO_SYSTEM)).icon(ORANGE, Icon::Power), Row::new(l.pick(texts::common::DONE)).trail(Trail::None)],
                     vec![Action::RebootTo(Target::System), Action::Back],
                 ),
-                _ => (vec![Row::new(l.pick(DONE)).trail(Trail::None)], vec![Action::Back]),
+                _ => (vec![Row::new(l.pick(texts::common::DONE)).trail(Trail::None)], vec![Action::Back]),
             };
             let next = widgets::list(&mut c, t, f, y + t.m.card_gap, &rows);
             out.extend(hits(&next.rows, &acts));
@@ -2175,26 +1847,21 @@ pub fn backup_job(cx: &Ctx) -> Frame {
     // The parts come after what can be done, which a long list would push
     // off the screen.
     if !job.plan.is_empty() {
-        let heading = l.pick(if job.restore { ["恢复内容", "還原內容", "Contents"] } else { ["备份内容", "備份內容", "Contents"] });
+        let heading = l.pick(if job.restore { texts::restore::CONTENTS } else { texts::backup::CONTENTS });
         let y0 = widgets::section(&mut c, t, f, y, heading);
         let states: Vec<String> = (0..job.plan.len()).map(|k| part_state(l, job, k)).collect();
         let rows: Vec<Row> = job.plan.iter().zip(&states).map(|((name, _), state)| Row::new(name).trail(Trail::Text(state))).collect();
         y = widgets::list(&mut c, t, f, y0, &rows).bottom;
     }
     let title = l.pick(match (&job.outcome, job.restore) {
-        (None, restore) => job_words(restore).1,
-        (Some(BackupEnd::Saved(_)), _) => BACKUP_COMPLETE,
-        (Some(BackupEnd::Restored { .. }), _) => RESTORE_COMPLETE,
-        (Some(_), false) => ["备份未完成", "備份未完成", "Backup incomplete"],
-        (Some(_), true) => ["恢复未完成", "還原未完成", "Restore incomplete"],
+        (None, restore) => Pass::writing(restore).doing(),
+        (Some(BackupEnd::Saved(_)), _) => said::BACKUP_COMPLETE,
+        (Some(BackupEnd::Restored { .. }), _) => said::RESTORE_COMPLETE,
+        (Some(_), false) => said::BACKUP_INCOMPLETE,
+        (Some(_), true) => said::RESTORE_INCOMPLETE,
     });
     Frame { back: job.outcome.is_some(), ..Frame::new(t, fit(c, t, y), out, title, top) }
 }
-
-const BACKUP_COMPLETE: Text = ["备份完成", "備份完成", "Backup complete"];
-const RESTORE_COMPLETE: Text = ["恢复完成", "還原完成", "Restore complete"];
-const RESTORE_FAILED: Text = ["恢复失败", "還原失敗", "Restore failed"];
-const STOP: Text = ["停止", "停止", "Stop"];
 
 /// Tools for the experienced.
 pub fn advanced(cx: &Ctx) -> Frame {
@@ -2202,12 +1869,12 @@ pub fn advanced(cx: &Ctx) -> Frame {
     let mut c = page(cx);
     let top = t.m.content_top;
     let tools = widgets::list(&mut c, t, f, top, &[
-        Row::new(l.pick(FILES)).icon(BLUE, Icon::Folder),
-        Row::new(l.pick(TERMINAL)).icon(SLATE, Icon::Terminal),
-        Row::new(l.pick(RELABEL)).icon(PURPLE, Icon::Shield),
-        Row::new(l.pick(FILESYSTEMS)).icon(RED, Icon::Mount),
-        Row::new(l.pick(LOGS)).icon(ORANGE, Icon::Log),
-        Row::new(l.pick(UPDATE)).icon(GREEN, Icon::Layers).trail(Trail::Value(update_value(cx))),
+        Row::new(l.pick(texts::page::FILES)).icon(BLUE, Icon::Folder),
+        Row::new(l.pick(texts::page::TERMINAL)).icon(SLATE, Icon::Terminal),
+        Row::new(l.pick(texts::page::RELABEL)).icon(PURPLE, Icon::Shield),
+        Row::new(l.pick(texts::page::FILESYSTEMS)).icon(RED, Icon::Mount),
+        Row::new(l.pick(texts::page::LOGS)).icon(ORANGE, Icon::Log),
+        Row::new(l.pick(texts::page::UPDATE)).icon(GREEN, Icon::Layers).trail(Trail::Value(update_value(cx))),
     ]);
     let out = hits(&tools.rows, &[
         Action::Open(Screen::Files),
@@ -2217,13 +1884,8 @@ pub fn advanced(cx: &Ctx) -> Frame {
         Action::Open(Screen::Logs),
         Action::Open(Screen::Update),
     ]);
-    Frame::new(t, c, out, l.pick(ADVANCED), top)
+    Frame::new(t, c, out, l.pick(texts::page::ADVANCED), top)
 }
-
-const RELABEL: Text = ["修复 SELinux 上下文", "修復 SELinux 上下文", "Fix SELinux contexts"];
-const FILESYSTEMS: Text = ["文件系统", "檔案系統", "Filesystems"];
-const STOPPED: Text = ["已停止", "已停止", "Stopped"];
-const STOPPING: Text = ["正在停止", "正在停止", "Stopping"];
 
 /// Giving the data partition's files the SELinux labels the installed
 /// system's rules give them: what it does, and a swipe to start it; then
@@ -2233,20 +1895,13 @@ pub fn relabel(cx: &Ctx) -> Frame {
     let mut c = page(cx);
     let mut out = Vec::new();
     let top = t.m.content_top;
-    let title = l.pick(RELABEL);
+    let title = l.pick(texts::page::RELABEL);
     let Some(job) = &s.relabel else {
-        let what = l.pick([
-            "按已安装系统的规则，重新设置 data 分区中文件的 SELinux 上下文，应用数据保持不变。",
-            "按已安裝系統的規則，重新設定 data 分割區中檔案的 SELinux 上下文，應用程式資料保持不變。",
-            "Gives the files in the data partition the SELinux contexts the installed system's rules give them. App data stays as it is.",
-        ]);
-        let mut y = widgets::paragraph(&mut c, t, f, top, what);
+        let mut y = widgets::paragraph(&mut c, t, f, top, l.pick(texts::relabel::WHAT));
         let note = match s.data {
             Data::Open | Data::Locked { .. } => None,
-            Data::Erased => Some(["data 分区已清除。", "data 分割區已清除。", "The data partition was wiped."]),
-            Data::Closed | Data::Opening | Data::Failed(_) => {
-                Some(["暂无法修复，需先在「解密」中打开 data 分区。", "暫時無法修復，需先在「解密」中開啟 data 分割區。", "Open the data partition in Decrypt first."])
-            }
+            Data::Erased => Some(texts::relabel::DATA_ERASED),
+            Data::Closed | Data::Opening | Data::Failed(_) => Some(texts::relabel::OPEN_FIRST),
         };
         if let Some(note) = note {
             y = widgets::footnote(&mut c, t, f, y, l.pick(note));
@@ -2260,17 +1915,17 @@ pub fn relabel(cx: &Ctx) -> Frame {
     let heading = match &job.outcome {
         None => repair.going(l),
         Some(JobEnd::Done) => repair.complete(l),
-        Some(JobEnd::Stopped) => l.pick(STOPPED).into(),
+        Some(JobEnd::Stopped) => l.pick(texts::common::STOPPED).into(),
         Some(JobEnd::Failed(_)) => repair.failed(l),
     };
     let detail = match (job.total, job.checked) {
-        (0, _) if job.outcome.is_none() => l.pick(GETTING_READY).to_string(),
-        (total, checked) => tr!(l, "已检查 {checked} 项，共 {total} 项", "已檢查 {checked} 項，共 {total} 項", "{checked} of {total} checked"),
+        (0, _) if job.outcome.is_none() => l.pick(texts::installing::GETTING_READY).to_string(),
+        (total, checked) => texts::relabel::checked(l, checked, total),
     };
     let y = widgets::progress_card(&mut c, t, f, top, &heading, &detail, Some(share(job.checked, job.total)));
     match &job.outcome {
         None => {
-            let label = l.pick(if job.stopping { STOPPING } else { STOP });
+            let label = l.pick(if job.stopping { texts::common::STOPPING } else { texts::common::STOP });
             let stop = widgets::list(&mut c, t, f, y + t.m.card_gap, &[Row::new(label).trail(Trail::None)]);
             if !job.stopping {
                 out.extend(hits(&stop.rows, &[Action::StopRelabel]));
@@ -2279,20 +1934,13 @@ pub fn relabel(cx: &Ctx) -> Frame {
         Some(end) => {
             let changed = job.changed;
             let note = match end {
-                JobEnd::Done if changed == 0 => l
-                    .pick(["全部文件的 SELinux 上下文都正确，无需修复。", "全部檔案的 SELinux 上下文都正確，無需修復。", "Every file's SELinux context is right, so nothing needed fixing."])
-                    .to_string(),
-                JobEnd::Done => tr!(
-                    l,
-                    "已按规则重新设置 {changed} 项的 SELinux 上下文。",
-                    "已按規則重新設定 {changed} 項的 SELinux 上下文。",
-                    "{changed} entries got the SELinux context the rules give them."
-                ),
-                JobEnd::Stopped => tr!(l, "已停止，已重新设置 {changed} 项。", "已停止，已重新設定 {changed} 項。", "Stopped, with {changed} entries set again."),
-                JobEnd::Failed(why) => tr!(l, "修复失败：{why}", "修復失敗：{why}", "Repair failed: {why}"),
+                JobEnd::Done if changed == 0 => l.pick(texts::relabel::NOTHING_NEEDED).to_string(),
+                JobEnd::Done => texts::relabel::changed(l, changed),
+                JobEnd::Stopped => texts::relabel::stopped(l, changed),
+                JobEnd::Failed(why) => texts::relabel::failed(l, why),
             };
             let y = widgets::footnote(&mut c, t, f, y, &note);
-            let finish = widgets::list(&mut c, t, f, y + t.m.card_gap, &[Row::new(l.pick(DONE)).trail(Trail::None)]);
+            let finish = widgets::list(&mut c, t, f, y + t.m.card_gap, &[Row::new(l.pick(texts::common::DONE)).trail(Trail::None)]);
             out.extend(hits(&finish.rows, &[Action::Back]));
         }
     }
@@ -2306,26 +1954,23 @@ pub fn filesystems(cx: &Ctx) -> Frame {
     let mut c = long_page(cx);
     let mut out = Vec::new();
     let top = t.m.content_top;
-    let y = widgets::section_first(&mut c, t, f, top, l.pick(["分区", "分割區", "Partitions"]));
+    let y = widgets::section_first(&mut c, t, f, top, l.pick(texts::mount::PARTITIONS));
     let bottom = match &s.filesystems {
-        None => widgets::list(&mut c, t, f, y, &[Row::new(l.pick(["正在读取分区", "正在讀取分割區", "Reading the partitions"])).trail(Trail::None)]).bottom,
+        None => widgets::list(&mut c, t, f, y, &[Row::new(l.pick(texts::filesystems::READING)).trail(Trail::None)]).bottom,
         Some(Err(why)) => {
-            let y = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(["无法读取分区", "無法讀取分割區", "Couldn't read the partitions"])).trail(Trail::None)]).bottom;
+            let y = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(texts::mount::UNREADABLE)).trail(Trail::None)]).bottom;
             widgets::footnote(&mut c, t, f, y, why)
         }
-        Some(Ok(rows)) if rows.is_empty() => {
-            widgets::list(&mut c, t, f, y, &[Row::new(l.pick(["暂无可修复的分区", "沒有可修復的分割區", "No partitions to repair"])).trail(Trail::None)]).bottom
-        }
+        Some(Ok(rows)) if rows.is_empty() => widgets::list(&mut c, t, f, y, &[Row::new(l.pick(texts::filesystems::NONE)).trail(Trail::None)]).bottom,
         Some(Ok(rows)) => {
             let subs: Vec<String> = rows.iter().map(|r| format!("{} · {}", fs_held(l, r, &s.data), fmt::bytes(r.size))).collect();
             let shown: Vec<Row> = rows.iter().zip(&subs).map(|(r, sub)| Row::new(&r.name).subtitle(sub)).collect();
             let list = widgets::list(&mut c, t, f, y, &shown);
             out.extend(hits(&list.rows, &(0..rows.len()).map(Action::OpenFilesystem).collect::<Vec<_>>()));
-            let note = l.pick(["仅显示本机分区表中可格式化的分区。", "僅顯示本機分割區表中可格式化的分割區。", "Only the partitions in this phone's partition table that can be formatted show here."]);
-            widgets::footnote(&mut c, t, f, list.bottom, note)
+            widgets::footnote(&mut c, t, f, list.bottom, l.pick(texts::filesystems::NOTE))
         }
     };
-    Frame::new(t, fit(c, t, bottom), out, l.pick(FILESYSTEMS), top)
+    Frame::new(t, fit(c, t, bottom), out, l.pick(texts::page::FILESYSTEMS), top)
 }
 
 /// What a partition holds, as its row and page name it: the data
@@ -2335,7 +1980,7 @@ fn fs_held(l: Lang, row: &FsRow, data: &Data) -> String {
     match (&row.filesystem, row.name == DATA_PARTITION) {
         (Some(filesystem), _) => filesystem.clone(),
         (None, true) => fmt::data(l, data).into(),
-        (None, false) => l.pick(["无法识别", "無法辨識", "Unrecognized"]).into(),
+        (None, false) => l.pick(texts::filesystems::UNRECOGNIZED).into(),
     }
 }
 
@@ -2350,17 +1995,17 @@ pub fn filesystem(cx: &Ctx) -> Frame {
     let row = &rows[s.fs_chosen];
     let data = row.name == DATA_PARTITION;
     let facts = [
-        (l.pick(["挂载点", "掛載點", "Mount point"]), row.mount_point.clone()),
-        (l.pick(["文件系统", "檔案系統", "Filesystem"]), fs_held(l, row, &s.data)),
-        (l.pick(["大小", "大小", "Size"]), fmt::bytes(row.size)),
+        (l.pick(texts::filesystems::MOUNT_POINT), row.mount_point.clone()),
+        (l.pick(texts::filesystems::FILESYSTEM), fs_held(l, row, &s.data)),
+        (l.pick(texts::common::SIZE), fmt::bytes(row.size)),
     ];
     let y = widgets::info_card(&mut c, t, f, top, &facts);
-    let y = widgets::section(&mut c, t, f, y, l.pick(ACTIONS));
+    let y = widgets::section(&mut c, t, f, y, l.pick(texts::common::ACTIONS));
     let chosen = |action: &FsAction| s.fs_action == *action;
-    let remakes: Vec<String> = row.others.iter().map(|fs| tr!(l, "更换为 {fs}", "更換為 {fs}", "Change to {fs}")).collect();
+    let remakes: Vec<String> = row.others.iter().map(|fs| texts::filesystems::change_to(l, fs)).collect();
     let made: Vec<String> = row.others.iter().map(|_| remade(row, s)).collect();
-    let repair = Row::new(l.pick(["修复文件系统", "修復檔案系統", "Repair the filesystem"]))
-        .subtitle(l.pick(["检查整个文件系统，并修复发现的错误", "檢查整個檔案系統，並修復發現的錯誤", "Checks the whole filesystem and fixes the errors found"]))
+    let repair = Row::new(l.pick(texts::filesystems::REPAIR))
+        .subtitle(l.pick(texts::filesystems::REPAIR_NOTE))
         .trail(Trail::Check(chosen(&FsAction::Repair)));
     let mut shown = vec![repair];
     let mut actions = vec![Action::ChooseFs(FsChoice::Repair)];
@@ -2372,19 +2017,13 @@ pub fn filesystem(cx: &Ctx) -> Frame {
     out.extend(hits(&list.rows, &actions));
     let mut y = list.bottom;
     if row.others.is_empty() {
-        let note = l.pick(["暂不支持更换该分区的文件系统。", "尚不支援更換這個分割區的檔案系統。", "This partition's filesystem can't be changed."]);
-        y = widgets::footnote(&mut c, t, f, y, note);
+        y = widgets::footnote(&mut c, t, f, y, l.pick(texts::filesystems::CANT_CHANGE));
     }
     if data {
-        let note = l.pick([
-            "修复前将关闭 data 分区，完成后需在「解密」中重新打开。",
-            "修復前將關閉 data 分割區，完成後需在「解密」中重新開啟。",
-            "The data partition closes for the repair, and opens again from Decrypt once it's done.",
-        ]);
-        y = widgets::footnote(&mut c, t, f, y, note);
+        y = widgets::footnote(&mut c, t, f, y, l.pick(texts::filesystems::DATA_CLOSES));
     }
     if !row.others.is_empty() {
-        y = widgets::footnote(&mut c, t, f, y, l.pick(["更换后，分区中的内容无法恢复。", "更換後，分割區中的內容無法復原。", "Once changed, what the partition held can't be brought back."]));
+        y = widgets::footnote(&mut c, t, f, y, l.pick(texts::filesystems::CANT_UNDO));
     }
     let (label, danger) = confirm_label(Confirm::Filesystem, s);
     let track = widgets::confirm(&mut c, t, f, y + t.m.dp(24.0), label, danger, s.confirm);
@@ -2395,10 +2034,10 @@ pub fn filesystem(cx: &Ctx) -> Frame {
 /// The title of the page of a partition the filesystem page lists.
 fn partition_title(l: Lang, name: &str) -> &'static str {
     l.pick(match name {
-        DATA_PARTITION => DATA_PART,
-        "metadata" => ["metadata 分区", "metadata 分割區", "metadata partition"],
-        "cache" => ["cache 分区", "cache 分割區", "cache partition"],
-        _ => ["分区", "分割區", "Partition"],
+        DATA_PARTITION => texts::wipe::part::DATA,
+        "metadata" => texts::wipe::part::METADATA,
+        "cache" => texts::wipe::part::CACHE,
+        _ => texts::flash::PARTITION,
     })
 }
 
@@ -2406,18 +2045,10 @@ fn partition_title(l: Lang, name: &str) -> &'static str {
 /// partition goes as a factory reset goes, with /metadata and the cache
 /// partition beside it.
 fn remade(row: &FsRow, s: &State) -> String {
-    match row.name == DATA_PARTITION {
-        true => {
-            let parts = s.lang.pick(match s.cache_partition {
-                true => ["data、cache、metadata 分区", "data、cache、metadata 分割區", "the data, cache and metadata partitions"],
-                false => ["data、metadata 分区", "data、metadata 分割區", "the data and metadata partitions"],
-            });
-            tr!(s.lang, "格式化 {parts}，清空本机的全部数据", "格式化 {parts}，清空本機的全部資料", "Formats {parts}, emptying all of this phone's data")
-        }
-        false => {
-            let name = &row.name;
-            tr!(s.lang, "格式化 {name} 分区，清空其中的全部内容", "格式化 {name} 分割區，清空其中的全部內容", "Formats the {name} partition, emptying all it holds")
-        }
+    match (row.name == DATA_PARTITION, s.cache_partition) {
+        (true, true) => s.lang.pick(texts::filesystems::FORMATS_DATA_AND_CACHE).into(),
+        (true, false) => s.lang.pick(texts::filesystems::FORMATS_DATA).into(),
+        (false, _) => texts::filesystems::formats(s.lang, &row.name),
     }
 }
 
@@ -2435,10 +2066,10 @@ pub fn part_work(cx: &Ctx) -> Frame {
     let verb = Verb::of(&work.kind);
     // Work on one partition fails; work through several may get partway.
     let (title, several) = match &work.kind {
-        PartKind::Disable => (["清除分区", "清除分割區", "Wipe partitions"], true),
-        PartKind::Unshare => (["取消数据块共享", "取消資料區塊共用", "Unshare blocks"], true),
-        PartKind::Repair => (["修复文件系统", "修復檔案系統", "Repair filesystem"], false),
-        PartKind::Remake(_) => (["更换文件系统", "更換檔案系統", "Change filesystem"], false),
+        PartKind::Disable => (texts::parts::title::WIPE, true),
+        PartKind::Unshare => (texts::parts::title::UNSHARE, true),
+        PartKind::Repair => (texts::parts::title::REPAIR, false),
+        PartKind::Remake(_) => (texts::parts::title::FORMAT, false),
     };
     let failed = |state: &ItemState| matches!(state, ItemState::Ended(ItemEnd::Failed(_)));
     let short = matches!(work.outcome, Some(Err(_))) || work.items.iter().any(|(_, state)| failed(state));
@@ -2455,7 +2086,7 @@ pub fn part_work(cx: &Ctx) -> Frame {
             .iter()
             .map(|(_, state)| match state {
                 ItemState::Waiting if work.outcome.is_some() => verb.not_done(l),
-                ItemState::Waiting => l.pick(WAITING_TURN).into(),
+                ItemState::Waiting => l.pick(texts::common::WAITING).into(),
                 ItemState::Working => verb.going(l),
                 ItemState::Ended(end) => fmt::item_end(l, end, verb),
             })
@@ -2484,8 +2115,8 @@ pub fn part_work(cx: &Ctx) -> Frame {
         y = widgets::list(&mut c, t, f, y, &shown).bottom;
     }
     let leaving = match s.asked.shutdown_after {
-        true => ["完成后将自动关机。", "完成後將自動關機。", "Powers off on its own once done."],
-        false => ["完成后将自动重启。", "完成後將自動重新啟動。", "Reboots on its own once done."],
+        true => texts::parts::leaving::POWER_OFF,
+        false => texts::parts::leaving::REBOOT,
     };
     let mut notes: Vec<String> = Vec::new();
     match &work.outcome {
@@ -2500,15 +2131,14 @@ pub fn part_work(cx: &Ctx) -> Frame {
     }
     for (name, state) in &work.items {
         if let ItemState::Ended(ItemEnd::Failed(Some(why))) = state {
-            let failed = verb.failed_on(l, name);
-            notes.push(tr!(l, "{failed}：{why}", "{failed}：{why}", "{failed}: {why}"));
+            notes.push(texts::common::with_reason(l, verb.failed_on(l, name), why));
         }
     }
     for note in &notes {
         y = widgets::footnote(&mut c, t, f, y, note);
     }
     if let (true, Some(reason)) = (work.asked, &s.asked.reason) {
-        y = widgets::info_card(&mut c, t, f, y + t.m.dp(12.0), &[(l.pick(REASON), reason.clone())]);
+        y = widgets::info_card(&mut c, t, f, y + t.m.dp(12.0), &[(l.pick(texts::installing::REASON), reason.clone())]);
     }
     match (&work.outcome, work.asked) {
         (None, _) => {}
@@ -2516,7 +2146,7 @@ pub fn part_work(cx: &Ctx) -> Frame {
         // The system's work ran without the slot's partitions, which going
         // on in the recovery brings up first, as leaving fastboot does.
         (Some(_), true) => {
-            let below = widgets::section(&mut c, t, f, y, l.pick(ACTIONS));
+            let below = widgets::section(&mut c, t, f, y, l.pick(texts::common::ACTIONS));
             let rows: Vec<Row> = AFTERWARDS.iter().map(|&(title, _)| Row::new(l.pick(title)).trail(Trail::None)).collect();
             let actions = AFTERWARDS.map(|(_, action)| if action == Action::Dismiss { Action::EnterRecovery } else { action });
             let choices = widgets::list(&mut c, t, f, below, &rows);
@@ -2524,21 +2154,19 @@ pub fn part_work(cx: &Ctx) -> Frame {
             y = choices.bottom;
         }
         (Some(_), false) => {
-            let finish = widgets::list(&mut c, t, f, y + t.m.card_gap, &[Row::new(l.pick(DONE)).trail(Trail::None)]);
+            let finish = widgets::list(&mut c, t, f, y + t.m.card_gap, &[Row::new(l.pick(texts::common::DONE)).trail(Trail::None)]);
             out.extend(hits(&finish.rows, &[Action::Back]));
             y = finish.bottom;
         }
     }
     if !work.output.is_empty() {
-        let below = widgets::section(&mut c, t, f, y, l.pick(["程序输出", "程式輸出", "Program output"]));
+        let below = widgets::section(&mut c, t, f, y, l.pick(texts::parts::OUTPUT));
         rows = Some(Rows { edges: widgets::output_edges(&c, t, f, below, &work.output), action: None });
         y = below;
     }
     let back = work.outcome.is_some() && !work.asked;
     Frame { rows, back, ..Frame::new(t, fit(c, t, y), out, l.pick(title), top) }
 }
-
-const ACTIONS: Text = ["操作", "操作", "Actions"];
 
 /// The system on the phone now; the newest system the phone maker's
 /// server knows, and downloading its full package to install it; and
@@ -2552,24 +2180,18 @@ pub fn update(cx: &Ctx) -> Frame {
     let mut out = Vec::new();
     if let Standing::Merging(done) = s.update {
         let share = done as f32;
-        let p = percent(share);
-        let detail = tr!(l, "已完成 {p}%", "已完成 {p}%", "{p}% done");
-        let y = widgets::progress_card(&mut c, t, f, top, l.pick(["正在合并更新", "正在合併更新", "Merging the update"]), &detail, Some(share));
-        let note = l.pick([
-            "合并完成前，暂不刷写 super 中的分区。返回后将继续合并。",
-            "合併完成前，暫不刷寫 super 中的分割區。返回後將繼續合併。",
-            "Partitions in super aren't flashed until it merges. Merging goes on after going back.",
-        ]);
-        let y = widgets::footnote(&mut c, t, f, y, note);
-        return Frame::new(t, fit(c, t, y), out, l.pick(UPDATE), top);
+        let detail = texts::common::share_done(l, percent(share));
+        let y = widgets::progress_card(&mut c, t, f, top, l.pick(texts::snapshot::MERGING), &detail, Some(share));
+        let y = widgets::footnote(&mut c, t, f, y, l.pick(texts::update::MERGING_NOTE));
+        return Frame::new(t, fit(c, t, y), out, l.pick(texts::page::UPDATE), top);
     }
     let mut y = top;
     if let Some(v) = &i.os_version {
-        y = widgets::section_first(&mut c, t, f, y, l.pick(["本机", "本機", "This phone"]));
-        y = widgets::info_card(&mut c, t, f, y, &[(l.pick(["当前版本", "目前版本", "Current version"]), v.clone())]);
+        y = widgets::section_first(&mut c, t, f, y, l.pick(texts::common::THIS_PHONE));
+        y = widgets::info_card(&mut c, t, f, y, &[(l.pick(texts::update::CURRENT_VERSION), v.clone())]);
     }
     if s.update_server {
-        let online_update = l.pick(["在线更新", "線上更新", "Online update"]);
+        let online_update = l.pick(texts::update::ONLINE);
         y = if y == top { widgets::section_first(&mut c, t, f, y, online_update) } else { widgets::section(&mut c, t, f, y, online_update) };
         y = online(&mut c, cx, y, &mut out);
     }
@@ -2588,26 +2210,17 @@ pub fn update(cx: &Ctx) -> Frame {
     if let Some(detail) = &detail {
         row = row.subtitle(detail);
     }
-    let merging = l.pick(["更新合并", "更新合併", "Merging"]);
+    let merging = l.pick(texts::update::MERGING);
     y = if y == top { widgets::section_first(&mut c, t, f, y, merging) } else { widgets::section(&mut c, t, f, y, merging) };
     y = widgets::list(&mut c, t, f, y, &[row]).bottom;
     if s.update == Standing::Waiting {
         let (label, danger) = confirm_label(Confirm::Merge, cx.state);
         let track = widgets::confirm(&mut c, t, f, y + t.m.dp(28.0), label, danger, s.confirm);
         out.push(Hit { rect: track, action: Action::Confirm(Confirm::Merge) });
-        let note = l.pick(["合并后无法回到更新前的系统。", "合併後無法回到更新前的系統。", "Once merged, the system from before the update can't come back."]);
-        y = widgets::footnote(&mut c, t, f, track.y + track.h, note);
+        y = widgets::footnote(&mut c, t, f, track.y + track.h, l.pick(texts::update::CANT_GO_BACK));
     }
-    Frame::new(t, fit(c, t, y), out, l.pick(UPDATE), top)
+    Frame::new(t, fit(c, t, y), out, l.pick(texts::page::UPDATE), top)
 }
-
-/// What downloading or checking for updates needs first, while the phone
-/// has joined no network that reaches the internet.
-const WLAN_FIRST: Text = ["需先连接 WLAN", "需先連接 Wi-Fi", "Connect to Wi-Fi first"];
-const CHECKING: Text = ["正在检查更新", "正在檢查更新", "Checking for updates"];
-const CHECK_FOR_UPDATES: Text = ["检查更新", "檢查更新", "Check for updates"];
-const DOWNLOADING: Text = ["正在下载", "正在下載", "Downloading"];
-const CHECKING_PART: Text = ["正在校验已下载的部分", "正在驗證已下載的部分", "Verifying what was downloaded"];
 
 /// Asking the update server for the newest system, then its full package:
 /// downloading it, how far that has come, and installing it once it is
@@ -2615,42 +2228,38 @@ const CHECKING_PART: Text = ["正在校验已下载的部分", "正在驗證已�
 fn online(c: &mut Canvas, cx: &Ctx, y: f32, out: &mut Vec<Hit>) -> f32 {
     let (t, f, s, i, l) = (cx.t, cx.f, cx.state, cx.info, cx.state.lang);
     let release = match &s.check {
-        Check::Asking => return widgets::list(c, t, f, y, &[Row::new(l.pick(CHECKING)).trail(Trail::None)]).bottom,
+        Check::Asking => return widgets::list(c, t, f, y, &[Row::new(l.pick(texts::update::CHECKING)).trail(Trail::None)]).bottom,
         Check::Answered(Some(r)) => r,
         other => {
-            let mut row = Row::new(l.pick(CHECK_FOR_UPDATES));
+            let mut row = Row::new(l.pick(texts::update::CHECK));
             if !s.online() {
-                row = row.subtitle(l.pick(WLAN_FIRST));
+                row = row.subtitle(l.pick(texts::update::WLAN_FIRST));
             }
             let check = widgets::list(c, t, f, y, &[row]);
             out.extend(hits(&check.rows, &[Action::CheckUpdate]));
             return match other {
                 Check::Failed(why) => widgets::footnote(c, t, f, check.bottom, &fmt::unanswered(l, why)),
-                Check::Answered(None) => {
-                    let none = l.pick(["暂无本机的系统更新信息。", "目前沒有本機的系統更新資訊。", "The server knows of no system update for this phone."]);
-                    widgets::footnote(c, t, f, check.bottom, none)
-                }
+                Check::Answered(None) => widgets::footnote(c, t, f, check.bottom, l.pick(texts::update::NONE_KNOWN)),
                 _ => check.bottom,
             };
         }
     };
     let newer = i.os_version.as_deref() != Some(release.version.as_str());
-    let version = &release.version;
-    let title = if newer { tr!(l, "新版本 {version}", "新版本 {version}", "New version {version}") } else { l.pick(["已是最新版本", "已是最新版本", "Up to date"]).to_string() };
+    let title = if newer { texts::update::new_version_named(l, &release.version) } else { l.pick(texts::update::UP_TO_DATE).to_string() };
     let size = match release.length {
         Some(length) => fmt::file_size(length),
         None => fmt::package_size(&release.size),
     };
-    let package = tr!(l, "完整更新包 {size}", "完整更新檔 {size}", "Full OTA package {size}");
+    let package = texts::update::full_package(l, size);
     let mut y = widgets::list(c, t, f, y, &[Row::new(&title).icon(GREEN, Icon::Layers).subtitle(&package).trail(Trail::None)]).bottom;
     match (&s.download, s.have) {
         (Some(job), _) if job.outcome.is_none() => {
             let (heading, detail, share) = match job.progress {
-                None => (l.pick(GETTING_READY), String::new(), None),
+                None => (l.pick(texts::installing::GETTING_READY), String::new(), None),
                 Some(p) => downloaded(l, p, job.rate),
             };
             y = widgets::progress_card(c, t, f, y + t.m.card_gap, heading, &detail, share);
-            let label = l.pick(if job.stopping { ["正在暂停", "正在暫停", "Pausing"] } else { ["暂停", "暫停", "Pause"] });
+            let label = l.pick(if job.stopping { texts::update::PAUSING } else { texts::update::PAUSE });
             let stop = widgets::list(c, t, f, y + t.m.card_gap, &[Row::new(label).trail(Trail::None)]);
             if !job.stopping {
                 out.extend(hits(&stop.rows, &[Action::StopDownload]));
@@ -2658,7 +2267,7 @@ fn online(c: &mut Canvas, cx: &Ctx, y: f32, out: &mut Vec<Hit>) -> f32 {
             y = stop.bottom;
         }
         (_, Have::Whole(_)) => {
-            let row = Row::new(l.pick(["安装", "安裝", "Install"])).subtitle(l.pick(["已下载到内部存储", "已下載到內部儲存空間", "Downloaded to internal storage"]));
+            let row = Row::new(l.pick(texts::page::INSTALL)).subtitle(l.pick(texts::update::DOWNLOADED_TO_STORAGE));
             let install = widgets::list(c, t, f, y + t.m.card_gap, &[row]);
             out.extend(hits(&install.rows, &[Action::InstallDownloaded]));
             y = install.bottom;
@@ -2666,21 +2275,18 @@ fn online(c: &mut Canvas, cx: &Ctx, y: f32, out: &mut Vec<Hit>) -> f32 {
         (job, have) => {
             match job.as_ref().and_then(|j| j.outcome.as_ref()) {
                 Some(DownloadEnd::Failed(why)) => y = widgets::footnote(c, t, f, y, &fmt::download_failure(l, why)),
-                Some(DownloadEnd::Stopped) => y = widgets::footnote(c, t, f, y, l.pick(["已暂停下载。", "已暫停下載。", "Download paused."])),
+                Some(DownloadEnd::Stopped) => y = widgets::footnote(c, t, f, y, l.pick(texts::update::PAUSED)),
                 _ => {}
             }
-            let title = l.pick(if matches!(have, Have::Part(_)) { ["继续下载", "繼續下載", "Resume download"] } else { ["下载", "下載", "Download"] });
+            let title = l.pick(if matches!(have, Have::Part(_)) { texts::update::RESUME } else { texts::update::DOWNLOAD });
             let had = match have {
-                Have::Part(done) => {
-                    let done = fmt::file_size(done);
-                    Some(tr!(l, "已下载 {done}", "已下載 {done}", "{done} downloaded"))
-                }
+                Have::Part(done) => Some(texts::update::downloaded(l, fmt::file_size(done))),
                 _ => None,
             };
             let sub = if !s.data.storage_open() {
-                Some(l.pick(DECRYPT_NEEDED))
+                Some(l.pick(texts::decrypt::NEEDED))
             } else if !s.online() {
-                Some(l.pick(WLAN_FIRST))
+                Some(l.pick(texts::update::WLAN_FIRST))
             } else {
                 had.as_deref()
             };
@@ -2690,35 +2296,19 @@ fn online(c: &mut Canvas, cx: &Ctx, y: f32, out: &mut Vec<Hit>) -> f32 {
             y = download.bottom;
         }
     }
-    let saved = tr!(
-        l,
-        "完整更新包将保存到\"/sdcard/{DOWNLOADS}\"中，安装后不会自动删除。",
-        "完整更新檔將儲存到「/sdcard/{DOWNLOADS}」中，安裝後不會自動刪除。",
-        "The full OTA package is saved in “/sdcard/{DOWNLOADS}”, and stays there after it's installed."
-    );
-    let points = [
-        l.pick(["安装系统更新不会删除用户数据，建议在安装前进行备份。", "安裝系統更新不會刪除使用者資料，建議在安裝前進行備份。", "Installing a system update deletes no user data. Backing up first is still wise."]),
-        saved.as_str(),
-        l.pick(["下载中断后可继续下载，已下载的部分会保留。", "下載中斷後可繼續下載，已下載的部分會保留。", "A download cut short can be resumed, keeping what was downloaded."]),
-        l.pick([
-            "更新后，系统会在后台进行一系列优化，期间可能出现发热、耗电增加等情况，1 ~ 3 天内将自行恢复。",
-            "更新後，系統會在背景進行一系列最佳化，期間可能出現發熱、耗電增加等情況，1 ~ 3 天內將自行恢復。",
-            "After the update the system optimizes itself in the background, and the phone may run warm or use more battery for 1 to 3 days.",
-        ]),
-    ];
-    widgets::notes(c, t, f, y + t.m.card_gap, l.pick(NOTES), &points)
+    let saved = texts::update::saved_in(l, DOWNLOADS);
+    let points = [l.pick(texts::update::KEEPS_DATA), saved.as_str(), l.pick(texts::update::RESUMABLE), l.pick(texts::update::OPTIMIZES)];
+    widgets::notes(c, t, f, y + t.m.card_gap, l.pick(texts::common::NOTES), &points)
 }
-
-const NOTES: Text = ["注意事项", "注意事項", "Notes"];
 
 /// What a progress card says of a download, and the share of it done:
 /// what an earlier download left being checked, or the rest coming at
 /// `rate` bytes a second.
 fn downloaded(l: Lang, progress: Progress, rate: u64) -> (&'static str, String, Option<f32>) {
     match progress {
-        Progress::Checking { done, total } => (l.pick(CHECKING_PART), format!("{} / {}", fmt::file_size(done), fmt::file_size(total)), Some(share(done, total))),
+        Progress::Checking { done, total } => (l.pick(texts::update::CHECKING_PART), format!("{} / {}", fmt::file_size(done), fmt::file_size(total)), Some(share(done, total))),
         Progress::Downloading { done, total } => (
-            l.pick(DOWNLOADING),
+            l.pick(texts::update::DOWNLOADING),
             format!("{} / {} · {}/s", fmt::file_size(done), fmt::file_size(total), fmt::file_size(rate)),
             Some(share(done, total)),
         ),
@@ -2732,25 +2322,13 @@ pub fn skyward_update(cx: &Ctx) -> Frame {
     let mut c = long_page(cx);
     let top = t.m.content_top;
     let mut out = Vec::new();
-    let y = widgets::section_first(&mut c, t, f, top, l.pick(["本机", "本機", "This phone"]));
-    let y = widgets::info_card(&mut c, t, f, y, &[(l.pick(["当前版本", "目前版本", "Current version"]), VERSION.to_string())]);
-    let y = widgets::section(&mut c, t, f, y, l.pick(["在线更新", "線上更新", "Online update"]));
+    let y = widgets::section_first(&mut c, t, f, top, l.pick(texts::common::THIS_PHONE));
+    let y = widgets::info_card(&mut c, t, f, y, &[(l.pick(texts::update::CURRENT_VERSION), VERSION.to_string())]);
+    let y = widgets::section(&mut c, t, f, y, l.pick(texts::update::ONLINE));
     let y = skyward_online(&mut c, cx, y, &mut out);
-    let points = [
-        l.pick([
-            "新版本从 GitHub 下载，校验 SHA-256 后写入 recovery 分区，不会改动系统和用户数据。",
-            "新版本從 GitHub 下載，驗證 SHA-256 後寫入 recovery 分割區，不會改動系統和使用者資料。",
-            "The new version is downloaded from GitHub and goes into the recovery partitions once its SHA-256 checks out. The system and user data are left as they are.",
-        ]),
-        l.pick([
-            "新版本将写入下次启动所用槽位的 recovery 分区；另一个槽位装有 Skyward 时，也会一并更新。",
-            "新版本將寫入下次啟動所用槽位的 recovery 分割區；另一個槽位裝有 Skyward 時，也會一併更新。",
-            "The new version goes into the recovery partition of the slot that starts next, and into the other slot's where it holds Skyward.",
-        ]),
-        l.pick(["更新完成后，重启到恢复模式即可使用新版本。", "更新完成後，重新啟動到復原模式即可使用新版本。", "Once updated, reboot to recovery to use the new version."]),
-    ];
-    let y = widgets::notes(&mut c, t, f, y + t.m.card_gap, l.pick(NOTES), &points);
-    Frame::new(t, fit(c, t, y), out, l.pick(SKYWARD_UPDATE), top)
+    let points = [l.pick(texts::skyward_update::FROM_GITHUB), l.pick(texts::skyward_update::BOTH_SLOTS), l.pick(texts::skyward_update::REBOOT_TO_USE)];
+    let y = widgets::notes(&mut c, t, f, y + t.m.card_gap, l.pick(texts::common::NOTES), &points);
+    Frame::new(t, fit(c, t, y), out, l.pick(texts::page::SKYWARD_UPDATE), top)
 }
 
 /// Asking GitHub for Skyward's newest release, then updating to it: its
@@ -2760,12 +2338,12 @@ fn skyward_online(c: &mut Canvas, cx: &Ctx, y: f32, out: &mut Vec<Hit>) -> f32 {
     let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
     let gap = t.m.card_gap;
     let newest = match &s.skyward_check {
-        SkywardCheck::Asking => return widgets::list(c, t, f, y, &[Row::new(l.pick(CHECKING)).trail(Trail::None)]).bottom,
+        SkywardCheck::Asking => return widgets::list(c, t, f, y, &[Row::new(l.pick(texts::update::CHECKING)).trail(Trail::None)]).bottom,
         SkywardCheck::Answered(n) => n,
         other => {
-            let mut row = Row::new(l.pick(CHECK_FOR_UPDATES));
+            let mut row = Row::new(l.pick(texts::update::CHECK));
             if !s.online() {
-                row = row.subtitle(l.pick(WLAN_FIRST));
+                row = row.subtitle(l.pick(texts::update::WLAN_FIRST));
             }
             let check = widgets::list(c, t, f, y, &[row]);
             out.extend(hits(&check.rows, &[Action::CheckSkyward]));
@@ -2777,18 +2355,9 @@ fn skyward_online(c: &mut Canvas, cx: &Ctx, y: f32, out: &mut Vec<Hit>) -> f32 {
     };
     let version = &newest.version;
     let (title, detail) = match (newest.newer, &newest.build) {
-        (true, Some(build)) => {
-            let size = fmt::file_size(build.size);
-            (tr!(l, "新版本 {version}", "新版本 {version}", "New version {version}"), tr!(l, "安装包 {size}", "安裝包 {size}", "Package {size}"))
-        }
-        (true, None) => (
-            tr!(l, "新版本 {version}", "新版本 {version}", "New version {version}"),
-            l.pick(["没有本机的安装包", "沒有本機的安裝包", "No package for this phone"]).to_string(),
-        ),
-        (false, _) => (
-            l.pick(["已是最新版本", "已是最新版本", "Up to date"]).to_string(),
-            tr!(l, "最新发布的版本为 {version}", "最新發佈的版本為 {version}", "The newest release is {version}"),
-        ),
+        (true, Some(build)) => (texts::update::new_version_named(l, version), texts::skyward_update::package(l, fmt::file_size(build.size))),
+        (true, None) => (texts::update::new_version_named(l, version), l.pick(texts::skyward_update::NO_PACKAGE).to_string()),
+        (false, _) => (l.pick(texts::update::UP_TO_DATE).to_string(), texts::skyward_update::newest_is(l, version)),
     };
     let y = widgets::list(c, t, f, y, &[Row::new(&title).icon(GREEN, Icon::Install).subtitle(&detail).trail(Trail::None)]).bottom;
     if !newest.newer || newest.build.is_none() {
@@ -2797,62 +2366,48 @@ fn skyward_online(c: &mut Canvas, cx: &Ctx, y: f32, out: &mut Vec<Hit>) -> f32 {
     match &s.skyward_job {
         Some(job) if job.outcome.is_none() => {
             let (heading, detail, share) = match job.stage {
-                None => (l.pick(GETTING_READY), String::new(), None),
+                None => (l.pick(texts::installing::GETTING_READY), String::new(), None),
                 Some(SkywardStage::Download(p)) => downloaded(l, p, job.rate),
                 Some(SkywardStage::Write { done, total }) => {
                     let part = share(done, total);
-                    let p = percent(part);
-                    (l.pick(["正在写入 recovery 分区", "正在寫入 recovery 分割區", "Writing the recovery partitions"]), tr!(l, "已完成 {p}%", "已完成 {p}%", "{p}% done"), Some(part))
+                    (l.pick(texts::skyward_update::WRITING), texts::common::share_done(l, percent(part)), Some(part))
                 }
             };
             let y = widgets::progress_card(c, t, f, y + gap, heading, &detail, share);
             if matches!(job.stage, Some(SkywardStage::Write { .. })) {
-                return widgets::footnote(c, t, f, y, l.pick(["写入完成前，请不要关机。", "寫入完成前，請不要關機。", "Don't power off until it's written."]));
+                return widgets::footnote(c, t, f, y, l.pick(texts::skyward_update::KEEP_POWER));
             }
-            let stop = widgets::list(c, t, f, y + gap, &[Row::new(l.pick(if job.stopping { STOPPING } else { STOP })).trail(Trail::None)]);
+            let stop = widgets::list(c, t, f, y + gap, &[Row::new(l.pick(if job.stopping { texts::common::STOPPING } else { texts::common::STOP })).trail(Trail::None)]);
             if !job.stopping {
                 out.extend(hits(&stop.rows, &[Action::StopSkywardUpdate]));
             }
             stop.bottom
         }
         Some(SkywardJob { outcome: Some(SkywardEnd::Updated(slots)), .. }) => {
-            let names = fmt::slots(l, slots);
-            let detail = match (l, slots.len()) {
-                (Lang::En, 1) => format!("Skyward {version} is in {names}'s recovery partition."),
-                _ => tr!(
-                    l,
-                    "已将 Skyward {version} 刷入{names} 的 recovery 分区。",
-                    "已將 Skyward {version} 刷入{names} 的 recovery 分割區。",
-                    "Skyward {version} is in the recovery partitions of {names}."
-                ),
+            let detail = match slots.as_slice() {
+                [slot] => texts::skyward_update::in_one(l, version, slot.letter()),
+                [a, b] => texts::skyward_update::in_two(l, version, a.letter(), b.letter()),
+                other => unreachable!("a phone has two slots, and Skyward went into {other:?}"),
             };
-            let y = widgets::list(c, t, f, y + gap, &[standing(l.pick(["更新成功", "更新成功", "Updated"]), GREEN, Icon::Install, &detail)]).bottom;
-            let restart = widgets::list(c, t, f, y + gap, &[Row::new(l.pick(["重启到恢复模式", "重新啟動到復原模式", "Reboot to recovery"])).icon(ORANGE, Icon::Power)]);
+            let y = widgets::list(c, t, f, y + gap, &[standing(l.pick(texts::skyward_update::SUCCEEDED), GREEN, Icon::Install, &detail)]).bottom;
+            let restart = widgets::list(c, t, f, y + gap, &[Row::new(l.pick(texts::installed::REBOOT_TO_RECOVERY)).icon(ORANGE, Icon::Power)]);
             out.extend(hits(&restart.rows, &[Action::RebootTo(Target::Recovery)]));
             restart.bottom
         }
         job => {
             let mut y = y;
             match job.as_ref().and_then(|j| j.outcome.as_ref()) {
-                Some(SkywardEnd::Stopped) => y = widgets::footnote(c, t, f, y, l.pick(["已停止下载。", "已停止下載。", "Download stopped."])),
+                Some(SkywardEnd::Stopped) => y = widgets::footnote(c, t, f, y, l.pick(texts::skyward_update::STOPPED)),
                 Some(SkywardEnd::Download(why)) => y = widgets::footnote(c, t, f, y, &fmt::skyward_download_failure(l, why)),
                 Some(SkywardEnd::NotWritten(why)) => {
-                    y = widgets::footnote(c, t, f, y, l.pick(["更新失败，未写入任何内容。", "更新失敗，未寫入任何內容。", "Couldn't update. Nothing was written."]));
+                    y = widgets::footnote(c, t, f, y, l.pick(texts::skyward_update::NOT_WRITTEN));
                     y = widgets::footnote(c, t, f, y, why);
                 }
                 Some(SkywardEnd::WriteFailed(slots, why)) => {
-                    let names = fmt::slots(l, slots);
-                    let warning = match (l, slots.len()) {
-                        (Lang::En, 1) => format!(
-                            "{}'s recovery partition was only partly written, so rebooting to recovery may not start Skyward. Update again, and reboot once it's done.",
-                            capitalized(l, &names)
-                        ),
-                        _ => tr!(
-                            l,
-                            "{names} 的 recovery 分区仅写入了部分内容，重启到恢复模式可能无法进入 Skyward。请重新更新，完成后再重启。",
-                            "{names} 的 recovery 分割區僅寫入了部分內容，重新啟動到復原模式可能無法進入 Skyward。請重新更新，完成後再重新啟動。",
-                            "The recovery partitions of {names} were only partly written, so rebooting to recovery may not start Skyward. Update again, and reboot once it's done."
-                        ),
+                    let warning = match slots.as_slice() {
+                        [slot] => texts::skyward_update::partly_one(l, slot.letter()),
+                        [a, b] => texts::skyward_update::partly_two(l, a.letter(), b.letter()),
+                        other => unreachable!("a phone has two slots, and Skyward was written to {other:?}"),
                     };
                     y = widgets::footnote(c, t, f, y, &warning);
                     y = widgets::footnote(c, t, f, y, why);
@@ -2860,9 +2415,9 @@ fn skyward_online(c: &mut Canvas, cx: &Ctx, y: f32, out: &mut Vec<Hit>) -> f32 {
                 Some(SkywardEnd::Updated(_)) => unreachable!("an update that went in shows how it did"),
                 None => {}
             }
-            let mut row = Row::new(l.pick(["下载并更新", "下載並更新", "Download and update"]));
+            let mut row = Row::new(l.pick(texts::skyward_update::DOWNLOAD_AND_UPDATE));
             if !s.online() {
-                row = row.subtitle(l.pick(WLAN_FIRST));
+                row = row.subtitle(l.pick(texts::update::WLAN_FIRST));
             }
             let update = widgets::list(c, t, f, y + gap, &[row]);
             out.extend(hits(&update.rows, &[Action::UpdateSkyward]));
@@ -2880,20 +2435,13 @@ pub fn wlan(cx: &Ctx) -> Frame {
     let mut out = Vec::new();
     let top = t.m.content_top;
     let on = !matches!(w.power, Power::Off | Power::Failed(_));
-    let switch = widgets::list(&mut c, t, f, top, &[Row::new(l.pick(WLAN)).trail(Trail::Switch(on))]);
+    let switch = widgets::list(&mut c, t, f, top, &[Row::new(l.pick(texts::page::WLAN)).trail(Trail::Switch(on))]);
     out.extend(hits(&switch.rows, &[Action::Toggle(Switch::Wlan)]));
     let mut y = switch.bottom;
     match &w.power {
-        Power::Off => {
-            let note = l.pick([
-                "开启后，可连接 WLAN 下载系统更新和 Skyward 新版本。",
-                "開啟後，可連接 Wi-Fi 下載系統更新和 Skyward 新版本。",
-                "When on, system updates and new versions of Skyward can download over Wi-Fi.",
-            ]);
-            y = widgets::footnote(&mut c, t, f, y, note)
-        }
-        Power::Failed(why) => y = widgets::footnote(&mut c, t, f, y, &tr!(l, "无法开启 WLAN：{why}", "無法開啟 Wi-Fi：{why}", "Couldn't turn on Wi-Fi: {why}")),
-        Power::Starting => y = widgets::footnote(&mut c, t, f, y, l.pick(["正在开启 WLAN", "正在開啟 Wi-Fi", "Turning on Wi-Fi"])),
+        Power::Off => y = widgets::footnote(&mut c, t, f, y, l.pick(texts::wlan::TURN_ON_NOTE)),
+        Power::Failed(why) => y = widgets::footnote(&mut c, t, f, y, &texts::wlan::cant_turn_on(l, why)),
+        Power::Starting => y = widgets::footnote(&mut c, t, f, y, l.pick(texts::wlan::TURNING_ON_WLAN)),
         Power::On => {
             let locked = |s: Security| !matches!(s, Security::Open | Security::Owe);
             // The network chosen stands out in the accent, as the stock
@@ -2923,13 +2471,11 @@ pub fn wlan(cx: &Ctx) -> Frame {
             }
             let others: Vec<(usize, &Network)> =
                 w.networks.iter().enumerate().filter(|(_, n)| w.joined.as_ref().is_none_or(|j| j.ssid != n.ssid)).collect();
-            let nearby = l.pick(["选取附近的 WLAN", "選擇附近的 Wi-Fi 網路", "Choose a nearby network"]);
-            let (below, rescan) = widgets::section_action(&mut c, t, f, y, nearby, l.pick(["刷新", "重新整理", "Refresh"]));
+            let (below, rescan) = widgets::section_action(&mut c, t, f, y, l.pick(texts::wlan::NEARBY), l.pick(texts::wlan::REFRESH));
             out.push(Hit { rect: rescan, action: Action::Rescan });
             y = below;
             if others.is_empty() {
-                let looking = l.pick(["正在搜索附近的 WLAN", "正在搜尋附近的 Wi-Fi 網路", "Looking for nearby networks"]);
-                y = widgets::footnote(&mut c, t, f, y - t.m.dp(10.0), looking) + t.m.card_gap;
+                y = widgets::footnote(&mut c, t, f, y - t.m.dp(10.0), l.pick(texts::wlan::LOOKING)) + t.m.card_gap;
             }
             let tags: Vec<Option<String>> = others.iter().map(|(_, n)| fmt::band_tag(n.bands)).collect();
             let mut rows: Vec<Row> = others
@@ -2945,7 +2491,7 @@ pub fn wlan(cx: &Ctx) -> Frame {
                 .collect();
             // The list ends with adding a network by hand, as the stock one
             // does.
-            rows.push(Row::new(l.pick(ADD_NETWORK)).tint(t.pal.accent).trail(Trail::None));
+            rows.push(Row::new(l.pick(texts::wlan::ADD_NETWORK)).tint(t.pal.accent).trail(Trail::None));
             let list = widgets::list(&mut c, t, f, y, &rows);
             let mut picks: Vec<Action> = others.iter().map(|(k, _)| Action::JoinNetwork(*k)).collect();
             picks.push(Action::AddNetwork);
@@ -2958,13 +2504,8 @@ pub fn wlan(cx: &Ctx) -> Frame {
             y = list.bottom;
         }
     }
-    Frame::new(t, fit(c, t, y), out, l.pick(WLAN), top)
+    Frame::new(t, fit(c, t, y), out, l.pick(texts::page::WLAN), top)
 }
-
-const ADD_NETWORK: Text = ["添加网络", "新增網路", "Add network"];
-const SHOW_PASSWORD: Text = ["显示密码", "顯示密碼", "Show password"];
-const CONNECT_KEY: Text = ["连接", "連線", "Connect"];
-const SECURITY: Text = ["安全性", "安全性", "Security"];
 
 /// The password of the network chosen: its name, what is typed, a switch
 /// to show it, and the keyboard.
@@ -2977,10 +2518,10 @@ pub fn wlan_password(cx: &Ctx) -> Frame {
     let y = widgets::section_first(&mut c, t, f, top, &network.name);
     let shown = if s.show_password { s.password.clone() } else { "•".repeat(s.password.chars().count()) };
     let (y, caret) = widgets::text_field(&mut c, t, f, y, &shown);
-    let show = widgets::list(&mut c, t, f, y + t.m.card_gap, &[Row::new(l.pick(SHOW_PASSWORD)).trail(Trail::Switch(s.show_password))]);
+    let show = widgets::list(&mut c, t, f, y + t.m.card_gap, &[Row::new(l.pick(texts::wlan::SHOW_PASSWORD)).trail(Trail::Switch(s.show_password))]);
     out.extend(hits(&show.rows, &[Action::Toggle(Switch::ShowPassword)]));
-    keyboard_hits(&mut c, t, f, s, l.pick(CONNECT_KEY), &mut out);
-    Frame { caret: Some(caret), ..Frame::new(t, c, out, l.pick(["输入密码", "輸入密碼", "Enter password"]), top) }
+    keyboard_hits(&mut c, t, f, s, l.pick(texts::wlan::CONNECT), &mut out);
+    Frame { caret: Some(caret), ..Frame::new(t, c, out, l.pick(texts::wlan::ENTER_PASSWORD), top) }
 }
 
 /// A network added by hand: its name, how it is protected, its password
@@ -2995,28 +2536,28 @@ pub fn wlan_add(cx: &Ctx) -> Frame {
     let mut out = Vec::new();
     let top = m.content_top;
     let field = |y: f32| Rect::new(m.margin, y, m.w as f32 - m.margin * 2.0, m.dp(56.0));
-    let y = widgets::section_first(&mut c, t, f, top, l.pick(["网络名称", "網路名稱", "Network name"]));
+    let y = widgets::section_first(&mut c, t, f, top, l.pick(texts::wlan::NETWORK_NAME));
     let (below, mut caret) = widgets::text_field(&mut c, t, f, y, &a.name);
     out.push(Hit { rect: field(y), action: Action::TypeInto(Field::Name) });
     // Held down while its list is open, as the stock row stays.
     let tone = if a.choosing { Tone::page(&t.pressed()) } else { Tone::page(t) };
-    let protection = [Row::new(l.pick(SECURITY)).trail(Trail::Choice(fmt::security(l, a.security)))];
+    let protection = [Row::new(l.pick(texts::wlan::SECURITY_TITLE)).trail(Trail::Choice(fmt::security(l, a.security)))];
     let security = widgets::list_toned(&mut c, t, f, below + m.card_gap, &protection, &tone);
     out.extend(hits(&security.rows, &[Action::ChooseSecurity]));
     if a.security.password() {
-        let y = widgets::section(&mut c, t, f, security.bottom, l.pick(["密码", "密碼", "Password"]));
+        let y = widgets::section(&mut c, t, f, security.bottom, l.pick(texts::wlan::PASSWORD));
         let shown = if s.show_password { s.password.clone() } else { "•".repeat(s.password.chars().count()) };
         let (below, typed) = widgets::text_field(&mut c, t, f, y, &shown);
         out.push(Hit { rect: field(y), action: Action::TypeInto(Field::Password) });
         if a.field == Field::Password {
             caret = typed;
         }
-        let show = widgets::list(&mut c, t, f, below + m.card_gap, &[Row::new(l.pick(SHOW_PASSWORD)).trail(Trail::Switch(s.show_password))]);
+        let show = widgets::list(&mut c, t, f, below + m.card_gap, &[Row::new(l.pick(texts::wlan::SHOW_PASSWORD)).trail(Trail::Switch(s.show_password))]);
         out.extend(hits(&show.rows, &[Action::Toggle(Switch::ShowPassword)]));
     }
-    keyboard_hits(&mut c, t, f, s, l.pick(CONNECT_KEY), &mut out);
+    keyboard_hits(&mut c, t, f, s, l.pick(texts::wlan::CONNECT), &mut out);
     if !a.choosing {
-        return Frame { caret: Some(caret), ..Frame::new(t, c, out, l.pick(ADD_NETWORK), top) };
+        return Frame { caret: Some(caret), ..Frame::new(t, c, out, l.pick(texts::wlan::ADD_NETWORK), top) };
     }
     // A touch anywhere off the list closes it.
     out.clear();
@@ -3026,7 +2567,7 @@ pub fn wlan_add(cx: &Ctx) -> Frame {
     let held = ADDABLE.iter().position(|&p| s.held == Some(Action::PickSecurity(p)));
     let list = widgets::choices(&mut c, t, f, security.rows[0], &names, chosen, held);
     out.extend(hits(&list, &ADDABLE.map(Action::PickSecurity)));
-    Frame::new(t, c, out, l.pick(ADD_NETWORK), top)
+    Frame::new(t, c, out, l.pick(texts::wlan::ADD_NETWORK), top)
 }
 
 /// A network's details, in the stock page's grid: for the one chosen, how
@@ -3041,33 +2582,33 @@ pub fn wlan_network(cx: &Ctx) -> Frame {
     let joined = s.wlan.as_ref().and_then(|w| w.joined.as_ref()).filter(|j| j.ssid == network.ssid);
     let y = widgets::section_first(&mut c, t, f, top, &network.name);
     let detail = |icon, title, value: String| Detail { icon, title, value };
-    let security = detail(Outline::Shield, l.pick(SECURITY), fmt::security(l, network.security).to_string());
-    let signal = l.pick(["信号强度", "訊號強度", "Signal strength"]);
-    let title = l.pick(["网络详情", "網路詳細資料", "Network details"]);
+    let security = detail(Outline::Shield, l.pick(texts::wlan::SECURITY_TITLE), fmt::security(l, network.security).to_string());
+    let signal = l.pick(texts::wlan::SIGNAL_STRENGTH);
+    let title = l.pick(texts::wlan::DETAILS);
     let Some(j) = joined else {
         let items = [
-            detail(Outline::Wifi, l.pick(["频段", "頻段", "Bands"]), fmt::bands(l, network.bands)),
+            detail(Outline::Wifi, l.pick(texts::wlan::BANDS), fmt::bands(l, network.bands)),
             detail(Outline::Signal, signal, fmt::signal(l, network.signal).to_string()),
             security,
         ];
         let y = widgets::detail_grid(&mut c, t, f, y, &items);
         return Frame::new(t, fit(c, t, y), out, title, top);
     };
-    let mut items = vec![detail(Outline::Info, l.pick(["状态信息", "狀態資訊", "Status"]), fmt::joining(l, &j.stage).to_string())];
+    let mut items = vec![detail(Outline::Info, l.pick(texts::wlan::STATUS), fmt::joining(l, &j.stage).to_string())];
     match &j.stage {
         Joining::Connected(link) => {
             if let Some(n) = link.generation {
-                items.push(detail(Outline::Wifi, l.pick(["技术标准", "技術標準", "Wi-Fi standard"]), fmt::generation(l, n)));
+                items.push(detail(Outline::Wifi, l.pick(texts::wlan::STANDARD), fmt::generation(l, n)));
             }
             if let Some(speed) = link.speed {
-                items.push(detail(Outline::Speed, l.pick(["连接速度", "連線速度", "Link speed"]), format!("{speed} Mbps")));
+                items.push(detail(Outline::Speed, l.pick(texts::wlan::LINK_SPEED), format!("{speed} Mbps")));
             }
             items.push(detail(Outline::Signal, signal, fmt::signal(l, link.signal).to_string()));
             items.push(security);
-            items.push(detail(Outline::Address, l.pick(["IP 地址", "IP 位址", "IP address"]), link.address.to_string()));
-            items.push(detail(Outline::Mask, l.pick(["子网掩码", "子網路遮罩", "Subnet mask"]), link.mask.to_string()));
+            items.push(detail(Outline::Address, l.pick(texts::wlan::IP_ADDRESS), link.address.to_string()));
+            items.push(detail(Outline::Mask, l.pick(texts::wlan::SUBNET_MASK), link.mask.to_string()));
             if let Some(router) = link.router {
-                items.push(detail(Outline::Router, l.pick(["路由器", "路由器", "Router"]), router.to_string()));
+                items.push(detail(Outline::Router, l.pick(texts::wlan::ROUTER), router.to_string()));
             }
         }
         _ => {
@@ -3076,7 +2617,7 @@ pub fn wlan_network(cx: &Ctx) -> Frame {
         }
     }
     let y = widgets::detail_grid(&mut c, t, f, y, &items);
-    let forget = widgets::list(&mut c, t, f, y + t.m.card_gap, &[Row::new(l.pick(["删除网络", "刪除網路", "Forget network"])).tint(t.pal.danger).trail(Trail::None)]);
+    let forget = widgets::list(&mut c, t, f, y + t.m.card_gap, &[Row::new(l.pick(texts::wlan::FORGET)).tint(t.pal.danger).trail(Trail::None)]);
     out.extend(hits(&forget.rows, &[Action::LeaveNetwork]));
     Frame::new(t, fit(c, t, forget.bottom), out, title, top)
 }
@@ -3088,18 +2629,16 @@ pub fn files(cx: &Ctx) -> Frame {
     // bar held at the bottom.
     let dock = s.clip.as_ref().map(|clip| {
         let go = l.pick(match clip.op {
-            FileOp::Copy => ["复制到此处", "複製到這裡", "Copy here"],
-            FileOp::Move => ["移动到此处", "移動到這裡", "Move here"],
+            FileOp::Copy => texts::files::COPY_HERE,
+            FileOp::Move => texts::files::MOVE_HERE,
         });
-        let (canvas, rects) = widgets::dock_bar(t, f, files::page(t), &[l.pick(CANCEL), go]);
+        let (canvas, rects) = widgets::dock_bar(t, f, files::page(t), &[l.pick(texts::common::CANCEL), go]);
         Dock { canvas, hits: hits(&rects, &[Action::Unpick, Action::Paste]) }
     });
     let button = Some((widgets::Glyph::Terminal, Action::TerminalHere));
-    let root = l.pick(["根目录", "根目錄", "Root"]);
-    Frame { dock, button, ..listing(cx, &s.files, root, None, l.pick(["暂无文件", "沒有檔案", "No files"]), Action::OpenEntry, l.pick(FILES)) }
+    let root = l.pick(texts::files::ROOT);
+    Frame { dock, button, ..listing(cx, &s.files, root, None, l.pick(texts::files::NONE), Action::OpenEntry, l.pick(texts::page::FILES)) }
 }
-
-const CANCEL: Text = ["取消", "取消", "Cancel"];
 
 /// A place's folders and the files in them that can be installed, to
 /// choose one. A USB drive's page waits for one to be plugged in, and the
@@ -3108,18 +2647,15 @@ pub fn choose(cx: &Ctx, place: Place) -> Frame {
     let (s, l) = (cx.state, cx.state.lang);
     let unreadable;
     let absent = match (place, &s.usb_drive) {
-        (Place::UsbDrive, None) => Some((
-            l.pick(["未连接 U 盘", "未連接 USB 隨身碟", "No USB drive"]),
-            l.pick(["通过 OTG 连接 U 盘后，将在此显示其中的文件。", "透過 OTG 連接 USB 隨身碟後，將在此顯示其中的檔案。", "Connect a USB drive through OTG to see its files here."]),
-        )),
+        (Place::UsbDrive, None) => Some((l.pick(texts::choose::NO_USB_DRIVE), l.pick(texts::choose::CONNECT_USB_DRIVE))),
         (Place::UsbDrive, Some(UsbDrive::Unreadable(why))) => {
-            unreadable = tr!(l, "请使用 FAT32 或 exFAT 格式的 U 盘。{why}", "請使用 FAT32 或 exFAT 格式的 USB 隨身碟。{why}", "Use a USB drive formatted as FAT32 or exFAT. {why}");
-            Some((l.pick(USB_DRIVE_UNREADABLE), unreadable.as_str()))
+            unreadable = texts::choose::usb_drive_format(l, why);
+            Some((l.pick(texts::usb_drive::UNREADABLE), unreadable.as_str()))
         }
         _ => None,
     };
-    let empty = l.pick(["暂无可安装的文件", "沒有可安裝的檔案", "Nothing here to install"]);
-    listing(cx, s.folder(Screen::Choose(place)), place_name(l, place), absent, empty, Action::ChooseEntry, l.pick(["选择文件", "選擇檔案", "Choose a file"]))
+    let empty = l.pick(texts::choose::NONE);
+    listing(cx, s.folder(Screen::Choose(place)), place_name(l, place), absent, empty, Action::ChooseEntry, l.pick(texts::choose::TITLE))
 }
 
 /// A folder laid out as the stock file manager lays one out: the path as
@@ -3145,7 +2681,7 @@ fn listing(
             None
         }
         (None, Err(why)) => {
-            files::note(&mut c, t, f, cx.state.lang.pick(["无法读取该文件夹", "無法讀取這個資料夾", "This folder can't be read"]), Some(why));
+            files::note(&mut c, t, f, cx.state.lang.pick(texts::files::UNREADABLE), Some(why));
             None
         }
         (None, Ok(entries)) if entries.is_empty() => {
@@ -3185,28 +2721,18 @@ pub fn file_info(cx: &Ctx) -> Frame {
     let top = t.m.content_top;
     let folder = matches!(e.kind, FileKind::Folder { .. });
     let mut facts = vec![
-        (l.pick(NAME), e.name.clone()),
-        (l.pick(["位置", "位置", "Location"]), Path::new(&s.files.path).join(&e.name).to_string_lossy().into_owned()),
+        (l.pick(texts::files::NAME), e.name.clone()),
+        (l.pick(texts::common::LOCATION), Path::new(&s.files.path).join(&e.name).to_string_lossy().into_owned()),
     ];
-    let holds = l.pick(["内容", "內容", "Holds"]);
+    let holds = l.pick(texts::files::HOLDS);
     match &e.kind {
-        FileKind::Link { target, .. } => facts.push((l.pick(["指向", "指向", "Points to"]), target.clone())),
-        FileKind::Folder { items: Some(n) } => {
-            let items = match (l, n) {
-                (Lang::En, 1) => "1 item".to_string(),
-                (_, n) => tr!(l, "{n} 项", "{n} 項", "{n} items"),
-            };
-            facts.push((holds, items))
-        }
-        FileKind::Folder { items: None } => facts.push((holds, l.pick(UNREADABLE).to_string())),
-        FileKind::File | FileKind::Special => {
-            let (size, bytes) = (fmt::file_size(e.size), e.size);
-            facts.push((l.pick(["大小", "大小", "Size"]), tr!(l, "{size}（{bytes} 字节）", "{size}（{bytes} 位元組）", "{size} ({bytes} bytes)")))
-        }
+        FileKind::Link { target, .. } => facts.push((l.pick(texts::files::POINTS_TO), target.clone())),
+        FileKind::Folder { items: Some(n) } => facts.push((holds, texts::files::line::items(l, *n as u64))),
+        FileKind::Folder { items: None } => facts.push((holds, l.pick(texts::common::UNREADABLE).to_string())),
+        FileKind::File | FileKind::Special => facts.push((l.pick(texts::common::SIZE), texts::files::size(l, e.size, fmt::file_size(e.size)))),
     }
-    facts.push((l.pick(["修改时间", "修改時間", "Modified"]), fmt::datetime(l, e.modified, s.time_zone)));
-    let (mode, uid, gid) = (fmt::mode(e.mode), e.uid, e.gid);
-    facts.push((l.pick(PERMISSIONS), tr!(l, "{mode}，所有者 {uid}，用户组 {gid}", "{mode}，擁有者 {uid}，群組 {gid}", "{mode}, owner {uid}, group {gid}")));
+    facts.push((l.pick(texts::files::MODIFIED), fmt::datetime(l, e.modified, s.time_zone)));
+    facts.push((l.pick(texts::files::PERMISSIONS), texts::files::owned_by(l, fmt::mode(e.mode), e.uid, e.gid)));
     let y = widgets::info_card(&mut c, t, f, top, &facts);
     let mut rows = Vec::new();
     let mut acts = Vec::new();
@@ -3214,36 +2740,30 @@ pub fn file_info(cx: &Ctx) -> Frame {
     // installed.
     if installs(e) {
         let image = Path::new(&e.name).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("img"));
-        rows.push(Row::new(l.pick(if image { ["刷入", "刷入", "Flash"] } else { ["安装", "安裝", "Install"] })));
+        rows.push(Row::new(l.pick(if image { texts::files::FLASH } else { texts::page::INSTALL })));
         acts.push(Action::InstallEntry);
     }
     if e.kind == FileKind::File {
-        rows.push(Row::new(l.pick(["编辑", "編輯", "Edit"])));
+        rows.push(Row::new(l.pick(texts::files::EDIT)));
         acts.push(Action::EditEntry);
     }
-    rows.extend([Row::new(l.pick(["复制", "複製", "Copy"])), Row::new(l.pick(["移动", "移動", "Move"])), Row::new(l.pick(RENAME))]);
+    rows.extend([Row::new(l.pick(texts::files::COPY)), Row::new(l.pick(texts::files::MOVE_TO)), Row::new(l.pick(texts::files::RENAME))]);
     acts.extend([Action::PickEntry(FileOp::Copy), Action::PickEntry(FileOp::Move), Action::RenameEntry]);
     // A link's own permissions mean nothing; its target is changed where
     // it is.
     if !matches!(e.kind, FileKind::Link { .. }) {
-        rows.push(Row::new(l.pick(CHANGE_PERMISSIONS)));
+        rows.push(Row::new(l.pick(texts::files::CHANGE_PERMISSIONS)));
         acts.push(Action::OpenPermissions);
     }
-    rows.push(Row::new(l.pick(["删除", "刪除", "Delete"])).tint(t.pal.danger).trail(Trail::None));
+    rows.push(Row::new(l.pick(texts::files::DELETE)).tint(t.pal.danger).trail(Trail::None));
     acts.push(Action::AskDelete);
     let actions = widgets::list(&mut c, t, f, y + t.m.card_gap, &rows);
     let mut out = hits(&actions.rows, &acts);
     let mut bottom = actions.bottom;
     if s.asking_delete {
-        let name = &e.name;
         let what = match folder {
-            true => tr!(
-                l,
-                "删除\"{name}\"及其中的全部内容？删除后无法恢复。",
-                "刪除「{name}」及其中的全部內容？刪除後無法復原。",
-                "Delete “{name}” and everything in it? It can't be brought back."
-            ),
-            false => tr!(l, "删除\"{name}\"？删除后无法恢复。", "刪除「{name}」？刪除後無法復原。", "Delete “{name}”? It can't be brought back."),
+            true => texts::files::ask_delete_folder(l, &e.name),
+            false => texts::files::ask_delete(l, &e.name),
         };
         let y = widgets::footnote(&mut c, t, f, actions.bottom, &what);
         let (label, danger) = confirm_label(Confirm::DeleteEntry, cx.state);
@@ -3251,14 +2771,9 @@ pub fn file_info(cx: &Ctx) -> Frame {
         out.push(Hit { rect: track, action: Action::Confirm(Confirm::DeleteEntry) });
         bottom = track.y + track.h;
     }
-    let title = l.pick(if folder { ["文件夹信息", "資料夾資訊", "Folder info"] } else { ["文件信息", "檔案資訊", "File info"] });
+    let title = l.pick(if folder { texts::files::FOLDER_INFO } else { texts::files::FILE_INFO });
     Frame::new(t, fit(c, t, bottom), out, title, top)
 }
-
-const NAME: Text = ["名称", "名稱", "Name"];
-const PERMISSIONS: Text = ["权限", "權限", "Permissions"];
-const CHANGE_PERMISSIONS: Text = ["修改权限", "修改權限", "Change permissions"];
-const RENAME: Text = ["重命名", "重新命名", "Rename"];
 
 /// The permission bits of the entry the file page shows, a switch each that
 /// takes effect at once: reading, writing and running for its owner, its
@@ -3270,13 +2785,14 @@ pub fn permissions(cx: &Ctx) -> Frame {
     let top = t.m.content_top;
     let mode = e.mode & 0o7777;
     let bits = fmt::mode(e.mode);
-    let facts = [(l.pick(NAME), e.name.clone()), (l.pick(PERMISSIONS), tr!(l, "{bits}，{mode:04o}", "{bits}，{mode:04o}", "{bits}, {mode:04o}"))];
+    use texts::files::mode as said;
+    let facts = [(l.pick(texts::files::NAME), e.name.clone()), (l.pick(texts::files::PERMISSIONS), said::bits(l, bits, format!("{mode:04o}")))];
     let mut y = widgets::info_card(&mut c, t, f, top, &facts);
     let mut out = Vec::new();
-    let classes = [(["所有者", "擁有者", "Owner"], 6), (["用户组", "群組", "Group"], 3), (["其他用户", "其他使用者", "Others"], 0)];
-    let (read, write, run) = (l.pick(["读取", "讀取", "Read"]), l.pick(["写入", "寫入", "Write"]), l.pick(["执行", "執行", "Execute"]));
+    let classes = [(said::OWNER, 6), (said::GROUP, 3), (said::OTHERS, 0)];
+    let (read, write, run) = (l.pick(said::READ), l.pick(said::WRITE), l.pick(said::EXECUTE));
     let groups = classes.map(|(title, shift)| (l.pick(title), [(read, 4 << shift), (write, 2 << shift), (run, 1 << shift)]));
-    let special = (l.pick(["特殊权限", "特殊權限", "Special"]), [("SUID", 0o4000), ("SGID", 0o2000), (l.pick(["粘滞位", "黏滯位", "Sticky"]), 0o1000)]);
+    let special = (l.pick(said::SPECIAL), [("SUID", 0o4000), ("SGID", 0o2000), (l.pick(said::STICKY), 0o1000)]);
     for (title, bits) in groups.into_iter().chain([special]) {
         y = widgets::section(&mut c, t, f, y, title);
         let rows = bits.map(|(name, bit)| Row::new(name).trail(Trail::Switch(mode & bit != 0)));
@@ -3284,7 +2800,7 @@ pub fn permissions(cx: &Ctx) -> Frame {
         out.extend(hits(&list.rows, &bits.map(|(_, bit)| Action::ModeBit(bit))));
         y = list.bottom;
     }
-    Frame::new(t, fit(c, t, y), out, l.pick(CHANGE_PERMISSIONS), top)
+    Frame::new(t, fit(c, t, y), out, l.pick(texts::files::CHANGE_PERMISSIONS), top)
 }
 
 /// A new name for the entry the file page shows, typed on the keyboard.
@@ -3294,9 +2810,9 @@ pub fn rename(cx: &Ctx) -> Frame {
     let mut out = Vec::new();
     let top = t.m.content_top;
     let (y, caret) = widgets::text_field(&mut c, t, f, top, &s.new_name);
-    widgets::footnote(&mut c, t, f, y, l.pick(["名称不能包含\"/\"。点击「完成」保存。", "名稱不能包含「/」。點選「完成」儲存。", "A name can't hold “/”. Tap Done to save it."]));
-    keyboard_hits(&mut c, t, f, s, l.pick(DONE), &mut out);
-    Frame { caret: Some(caret), ..Frame::new(t, c, out, l.pick(RENAME), top) }
+    widgets::footnote(&mut c, t, f, y, l.pick(texts::files::RENAME_NOTE));
+    keyboard_hits(&mut c, t, f, s, l.pick(texts::common::DONE), &mut out);
+    Frame { caret: Some(caret), ..Frame::new(t, c, out, l.pick(texts::files::RENAME), top) }
 }
 
 /// The folder an entry goes to already holds its name: what to do.
@@ -3304,64 +2820,25 @@ pub fn clash(cx: &Ctx) -> Frame {
     let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
     let (clip, into, _) = s.clash.as_ref().expect("the clash page shows a clash");
     let name = Path::new(&clip.path).file_name().map_or_else(|| clip.path.clone(), |n| n.to_string_lossy().into_owned());
-    let verb = l.pick(match clip.op {
-        FileOp::Copy => ["复制", "複製", "copy"],
-        FileOp::Move => ["移动", "移動", "move"],
+    use texts::files::clash as said;
+    let skip = l.pick(match clip.op {
+        FileOp::Copy => said::SKIP_COPY,
+        FileOp::Move => said::SKIP_MOVE,
     });
     let mut c = page(cx);
     let top = t.m.content_top;
-    let there = tr!(l, "\"{into}\"中已有同名的\"{name}\"。", "「{into}」中已有同名的「{name}」。", "“{into}” already holds an entry named “{name}”.");
-    let y = widgets::paragraph(&mut c, t, f, top, &there);
-    let skip = tr!(l, "保留已有的同名项，不{verb}该项", "保留已有的同名項目，不{verb}這個項目", "Keeps the entry there, and doesn't {verb} this one");
+    let y = widgets::paragraph(&mut c, t, f, top, &said::there(l, into, name));
     let choices = widgets::list(&mut c, t, f, y + t.m.dp(12.0), &[
-        Row::new(l.pick(["替换", "取代", "Replace"])).subtitle(l.pick(["覆盖已有的同名项", "覆寫已有的同名項目", "Writes over the entry there"])),
-        Row::new(l.pick(["跳过", "略過", "Skip"])).subtitle(&skip),
-        Row::new(l.pick(["保留两者", "保留兩者", "Keep both"])).subtitle(l.pick(["自动为该项重新命名", "自動為這個項目重新命名", "Gives this one a new name"])),
+        Row::new(l.pick(said::REPLACE)).subtitle(l.pick(said::REPLACE_NOTE)),
+        Row::new(l.pick(said::SKIP)).subtitle(skip),
+        Row::new(l.pick(said::KEEP_BOTH)).subtitle(l.pick(said::KEEP_BOTH_NOTE)),
     ]);
     let out = hits(&choices.rows, &[
         Action::Resolve(ClashChoice::Replace),
         Action::Resolve(ClashChoice::Skip),
         Action::Resolve(ClashChoice::KeepBoth),
     ]);
-    Frame::new(t, c, out, l.pick(["名称已存在", "名稱已存在", "Name taken"]), top)
-}
-
-/// How work on files is told of: the Chinese verb its sentences build on,
-/// in simplified and in traditional characters, then English's own words
-/// for what is done and for doing it; the page's titles while it goes on
-/// and once it ended short; and what stopping it may have left.
-struct FileWords {
-    verb: [&'static str; 2],
-    done: &'static str,
-    base: &'static str,
-    titles: (Text, Text),
-    stopped: Text,
-}
-
-fn file_words(task: &FileTask) -> FileWords {
-    match task {
-        FileTask::Copy { .. } => FileWords {
-            verb: ["复制", "複製"],
-            done: "copied",
-            base: "copy",
-            titles: (["正在复制", "正在複製", "Copying"], ["复制未完成", "複製未完成", "Copy incomplete"]),
-            stopped: ["已停止，部分内容可能已复制到目标文件夹。", "已停止，部分內容可能已複製到目標資料夾。", "Stopped. Part of it may have been copied into the folder."],
-        },
-        FileTask::Move { .. } => FileWords {
-            verb: ["移动", "移動"],
-            done: "moved",
-            base: "move",
-            titles: (["正在移动", "正在移動", "Moving"], ["移动未完成", "移動未完成", "Move incomplete"]),
-            stopped: ["已停止，部分内容可能已移动到目标文件夹。", "已停止，部分內容可能已移動到目標資料夾。", "Stopped. Part of it may have been moved into the folder."],
-        },
-        FileTask::Delete { .. } => FileWords {
-            verb: ["删除", "刪除"],
-            done: "deleted",
-            base: "delete",
-            titles: (["正在删除", "正在刪除", "Deleting"], ["删除未完成", "刪除未完成", "Delete incomplete"]),
-            stopped: ["已停止，部分内容可能已删除。", "已停止，部分內容可能已刪除。", "Stopped. Part of it may have been deleted."],
-        },
-    }
+    Frame::new(t, c, out, l.pick(said::TITLE), top)
 }
 
 /// Copying, moving or deleting: how far it has come and a way to stop it,
@@ -3372,23 +2849,19 @@ pub fn file_job(cx: &Ctx) -> Frame {
     let path = match &job.task {
         FileTask::Copy { path, .. } | FileTask::Move { path, .. } | FileTask::Delete { path } => path,
     };
-    let words = file_words(&job.task);
-    let ([hans, hant], done_en, base) = (words.verb, words.done, words.base);
+    use texts::files::job as said;
     let name = Path::new(path).file_name().map_or_else(|| path.clone(), |n| n.to_string_lossy().into_owned());
     let share = |(done, total): (u64, u64)| if total == 0 { 0.0 } else { done as f32 / total as f32 };
     // The bar stays while the work measures, so that the button under it
     // does not move. Deleting, and copying entries that hold no bytes, is
     // counted in entries.
     let (detail, done) = match (job.progress, &job.task) {
-        (None, _) => (l.pick(GETTING_READY).to_string(), 0.0),
-        (Some((bytes, _)), FileTask::Copy { .. } | FileTask::Move { .. }) if bytes.1 > 0 => {
-            let (did, total) = (fmt::file_size(bytes.0), fmt::file_size(bytes.1));
-            (tr!(l, "已{hans} {did}，共 {total}", "已{hant} {did}，共 {total}", "{did} of {total} {done_en}"), share(bytes))
-        }
-        (Some((_, entries)), _) => {
-            let (did, total) = entries;
-            (tr!(l, "已{hans} {did} 项，共 {total} 项", "已{hant} {did} 項，共 {total} 項", "{did} of {total} items {done_en}"), share(entries))
-        }
+        (None, _) => (l.pick(texts::installing::GETTING_READY).to_string(), 0.0),
+        (Some((bytes, _)), FileTask::Copy { .. }) if bytes.1 > 0 => (said::copied_of(l, fmt::file_size(bytes.0), fmt::file_size(bytes.1)), share(bytes)),
+        (Some((bytes, _)), FileTask::Move { .. }) if bytes.1 > 0 => (said::moved_of(l, fmt::file_size(bytes.0), fmt::file_size(bytes.1)), share(bytes)),
+        (Some((_, entries)), FileTask::Copy { .. }) => (said::copied_items(l, entries.0, entries.1), share(entries)),
+        (Some((_, entries)), FileTask::Move { .. }) => (said::moved_items(l, entries.0, entries.1), share(entries)),
+        (Some((_, entries)), FileTask::Delete { .. }) => (said::deleted_items(l, entries.0, entries.1), share(entries)),
     };
     let mut c = page(cx);
     let top = t.m.content_top;
@@ -3396,24 +2869,35 @@ pub fn file_job(cx: &Ctx) -> Frame {
     let mut out = Vec::new();
     match &job.outcome {
         None => {
-            let label = l.pick(if job.stopping { STOPPING } else { STOP });
+            let label = l.pick(if job.stopping { texts::common::STOPPING } else { texts::common::STOP });
             let stop = widgets::list(&mut c, t, f, y + t.m.card_gap, &[Row::new(label).trail(Trail::None)]);
             if !job.stopping {
                 out.extend(hits(&stop.rows, &[Action::StopJob]));
             }
         }
         Some(end) => {
-            let why = match end {
-                JobEnd::Stopped => l.pick(words.stopped).to_string(),
-                JobEnd::Failed(why) => tr!(l, "{hans}失败：{why}", "{hant}失敗：{why}", "Couldn't {base} it: {why}"),
-                JobEnd::Done => unreachable!("work done leaves its page"),
+            let why = match (end, &job.task) {
+                (JobEnd::Stopped, FileTask::Copy { .. }) => l.pick(said::COPY_STOPPED).to_string(),
+                (JobEnd::Stopped, FileTask::Move { .. }) => l.pick(said::MOVE_STOPPED).to_string(),
+                (JobEnd::Stopped, FileTask::Delete { .. }) => l.pick(said::DELETE_STOPPED).to_string(),
+                (JobEnd::Failed(why), FileTask::Copy { .. }) => said::copy_failed(l, why),
+                (JobEnd::Failed(why), FileTask::Move { .. }) => said::move_failed(l, why),
+                (JobEnd::Failed(why), FileTask::Delete { .. }) => said::delete_failed(l, why),
+                (JobEnd::Done, _) => unreachable!("work done leaves its page"),
             };
             let y = widgets::footnote(&mut c, t, f, y, &why);
-            let finish = widgets::list(&mut c, t, f, y + t.m.card_gap, &[Row::new(l.pick(DONE)).trail(Trail::None)]);
+            let finish = widgets::list(&mut c, t, f, y + t.m.card_gap, &[Row::new(l.pick(texts::common::DONE)).trail(Trail::None)]);
             out.extend(hits(&finish.rows, &[Action::Back]));
         }
     }
-    let title = l.pick(if job.outcome.is_none() { words.titles.0 } else { words.titles.1 });
+    let title = l.pick(match (&job.task, job.outcome.is_none()) {
+        (FileTask::Copy { .. }, true) => said::COPYING,
+        (FileTask::Copy { .. }, false) => said::COPY_INCOMPLETE,
+        (FileTask::Move { .. }, true) => said::MOVING,
+        (FileTask::Move { .. }, false) => said::MOVE_INCOMPLETE,
+        (FileTask::Delete { .. }, true) => said::DELETING,
+        (FileTask::Delete { .. }, false) => said::DELETE_INCOMPLETE,
+    });
     Frame { back: job.outcome.is_some(), ..Frame::new(t, c, out, title, top) }
 }
 
@@ -3424,13 +2908,13 @@ pub fn terminal(cx: &Ctx) -> Frame {
     let mut c = page(cx);
     let mut out = Vec::new();
     let top = t.m.content_top;
-    keyboard_hits(&mut c, t, f, s, s.lang.pick(["回车", "Enter", "Enter"]), &mut out);
+    keyboard_hits(&mut c, t, f, s, s.lang.pick(texts::keyboard::ENTER), &mut out);
     let l = term::layout(t, f, top);
     term::draw(&mut c, t, f, &l, cx.term);
     let held = cx.term.is_some_and(|term| term.ctrl);
     let keys = term::keys(&mut c, t, f, &l, &term::TERM_KEYS, held);
     out.extend(keys.into_iter().map(|(rect, key)| Hit { rect, action: Action::TermKey(key) }));
-    Frame { scrollback: Some((l.card, l.pitch)), ..Frame::new(t, c, out, s.lang.pick(TERMINAL), top) }
+    Frame { scrollback: Some((l.card, l.pitch)), ..Frame::new(t, c, out, s.lang.pick(texts::page::TERMINAL), top) }
 }
 
 /// A text file being edited: where it is, its lines wrapped on a card, the
@@ -3441,25 +2925,25 @@ pub fn editor(cx: &Ctx) -> Frame {
     let ed = s.editor.as_ref().expect("the editor page shows a file");
     let mut c = page(cx);
     let mut out = Vec::new();
-    keyboard_hits(&mut c, t, f, s, s.lang.pick(["换行", "換行", "Return"]), &mut out);
+    keyboard_hits(&mut c, t, f, s, s.lang.pick(texts::keyboard::NEW_LINE), &mut out);
     editor::caption(&mut c, t, f, &ed.path);
     let l = editor::layout(t, f);
     let caret = editor::draw(&mut c, t, f, &l, ed);
     let keys = term::keys(&mut c, t, f, &l, &editor::EDITOR_KEYS, false);
     out.extend(keys.into_iter().map(|(rect, key)| Hit { rect, action: Action::TermKey(key) }));
     let button = ed.changed.then_some((widgets::Glyph::Done, Action::SaveText));
-    Frame { scrollback: Some((l.card, l.pitch)), caret, button, ..Frame::new(t, c, out, s.lang.pick(["编辑", "編輯", "Edit"]), t.m.content_top) }
+    Frame { scrollback: Some((l.card, l.pitch)), caret, button, ..Frame::new(t, c, out, s.lang.pick(texts::files::EDIT), t.m.content_top) }
 }
 
 /// The languages the pages speak, each named in itself, to speak another.
 pub fn language(cx: &Ctx) -> Frame {
     let (t, f, l) = (cx.t, cx.f, cx.state.lang);
-    let mut c = page(cx);
+    let mut c = long_page(cx);
     let top = t.m.content_top;
     let rows: Vec<Row> = Lang::ALL.iter().map(|&k| Row::new(k.name()).trail(Trail::Check(k == l))).collect();
     let list = widgets::list(&mut c, t, f, top, &rows);
     let out = hits(&list.rows, &Lang::ALL.map(Action::Language));
-    Frame::new(t, c, out, l.pick(LANGUAGE), top)
+    Frame::new(t, fit(c, t, list.bottom), out, l.pick(texts::page::LANGUAGE), top)
 }
 
 /// The time zone the status bar's clock and the times on the pages keep.
@@ -3475,9 +2959,8 @@ pub fn time_zone(cx: &Ctx) -> Frame {
     let list = widgets::list(&mut c, t, f, top, &rows);
     let picks: Vec<Action> = (0..TIME_ZONES.len()).map(Action::TimeZone).collect();
     let out = hits(&list.rows, &picks);
-    let note = l.pick(["状态栏和各页面中的时间按所选时区显示。", "狀態列和各頁面中的時間按所選時區顯示。", "The status bar and the pages tell times in the zone chosen."]);
-    let bottom = widgets::footnote(&mut c, t, f, list.bottom, note);
-    Frame::new(t, fit(c, t, bottom), out, l.pick(TIME_ZONE), top)
+    let bottom = widgets::footnote(&mut c, t, f, list.bottom, l.pick(texts::time_zone::NOTE));
+    Frame::new(t, fit(c, t, bottom), out, l.pick(texts::page::TIME_ZONE), top)
 }
 
 /// Saving the logs, as a bug report asks for them.
@@ -3486,76 +2969,50 @@ pub fn logs(cx: &Ctx) -> Frame {
     let mut c = page(cx);
     let mut out = Vec::new();
     let top = t.m.content_top;
-    let y = widgets::section_first(&mut c, t, f, top, l.pick(["日志内容", "記錄內容", "Logs"]));
+    let y = widgets::section_first(&mut c, t, f, top, l.pick(texts::logs::CONTENTS));
     let parts = widgets::list(&mut c, t, f, y, &[
-        Row::new(l.pick(["Recovery 日志", "Recovery 記錄", "Recovery log"]))
-            .subtitle(l.pick(["界面、安装和挂载的记录", "介面、安裝和掛載的記錄", "What the pages, installs and mounts did"]))
-            .trail(Trail::Check(s.logs[0])),
-        Row::new(l.pick(["内核日志", "核心記錄", "Kernel log"]))
-            .subtitle(l.pick(["本次开机以来的内核消息", "本次開機以來的核心訊息", "The kernel's messages since this start"]))
-            .trail(Trail::Check(s.logs[1])),
+        Row::new(l.pick(texts::logs::RECOVERY_LOG)).subtitle(l.pick(texts::logs::RECOVERY_LOG_NOTE)).trail(Trail::Check(s.logs[0])),
+        Row::new(l.pick(texts::logs::KERNEL_LOG)).subtitle(l.pick(texts::logs::KERNEL_LOG_NOTE)).trail(Trail::Check(s.logs[1])),
     ]);
     out.extend(hits(&parts.rows, &[Action::LogPart(0), Action::LogPart(1)]));
-    let y = widgets::section(&mut c, t, f, parts.bottom, l.pick(["保存到", "儲存到", "Save to"]));
+    let y = widgets::section(&mut c, t, f, parts.bottom, l.pick(texts::logs::SAVE_TO));
     let storage = l.pick(match cx.state.data.storage_open() {
-        true => ["Skyward/logs 文件夹", "Skyward/logs 資料夾", "The Skyward/logs folder"],
-        false => DECRYPT_NEEDED,
+        true => texts::logs::FOLDER,
+        false => texts::decrypt::NEEDED,
     });
     let places = widgets::list(&mut c, t, f, y, &[
-        Row::new(l.pick(["临时文件夹", "暫存資料夾", "Temporary folder"]))
-            .subtitle(l.pick(["/skyward/run/logs，可通过 adb pull 导出到电脑", "/skyward/run/logs，可透過 adb pull 匯出到電腦", "/skyward/run/logs, which adb pull copies to a computer"]))
-            .trail(Trail::Check(s.logs_to == 0)),
+        Row::new(l.pick(texts::logs::TEMPORARY)).subtitle(l.pick(texts::logs::TEMPORARY_NOTE)).trail(Trail::Check(s.logs_to == 0)),
         Row::new(place_name(l, Place::Storage)).subtitle(storage).trail(Trail::Check(s.logs_to == 1)),
     ]);
     out.extend(hits(&places.rows, &[Action::LogsTo(0), Action::LogsTo(1)]));
-    let note = l.pick([
-        "每次导出保存在以导出时间命名的文件夹中。重启后将清空临时文件夹。",
-        "每次匯出儲存在以匯出時間命名的資料夾中。重新啟動後將清空暫存資料夾。",
-        "Each export goes in a folder named by when it was made. A reboot empties the temporary folder.",
-    ]);
-    let y = widgets::footnote(&mut c, t, f, places.bottom, note);
-    let export = widgets::button(&mut c, t, f, y + t.m.dp(24.0), l.pick(["导出", "匯出", "Export"]));
+    let y = widgets::footnote(&mut c, t, f, places.bottom, l.pick(texts::logs::NOTE));
+    let export = widgets::button(&mut c, t, f, y + t.m.dp(24.0), l.pick(texts::logs::EXPORT));
     out.push(Hit { rect: export, action: Action::ExportLogs });
-    Frame::new(t, c, out, l.pick(LOGS), top)
+    Frame::new(t, c, out, l.pick(texts::page::LOGS), top)
 }
 
-/// Skyward's licence, in Chinese, ahead of the words the licence gives for
-/// a program's notice; English reads those words alone.
-const LICENSE_NOTICE: [&str; 2] = [
-    "Skyward 是自由软件：你可以依据自由软件基金会发布的 GNU 通用公共许可证第 3 版，或（由你选择）任何更新的版本，重新发布和修改它。\n\n\
-发布 Skyward 是希望它有用，但不附带任何担保，也不担保其适销性或适用于特定用途。详见 GNU 通用公共许可证。",
-    "Skyward 是自由軟體：你可以依據自由軟體基金會發布的 GNU 通用公眾授權條款第 3 版，或（由你選擇）任何更新的版本，重新發布和修改它。\n\n\
-發布 Skyward 是希望它有用，但不附帶任何擔保，也不擔保其適銷性或適用於特定用途。詳見 GNU 通用公眾授權條款。",
-];
-
+/// The words the licence gives for a program's notice, which every
+/// language but English reads its own rendering ahead of.
 const LICENSE_ORIGINAL: &str = "Skyward\nCopyright (C) 2026 Kirk Lin\n\n\
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.\n\n\
 This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.\n\n\
 You should have received a copy of the GNU General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.";
-
-const LICENSE_TERMS: Text = ["许可证", "授權條款", "License"];
 
 /// Skyward's own licence.
 pub fn license(cx: &Ctx) -> Frame {
     let (t, f, l) = (cx.t, cx.f, cx.state.lang);
     let mut c = long_page(cx);
     let top = t.m.content_top;
-    let terms = l.pick([
-        "GNU 通用公共许可证第 3 版或更新的版本（GPL-3.0-or-later）",
-        "GNU 通用公眾授權條款第 3 版或更新的版本（GPL-3.0-or-later）",
-        "GNU General Public License, version 3 or later (GPL-3.0-or-later)",
-    ]);
-    let y = widgets::info_card(&mut c, t, f, top, &[(l.pick(LICENSE_TERMS), terms.to_string())]);
-    let bottom = match l {
-        Lang::Hans | Lang::Hant => {
-            let notice = if l == Lang::Hans { LICENSE_NOTICE[0] } else { LICENSE_NOTICE[1] };
-            let y = widgets::paragraph(&mut c, t, f, y + t.m.dp(4.0), notice);
-            let y = widgets::section(&mut c, t, f, y, "原文");
+    let y = widgets::info_card(&mut c, t, f, top, &[(l.pick(texts::license::TERMS_TITLE), l.pick(texts::license::TERMS).to_string())]);
+    let bottom = match l.pick(texts::license::ORIGINAL_ALONE) {
+        true => widgets::paragraph(&mut c, t, f, y + t.m.dp(4.0), LICENSE_ORIGINAL),
+        false => {
+            let y = widgets::paragraph(&mut c, t, f, y + t.m.dp(4.0), l.pick(texts::license::NOTICE));
+            let y = widgets::section(&mut c, t, f, y, l.pick(texts::license::ORIGINAL));
             widgets::paragraph(&mut c, t, f, y - t.m.dp(16.0), LICENSE_ORIGINAL)
         }
-        Lang::En => widgets::paragraph(&mut c, t, f, y + t.m.dp(4.0), LICENSE_ORIGINAL),
     };
-    Frame::new(t, fit(c, t, bottom), Vec::new(), l.pick(LICENSE), top)
+    Frame::new(t, fit(c, t, bottom), Vec::new(), l.pick(texts::page::LICENSE), top)
 }
 
 /// The monospaced typeface's licence, which names the copyright holders on
@@ -3567,37 +3024,25 @@ pub fn font_license(cx: &Ctx) -> Frame {
     let (t, f, l) = (cx.t, cx.f, cx.state.lang);
     let mut c = long_page(cx);
     let top = t.m.content_top;
-    let (typeface, version, copyright) = (l.pick(["字体", "字型", "Typeface"]), l.pick(["版本", "版本", "Version"]), l.pick(["版权", "版權", "Copyright"]));
-    let y = widgets::section_first(&mut c, t, f, top, l.pick(["界面文字", "介面文字", "Interface text"]));
+    let (typeface, version, copyright) = (l.pick(texts::fonts::TYPEFACE), l.pick(texts::fonts::VERSION), l.pick(texts::fonts::COPYRIGHT));
+    let y = widgets::section_first(&mut c, t, f, top, l.pick(texts::fonts::INTERFACE_TEXT));
     let y = widgets::info_card(&mut c, t, f, y, &[
         (typeface, f.info.family.clone()),
         (version, f.info.version.clone()),
         (copyright, f.info.copyright.clone().expect("MiSans names its copyright holder")),
     ]);
-    let misans = l.pick([
-        "界面文字使用小米 MiSans 字体，依据《MiSans 字体知识产权许可协议》免费使用。字体文件未经修改，仅随 Skyward 提供，不单独分发。\n\n协议全文可在 MiSans 官方网站查看。",
-        "介面文字使用小米 MiSans 字型，依據《MiSans 字體知識產權許可協議》免費使用。字型檔案未經修改，僅隨 Skyward 提供，不單獨散布。\n\n協議全文可在 MiSans 官方網站查看。",
-        "The interface text is set in Xiaomi's MiSans, used free of charge under the MiSans Font Intellectual Property License Agreement. The font files are unchanged, and come with Skyward alone, never on their own.\n\nThe agreement in full is on the MiSans website.",
-    ]);
-    let y = widgets::paragraph(&mut c, t, f, y + t.m.dp(4.0), misans);
-    let y = widgets::section(&mut c, t, f, y, l.pick(["终端文字", "終端機文字", "Terminal text"]));
+    let y = widgets::paragraph(&mut c, t, f, y + t.m.dp(4.0), l.pick(texts::fonts::MISANS));
+    let y = widgets::section(&mut c, t, f, y, l.pick(texts::fonts::TERMINAL_TEXT));
     let holders: Vec<&str> = MONO_LICENSE.lines().take_while(|l| l.starts_with("Copyright")).collect();
     let y = widgets::info_card(&mut c, t, f, y, &[
         (typeface, f.mono_info.family.clone()),
         (version, f.mono_info.version.clone()),
         (copyright, holders.join("\n")),
-        (l.pick(LICENSE_TERMS), l.pick(["SIL 开源字体许可证 1.1 版（OFL-1.1）", "SIL 開放字型授權條款 1.1 版（OFL-1.1）", "SIL Open Font License, version 1.1 (OFL-1.1)"]).to_string()),
+        (l.pick(texts::license::TERMS_TITLE), l.pick(texts::fonts::OFL).to_string()),
     ]);
-    let mono = l.pick([
-        "终端文字使用 Kirk Mono 等宽字体。该许可证允许自由使用、修改和再发布字体，但不允许单独出售字体。\n\n许可证全文位于 /skyward/KirkMono-OFL.txt，也可在 openfontlicense.org 查看。",
-        "終端機文字使用 Kirk Mono 等寬字型。這份授權條款允許自由使用、修改和再散布字型，但不允許單獨出售字型。\n\n授權條款全文位於 /skyward/KirkMono-OFL.txt，也可在 openfontlicense.org 查看。",
-        "The terminal text is set in the monospaced Kirk Mono. Its license lets the font be used, changed and passed on freely, but not sold on its own.\n\nThe license in full is at /skyward/KirkMono-OFL.txt, and on openfontlicense.org.",
-    ]);
-    let bottom = widgets::paragraph(&mut c, t, f, y + t.m.dp(4.0), mono);
-    Frame::new(t, fit(c, t, bottom), Vec::new(), l.pick(FONTS), top)
+    let bottom = widgets::paragraph(&mut c, t, f, y + t.m.dp(4.0), l.pick(texts::fonts::MONO));
+    Frame::new(t, fit(c, t, bottom), Vec::new(), l.pick(texts::page::FONTS), top)
 }
-
-const BOOT_SLOT: Text = ["启动槽位", "啟動槽位", "Boot slot"];
 
 /// Which slot the phone starts from next, as the boot control holds it,
 /// and what it holds of each; picking the other and swiping switches.
@@ -3607,61 +3052,48 @@ pub fn slot(cx: &Ctx) -> Frame {
     let mut c = page(cx);
     let mut out = Vec::new();
     let top = t.m.content_top;
-    let title = l.pick(BOOT_SLOT);
+    let title = l.pick(texts::slot::BOOT_SLOT);
     let Some(current) = i.slot else {
-        widgets::list(&mut c, t, f, top, &[Row::new(l.pick(["本机没有 A/B 槽位", "本機沒有 A/B 槽位", "This phone has no A/B slots"])).trail(Trail::None)]);
+        widgets::list(&mut c, t, f, top, &[Row::new(l.pick(texts::slot::NO_SLOTS)).trail(Trail::None)]);
         return Frame::new(t, c, out, title, top);
     };
     let slots = match &s.boot_slots {
         Some(Ok(slots)) => *slots,
         Some(Err(why)) => {
-            let list = widgets::list(&mut c, t, f, top, &[Row::new(l.pick(["无法读取启动槽位", "無法讀取啟動槽位", "Couldn't read the boot slots"])).trail(Trail::None)]);
+            let list = widgets::list(&mut c, t, f, top, &[Row::new(l.pick(texts::slot::UNREADABLE)).trail(Trail::None)]);
             widgets::footnote(&mut c, t, f, list.bottom, why);
             return Frame::new(t, c, out, title, top);
         }
         None => return Frame::new(t, c, out, title, top),
     };
     let chosen = s.next_slot.unwrap_or(slots.active);
-    let y = widgets::section_first(&mut c, t, f, top, l.pick(["下次启动", "下次啟動", "Next boot"]));
-    let titles = [Slot::A, Slot::B].map(|slot| {
-        let slot = slot.letter();
-        tr!(l, "槽位 {slot}", "槽位 {slot}", "Slot {slot}")
-    });
+    let y = widgets::section_first(&mut c, t, f, top, l.pick(texts::reboot::NEXT_BOOT));
+    let titles = [Slot::A, Slot::B].map(|slot| texts::slot::named(l, slot.letter()));
     let subs = [Slot::A, Slot::B].map(|slot| {
         let k = slot.number() as usize;
-        let which = l.pick(if slot == current { ["当前运行的系统", "目前執行的系統", "The system running now"] } else { ["另一个槽位", "另一個槽位", "The other slot"] });
-        match (slots.bootable[k], slots.successful[k]) {
-            (false, _) => tr!(l, "{which}，已标记为无法启动", "{which}，已標記為無法啟動", "{which}, marked unbootable"),
-            (true, false) => tr!(l, "{which}，尚未完整启动过", "{which}，尚未完整啟動過", "{which}, not yet fully started"),
-            (true, true) => which.to_string(),
-        }
+        l.pick(match (slot == current, slots.bootable[k], slots.successful[k]) {
+            (true, false, _) => texts::slot::RUNNING_UNBOOTABLE,
+            (true, true, false) => texts::slot::RUNNING_UNSTARTED,
+            (true, true, true) => texts::slot::RUNNING,
+            (false, false, _) => texts::slot::OTHER_UNBOOTABLE,
+            (false, true, false) => texts::slot::OTHER_UNSTARTED,
+            (false, true, true) => texts::slot::OTHER,
+        })
     });
     let rows: Vec<Row> =
-        [Slot::A, Slot::B].iter().enumerate().map(|(k, &slot)| Row::new(&titles[k]).subtitle(&subs[k]).trail(Trail::Check(slot == chosen))).collect();
+        [Slot::A, Slot::B].iter().enumerate().map(|(k, &slot)| Row::new(&titles[k]).subtitle(subs[k]).trail(Trail::Check(slot == chosen))).collect();
     let list = widgets::list(&mut c, t, f, y, &rows);
     out.extend(hits(&list.rows, &[Slot::A, Slot::B].map(Action::PickSlot)));
     if let Some(note) = fmt::snapshot_slot_note(l, &i.snapshot) {
         widgets::footnote(&mut c, t, f, list.bottom, note);
         return Frame::new(t, c, out, title, top);
     }
-    let note = l.pick([
-        "另一个槽位中没有完整的系统时，切换后将无法开机。",
-        "另一個槽位中沒有完整的系統時，切換後將無法開機。",
-        "If the other slot holds no whole system, the phone won't start after switching.",
-    ]);
-    let y = widgets::footnote(&mut c, t, f, list.bottom, note);
+    let y = widgets::footnote(&mut c, t, f, list.bottom, l.pick(texts::slot::SWITCH_NOTE));
     let (label, danger) = confirm_label(Confirm::Slot, cx.state);
     let track = widgets::confirm(&mut c, t, f, y + t.m.dp(24.0), label, danger, s.confirm);
     out.push(Hit { rect: track, action: Action::Confirm(Confirm::Slot) });
     Frame::new(t, c, out, title, top)
 }
-
-const MAIN_SYSTEM: Text = ["主系统", "主系統", "Main system"];
-const SECOND_SYSTEM: Text = ["第二系统", "第二系統", "Second system"];
-
-/// What the home page and the systems page say once the second system's
-/// start stopped.
-const SECOND_FAILED: Text = ["第二系统未能启动", "第二系統未能啟動", "The second system couldn't start"];
 
 /// The two systems as big cards one over the other, laid out as the boot
 /// slot page lays out its slots: the main system, in the phone's own
@@ -3675,7 +3107,7 @@ pub fn systems(cx: &Ctx) -> Frame {
     let mut c = long_page(cx);
     let mut out = Vec::new();
     let top = t.m.content_top;
-    let title = l.pick(DUAL_BOOT);
+    let title = l.pick(texts::page::DUAL_BOOT);
     // While the boot partitions are written, or the second system removed,
     // the page only says so: of a switch the system asked for, perhaps
     // before the systems are read.
@@ -3688,24 +3120,21 @@ pub fn systems(cx: &Ctx) -> Frame {
                     _ => None,
                 };
                 let heading = match name {
-                    Some(name) => tr!(l, "正在切换到 {name}", "正在切換到 {name}", "Switching to {name}"),
-                    None => l.pick(["正在切换系统", "正在切換系統", "Switching systems"]).to_string(),
+                    Some(name) => texts::systems::switching_to(l, name),
+                    None => l.pick(texts::systems::SWITCHING).to_string(),
                 };
-                (heading, l.pick(["正在写入启动镜像", "正在寫入啟動映像檔", "Writing its boot images"]))
+                (heading, l.pick(texts::systems::WRITING_BOOT_IMAGES))
             }
-            SystemsWork::Removing => (
-                l.pick(["正在删除第二系统", "正在刪除第二系統", "Removing the second system"]).to_string(),
-                l.pick(["正在归还 data 分区中的空间", "正在歸還 data 分割區中的空間", "Giving its room back to the data partition"]),
-            ),
+            SystemsWork::Removing => (l.pick(texts::systems::REMOVING).to_string(), l.pick(texts::systems::GIVING_ROOM_BACK)),
         };
         let y = widgets::progress_card(&mut c, t, f, top, &heading, detail, None);
-        let y = widgets::footnote(&mut c, t, f, y, l.pick(["完成前，请不要关机。", "完成前，請不要關機。", "Don't power off until it's done."]));
+        let y = widgets::footnote(&mut c, t, f, y, l.pick(texts::systems::KEEP_POWER));
         return Frame::new(t, fit(c, t, y), out, title, top);
     }
     let systems = match &s.systems {
         Some(Ok(systems)) => systems,
         Some(Err(why)) => {
-            let list = widgets::list(&mut c, t, f, top, &[Row::new(l.pick(["无法读取双系统", "無法讀取雙系統", "Couldn't read the systems"])).trail(Trail::None)]);
+            let list = widgets::list(&mut c, t, f, top, &[Row::new(l.pick(texts::systems::UNREADABLE)).trail(Trail::None)]);
             let y = widgets::footnote(&mut c, t, f, list.bottom, why);
             return Frame::new(t, fit(c, t, y), out, title, top);
         }
@@ -3713,11 +3142,11 @@ pub fn systems(cx: &Ctx) -> Frame {
     };
     let starts = starting(systems);
     let chosen = s.system_pick.unwrap_or(starts);
-    let second_role = l.pick(SECOND_SYSTEM);
+    let second_role = l.pick(texts::systems::SECOND);
     // Boot partitions that hold a second system's image nothing is kept of
     // start neither system the page knows.
     let main = SystemCard {
-        role: l.pick(MAIN_SYSTEM),
+        role: l.pick(texts::systems::MAIN),
         name: &systems.installed.name,
         detail: systems.installed.version.as_deref().unwrap_or_default(),
         mark: SystemMark::Check(chosen == Who::Installed && systems.held != Held::Unrecorded),
@@ -3726,12 +3155,12 @@ pub fn systems(cx: &Ctx) -> Frame {
         Some(other) => SystemCard { role: second_role, name: &other.name, detail: &other.version, mark: SystemMark::Check(chosen == Who::Other) },
         None => SystemCard {
             role: second_role,
-            name: l.pick(["安装系统", "安裝系統", "Install a system"]),
-            detail: l.pick(["选择第二系统的安装包", "選擇第二系統的安裝檔", "Choose the second system's package"]),
+            name: l.pick(texts::systems::INSTALL),
+            detail: l.pick(texts::systems::CHOOSE_PACKAGE),
             mark: SystemMark::Opens,
         },
     };
-    let y = widgets::section_first(&mut c, t, f, top, l.pick(["下次启动", "下次啟動", "Next boot"]));
+    let y = widgets::section_first(&mut c, t, f, top, l.pick(texts::reboot::NEXT_BOOT));
     let shown = widgets::system_cards(&mut c, t, f, y, &[main, second]);
     let second_opens = match systems.other {
         Some(_) => Action::PickSystem(Who::Other),
@@ -3740,7 +3169,7 @@ pub fn systems(cx: &Ctx) -> Frame {
     out.extend(hits(&shown.rows, &[Action::PickSystem(Who::Installed), second_opens]));
     let mut y = shown.bottom + t.m.dp(12.0);
     if let Some(why) = &s.system_notice {
-        y = widgets::info_card(&mut c, t, f, y, &[(l.pick(SECOND_FAILED), why.clone())]);
+        y = widgets::info_card(&mut c, t, f, y, &[(l.pick(texts::systems::SECOND_FAILED), why.clone())]);
     }
     if chosen != starts {
         match (chosen, fmt::snapshot_system_note(l, &i.snapshot)) {
@@ -3753,65 +3182,33 @@ pub fn systems(cx: &Ctx) -> Frame {
             }
         }
     }
-    let what = l.pick([
-        "点按卡片选择系统。切换系统只改写下次启动槽位的 boot 和 init_boot 分区，主系统的其他分区保持不变。第二系统的文件保存在 data 分区中。",
-        "點按卡片選擇系統。切換系統只改寫下次啟動槽位的 boot 和 init_boot 分割區，主系統的其他分割區保持不變。第二系統的檔案儲存在 data 分割區中。",
-        "Tap a card to pick a system. Switching rewrites only the boot and init_boot partitions of the slot that starts next, and leaves the main system's other partitions as they are. The second system's files are kept in the data partition.",
-    ]);
-    y = widgets::footnote(&mut c, t, f, y, what);
+    y = widgets::footnote(&mut c, t, f, y, l.pick(texts::systems::WHAT));
     match systems.held {
         Held::Recorded => {}
-        Held::Rewritten => {
-            let note = l.pick([
-                "Skyward 写入第二系统的启动镜像之后，启动分区被改写过。选择主系统并滑动确认，会用保存的主系统启动镜像覆盖现在的内容；在此之前，安装、清除和备份都不会进行。",
-                "Skyward 寫入第二系統的啟動映像檔之後，啟動分割區被改寫過。選擇主系統並滑動確認，會用儲存的主系統啟動映像檔覆蓋現在的內容；在此之前，安裝、清除和備份都不會進行。",
-                "Something else has written the boot partitions since Skyward put the second system's boot images there. Picking the main system and sliding to confirm writes the main system's saved boot images over what is there now; until then, nothing is installed, wiped or backed up.",
-            ]);
-            y = widgets::footnote(&mut c, t, f, y, note);
-        }
-        Held::Unrecorded => {
-            let note = l.pick([
-                "启动分区里是第二系统的启动镜像，Skyward 保存的记录已经不存在，无法写回主系统的启动镜像。请重新刷入主系统的 boot 和 init_boot 镜像。",
-                "啟動分割區裡是第二系統的啟動映像檔，Skyward 儲存的記錄已經不存在，無法寫回主系統的啟動映像檔。請重新刷入主系統的 boot 和 init_boot 映像檔。",
-                "The boot partitions hold a second system's boot images, and what Skyward kept of them is gone, so it can't put the main system's back. Flash the main system's boot and init_boot images again.",
-            ]);
-            y = widgets::footnote(&mut c, t, f, y, note);
-        }
+        Held::Rewritten => y = widgets::footnote(&mut c, t, f, y, l.pick(texts::systems::REWRITTEN)),
+        Held::Unrecorded => y = widgets::footnote(&mut c, t, f, y, l.pick(texts::systems::UNRECORDED)),
     }
     if systems.other.is_some() && systems.changed {
-        let note = l.pick([
-            "安装第二系统后，主系统的 vendor_boot 或 dtbo 分区已改变，第二系统可能无法正常启动。",
-            "安裝第二系統後，主系統的 vendor_boot 或 dtbo 分割區已改變，第二系統可能無法正常啟動。",
-            "The main system's vendor_boot or dtbo partition has changed since the second system was installed, so the second system may not start properly.",
-        ]);
-        y = widgets::footnote(&mut c, t, f, y, note);
+        y = widgets::footnote(&mut c, t, f, y, l.pick(texts::systems::CHANGED));
     }
     if let Some(other) = &systems.other {
         y = widgets::section(&mut c, t, f, y, second_role);
         let size = fmt::bytes(other.size);
-        let facts = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(["占用空间", "佔用空間", "Space used"])).trail(Trail::Text(&size))]);
+        let facts = widgets::list(&mut c, t, f, y, &[Row::new(l.pick(texts::systems::SPACE_USED)).trail(Trail::Text(&size))]);
         let mounted = matches!(s.data, Data::Open | Data::Locked { .. });
-        let remove = Row::new(l.pick(["删除第二系统", "刪除第二系統", "Remove the second system"])).tint(t.pal.danger);
+        let remove = Row::new(l.pick(texts::systems::REMOVE)).tint(t.pal.danger);
         let (remove, act) = match mounted {
             true => (remove.trail(Trail::None), Action::AskDelete),
-            false => (remove.subtitle(l.pick(DECRYPT_NEEDED)), Action::Open(Screen::Decrypt)),
+            false => (remove.subtitle(l.pick(texts::decrypt::NEEDED)), Action::Open(Screen::Decrypt)),
         };
         let removing = widgets::list(&mut c, t, f, facts.bottom + t.m.card_gap, &[remove]);
         out.extend(hits(&removing.rows, &[act]));
         y = removing.bottom;
         if s.asking_delete && mounted {
-            let ask = match starts {
-                Who::Other => l.pick([
-                    "将先切换回主系统，再删除第二系统及其全部数据，删除后无法恢复。",
-                    "將先切換回主系統，再刪除第二系統及其全部資料，刪除後無法復原。",
-                    "The phone goes back to the main system first, then the second system and all its data are removed for good.",
-                ]),
-                Who::Installed => l.pick([
-                    "删除第二系统及其全部数据？删除后无法恢复。",
-                    "刪除第二系統及其全部資料？刪除後無法復原。",
-                    "Remove the second system and all its data? It can't be brought back.",
-                ]),
-            };
+            let ask = l.pick(match starts {
+                Who::Other => texts::systems::ASK_REMOVE_RUNNING,
+                Who::Installed => texts::systems::ASK_REMOVE,
+            });
             let y2 = widgets::footnote(&mut c, t, f, y, ask);
             let (label, danger) = confirm_label(Confirm::RemoveSystem, s);
             let track = widgets::confirm(&mut c, t, f, y2 + t.m.dp(24.0), label, danger, s.confirm);
@@ -3829,57 +3226,47 @@ pub fn fastboot(cx: &Ctx) -> Frame {
     let (t, f, s, i, l) = (cx.t, cx.f, cx.state, cx.info, cx.state.lang);
     let mut c = page(cx);
     let top = t.m.content_top;
-    let running = l.pick(if s.fastboot.running { ["正在运行", "正在執行", "Running"] } else { ["未运行", "未執行", "Not running"] });
+    let running = l.pick(if s.fastboot.running { texts::fastboot::RUNNING } else { texts::fastboot::NOT_RUNNING });
     let link = l.pick(match s.fastboot.link {
-        UsbLink::Connected => ["已连接电脑", "已連接電腦", "Computer connected"],
-        UsbLink::Connecting => ["正在连接", "正在連線", "Connecting"],
-        UsbLink::Unplugged => ["未连接电脑", "未連接電腦", "No computer"],
+        UsbLink::Connected => texts::fastboot::CONNECTED,
+        UsbLink::Connecting => texts::fastboot::CONNECTING,
+        UsbLink::Unplugged => texts::fastboot::NO_COMPUTER,
     });
     let slot = i.slot.map(|s| s.letter());
     let mut facts = vec![
         Row::new("fastbootd").trail(Trail::Text(running)),
         Row::new("USB").trail(Trail::Text(link)),
-        Row::new(l.pick(["设备代号", "裝置代號", "Codename"])).trail(Trail::Text(&i.codename)),
+        Row::new(l.pick(texts::specs::CODENAME)).trail(Trail::Text(&i.codename)),
     ];
     if let Some(letter) = slot {
-        facts.push(Row::new(l.pick(CURRENT_SLOT)).trail(Trail::Text(letter)));
+        facts.push(Row::new(l.pick(texts::slot::CURRENT)).trail(Trail::Text(letter)));
     }
-    let y = widgets::section_first(&mut c, t, f, top, l.pick(["状态", "狀態", "Status"]));
+    let y = widgets::section_first(&mut c, t, f, top, l.pick(texts::fastboot::STATUS));
     let state = widgets::list(&mut c, t, f, y, &facts);
-    let note = l.pick([
-        "你可以在电脑上使用 fastboot 命令刷写分区，包括 super 中的逻辑分区。",
-        "你可以在電腦上使用 fastboot 指令刷寫分割區，包括 super 中的邏輯分割區。",
-        "fastboot commands on the computer can flash partitions, the logical ones in super among them.",
-    ]);
-    let y = widgets::footnote(&mut c, t, f, state.bottom, note);
-    let y = widgets::section(&mut c, t, f, y, l.pick(["退出 fastboot", "結束 fastboot", "Leave fastboot"]));
+    let y = widgets::footnote(&mut c, t, f, state.bottom, l.pick(texts::fastboot::NOTE));
+    let y = widgets::section(&mut c, t, f, y, l.pick(texts::fastboot::LEAVE));
     let rows: Vec<Row> = FASTBOOT_CHOICES.iter().map(|&(title, _)| Row::new(l.pick(title)).trail(Trail::None)).collect();
     let choices = widgets::list(&mut c, t, f, y, &rows);
     let actions: Vec<Action> = FASTBOOT_CHOICES.iter().map(|&(_, action)| action).collect();
     let out = hits(&choices.rows, &actions);
-    widgets::footnote(&mut c, t, f, choices.bottom, l.pick(["按音量键选择，按电源键确认。", "按音量鍵選擇，按電源鍵確認。", "Choose with the volume keys, and press the power key to confirm."]));
+    widgets::footnote(&mut c, t, f, choices.bottom, l.pick(texts::fastboot::KEYS));
     Frame { back: false, ..Frame::new(t, c, out, "Fastboot", top) }
 }
 
 /// Where to go once what the system asked for has stopped or cannot be
 /// done, in the order the pages list them.
 const AFTERWARDS: [(Text, Action); 3] = [
-    (["重启到系统", "重新啟動到系統", "Reboot to system"], Action::RebootTo(Target::System)),
-    (["进入恢复模式", "進入復原模式", "Enter recovery"], Action::Dismiss),
-    (["关机", "關機", "Power off"], Action::RebootTo(Target::PowerOff)),
+    (texts::installed::REBOOT_TO_SYSTEM, Action::RebootTo(Target::System)),
+    (texts::afterwards::ENTER_RECOVERY, Action::Dismiss),
+    (texts::reboot::target::POWER_OFF, Action::RebootTo(Target::PowerOff)),
 ];
-
-/// What work the system asked for says while it goes on of how the phone
-/// leaves once it is done.
-const POWERS_OFF_WHEN_DONE: Text = ["完成后将自动关机。", "完成後將自動關機。", "Powers off on its own once done."];
-const REBOOTS_WHEN_DONE: Text = ["完成后将自动重启。", "完成後將自動重新啟動。", "Reboots on its own once done."];
 
 /// The list of [`AFTERWARDS`] at `y`, and where it ends. Work the user
 /// chose in the recovery goes back to its home page, rather than into it.
 fn afterwards(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, y: f32, asked: bool, out: &mut Vec<Hit>) -> f32 {
     let rows: Vec<Row> = AFTERWARDS
         .iter()
-        .map(|&(title, action)| Row::new(l.pick(if action == Action::Dismiss && !asked { ["返回主页", "返回主頁", "Back to home"] } else { title })).trail(Trail::None))
+        .map(|&(title, action)| Row::new(l.pick(if action == Action::Dismiss && !asked { texts::afterwards::BACK_HOME } else { title })).trail(Trail::None))
         .collect();
     let choices = widgets::list(c, t, f, y, &rows);
     out.extend(hits(&choices.rows, &AFTERWARDS.map(|(_, action)| action)));
@@ -3901,24 +3288,23 @@ pub fn erase(cx: &Ctx) -> Frame {
     // Only a part that went wrong was under way; whatever else stopped
     // erasing stopped it before any part began.
     let begun = !failed || matches!(e.outcome, Some(Err(EraseStop::Failed(..))));
-    let wiped = ["已清除", "已清除", "Wiped"];
     let heading = l.pick(match &e.outcome {
-        None => WIPING,
-        Some(Ok(())) => wiped,
-        Some(Err(_)) => WIPE_INCOMPLETE,
+        None => texts::wipe::WIPING,
+        Some(Ok(())) => texts::wipe::WIPED,
+        Some(Err(_)) => texts::wipe::INCOMPLETE,
     });
     let mut y = widgets::section_first(&mut c, t, f, top, heading);
     if !e.parts.is_empty() {
         let states: Vec<String> = (0..e.parts.len())
             .map(|k| match (k.cmp(&e.done), failed) {
-                (Ordering::Less, _) => l.pick(wiped).into(),
+                (Ordering::Less, _) => l.pick(texts::wipe::WIPED).into(),
                 (Ordering::Equal, false) => match e.progress {
-                    Some((done, total)) if total > 0 => format!("{} {}%", l.pick(WIPING), percent(share(done, total))),
-                    _ => l.pick(WIPING).into(),
+                    Some((done, total)) if total > 0 => texts::wipe::wiping_share(l, percent(share(done, total))),
+                    _ => l.pick(texts::wipe::WIPING).into(),
                 },
-                (Ordering::Equal, true) if begun => l.pick(["未完成", "未完成", "Unfinished"]).into(),
-                (Ordering::Greater, false) => l.pick(WAITING_TURN).into(),
-                (Ordering::Equal | Ordering::Greater, true) => l.pick(["未清除", "未清除", "Not wiped"]).into(),
+                (Ordering::Equal, true) if begun => l.pick(texts::common::UNFINISHED).into(),
+                (Ordering::Greater, false) => l.pick(texts::common::WAITING).into(),
+                (Ordering::Equal | Ordering::Greater, true) => l.pick(texts::wipe::NOT_WIPED).into(),
             })
             .collect();
         let rows: Vec<Row> = e.parts.iter().zip(&states).map(|(&part, state)| Row::new(fmt::part(l, part)).trail(Trail::Text(state))).collect();
@@ -3931,37 +3317,33 @@ pub fn erase(cx: &Ctx) -> Frame {
         }
         (_, true, true) => {
             let leaving = match s.asked.shutdown_after {
-                true => ["本机的全部数据将被清除，完成后将自动关机。", "本機的全部資料將被清除，完成後將自動關機。", "All of this phone's data is being wiped, and it powers off on its own once done."],
-                false => ["本机的全部数据将被清除，完成后将自动重启。", "本機的全部資料將被清除，完成後將自動重新啟動。", "All of this phone's data is being wiped, and it reboots on its own once done."],
+                true => texts::erase::ALL_THEN_POWER_OFF,
+                false => texts::erase::ALL_THEN_REBOOT,
             };
             vec![l.pick(leaving).into()]
         }
-        (_, true, false) => vec![l.pick(if s.asked.shutdown_after { POWERS_OFF_WHEN_DONE } else { REBOOTS_WHEN_DONE }).into()],
-        (None, false, _) => vec![l.pick(KEEP_POWER).into()],
-        (Some(Ok(())), false, true) => {
-            vec![l.pick(["下次开机时将重新创建 data 分区，启动时间较长。", "下次開機時將重新建立 data 分割區，啟動時間較長。", "The data partition is made anew at the next start, which then takes longer."]).into()]
-        }
+        (_, true, false) => vec![l.pick(if s.asked.shutdown_after { texts::parts::leaving::POWER_OFF } else { texts::parts::leaving::REBOOT }).into()],
+        (None, false, _) => vec![l.pick(texts::wipe::KEEP_POWER).into()],
+        (Some(Ok(())), false, true) => vec![l.pick(texts::erase::MADE_ANEW).into()],
         (Some(Ok(())), false, false) => Vec::new(),
     };
     for note in &notes {
         y = widgets::footnote(&mut c, t, f, y, note);
     }
     if let (true, Some(reason)) = (e.asked, &s.asked.reason) {
-        y = widgets::info_card(&mut c, t, f, y + t.m.dp(12.0), &[(l.pick(REASON), reason.clone())]);
+        y = widgets::info_card(&mut c, t, f, y + t.m.dp(12.0), &[(l.pick(texts::installing::REASON), reason.clone())]);
     }
     if failed || (!e.asked && e.outcome.is_some()) {
-        let below = widgets::section(&mut c, t, f, y, l.pick(ACTIONS));
+        let below = widgets::section(&mut c, t, f, y, l.pick(texts::common::ACTIONS));
         y = afterwards(&mut c, t, f, l, below, e.asked, &mut out);
     }
     let title = l.pick(match (e.reset, e.asked) {
-        (true, _) => FACTORY_RESET,
-        (false, true) => ["清除缓存", "清除快取", "Wipe cache"],
-        (false, false) => ["清除数据", "清除資料", "Wipe data"],
+        (true, _) => texts::wipe::RESET,
+        (false, true) => texts::erase::WIPE_CACHE,
+        (false, false) => texts::page::WIPE,
     });
     Frame { back: false, ..Frame::new(t, fit(c, t, y), out, title, top) }
 }
-
-const FACTORY_RESET: Text = ["恢复出厂设置", "恢復原廠設定", "Factory reset"];
 
 /// The system could not start Android and asks whether to erase all user
 /// data: start it again, look around the recovery first, or erase.
@@ -3970,27 +3352,22 @@ pub fn cant_start(cx: &Ctx) -> Frame {
     let mut c = page(cx);
     let mut out = Vec::new();
     let top = t.m.content_top;
-    let what = l.pick([
-        "无法启动系统，本机数据可能已损坏。如果每次启动都停留在此页面，可恢复出厂设置，这将清除本机的全部数据。",
-        "無法啟動系統，本機資料可能已損壞。如果每次啟動都停留在此頁面，可恢復原廠設定，這將清除本機的全部資料。",
-        "The system couldn't start, and this phone's data may be damaged. If every start ends on this page, a factory reset may help, though it wipes all of this phone's data.",
-    ]);
-    let mut y = widgets::paragraph(&mut c, t, f, top, what);
+    let mut y = widgets::paragraph(&mut c, t, f, top, l.pick(texts::cant_start::WHAT));
     if let Some(reason) = &s.asked.reason {
-        y = widgets::info_card(&mut c, t, f, y + t.m.dp(12.0), &[(l.pick(REASON), reason.clone())]);
+        y = widgets::info_card(&mut c, t, f, y + t.m.dp(12.0), &[(l.pick(texts::installing::REASON), reason.clone())]);
     }
-    y = widgets::section(&mut c, t, f, y, l.pick(ACTIONS));
+    y = widgets::section(&mut c, t, f, y, l.pick(texts::common::ACTIONS));
     let rows = [
-        Row::new(l.pick(["重试", "重試", "Try again"])).subtitle(l.pick(["重新启动系统", "重新啟動系統", "Starts the system again"])).trail(Trail::None),
-        Row::new(l.pick(["进入恢复模式", "進入復原模式", "Enter recovery"])).subtitle(l.pick(["不清除任何内容", "不清除任何內容", "Wipes nothing"])).trail(Trail::None),
+        Row::new(l.pick(texts::common::TRY_AGAIN)).subtitle(l.pick(texts::cant_start::STARTS_AGAIN)).trail(Trail::None),
+        Row::new(l.pick(texts::afterwards::ENTER_RECOVERY)).subtitle(l.pick(texts::cant_start::WIPES_NOTHING)).trail(Trail::None),
     ];
     let choices = widgets::list(&mut c, t, f, y, &rows);
     out.extend(hits(&choices.rows, &[Action::RebootTo(Target::System), Action::Dismiss]));
-    let y = widgets::footnote(&mut c, t, f, choices.bottom, l.pick(["恢复出厂设置后，数据无法恢复。", "恢復原廠設定後，資料無法復原。", "Data a factory reset wipes can't be brought back."]));
+    let y = widgets::footnote(&mut c, t, f, choices.bottom, l.pick(texts::cant_start::CANT_UNDO));
     let (label, danger) = confirm_label(Confirm::FactoryReset, cx.state);
     let track = widgets::confirm(&mut c, t, f, y + t.m.dp(24.0), label, danger, s.confirm);
     out.push(Hit { rect: track, action: Action::Confirm(Confirm::FactoryReset) });
-    Frame { back: false, ..Frame::new(t, c, out, l.pick(["无法启动系统", "無法啟動系統", "Can't start the system"]), top) }
+    Frame { back: false, ..Frame::new(t, c, out, l.pick(texts::cant_start::TITLE), top) }
 }
 
 /// Something the system asked of the recovery that it does not do: what
@@ -4000,15 +3377,15 @@ pub fn unhandled(cx: &Ctx) -> Frame {
     let mut c = page(cx);
     let mut out = Vec::new();
     let top = t.m.content_top;
-    let mut items = vec![(l.pick(["请求", "要求", "Request"]), s.asked.unhandled.clone().unwrap_or_default())];
+    let mut items = vec![(l.pick(texts::unhandled::REQUEST), s.asked.unhandled.clone().unwrap_or_default())];
     if let Some(reason) = &s.asked.reason {
-        items.push((l.pick(REASON), reason.clone()));
+        items.push((l.pick(texts::installing::REASON), reason.clone()));
     }
     let y = widgets::info_card(&mut c, t, f, top, &items);
-    let y = widgets::footnote(&mut c, t, f, y, l.pick(["Skyward 暂不支持该请求，本机未做任何改动。", "Skyward 尚不支援這項要求，本機未做任何變更。", "Skyward doesn't support this request, and changed nothing on this phone."]));
-    let y = widgets::section(&mut c, t, f, y, l.pick(ACTIONS));
+    let y = widgets::footnote(&mut c, t, f, y, l.pick(texts::unhandled::NOTE));
+    let y = widgets::section(&mut c, t, f, y, l.pick(texts::common::ACTIONS));
     afterwards(&mut c, t, f, l, y, true, &mut out);
-    Frame { back: false, ..Frame::new(t, c, out, l.pick(["无法处理该请求", "無法處理這項要求", "Can't handle the request"]), top) }
+    Frame { back: false, ..Frame::new(t, c, out, l.pick(texts::unhandled::TITLE), top) }
 }
 
 #[cfg(test)]
@@ -4081,11 +3458,5 @@ mod tests {
         let mut r = job(true, true);
         r.at = Some(at(0, 200, 400, false));
         assert_eq!((0..2).map(|k| part_state(Lang::Hant, &r, k)).collect::<Vec<_>>(), ["正在還原 50%", "已驗證"]);
-    }
-
-    #[test]
-    fn a_phrase_that_opens_a_line_starts_with_a_capital_in_english() {
-        assert_eq!(capitalized(Lang::En, "empties the data partition"), "Empties the data partition");
-        assert_eq!(capitalized(Lang::Hans, "清空 data 分区"), "清空 data 分区");
     }
 }

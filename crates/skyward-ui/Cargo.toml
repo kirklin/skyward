@@ -9,7 +9,15 @@ anyhow = { workspace = true }
 ab_glyph = "0.2.32"
 # The stock status bar's outlines are filled as glyphs are.
 ab_glyph_rasterizer = "0.1.10"
+# The plain letter under one that carries a mark, which is how the
+# keyboard's Latin letters type a title the search looks for.
+deunicode = "1.6.2"
+# A word's letters made small or capital as its language makes them: a
+# Turkish I, dotted and dotless, is not English's.
+icu_casemap = "2.4.0"
 icu_locale_core = { version = "2.4.0", features = ["alloc"] }
+# Which of its forms a text that differs by number takes in each language.
+icu_plurals = "2.4.0"
 # The recovery carries no time zone files, so the rules come built in.
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-always"] }
 # Screenshots are saved as PNG.
@@ -28,14 +36,28 @@ skyward-vab = { path = "../skyward-vab" }
 svgtypes = "0.16.1"
 tiny-skia = { version = "0.12.0", default-features = false, features = ["std", "simd"] }
 ttf-parser = "0.25.1"
+# Which script a letter is of: a line breaks between any two Chinese
+# characters or kana, and between words of every other script.
+unicode-script = "0.5.9"
 unicode-width = "0.2.2"
 vt100 = "0.18.1"
 
+[build-dependencies]
+# The texts of each language are read from its file in `locales`, held to
+# the others', and written out as code.
+icu_locale_core = { version = "2.4.0", features = ["alloc"] }
+icu_plurals = "2.4.0"
+proc-macro2 = "1.0.107"
+quote = "1.0.47"
+syn = "2.0.119"
+toml = { workspace = true }
+
 [dev-dependencies]
 # The test that the typeface draws every text the pages write reads them
-# from the source.
+# from the source and from each language's file.
 proc-macro2 = "1.0.107"
 syn = { version = "2.0.119", features = ["full", "visit"] }
+toml = { workspace = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 drm = "0.15.0"

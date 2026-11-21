@@ -1,5 +1,7 @@
 use crate::app::Screen;
-use crate::lang::{Lang, Text};
+use crate::lang::{same, Lang, Text};
+use crate::texts::{self, page, search::keys};
+use unicode_script::{Script, UnicodeScript};
 
 /// A feature or partition the search finds, and the page it opens.
 pub struct Entry {
@@ -7,100 +9,76 @@ pub struct Entry {
     /// Where it lives, shown under the title.
     pub place: Text,
     pub screen: Screen,
-    /// What it answers to besides its title: pinyin in full and by
-    /// initials, and English, since the keyboard types Latin letters.
-    pub keys: &'static [&'static str],
+    /// What it answers to besides its title, in each language: words in
+    /// the Latin letters the keyboard types, with a space between them.
+    /// Chinese gives pinyin in full and by initials, a language written in
+    /// other letters how it writes its words in Latin ones, and English
+    /// the names every language borrows.
+    pub keys: Text,
 }
 
-const fn entry(title: Text, place: Text, screen: Screen, keys: &'static [&'static str]) -> Entry {
+const fn entry(title: Text, place: Text, screen: Screen, keys: Text) -> Entry {
     Entry { title, place, screen, keys }
+}
+
+/// A title as the keyboard can type it: in small letters, each Latin
+/// letter that carries a mark as the plain letter under it, so that
+/// `guncelle` finds Güncelle. Letters of other scripts stay as they are.
+fn typed(title: &str) -> String {
+    title
+        .chars()
+        .map(|ch| match ch.script() {
+            Script::Latin if !ch.is_ascii() => deunicode::deunicode_char(ch).unwrap_or_default().to_ascii_lowercase(),
+            _ => ch.to_lowercase().collect(),
+        })
+        .collect()
 }
 
 /// A partition, named the same in every language.
 const fn partition(name: &'static str, place: Text, screen: Screen) -> Entry {
-    Entry { title: [name; 3], place, screen, keys: &[] }
+    Entry { title: same(name), place, screen, keys: same("") }
 }
 
-const HOME: Text = ["主页", "主頁", "Home"];
-const INSTALL: Text = ["安装", "安裝", "Install"];
-const ADVANCED: Text = ["高级", "進階", "Advanced"];
-const SETTINGS: Text = ["设置", "設定", "Settings"];
-const MOUNT: Text = ["挂载", "掛載", "Mount"];
+const HOME: Text = page::HOME;
+const INSTALL: Text = page::INSTALL;
+const ADVANCED: Text = page::ADVANCED;
+const SETTINGS: Text = page::SETTINGS;
+const MOUNT: Text = page::MOUNT;
 
 pub const ENTRIES: &[Entry] = &[
-    entry(["WLAN", "Wi-Fi", "Wi-Fi"], HOME, Screen::Wlan, &["wuxianwangluo", "wxwl", "wangluo", "wl", "lianwang", "wifi", "wlan"]),
-    entry(
-        ["双系统", "雙系統", "Dual boot"],
-        HOME,
-        Screen::Systems,
-        &["shuangxitong", "sxt", "qiehuanxitong", "qhxt", "duoxitong", "dxt", "dualboot", "multiboot", "linux"],
-    ),
-    entry(INSTALL, HOME, Screen::Install, &["anzhuang", "az", "install", "shuaji", "sj"]),
-    entry(["从内部存储安装", "從內部儲存空間安裝", "Install from internal storage"], INSTALL, Screen::Install, &["congneibucunchuanzhuang", "cnbccaz", "neicun", "sdcard", "zip"]),
-    entry(["从 U 盘安装", "從 USB 隨身碟安裝", "Install from a USB drive"], INSTALL, Screen::Install, &["congupananzhuang", "cupaz", "upan", "usb", "otg"]),
-    entry(["通过电脑安装", "透過電腦安裝", "Install from a computer"], INSTALL, Screen::Install, &["tongguodiannaoanzhuang", "tgdnaz", "sideload", "adb"]),
-    entry(["备份", "備份", "Backup"], HOME, Screen::Backup, &["beifen", "bf", "backup"]),
-    entry(["恢复", "還原", "Restore"], HOME, Screen::Restore, &["huifu", "hf", "restore"]),
-    entry(MOUNT, HOME, Screen::Mount, &["guazai", "gz", "mount", "umount"]),
-    entry(["清除数据", "清除資料", "Wipe data"], HOME, Screen::Wipe, &["qingchushuju", "qcsj", "wipe", "format", "geshihua", "gsh"]),
-    entry(ADVANCED, HOME, Screen::Advanced, &["gaoji", "gj", "advanced"]),
-    entry(["文件管理", "檔案管理", "File manager"], ADVANCED, Screen::Files, &["wenjianguanli", "wjgl", "files", "file"]),
-    entry(["终端", "終端機", "Terminal"], ADVANCED, Screen::Terminal, &["zhongduan", "zd", "terminal", "shell"]),
-    entry(
-        ["修复 SELinux 上下文", "修復 SELinux 上下文", "Fix SELinux contexts"],
-        ADVANCED,
-        Screen::Relabel,
-        &["xiufuselinuxshangxiawen", "xfsxw", "xiufu", "xf", "shangxiawen", "context", "restorecon", "label"],
-    ),
-    entry(
-        ["文件系统", "檔案系統", "Filesystems"],
-        ADVANCED,
-        Screen::Filesystems,
-        &["wenjianxitong", "wjxt", "genghuan", "gh", "fsck", "filesystem", "f2fs", "ext4"],
-    ),
-    entry(["导出日志", "匯出記錄", "Export logs"], ADVANCED, Screen::Logs, &["daochurizhi", "dcrz", "rizhi", "rz", "logs", "dmesg"]),
-    entry(
-        ["系统更新", "系統更新", "System update"],
-        ADVANCED,
-        Screen::Update,
-        &["xitonggengxin", "xtgx", "hebing", "hb", "xiazai", "xz", "wanzhenggengxinbao", "wzgxb", "update", "ota", "merge", "snapshot", "download"],
-    ),
-    entry(SETTINGS, HOME, Screen::Settings, &["shezhi", "sz", "settings"]),
-    entry(["深色模式", "深色模式", "Dark mode"], SETTINGS, Screen::Settings, &["shensemoshi", "ssms", "dark", "theme"]),
-    entry(["屏幕亮度", "螢幕亮度", "Screen brightness"], SETTINGS, Screen::Settings, &["pingmuliangdu", "pmld", "liangdu", "ld", "brightness"]),
-    entry(["息屏时间", "螢幕自動關閉", "Screen timeout"], SETTINGS, Screen::ScreenOff, &["xipingshijian", "xpsj", "timeout"]),
-    entry(["振动强度", "震動強度", "Vibration intensity"], SETTINGS, Screen::Settings, &["zhendongqiangdu", "zdqd", "qiangdu", "qd", "intensity", "strength"]),
-    entry(["触摸振动", "觸控震動", "Touch vibration"], SETTINGS, Screen::Settings, &["chumozhendong", "cmzd", "zhendong", "vibrate", "haptic"]),
-    entry(["文件传输", "檔案傳輸", "File transfer"], SETTINGS, Screen::Settings, &["wenjianchuanshu", "wjcs", "chuanshu", "mtp", "usb"]),
-    entry(["语言", "語言", "Language"], SETTINGS, Screen::Language, &["yuyan", "yy", "language", "fanti", "jianti", "english"]),
-    entry(["时区", "時區", "Time zone"], SETTINGS, Screen::TimeZone, &["shiqu", "sq", "timezone"]),
-    entry(["重启", "重新啟動", "Reboot"], HOME, Screen::Reboot, &["chongqi", "cq", "reboot", "fastboot", "bootloader", "edl", "guanji"]),
-    entry(["启动槽位", "啟動槽位", "Boot slot"], ["重启", "重新啟動", "Reboot"], Screen::Slot, &["qidongcaowei", "qdcw", "caowei", "cw", "slot"]),
-    entry(["关于本机", "關於手機", "About phone"], SETTINGS, Screen::About, &["guanyubenji", "gybj", "about", "banben", "version"]),
-    entry(
-        ["Skyward 更新", "Skyward 更新", "Skyward update"],
-        SETTINGS,
-        Screen::SkywardUpdate,
-        &["skywardgengxin", "skywardgx", "shengji", "xiazai", "update", "upgrade", "release", "github"],
-    ),
-    entry(
-        ["全部参数与信息", "全部規格與資訊", "All specs"],
-        ["设置 > 关于本机", "設定 > 關於手機", "Settings > About phone"],
-        Screen::Specs,
-        &["quanbucanshuyuxinxi", "qbcsyxx", "canshu", "specs"],
-    ),
-    entry(
-        ["开源许可", "開放原始碼授權", "Open source licenses"],
-        ["设置 > 关于本机 > 全部参数与信息", "設定 > 關於手機 > 全部規格與資訊", "Settings > About phone > All specs"],
-        Screen::License,
-        &["kaiyuanxuke", "kyxk", "license", "gpl"],
-    ),
-    entry(
-        ["界面字体", "介面字型", "UI fonts"],
-        ["设置 > 关于本机 > 全部参数与信息", "設定 > 關於手機 > 全部規格與資訊", "Settings > About phone > All specs"],
-        Screen::FontLicense,
-        &["jiemianziti", "jmzt", "ziti", "font", "misans", "kirkmono", "dengkuan"],
-    ),
+    entry(page::WLAN, HOME, Screen::Wlan, keys::WLAN),
+    entry(page::DUAL_BOOT, HOME, Screen::Systems, keys::DUAL_BOOT),
+    entry(INSTALL, HOME, Screen::Install, keys::INSTALL),
+    entry(texts::install::title::FROM_STORAGE, INSTALL, Screen::Install, keys::FROM_STORAGE),
+    entry(texts::install::title::FROM_USB_DRIVE, INSTALL, Screen::Install, keys::FROM_USB_DRIVE),
+    entry(texts::install::title::FROM_COMPUTER, INSTALL, Screen::Install, keys::FROM_COMPUTER),
+    entry(page::BACKUP, HOME, Screen::Backup, keys::BACKUP),
+    entry(page::RESTORE, HOME, Screen::Restore, keys::RESTORE),
+    entry(MOUNT, HOME, Screen::Mount, keys::MOUNT),
+    entry(page::WIPE, HOME, Screen::Wipe, keys::WIPE),
+    entry(ADVANCED, HOME, Screen::Advanced, keys::ADVANCED),
+    entry(page::FILES, ADVANCED, Screen::Files, keys::FILES),
+    entry(page::TERMINAL, ADVANCED, Screen::Terminal, keys::TERMINAL),
+    entry(page::RELABEL, ADVANCED, Screen::Relabel, keys::RELABEL),
+    entry(page::FILESYSTEMS, ADVANCED, Screen::Filesystems, keys::FILESYSTEMS),
+    entry(page::LOGS, ADVANCED, Screen::Logs, keys::LOGS),
+    entry(page::UPDATE, ADVANCED, Screen::Update, keys::UPDATE),
+    entry(SETTINGS, HOME, Screen::Settings, keys::SETTINGS),
+    entry(texts::settings::DARK_MODE, SETTINGS, Screen::Settings, keys::DARK_MODE),
+    entry(texts::settings::SCREEN_BRIGHTNESS, SETTINGS, Screen::Settings, keys::BRIGHTNESS),
+    entry(page::SCREEN_TIMEOUT, SETTINGS, Screen::ScreenOff, keys::SCREEN_TIMEOUT),
+    entry(texts::settings::VIBRATION_INTENSITY, SETTINGS, Screen::Settings, keys::VIBRATION_INTENSITY),
+    entry(texts::settings::TOUCH_VIBRATION, SETTINGS, Screen::Settings, keys::TOUCH_VIBRATION),
+    entry(texts::settings::FILE_TRANSFER, SETTINGS, Screen::Settings, keys::FILE_TRANSFER),
+    entry(page::LANGUAGE, SETTINGS, Screen::Language, keys::LANGUAGE),
+    entry(page::TIME_ZONE, SETTINGS, Screen::TimeZone, keys::TIME_ZONE),
+    entry(page::REBOOT, HOME, Screen::Reboot, keys::REBOOT),
+    entry(texts::slot::BOOT_SLOT, page::REBOOT, Screen::Slot, keys::SLOT),
+    entry(page::ABOUT, SETTINGS, Screen::About, keys::ABOUT),
+    entry(page::SKYWARD_UPDATE, SETTINGS, Screen::SkywardUpdate, keys::SKYWARD_UPDATE),
+    entry(page::SPECS, texts::search::IN_ABOUT, Screen::Specs, keys::SPECS),
+    entry(page::LICENSE, texts::search::IN_SPECS, Screen::License, keys::LICENSE),
+    entry(page::FONTS, texts::search::IN_SPECS, Screen::FontLicense, keys::FONTS),
     partition("boot", INSTALL, Screen::Install),
     partition("init_boot", INSTALL, Screen::Install),
     partition("vendor_boot", INSTALL, Screen::Install),
@@ -118,18 +96,20 @@ pub const ENTRIES: &[Entry] = &[
 ];
 
 /// The entries `query` finds, best first: a title in `l` holding it, then a
-/// key starting with it, then a key holding it.
+/// key starting with it, then a key holding it. The keys are those of `l`
+/// and the English ones.
 pub fn find(query: &str, l: Lang) -> Vec<&'static Entry> {
-    let q = query.trim().to_lowercase();
+    let q = typed(query.trim());
     if q.is_empty() {
         return Vec::new();
     }
     let rank = |e: &Entry| {
-        if l.pick(e.title).to_lowercase().contains(&q) {
+        let keys = || l.pick(e.keys).split(' ').chain(Lang::En.pick(e.keys).split(' '));
+        if typed(l.pick(e.title)).contains(&q) {
             Some(0)
-        } else if e.keys.iter().any(|k| k.starts_with(&q)) {
+        } else if keys().any(|k| k.starts_with(&q)) {
             Some(1)
-        } else if e.keys.iter().any(|k| k.contains(&q)) {
+        } else if keys().any(|k| k.contains(&q)) {
             Some(2)
         } else {
             None
@@ -185,7 +165,7 @@ mod tests {
     #[test]
     fn the_wlan_is_found_where_the_phone_has_it() {
         assert_eq!(titles("wifi"), ["WLAN"]);
-        assert_eq!(find_on("wlan", Lang::Hans, |_| true).iter().map(|e| e.title[0]).collect::<Vec<_>>(), ["WLAN"]);
+        assert_eq!(find_on("wlan", Lang::Hans, |_| true).iter().map(|e| Lang::Hans.pick(e.title)).collect::<Vec<_>>(), ["WLAN"]);
         assert!(find_on("wlan", Lang::Hans, |s| s != Screen::Wlan).is_empty());
         assert_eq!(titles("xiazai"), ["系统更新", "Skyward 更新"]);
     }
@@ -194,7 +174,7 @@ mod tests {
     fn the_second_system_is_found_where_the_phone_can_hold_one() {
         assert_eq!(titles("sxt"), ["双系统"]);
         assert_eq!(titles("qiehuan"), ["双系统"]);
-        assert_eq!(find("dual", Lang::En).iter().map(|e| e.title[2]).collect::<Vec<_>>(), ["Dual boot"]);
+        assert_eq!(find("dual", Lang::En).iter().map(|e| Lang::En.pick(e.title)).collect::<Vec<_>>(), ["Dual boot"]);
         assert!(find_on("shuangxitong", Lang::Hans, |s| s != Screen::Systems).is_empty());
     }
 
@@ -207,13 +187,50 @@ mod tests {
 
     #[test]
     fn a_title_is_found_in_the_language_the_pages_speak() {
-        let english = |query| find(query, Lang::En).iter().map(|e| e.title[2]).collect::<Vec<_>>();
+        let english = |query| find(query, Lang::En).iter().map(|e| Lang::En.pick(e.title)).collect::<Vec<_>>();
         assert_eq!(english("brightness"), ["Screen brightness"]);
         assert_eq!(english("about"), ["About phone"]);
         assert_eq!(english("wi-fi"), ["Wi-Fi"]);
         let traditional = find("設定", Lang::Hant);
-        assert_eq!(traditional.first().map(|e| e.title[1]), Some("設定"));
+        assert_eq!(traditional.first().map(|e| Lang::Hant.pick(e.title)), Some("設定"));
         assert!(find("设置", Lang::Hant).is_empty(), "the simplified title belongs to the other script");
+    }
+
+    #[test]
+    fn a_language_answers_to_its_own_keys_and_the_english_ones() {
+        assert!(find("beifen", Lang::En).is_empty(), "pinyin is Chinese's own");
+        for l in Lang::ALL {
+            let found: Vec<Screen> = find("sideload", l).iter().map(|e| e.screen).collect();
+            assert_eq!(found, [Screen::Install], "{l:?} finds installing from a computer by the name every language borrows");
+        }
+    }
+
+    #[test]
+    fn a_title_is_found_as_the_keyboard_types_it() {
+        assert_eq!(typed("Güncelle"), "guncelle");
+        assert_eq!(typed("İptal Işık"), "iptal isik", "Turkish's two letters I");
+        assert_eq!(typed("Tiếng Việt"), "tieng viet");
+        assert_eq!(typed("Straße"), "strasse");
+        assert_eq!(typed("Настройки"), "настройки", "letters the keyboard lacks stay themselves");
+        assert_eq!(typed("設定"), "設定");
+        for l in Lang::ALL {
+            for e in ENTRIES {
+                let title = typed(l.pick(e.title));
+                let found = find(&title, l);
+                assert!(found.iter().any(|f| f.screen == e.screen && l.pick(f.title) == l.pick(e.title)), "{l:?} finds {title:?} by its own title");
+            }
+        }
+    }
+
+    #[test]
+    fn every_key_is_one_the_keyboard_types() {
+        for l in Lang::ALL {
+            for e in ENTRIES {
+                let keys = l.pick(e.keys);
+                assert!(keys.chars().all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == ' '), "{l:?} gives {keys:?}");
+                assert!(!keys.starts_with(' ') && !keys.ends_with(' ') && !keys.contains("  "), "{l:?} gives {keys:?}");
+            }
+        }
     }
 
     #[test]

@@ -1,76 +1,92 @@
 use anyhow::{Context, Result};
+use icu_casemap::CaseMapper;
 use icu_locale_core::Locale;
+use icu_plurals::{PluralCategory, PluralRules};
 
-/// A language the pages speak.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Lang {
-    /// Chinese in simplified characters, as mainland China writes it.
-    Hans,
-    /// Chinese in traditional characters, as Taiwan writes it.
-    Hant,
-    En,
-}
+// The languages, from the build script's list of them: `Lang`, how many
+// there are, their order, and each one's locale and its name for itself.
+include!(concat!(env!("OUT_DIR"), "/lang.rs"));
 
 /// One text written in each language, in the order of [`Lang::ALL`].
-pub type Text = [&'static str; 3];
+pub type Text = [&'static str; Lang::COUNT];
+
+/// A name that every language writes the same.
+pub const fn same(name: &'static str) -> Text {
+    [name; Lang::COUNT]
+}
+
+thread_local! {
+    /// How each language's numbers choose among the forms a text takes.
+    static PLURALS: Vec<PluralRules> = Lang::ALL
+        .iter()
+        .map(|l| {
+            let locale = Locale::try_from_str(l.tag()).expect("a language's tag is a locale");
+            PluralRules::try_new_cardinal(locale.into()).expect("the plural rules of every language are built in")
+        })
+        .collect();
+}
 
 impl Lang {
-    /// The languages, in the order the language page lists them.
-    pub const ALL: [Lang; 3] = [Lang::Hans, Lang::Hant, Lang::En];
-
-    /// The language's name, written in it.
-    pub fn name(self) -> &'static str {
-        self.pick(["简体中文", "繁體中文", "English"])
-    }
-
-    /// The language as a locale, which [`Lang::for_locale`] reads back.
-    pub fn tag(self) -> &'static str {
-        self.pick(["zh-Hans", "zh-Hant", "en"])
-    }
-
     /// Of the same thing written in each language, in the order of
     /// [`Lang::ALL`], the one in this language.
-    pub fn pick<T>(self, [hans, hant, en]: [T; 3]) -> T {
+    pub fn pick<T: Copy>(self, each: [T; Lang::COUNT]) -> T {
+        each[self as usize]
+    }
+
+    /// Of something written in the two kinds of Chinese characters and in
+    /// English alone, as a phone's own description of itself is, the one
+    /// this language reads: its own, or else the English.
+    pub fn among<T>(self, hans: T, hant: T, en: T) -> T {
         match self {
             Lang::Hans => hans,
             Lang::Hant => hant,
-            Lang::En => en,
+            _ => en,
         }
+    }
+
+    /// Which of the forms the language's texts take by number a count of
+    /// `n` asks for.
+    pub fn plural(self, n: u64) -> PluralCategory {
+        PLURALS.with(|rules| rules[self as usize].category_for(n))
+    }
+
+    /// The language as the locale its rules are looked up by.
+    fn locale(self) -> Locale {
+        Locale::try_from_str(self.tag()).expect("a language's tag is a locale")
+    }
+
+    /// `text` in small letters, as the language makes them small.
+    pub fn lowercase(self, text: &str) -> String {
+        String::from(CaseMapper::new().lowercase_to_string(text, &self.locale().id))
     }
 
     /// The language for a locale: the `zh-CN` a system is built to start
     /// in, or the one it hands the recovery with the work it asks for,
     /// which older systems write `zh_CN`. Chinese in that script or, with
     /// none named, in the one Taiwan, Hong Kong and Macau write in
-    /// traditional characters, any other Chinese in simplified ones, and
-    /// every other language in English.
+    /// traditional characters, any other Chinese in simplified ones; a
+    /// language the pages speak wherever it is spoken, as Brazil's
+    /// Portuguese is read in Portugal too; and every other language in
+    /// English.
     pub fn for_locale(tag: &str) -> Result<Lang> {
         // ICU takes a hyphen alone between the parts of a locale.
         let locale = Locale::try_from_str(&tag.replace('_', "-")).with_context(|| format!("read the locale {tag:?}"))?;
         let id = locale.id;
-        if id.language.as_str() != "zh" {
-            return Ok(Lang::En);
-        }
-        let traditional = match id.script {
-            Some(script) => script.as_str() == "Hant",
-            None => id.region.is_some_and(|r| matches!(r.as_str(), "TW" | "HK" | "MO")),
+        // Android wrote Indonesian by the code ISO 639 had retired, and
+        // older systems still do.
+        let language = match id.language.as_str() {
+            "in" => "id",
+            other => other,
         };
-        Ok(if traditional { Lang::Hant } else { Lang::Hans })
-    }
-}
-
-/// A text written in each language, made as [`format!`] makes it of the
-/// values it names:
-/// `tr!(l, "挂载 {base} 失败", "掛載 {base} 失敗", "Couldn't mount {base}")`.
-#[macro_export]
-macro_rules! tr {
-    ($l:expr, $hans:literal, $hant:literal, $en:literal $(,)?) => {
-        match $l {
-            $crate::lang::Lang::Hans => format!($hans),
-            $crate::lang::Lang::Hant => format!($hant),
-            $crate::lang::Lang::En => format!($en),
+        if language == "zh" {
+            let traditional = match id.script {
+                Some(script) => script.as_str() == "Hant",
+                None => id.region.is_some_and(|r| matches!(r.as_str(), "TW" | "HK" | "MO")),
+            };
+            return Ok(if traditional { Lang::Hant } else { Lang::Hans });
         }
-    };
+        Ok(Lang::ALL.into_iter().find(|l| l.locale().id.language.as_str() == language).unwrap_or(Lang::En))
+    }
 }
 
 #[cfg(test)]
@@ -127,14 +143,35 @@ mod tests {
         }
     }
 
+    /// Every text a table of a language's file holds, those of the tables
+    /// under it too.
+    fn written(table: &toml::Table, texts: &mut Vec<String>) {
+        for value in table.values() {
+            match value {
+                toml::Value::String(text) => texts.push(text.clone()),
+                toml::Value::Table(inner) => written(inner, texts),
+                _ => {}
+            }
+        }
+    }
+
     #[test]
     fn the_typeface_draws_every_text_the_pages_write() {
         let f = crate::font::bundled();
-        let mut texts = Texts::default();
-        read(&mut texts, &Path::new(env!("CARGO_MANIFEST_DIR")).join("src"));
-        assert!(texts.0.iter().any(|t| t.contains("簽章")), "the texts in traditional characters are read");
-        let missing: BTreeSet<char> = texts.0.iter().flat_map(|t| t.chars()).filter(|&ch| !ch.is_control() && !f.body.has(ch)).collect();
-        assert!(missing.is_empty(), "MiSans draws none of {missing:?}");
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut source = Texts::default();
+        read(&mut source, &manifest.join("src"));
+        assert!(source.0.iter().any(|t| t.contains("Fastboot")), "the texts the source writes itself are read");
+        let unwritten = |texts: &[String]| texts.iter().flat_map(|t| t.chars()).filter(|&ch| !ch.is_control() && !f.body.has(ch)).collect::<BTreeSet<char>>();
+        assert!(unwritten(&source.0).is_empty(), "MiSans draws none of {:?}, which the source writes", unwritten(&source.0));
+        for lang in Lang::ALL {
+            let file = manifest.join("locales").join(format!("{}.toml", lang.tag()));
+            let table: toml::Table = fs::read_to_string(&file).unwrap().parse().unwrap();
+            let mut texts = Vec::new();
+            written(&table, &mut texts);
+            assert!(texts.len() > 1000, "the texts of {lang:?} are read");
+            assert!(unwritten(&texts).is_empty(), "MiSans draws none of {:?}, which {lang:?} writes", unwritten(&texts));
+        }
     }
 
     #[test]
@@ -149,7 +186,20 @@ mod tests {
         assert_eq!(of("zh-Hant-TW"), Lang::Hant);
         assert_eq!(of("zh-Hans-HK"), Lang::Hans, "a script named wins over the region");
         assert_eq!(of("en-US"), Lang::En);
-        assert_eq!(of("ja-JP"), Lang::En, "a language the pages do not speak");
+        assert_eq!(of("tr-TR"), Lang::Tr);
+        assert_eq!(of("ru_RU"), Lang::Ru);
+        assert_eq!(of("uk-UA"), Lang::Uk);
+        assert_eq!([of("es-ES"), of("es-MX"), of("es-419")], [Lang::Es; 3], "Spanish wherever it is spoken");
+        assert_eq!([of("pt-BR"), of("pt-PT")], [Lang::PtBr; 2], "Brazil's Portuguese is read in Portugal too");
+        assert_eq!([of("id-ID"), of("in-ID"), of("in_ID")], [Lang::Id; 3], "by the code Android wrote Indonesian with, too");
+        assert_eq!(of("vi-VN"), Lang::Vi);
+        assert_eq!([of("de-DE"), of("de-AT")], [Lang::De; 2]);
+        assert_eq!([of("fr-FR"), of("fr-CA")], [Lang::Fr; 2]);
+        assert_eq!(of("it-IT"), Lang::It);
+        assert_eq!(of("pl-PL"), Lang::Pl);
+        assert_eq!(of("ja-JP"), Lang::Ja);
+        assert_eq!(of("ko-KR"), Lang::En, "a language the pages do not speak");
+        assert_eq!(of("ar-EG"), Lang::En);
         assert!(Lang::for_locale("not a locale").is_err());
     }
 
@@ -161,10 +211,41 @@ mod tests {
     }
 
     #[test]
+    fn each_language_names_itself_and_no_other() {
+        let names: BTreeSet<&str> = Lang::ALL.map(Lang::name).into_iter().collect();
+        assert_eq!(names.len(), Lang::COUNT);
+        assert_eq!(Lang::ALL.map(Lang::name)[..4], ["简体中文", "繁體中文", "English", "Türkçe"]);
+        assert_eq!(Lang::Ja.name(), "日本語");
+    }
+
+    #[test]
     fn a_text_is_picked_and_made_in_the_language() {
-        assert_eq!(Lang::Hant.pick(["设置", "設定", "Settings"]), "設定");
-        let base = "vendor";
-        assert_eq!(tr!(Lang::En, "挂载 {base} 失败", "掛載 {base} 失敗", "Couldn't mount {base}"), "Couldn't mount vendor");
-        assert_eq!(Lang::ALL.map(Lang::name), ["简体中文", "繁體中文", "English"]);
+        use crate::texts;
+        assert_eq!(Lang::Hant.pick(texts::page::SETTINGS), "設定");
+        assert_eq!(texts::mount::failed(Lang::En, "vendor", "busy"), "Couldn't mount vendor: busy");
+        assert_eq!(texts::mount::failed(Lang::Hans, "vendor", "busy"), "挂载 vendor 失败：busy");
+        assert_eq!(same("EDL"), [Lang::En; Lang::COUNT].map(|_| "EDL"));
+        assert_eq!(Lang::En.among("骁龙", "驍龍", "Snapdragon"), "Snapdragon");
+        assert_eq!(Lang::Tr.among("骁龙", "驍龍", "Snapdragon"), "Snapdragon", "a phone describes itself in Chinese and English alone");
+        assert_eq!(Lang::Hant.among("骁龙", "驍龍", "Snapdragon"), "驍龍");
+    }
+
+    #[test]
+    fn a_count_takes_the_form_the_language_gives_it() {
+        use PluralCategory::{Few, Many, One, Other};
+        assert_eq!([1, 2, 21].map(|n| Lang::En.plural(n)), [One, Other, Other]);
+        assert_eq!([1, 2, 5, 11, 21, 22, 25].map(|n| Lang::Ru.plural(n)), [One, Few, Many, Many, One, Few, Many]);
+        assert_eq!([1, 2, 5, 22].map(|n| Lang::Pl.plural(n)), [One, Few, Many, Few]);
+        assert_eq!([0, 1, 2].map(|n| Lang::Fr.plural(n)), [One, One, Other], "French counts none as one");
+        assert_eq!([1, 2].map(|n| Lang::Hans.plural(n)), [Other, Other], "Chinese has one form");
+        assert_eq!([1, 2].map(|n| Lang::Ja.plural(n)), [Other, Other]);
+    }
+
+    #[test]
+    fn letters_are_made_small_as_the_language_makes_them() {
+        assert_eq!(Lang::En.lowercase("I"), "i");
+        assert_eq!(Lang::Tr.lowercase("I"), "ı", "the dotless i of Turkish");
+        assert_eq!(Lang::Tr.lowercase("İ"), "i");
+        assert_eq!(Lang::Ru.lowercase("Н"), "н");
     }
 }

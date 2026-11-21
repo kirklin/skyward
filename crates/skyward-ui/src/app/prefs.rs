@@ -39,15 +39,15 @@ pub const SCREEN_OFF: [Option<u64>; 7] = [Some(15_000), Some(30_000), Some(60_00
 /// order their page lists them: the name, the cities it covers, and the
 /// zone's name in the tz database.
 pub const TIME_ZONES: [(Text, Text, &str); 9] = [
-    (["中国标准时间", "中國標準時間", "China Standard Time"], ["北京、上海", "北京、上海", "Beijing, Shanghai"], "Asia/Shanghai"),
-    (["香港时间", "香港時間", "Hong Kong Time"], ["香港", "香港", "Hong Kong"], "Asia/Hong_Kong"),
-    (["台北时间", "台北時間", "Taipei Time"], ["台北", "台北", "Taipei"], "Asia/Taipei"),
-    (["日本标准时间", "日本標準時間", "Japan Standard Time"], ["东京", "東京", "Tokyo"], "Asia/Tokyo"),
-    (["协调世界时", "世界標準時間", "Coordinated Universal Time"], ["UTC", "UTC", "UTC"], "UTC"),
-    (["英国时间", "英國時間", "British Time"], ["伦敦", "倫敦", "London"], "Europe/London"),
-    (["中欧时间", "中歐時間", "Central European Time"], ["柏林、巴黎", "柏林、巴黎", "Berlin, Paris"], "Europe/Berlin"),
-    (["美国东部时间", "美國東部時間", "Eastern Time"], ["纽约", "紐約", "New York"], "America/New_York"),
-    (["美国太平洋时间", "美國太平洋時間", "Pacific Time"], ["洛杉矶", "洛杉磯", "Los Angeles"], "America/Los_Angeles"),
+    (texts::time_zone::name::CHINA, texts::time_zone::cities::CHINA, "Asia/Shanghai"),
+    (texts::time_zone::name::HONG_KONG, texts::time_zone::cities::HONG_KONG, "Asia/Hong_Kong"),
+    (texts::time_zone::name::TAIPEI, texts::time_zone::cities::TAIPEI, "Asia/Taipei"),
+    (texts::time_zone::name::JAPAN, texts::time_zone::cities::JAPAN, "Asia/Tokyo"),
+    (texts::time_zone::name::UTC, same("UTC"), "UTC"),
+    (texts::time_zone::name::BRITAIN, texts::time_zone::cities::BRITAIN, "Europe/London"),
+    (texts::time_zone::name::CENTRAL_EUROPE, texts::time_zone::cities::CENTRAL_EUROPE, "Europe/Berlin"),
+    (texts::time_zone::name::US_EASTERN, texts::time_zone::cities::US_EASTERN, "America/New_York"),
+    (texts::time_zone::name::US_PACIFIC, texts::time_zone::cities::US_PACIFIC, "America/Los_Angeles"),
 ];
 
 impl App {

@@ -49,11 +49,10 @@ impl App {
             Ok(slots) => {
                 self.state.next_slot = None;
                 self.state.boot_slots = Some(Ok(slots));
-                let slot = slots.active.letter();
-                self.say(&tr!(self.state.lang, "下次将从槽位 {slot} 启动", "下次將從槽位 {slot} 啟動", "Slot {slot} starts next"), now);
+                self.say(&texts::toast::slot_starts_next(self.state.lang, slots.active.letter()), now);
                 self.refresh();
             }
-            Err(why) => self.say(&tr!(self.state.lang, "切换失败：{why}", "切換失敗：{why}", "Couldn't switch: {why}"), now),
+            Err(why) => self.say(&texts::toast::switch_failed(self.state.lang, why), now),
         }
     }
 
@@ -70,8 +69,8 @@ impl App {
     pub fn systems_work_failed(&mut self, why: &str, now: u64) {
         let l = self.state.lang;
         let said = match self.state.systems_work.take() {
-            Some(SystemsWork::Removing) => tr!(l, "删除失败：{why}", "刪除失敗：{why}", "Couldn't remove: {why}"),
-            _ => tr!(l, "切换失败：{why}", "切換失敗：{why}", "Couldn't switch: {why}"),
+            Some(SystemsWork::Removing) => texts::toast::remove_failed(l, why),
+            _ => texts::toast::switch_failed(l, why),
         };
         self.say(&said, now);
         self.refresh();

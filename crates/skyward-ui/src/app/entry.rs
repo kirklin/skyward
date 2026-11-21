@@ -26,7 +26,7 @@ impl App {
                 self.state.file = None;
                 self.settle_page();
                 self.refresh();
-                self.say(self.state.lang.pick(["已重命名", "已重新命名", "Renamed"]), now);
+                self.say(self.state.lang.pick(texts::toast::RENAMED), now);
             }
             Err(RenameRefused::Taken) => self.say_taken(now),
             Err(RenameRefused::Failed(why)) => self.report(&why, now),
@@ -39,7 +39,7 @@ impl App {
         let l = self.state.lang;
         let bits = match outcome {
             Ok(bits) => bits,
-            Err(why) => return self.report(&tr!(l, "修改权限失败：{why}", "修改權限失敗：{why}", "Couldn't change the permissions: {why}"), now),
+            Err(why) => return self.report(&texts::toast::permissions_failed(l, why), now),
         };
         let entry = self.state.file.as_mut().expect("the permissions page shows an entry");
         entry.mode = (entry.mode & !0o7777) | bits;
@@ -50,7 +50,7 @@ impl App {
             listed.mode = (listed.mode & !0o7777) | bits;
         }
         if bits != wanted {
-            self.say(l.pick(["该位置不支持修改权限", "這個位置不支援修改權限", "Permissions can't be changed here"]), now);
+            self.say(l.pick(texts::toast::PERMISSIONS_UNSUPPORTED), now);
         }
         self.refresh();
     }
@@ -63,11 +63,11 @@ impl App {
         let l = self.state.lang;
         let bytes = match read {
             Ok(Some(bytes)) => bytes,
-            Ok(None) => return self.say(l.pick(["暂不支持编辑超过 2 MB 的文件", "尚不支援編輯超過 2 MB 的檔案", "Files over 2 MB can't be edited"]), now),
-            Err(why) => return self.report(&tr!(l, "读取失败：{why}", "讀取失敗：{why}", "Couldn't read it: {why}"), now),
+            Ok(None) => return self.say(l.pick(texts::toast::TOO_BIG_TO_EDIT), now),
+            Err(why) => return self.report(&texts::toast::read_failed(l, why), now),
         };
         let Some(text) = String::from_utf8(bytes).ok().filter(|text| !text.contains('\0')) else {
-            return self.say(l.pick(["仅支持编辑 UTF-8 编码的文本文件", "僅支援編輯 UTF-8 編碼的文字檔", "Only UTF-8 text files can be edited"]), now);
+            return self.say(l.pick(texts::toast::NOT_TEXT), now);
         };
         let l = editor::layout(&self.theme(), f);
         self.state.editor = Some(Editor::new(path, &text, l.cols as usize, l.rows as usize));
@@ -83,16 +83,15 @@ impl App {
             Ok(()) => {
                 self.state.editor.as_mut().expect("the editor page shows a file").saved();
                 self.refresh();
-                self.say(self.state.lang.pick(["已保存", "已儲存", "Saved"]), now);
+                self.say(self.state.lang.pick(texts::toast::SAVED), now);
             }
-            Err(why) => self.report(&tr!(self.state.lang, "保存失败：{why}", "儲存失敗：{why}", "Couldn't save it: {why}"), now),
+            Err(why) => self.report(&texts::toast::save_failed(self.state.lang, why), now),
         }
     }
 
     /// The name typed for an entry is another entry's in the folder.
     pub(super) fn say_taken(&mut self, now: u64) {
-        let name = &self.state.new_name;
-        let said = tr!(self.state.lang, "该文件夹中已有\"{name}\"", "這個資料夾中已有「{name}」", "This folder already has “{name}”");
+        let said = texts::toast::name_taken(self.state.lang, &self.state.new_name);
         self.say(&said, now);
     }
 

@@ -54,7 +54,7 @@ const LINE_INK: Rgba = Rgba { r: 255, g: 255, b: 255, a: 160 };
 /// What the charger does to the battery, in the language.
 fn doing(l: Lang, b: &Battery) -> &'static str {
     match b.charge {
-        Charge::Charging if b.quick => l.pick(["快速充电中", "快速充電中", "Charging quickly"]),
+        Charge::Charging if b.quick => l.pick(crate::texts::battery::CHARGING_QUICKLY),
         other => fmt::charge(l, other),
     }
 }

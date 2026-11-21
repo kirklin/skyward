@@ -457,7 +457,7 @@ impl App {
                 if done {
                     fx.extend(self.confirmed(which, now));
                 } else {
-                    self.say(self.state.lang.pick(["请按住电源键", "請按住電源鍵", "Hold the power key"]), now);
+                    self.say(self.state.lang.pick(texts::toast::HOLD_POWER), now);
                 }
             }
             Press::Volume { .. } | Press::Spent => {}

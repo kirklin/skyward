@@ -4,7 +4,7 @@
 use super::*;
 
 /// What an install is told while the last one has not ended.
-pub const INSTALL_UNFINISHED: Text = ["上一次安装尚未结束，请稍后再试", "上一次安裝尚未結束，請稍後再試", "The last install hasn't ended. Try again shortly"];
+pub const INSTALL_UNFINISHED: Text = texts::toast::INSTALL_UNFINISHED;
 
 /// Where the package being installed comes from.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

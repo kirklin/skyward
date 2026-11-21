@@ -1,0 +1,1405 @@
+# What the pages say in English. Every other language's file has the same
+# tables and names, and each of its texts names the same values in braces.
+# A table of `one`, `other` and the like is one text in the forms the
+# language's numbers take, chosen by the count `{n}`.
+
+name = "English"
+
+# How things are named in a row.
+[list]
+separator = ", "
+# The last two of users named in a sentence, and the last after the rest.
+two = "{a} and {b}"
+end = "{rest} and {last}"
+# Whether what follows the first in a row opens with a small letter, as a
+# sentence would write it.
+lowercase_after_first = true
+
+[date]
+day = "{month} {d}, {year}"
+at = "{date}, {clock}"
+
+[date.month]
+january = "January"
+february = "February"
+march = "March"
+april = "April"
+may = "May"
+june = "June"
+july = "July"
+august = "August"
+september = "September"
+october = "October"
+november = "November"
+december = "December"
+
+# Words more than one page says.
+[common]
+unreadable = "Unreadable"
+# Above an error the pages have no words of their own for.
+unexpected = "Something went wrong."
+try_again = "Try again"
+done = "Done"
+# Over the switches of a page.
+options = "Options"
+stop = "Stop"
+stopping = "Stopping"
+stopped = "Stopped"
+# Beside one of several things done in turn, before its turn comes.
+waiting = "Waiting"
+# Beside the one that was under way when the work ended short.
+unfinished = "Unfinished"
+this_phone = "This phone"
+size = "Size"
+location = "Location"
+cancel = "Cancel"
+# How far work that shows no more than that has come.
+share_done = "{p}% done"
+# Over the rows that each do something.
+actions = "Actions"
+# Over the points to note before going on.
+notes = "Notes"
+# What went wrong, and why, as the system says it.
+with_reason = "{what}: {why}"
+
+# The processor, by its cores.
+[specs.cpu]
+cores_1 = "Single-core"
+cores_2 = "Dual-core"
+cores_4 = "Quad-core"
+cores_6 = "Hexa-core"
+cores_8 = "Octa-core"
+cores = "{n}-core"
+up_to = "{cores}, up to {ghz}GHz"
+
+[battery]
+charging = "Charging"
+charging_quickly = "Charging quickly"
+not_charging = "Not charging"
+full = "Full"
+unknown = "Unknown"
+capacity_left = "Maximum capacity {share}%"
+# The home page's warning of a battery too low to install on.
+low = "Battery at {level}%"
+charge_to_install = "Charge it past {least}% to install"
+
+# The battery's health, as the kernel reports it.
+[battery.health]
+good = "Good"
+overheated = "Overheated"
+warm = "Warm"
+cool = "Cool"
+cold = "Cold"
+dead = "Dead"
+over_voltage = "Over voltage"
+over_current = "Over current"
+failure = "Failure"
+needs_calibration = "Needs calibration"
+no_battery = "No battery"
+unknown = "Unknown"
+
+[android]
+security_update = "{release} | Android security update: {date}"
+
+# How verified boot found the system, by the colour the bootloader gives.
+[verified_boot]
+green = "Green · Verified with the official key"
+yellow = "Yellow · Verified with a custom key"
+orange = "Orange · Unlocked, so the system isn't verified"
+red = "Red · Verification failed"
+
+# Where a system update that merges after it starts stands.
+[snapshot]
+none = "No update waiting to merge"
+written = "Update written, waiting to merge"
+merging = "Merging the update"
+failed = "The update failed to merge"
+unreadable = "Couldn't read the update's status"
+
+# Why partitions in super are not flashed while an update is in flight.
+[snapshot.flash]
+until_merged = "Partitions in super aren't flashed until the update merges"
+until_dealt_with = "Partitions in super aren't flashed until the system deals with the update"
+until_read = "Partitions in super aren't flashed until the update's status can be read"
+
+# Why the slot to start next stays as it is.
+[snapshot.slot]
+until_merged = "The boot slot isn't switched until the update merges."
+until_dealt_with = "The boot slot isn't switched until the system deals with the update."
+until_read = "The boot slot isn't switched until the update's status can be read."
+
+# Why the second system does not start yet.
+[snapshot.second_system]
+until_merged = "The second system doesn't start until the system update merges. Start the main system first, and let the update merge."
+until_dealt_with = "The second system doesn't start until the main system deals with the update."
+until_read = "The second system doesn't start until the update's status can be read."
+
+# What an install script that writes to super does to the update.
+[snapshot.script]
+unmerged = "A system update hasn't finished merging. A flashable zip that rewrites partitions in super keeps it from ever finishing."
+failed = "A system update failed to merge, and the system has to deal with it. A flashable zip that rewrites partitions in super keeps it from ever finishing."
+
+# Why the slot's partitions in super are not backed up.
+[snapshot.backup]
+until_merged = "System partitions aren't backed up until the update merges"
+until_dealt_with = "System partitions aren't backed up until the system deals with the update"
+until_read = "System partitions aren't backed up until the update's status can be read"
+
+# The home page's word that the phone restarts from the other slot.
+[slot]
+# Over the rows that have to do with slots.
+title = "Slot"
+current = "Current slot"
+# The page that picks the slot the phone starts from next.
+boot_slot = "Boot slot"
+named = "Slot {slot}"
+no_slots = "This phone has no A/B slots"
+unreadable = "Couldn't read the boot slots"
+running = "The system running now"
+running_unbootable = "The system running now, marked unbootable"
+running_unstarted = "The system running now, not yet fully started"
+other = "The other slot"
+other_unbootable = "The other slot, marked unbootable"
+other_unstarted = "The other slot, not yet fully started"
+switch_note = "If the other slot holds no whole system, the phone won't start after switching."
+restarts_from = "Restarts from slot {next}"
+running_from = "Running from slot {now} now"
+
+# A switch between the two systems that a restart or a loss of power cut
+# off, as the recovery says of it when it starts.
+[systems.switch]
+resumed = "The switch of systems cut off last time is finished"
+unfinished = "The switch of systems cut off last time couldn't be finished: {why}"
+
+# Why backing up, or restoring, did not start.
+[backup.refused]
+room = "Not enough storage. The backup needs {needed}, and {free} is free."
+backup_until_merged = "System partitions aren't backed up until the update merges. You can see it in Advanced > System update."
+restore_until_merged = "The boot and system partitions aren't restored until the update merges. You can see it in Advanced > System update."
+backup_until_dealt_with = "The update failed to merge. System partitions aren't backed up until the system deals with it."
+restore_until_dealt_with = "The update failed to merge. The boot and system partitions aren't restored until the system deals with it."
+backup_until_read = "System partitions aren't backed up while the update's status can't be read."
+restore_until_read = "The boot and system partitions aren't restored while the update's status can't be read."
+other_phone = "This backup is from another device ({device}) and can't be restored to this phone."
+resized = "{name} isn't the size it was at the backup, so the system may have been updated. The backup's system partitions can't be restored to the current system."
+data_reset = "The data partition was made anew after the backup, as a factory reset does, so the backup's data partition can't be restored."
+
+# What the update page says of where an update stands, and the line under
+# it on what comes next.
+[update.standing]
+records_unread = "Couldn't read the update's records in /metadata"
+not_written = "The update isn't fully written"
+goes_on_in_system = "Installing goes on once the system starts"
+installed = "Update installed"
+starts_and_merges = "After a reboot the new system starts from slot {slot}, and merges once it has started"
+reboot_from_system = "Reboot from the system's System update to start slot {slot}'s new system"
+merges_once_started = "Merges once slot {slot}'s new system starts"
+waiting = "Update waiting to merge"
+merges_or_here = "Merges once the new system starts, or can be merged here"
+merges_in_system = "An update of this kind merges in the system, once it starts"
+goes_on_after_reboot = "Merging goes on after a reboot ({code})"
+merged = "Update merged"
+cleared_next_start = "The files the update left are cleared when the system next starts"
+
+# Where an update stands, beside the entry of its page.
+[update.value]
+none = "None"
+not_written = "Not fully written"
+installed = "Installed"
+waiting = "Waiting to merge"
+merging = "Merging"
+failed = "Merge failed"
+merged = "Merged"
+
+# Where the data partition stands.
+[data]
+not_mounted = "Not mounted"
+locked = "Locked"
+decrypted = "Decrypted"
+wiped = "Wiped"
+# What work on the data partition is told once it has been wiped whole.
+erased = "The data partition was wiped"
+
+# A part of the phone that wiping goes through, as its page names it.
+[wipe.part]
+data = "data partition"
+cache = "cache partition"
+metadata = "metadata partition"
+app_data = "App data"
+media = "Internal storage"
+app_caches = "App caches"
+system_caches = "System caches"
+art = "ART cache"
+logs = "Logs"
+updates = "Downloaded updates"
+
+# The part that wiping failed on.
+[wipe.failed]
+data = "Couldn't wipe the data partition."
+cache = "Couldn't wipe the cache partition."
+metadata = "Couldn't wipe the metadata partition."
+app_data = "Couldn't wipe app data."
+media = "Couldn't wipe internal storage."
+app_caches = "Couldn't wipe app caches."
+system_caches = "Couldn't wipe system caches."
+art = "Couldn't wipe the ART cache."
+logs = "Couldn't wipe the logs."
+updates = "Couldn't wipe the downloaded updates."
+
+# Why wiping did not start or stopped short.
+[wipe.stopped]
+update_unfinished = "The current slot's system update hasn't finished, so nothing can be wiped yet. Merge it in Advanced > System update, then try again."
+update_merging = "A system update is merging, so nothing can be wiped yet. You can see it in Advanced > System update; try again once it has merged."
+update_failed = "A system update failed to merge, so nothing can be wiped yet. Start the system to deal with it, then try again."
+not_rebuilt = "This phone's system doesn't make an emptied data partition anew when it starts, so it can't be wiped."
+no_cache = "This phone has no cache partition."
+erased = "The data partition is empty and will be made anew when the phone next starts. There's nothing to wipe."
+closed = "Couldn't open the data partition, so nothing was wiped."
+# `who` are the users whose data is still locked, as `users` names them.
+locked = "The data of {who} isn't decrypted, so nothing was wiped. Enter the screen lock in Decrypt, then try again."
+
+# Users as a sentence names them.
+[users]
+owner = "the owner"
+user = "user {u}"
+
+# Work on whole partitions: wiping them.
+[parts.wipe]
+going = "Wiping"
+complete = "Wipe complete"
+incomplete = "Wipe incomplete"
+failed = "Wipe failed"
+not_done = "Not wiped"
+hold_on = "Don't power off until it's done."
+failed_on = "Couldn't wipe {name}"
+
+# Ending a partition's sharing of blocks with others.
+[parts.unshare]
+going = "Unsharing"
+complete = "Unsharing complete"
+incomplete = "Unsharing incomplete"
+failed = "Unsharing failed"
+not_done = "Not unshared"
+hold_on = "Don't power off until it's done."
+failed_on = "Couldn't unshare {name}"
+
+[parts.repair]
+going = "Repairing"
+complete = "Repair complete"
+incomplete = "Repair incomplete"
+failed = "Repair failed"
+not_done = "Not repaired"
+hold_on = "Don't power off until it's done."
+failed_on = "Couldn't repair {name}"
+
+[parts.format]
+going = "Formatting"
+complete = "Format complete"
+incomplete = "Format incomplete"
+failed = "Format failed"
+not_done = "Not formatted"
+hold_on = "Don't power off until it's done."
+failed_on = "Couldn't format {name}"
+
+# How a partition's work ended, as its row says it.
+[parts.ended]
+wiped = "Wiped"
+unshared = "Unshared"
+nothing_to_do = "Nothing to do"
+clean = "No errors found"
+repaired = "Repaired"
+formatted = "Formatted"
+
+[mount]
+partitions = "Partitions"
+unreadable = "Couldn't read the partitions"
+none = "No partitions to mount"
+# Where a partition is mounted, and the programs that hold it there.
+in_use_by = "{point} · in use by {holders}"
+in_use = "In use"
+cant_unmount_in_use = "A partition in use can't be unmounted"
+shows_slot = "Only the current slot {slot}'s partitions in super show here, all mounted read-only."
+shows = "Only partitions in super show here, all mounted read-only."
+failed = "Couldn't mount {base}: {detail}"
+unmount_failed = "Couldn't unmount {base}: {detail}"
+# What work that takes a partition asks while it is not mounted.
+first = "Mount the {base} partition in Mount first"
+first_then_retry = "Mount the {base} partition in Mount, then try again."
+
+# The line under an entry's name in the file list.
+[files.line]
+link_to = "Link to {target}"
+char_device = "Character device"
+block_device = "Block device"
+pipe = "Pipe"
+socket = "Socket"
+
+[files.line.items]
+one = "{n} item"
+other = "{n} items"
+
+# What an image is, and what it holds.
+[image]
+recovery = "Recovery image"
+boot = "Boot image"
+vendor_boot = "vendor_boot image"
+dtbo = "dtbo image"
+vbmeta = "vbmeta image"
+
+[image.holds]
+kernel_and_recovery_ramdisk = "Holds a kernel and a recovery ramdisk"
+recovery_ramdisk = "Holds a recovery ramdisk alone"
+kernel_and_generic_ramdisk = "Holds a kernel and a generic ramdisk"
+kernel = "Holds a kernel alone"
+generic_ramdisk = "Holds a generic ramdisk alone"
+vendor_ramdisk = "Holds the vendor ramdisk and device tree"
+overlays = "Holds device tree overlays"
+verified_boot_data = "Holds verified boot data"
+
+# What a partition an image can go to is for.
+[image.role]
+boot = "Kernel"
+init_boot = "Generic ramdisk"
+recovery = "Recovery"
+vendor_boot = "Vendor ramdisk and device tree"
+dtbo = "Device tree overlays"
+vbmeta = "Verified boot data"
+vbmeta_system = "Verification data of the system partitions"
+vbmeta_vendor = "Verification data of the vendor partitions"
+partition = "Partition"
+
+# How long the screen stays on with nothing touched.
+[screen_off]
+never = "Never"
+note = "After the time chosen with nothing touched, the screen dims and turns off. Press the power key to light it again."
+stays_on = "The screen stays on. Showing the same image for long may leave it burnt in."
+
+[screen_off.seconds]
+one = "{n} second"
+other = "{n} seconds"
+
+[screen_off.minutes]
+one = "{n} minute"
+other = "{n} minutes"
+
+# Why a package was not installed. One the computer sent is answered with
+# sending another, a file chosen with choosing another.
+[install.refused]
+unknown_send = "This file isn't recognized. Send an A/B full OTA package, a flashable zip or a partition image."
+unknown_choose = "This file isn't recognized. Choose an A/B full OTA package, a flashable zip or a partition image."
+image_send = "A partition image can't be installed this way. Send an A/B full OTA package or a flashable zip."
+image_choose = "A partition image can't be installed this way. Choose an A/B full OTA package or a flashable zip."
+untyped_send = "This package doesn't say its type. Send an A/B full OTA package."
+untyped_choose = "This package doesn't say its type. Choose an A/B full OTA package."
+not_ab_send = "This package's type is {kind}. Send an A/B full OTA package."
+not_ab_choose = "This package's type is {kind}. Choose an A/B full OTA package."
+other_device = "This package is for {devices}, and this phone is {codename}."
+other_serial = "This package is only for devices with certain serial numbers, and this phone isn't one of them."
+incremental_send = "An incremental OTA package can't be installed. Send a full OTA package."
+incremental_choose = "An incremental OTA package can't be installed. Choose a full OTA package."
+older = "This package was built on {package}, before the current system, built on {installed}."
+older_patch = "This package's security patch is {package}, older than the current system's {installed}."
+no_partition = "This phone has no partition this image can be flashed to."
+battery = "The battery is at {level}%. Charge it past {least}%, then try again."
+# `standing` is one of the lines under `snapshot`.
+pending = "{standing}. Reboot to the system to finish the last update, then try again."
+old_host = "The computer's adb is too old. Update Android SDK Platform-Tools, then try again."
+unsigned = "This zip isn't signed. Turn off “Verify zip signatures”, then try again."
+unverified = "This zip's signature didn't verify. Turn off “Verify zip signatures”, then try again."
+panicked = "This update can't be installed now. Reboot to the system, then try again."
+system_asked = "The system asked for another system to be installed, which only goes in by hand on this phone."
+data_closed = "The other system goes into the data partition. Decrypt it first."
+system_installed = "{name} is installed already. Remove it in Dual boot, then try again."
+no_room = "This system needs at least {least}, and the data partition has {room} to spare."
+
+# Why the system's request to erase the partitions it lists was not
+# carried out.
+[erase_request.refused]
+unsigned = "The request isn't signed."
+unverified = "The request's signature didn't verify."
+untyped = "The request doesn't say its type."
+typed = "The request's type is {kind}."
+other_device = "The request is for {devices}, and this phone is {codename}."
+other_serial = "The request is only for devices with certain serial numbers, and this phone isn't one of them."
+no_serial = "The request names no serial number."
+
+# What went wrong installing a package.
+[install.failed]
+signature_send = "The package's signature didn't verify. Send an official package."
+signature_choose = "The package's signature didn't verify. Choose an official package."
+damaged = "The package is damaged. Download it again."
+older = "The package is too old."
+no_space = "Not enough space in the super partition."
+transfer_cable = "Couldn't read the package. Check the cable, then send it again."
+transfer = "Couldn't read the package."
+transfer_drive = "Couldn't read the package. Check the USB drive, then try again."
+write = "Couldn't write a partition."
+verify = "A partition didn't verify."
+post_install = "Couldn't finish installing."
+unsupported = "This package's format isn't supported."
+updater = "The updater ran into an error."
+error_code = "Error code: {code}"
+script = "The install script failed with exit code {code}."
+disconnected = "The computer stopped sending. Check the cable, then send it again."
+unreadable_drive = "Couldn't read the file. Check the USB drive, then try again."
+unreadable = "Couldn't read the file."
+changed_sent = "The file changed while it was sent. Send it again."
+changed_read = "The file changed while it was read. Choose it again."
+
+[wlan]
+turn_on_note = "When on, system updates and new versions of Skyward can download over Wi-Fi."
+cant_turn_on = "Couldn't turn on Wi-Fi: {why}"
+turning_on_wlan = "Turning on Wi-Fi"
+nearby = "Choose a nearby network"
+refresh = "Refresh"
+looking = "Looking for nearby networks"
+add_network = "Add network"
+network_name = "Network name"
+security_title = "Security"
+password = "Password"
+enter_password = "Enter password"
+show_password = "Show password"
+# The keyboard's key that joins the network.
+connect = "Connect"
+details = "Network details"
+bands = "Bands"
+signal_strength = "Signal strength"
+status = "Status"
+standard = "Wi-Fi standard"
+link_speed = "Link speed"
+ip_address = "IP address"
+subnet_mask = "Subnet mask"
+router = "Router"
+forget = "Forget network"
+generation = "Wi-Fi {n}"
+# What the home page says beside its WLAN entry.
+off = "Off"
+turning_on = "Turning on"
+connecting = "Connecting"
+not_connected = "Not connected"
+# What the page says under the network joined of how far it reaches.
+needs_login = "This network needs a sign-in in a browser before it reaches the internet, and Skyward has no browser to sign in with. Use a network that needs no sign-in instead, such as a phone's hotspot."
+offline = "This network doesn't reach the internet: {why}"
+
+# A signal's strength in words.
+[wlan.signal]
+excellent = "Excellent"
+good = "Good"
+fair = "Fair"
+weak = "Weak"
+
+# How a network is protected, where the name is not a standard's own.
+[wlan.security]
+none = "None"
+enhanced_open = "Enhanced Open"
+
+# How joining the network chosen goes, under its name.
+[wlan.joining]
+getting_address = "Getting an IP address"
+sign_in_required = "Sign-in required"
+no_internet = "Connected, no internet"
+connected = "Connected"
+wrong_password = "Wrong password"
+not_found = "Network not found"
+failed = "Couldn't connect"
+no_address = "Couldn't get an IP address"
+
+# Why the update server gave no answer.
+[update.unanswered]
+login = "Couldn't check for updates. The Wi-Fi network joined needs a sign-in in a browser before it reaches the internet, and Skyward has no browser to sign in with. Use a network that needs no sign-in instead, such as a phone's hotspot."
+offline = "Couldn't check for updates. The Wi-Fi network joined doesn't reach the internet: {why}"
+failed = "Couldn't check for updates: {why}"
+
+# Why downloading the full package did not end with it whole.
+[download.failed]
+no_room = "Not enough internal storage: {needed} has to be free, and {free} is."
+damaged = "The full OTA package didn't verify and was deleted. Download it again."
+changed = "The server has a newer version now. Check for updates again."
+other = "Download failed: {why}"
+# Skyward's own build goes into memory.
+no_memory = "Not enough memory: {needed} has to be free, and {free} is."
+skyward_damaged = "The package didn't verify and was deleted. Update again."
+
+[terminal]
+exited = "The shell exited with code {code}"
+signalled = "Signal {signal} stopped the shell"
+ended = "The shell ended: {status}"
+# What work that needs the terminal is told while a command holds it.
+busy = "The terminal is running a command. End it, then try again"
+# On the terminal once its shell has ended; `how` is how it ended.
+restart = "{how}. Press Enter to start it again"
+
+# File transfer to a computer.
+[transfer]
+# What a computer is told internal storage is called.
+storage_name = "Internal shared storage"
+kept = "Couldn't stop file transfer: {why}"
+failed = "Couldn't turn on file transfer: {why}"
+left_on = "Couldn't turn off file transfer: {why}"
+stopped = "File transfer stopped: {why}"
+
+[update]
+merge_failed = "Couldn't merge the update: {why}"
+# Beside an entry whose page has found a newer version.
+new_version = "New version"
+new_version_named = "New version {version}"
+up_to_date = "Up to date"
+current_version = "Current version"
+online = "Online update"
+# What downloading or checking for updates needs first.
+wlan_first = "Connect to Wi-Fi first"
+checking = "Checking for updates"
+check = "Check for updates"
+none_known = "The server knows of no system update for this phone."
+full_package = "Full OTA package {size}"
+downloading = "Downloading"
+checking_part = "Verifying what was downloaded"
+pause = "Pause"
+pausing = "Pausing"
+paused = "Download paused."
+download = "Download"
+resume = "Resume download"
+downloaded = "{done} downloaded"
+downloaded_to_storage = "Downloaded to internal storage"
+saved_in = "The full OTA package is saved in “/sdcard/{folder}”, and stays there after it's installed."
+keeps_data = "Installing a system update deletes no user data. Backing up first is still wise."
+resumable = "A download cut short can be resumed, keeping what was downloaded."
+optimizes = "After the update the system optimizes itself in the background, and the phone may run warm or use more battery for 1 to 3 days."
+# Over where an update the system installed stands.
+merging = "Merging"
+merging_note = "Partitions in super aren't flashed until it merges. Merging goes on after going back."
+cant_go_back = "Once merged, the system from before the update can't come back."
+
+[relabel]
+rules_unread = "Couldn't read the system's SELinux rules: {why}"
+what = "Gives the files in the data partition the SELinux contexts the installed system's rules give them. App data stays as it is."
+data_erased = "The data partition was wiped."
+open_first = "Open the data partition in Decrypt first."
+checked = "{checked} of {total} checked"
+nothing_needed = "Every file's SELinux context is right, so nothing needed fixing."
+failed = "Repair failed: {why}"
+
+[relabel.changed]
+one = "{n} entry got the SELinux context the rules give it."
+other = "{n} entries got the SELinux context the rules give them."
+
+[relabel.stopped]
+one = "Stopped, with {n} entry set again."
+other = "Stopped, with {n} entries set again."
+
+[logs]
+exported = "Exported to {folder}"
+export_failed = "Couldn't export: {why}"
+contents = "Logs"
+recovery_log = "Recovery log"
+recovery_log_note = "What the pages, installs and mounts did"
+kernel_log = "Kernel log"
+kernel_log_note = "The kernel's messages since this start"
+save_to = "Save to"
+temporary = "Temporary folder"
+temporary_note = "/skyward/run/logs, which adb pull copies to a computer"
+folder = "The Skyward/logs folder"
+note = "Each export goes in a folder named by when it was made. A reboot empties the temporary folder."
+export = "Export"
+
+[screenshot]
+saved = "Screenshot saved to the gallery"
+held = "Screenshot kept. It goes to the gallery once decrypted"
+failed = "Couldn't save the screenshot: {why}"
+not_kept = "Kept screenshots couldn't go to the gallery: {why}"
+
+# The swipe-to-confirm controls.
+[confirm]
+install = "Slide to install"
+repair = "Slide to repair"
+change = "Slide to change"
+reboot = "Slide to reboot"
+wipe = "Slide to wipe"
+flash = "Slide to flash"
+back_up = "Slide to back up"
+restore = "Slide to restore"
+switch = "Slide to switch"
+factory_reset = "Slide to factory reset"
+delete = "Slide to delete"
+install_and_wipe = "Slide to install and wipe"
+merge = "Slide to merge"
+fix = "Slide to fix"
+switch_and_reboot = "Slide to switch and reboot"
+remove = "Slide to remove"
+
+# What pages are called, both on the rows that open them and in their own
+# titles.
+[page]
+home = "Home"
+wlan = "Wi-Fi"
+decrypt = "Decrypt"
+advanced = "Advanced"
+settings = "Settings"
+reboot = "Reboot"
+about = "About phone"
+specs = "All specs"
+logs = "Export logs"
+screen_timeout = "Screen timeout"
+update = "System update"
+skyward_update = "Skyward update"
+files = "File manager"
+terminal = "Terminal"
+language = "Language"
+time_zone = "Time zone"
+license = "Open source licenses"
+fonts = "UI fonts"
+dual_boot = "Dual boot"
+install = "Install"
+backup = "Backup"
+restore = "Restore"
+mount = "Mount"
+wipe = "Wipe data"
+relabel = "Fix SELinux contexts"
+filesystems = "Filesystems"
+
+[home]
+# Under the word that the second system did not start.
+tap_to_see_why = "Tap to see why"
+no_second_system = "No second system"
+
+# What the settings page says beside its Skyward update entry.
+[skyward_update]
+updating = "Updating"
+updated = "Updated"
+package = "Package {size}"
+no_package = "No package for this phone"
+newest_is = "The newest release is {version}"
+writing = "Writing the recovery partitions"
+keep_power = "Don't power off until it's written."
+succeeded = "Updated"
+in_one = "Skyward {version} is in slot {slot}'s recovery partition."
+in_two = "Skyward {version} is in the recovery partitions of slots {a} and {b}."
+stopped = "Download stopped."
+not_written = "Couldn't update. Nothing was written."
+partly_one = "Slot {slot}'s recovery partition was only partly written, so rebooting to recovery may not start Skyward. Update again, and reboot once it's done."
+partly_two = "The recovery partitions of slots {a} and {b} were only partly written, so rebooting to recovery may not start Skyward. Update again, and reboot once it's done."
+download_and_update = "Download and update"
+from_github = "The new version is downloaded from GitHub and goes into the recovery partitions once its SHA-256 checks out. The system and user data are left as they are."
+both_slots = "The new version goes into the recovery partition of the slot that starts next, and into the other slot's where it holds Skyward."
+reboot_to_use = "Once updated, reboot to recovery to use the new version."
+
+[settings]
+light_mode = "Light mode"
+dark_mode = "Dark mode"
+brightness = "Brightness"
+screen_brightness = "Screen brightness"
+vibration = "Vibration"
+touch_vibration = "Touch vibration"
+vibration_intensity = "Vibration intensity"
+general = "General"
+file_transfer = "File transfer"
+file_transfer_note = "When on, a computer can manage the files in internal storage, once it is decrypted."
+debugging = "Debugging"
+about = "About"
+
+# Where the phone can restart to.
+[reboot]
+to = "Reboot to"
+next_boot = "Next boot"
+# The slot that starts next, where it is the one running now.
+current = "{slot} (current)"
+
+[reboot.target]
+system = "System"
+recovery = "Recovery"
+fastboot_note = "Userspace fastbootd"
+edl_note = "Qualcomm emergency download"
+power_off = "Power off"
+
+# The readings of the About and All specs pages.
+[specs]
+model = "Model"
+processor = "Processor"
+ram = "RAM"
+battery_capacity = "Battery capacity"
+screen_size = "Screen size"
+resolution = "Resolution"
+os_version = "OS version"
+android_version = "Android version"
+data_partition = "data partition"
+storage = "Storage"
+storage_capacity = "Storage capacity"
+codename = "Codename"
+recovery_version = "Recovery version"
+kernel_version = "Kernel version"
+# The bootloader.
+unlocked = "Unlocked"
+locked = "Locked"
+verified_boot = "Verified boot"
+level = "Level"
+temperature = "Temperature"
+health = "Health"
+charge_cycles = "Charge cycles"
+cycles = "{v}"
+voltage = "Voltage"
+internal_storage = "Internal storage"
+free_of = "{free} free of {total}"
+total_unmounted = "{total} in all · data partition not mounted"
+
+[decrypt]
+data_partition = "Decrypt the data partition"
+reading_lock = "Reading the screen lock"
+decrypted = "The data partition is decrypted"
+see_files = "You can see the phone's files in File manager"
+failed = "Couldn't open the data partition"
+made_anew = "It's made anew when the phone next starts"
+# What leaves the page with the data partition left as it is.
+not_now = "Not now"
+# Under a row whose work waits on the data partition.
+needed = "Decrypt first"
+draw_pattern = "Draw the screen lock pattern"
+draw_pattern_of = "Draw user {user}'s screen lock pattern"
+enter_lock = "Enter the screen lock"
+enter_lock_of = "Enter user {user}'s screen lock"
+checking = "Checking"
+to_see_files = "Decrypt to see the phone's files"
+
+# The install page: the system on the phone now, and where a package can
+# come from.
+[install]
+current_system = "Current system"
+security_patch = "Security patch"
+slot_detail = "{slot}, and a system update installs to slot {other}"
+ways = "Ways to install"
+choose_in_storage = "Choose a package or image in internal storage"
+choose_on_usb_drive = "Choose a package or image on the USB drive"
+sideload = "Run adb sideload on the computer"
+what_with_second_system = "Installs A/B full OTA packages, flashable zips with an install script and second systems' packages, and flashes boot, init_boot, vendor_boot, recovery, dtbo and vbmeta partition images. A system update installs to the other slot, which starts after a reboot; a second system installs into the data partition, and Dual boot switches to it. Choosing a file lists only folders and .zip and .img files."
+what = "Installs A/B full OTA packages and flashable zips with an install script, and flashes boot, init_boot, vendor_boot, recovery, dtbo and vbmeta partition images. A system update installs to the other slot, which starts after a reboot. Choosing a file lists only folders and .zip and .img files."
+verify_signatures = "Verify zip signatures"
+verify_signatures_note = "When on, only zips signed with this phone's official keys install."
+flash_skyward_again = "Flash Skyward again"
+flash_skyward_again_note = "When on, Skyward goes back into the recovery partitions a system update or flashable zip writes over."
+
+# How installing from each source is named: on the install page, and as
+# the title of the page that installs.
+[install.title]
+from_computer = "Install from a computer"
+from_storage = "Install from internal storage"
+from_usb_drive = "Install from a USB drive"
+from_files = "Install from File manager"
+system_update = "Install a system update"
+security_update = "Install a security update"
+rescue = "Rescue mode"
+
+# What a place is called at the top of its folders.
+[place]
+storage = "Internal storage"
+usb_drive = "USB drive"
+
+# The page that installs a package, step by step.
+[installing]
+update_writing = "Step 1 of 3: writing the new system {p}%"
+update_verifying = "Step 2 of 3: verifying {partition} ({n}/{count})"
+update_finishing = "Step 3 of 3: finishing"
+system_allocating = "Step 1 of 3: setting room aside in the data partition {p}%"
+system_writing = "Step 2 of 3: writing the system {p}%"
+system_verifying = "Step 2 of 3: verifying the system {p}%"
+system_storing = "Step 3 of 3: keeping its boot images"
+reflashing = "Flashing Skyward again"
+getting_ready = "Getting ready"
+running_script = "Running the install script"
+reflashed_one = "Skyward went back into slot {slot}'s recovery partition."
+reflashed_two = "Skyward went back into the recovery partitions of slots {a} and {b}."
+reflash_failed = "Couldn't flash Skyward back into the recovery partitions."
+script_output = "Install script output"
+switching_usb = "Switching USB mode"
+to_sideload = "From adb debugging to sideload"
+to_rescue = "From adb debugging to rescue mode"
+reading_file = "Reading the file"
+opening_data = "Opening the data partition"
+cant_read_yet = "The package can't be read yet"
+installs_once_decrypted = "It installs once the data partition is decrypted."
+waiting = "Waiting for the computer"
+connect = "Connect a computer with a cable, and run these commands on it"
+run_on_computer = "Run on the computer"
+rescue_install = "adb rescue install <file>"
+rescue_install_note = "With a system update package, flashable zip or partition image as <file>"
+rescue_getprop_note = "Reads this phone's versions and device details"
+rescue_wipe_note = "Wipes all of this phone's data"
+rescue_note = "The computer needs Android SDK Platform-Tools. Going back leaves rescue mode and switches USB back to adb debugging."
+sideload = "adb sideload <file>"
+sideload_file_note = "With a system update package, flashable zip or partition image as <file>, such as boot.img"
+sideload_note = "The computer needs Android SDK Platform-Tools. Going back stops waiting and switches USB back to adb debugging."
+read = "{p}% read"
+verifying_signature = "Verifying the signature"
+keep_cable = "Keep the cable in until it's read."
+keep_usb_drive = "Keep the USB drive in until it's read."
+cancel_ends_sideload = "Keep the cable in until it's read. Going back cancels the install and ends adb sideload on the computer."
+cancel_leaves_rescue = "Keep the cable in until it's read. Going back cancels the install and leaves rescue mode."
+cancel = "Going back cancels the install."
+cancel_keep_usb_drive = "Keep the USB drive in until it's read. Going back cancels the install."
+file_size = "File size {size}"
+# An image's size, and what it holds, from `image.holds`.
+size_and_holds = "{size} · {holds}"
+named = "Installing {name}"
+update = "Installing the system update"
+# `until` is one of the three lines that follow.
+until_and_slot = "{until} The new system installs to slot {slot}."
+until_keep_cable = "Keep the cable in and don't power off until it's installed."
+until_keep_power = "Don't power off until it's installed."
+until_keep_usb_drive = "Keep the USB drive in and don't power off until it's installed."
+overwriting = "The current system is being written over, so a reboot before the install finishes starts no system."
+as_second_system = "{version}, to install as the second system"
+room = "Room for it"
+least_room = "The least the system takes"
+room_note = "The room chosen is set aside in the data partition for the second system's files, can't be changed once it's installed, and comes back when the second system is removed. Nothing of the main system's partitions is written."
+flashable_zip = "Flashable zip"
+script_warning = "This zip runs the install script it holds, which can rewrite any partition of this phone."
+cancel_runs_nothing = "Going back cancels the install without running the script."
+cancel_writes_nothing = "Going back cancels the install without writing anything."
+script = "Installing"
+data_made_anew = "The data partition is made anew when the phone next starts"
+# What rescue says once a command is done with.
+more_commands = "You can send more commands from the computer."
+# What a request the system made gives as why.
+reason = "Reason"
+package = "Package"
+
+# An install that waits to be confirmed.
+[installing.confirm]
+wipe_needed = "All data has to be wiped"
+version_resets_with_cache = "Installing {v} then empties the data partition, apps, accounts, settings and internal storage included, and formats the metadata and cache partitions."
+version_resets = "Installing {v} then empties the data partition, apps, accounts, settings and internal storage included, and formats the metadata partition."
+update_resets_with_cache = "Installing this update then empties the data partition, apps, accounts, settings and internal storage included, and formats the metadata and cache partitions."
+update_resets = "Installing this update then empties the data partition, apps, accounts, settings and internal storage included, and formats the metadata partition."
+version = "Install {v}"
+update = "Install the system update"
+to_slot = "The new system installs to slot {slot}, which starts after a reboot."
+starts_after_reboot = "The new system starts after a reboot."
+
+# Flashing an image to a partition.
+[flash]
+partition = "Partition"
+current_slot = "Current slot {slot}"
+other_slot = "Other slot {slot}"
+other_slot_unnamed = "Other slot"
+both_slots = "Both slots"
+overwrites_ends_sideload = "Flashing writes over what the partition holds. Going back cancels it and ends adb sideload on the computer."
+overwrites_leaves_rescue = "Flashing writes over what the partition holds. Going back cancels it and leaves rescue mode."
+overwrites = "Flashing writes over what the partition holds. Going back cancels it."
+writing = "Writing {p}%"
+verifying = "Verifying {p}%"
+flashing = "Flashing {partition}"
+keep_cable = "Keep the cable in until it's flashed."
+keep_power = "Don't power off until it's flashed."
+keep_usb_drive = "Keep the USB drive in until it's flashed."
+
+# How an install ended, and where to go from there.
+[installed]
+choose_another = "Choose another file"
+send_again = "Send again"
+leave_rescue = "Leave rescue mode"
+reboot_to_system = "Reboot to system"
+reboot_to_recovery = "Reboot to recovery"
+installed = "Installed"
+nothing_written = "Nothing was written."
+to_slot = "The new system is installed to slot {slot}, which starts after a reboot."
+flashed = "Flashed"
+flashed_one = "Flashed to {partition} in slot {slot}."
+flashed_two = "Flashed to {partition} in slots {a} and {b}."
+script_ran = "The install script ran to its end."
+second_system = "{name} is installed as the second system. Switch to it from Dual boot."
+cancelled = "Cancelled"
+cant_install = "Can't install"
+failed = "Install failed"
+
+# What a failed install left behind. A package the computer sent is sent
+# again, a file chosen is installed or flashed again.
+[installed.damage]
+system_send = "The current system was partly written over, so a reboot starts no system. Send the full OTA package again, and reboot once it's installed."
+system_install = "The current system was partly written over, so a reboot starts no system. Install the full OTA package again, and reboot once it's installed."
+partition_send = "{p} was only partly written, so the phone may not start properly after a reboot. Send the image again, and reboot once it's flashed."
+partition_flash = "{p} was only partly written, so the phone may not start properly after a reboot. Flash the image again, and reboot once it's flashed."
+script_send = "This phone's partitions may have been partly rewritten, so it may not start properly after a reboot. Send the zip again, and reboot once it's installed."
+script_install = "This phone's partitions may have been partly rewritten, so it may not start properly after a reboot. Install the zip again, and reboot once it's installed."
+none = "The current system is untouched."
+
+# What a factory reset erases, as a line of its own.
+[wipe.factory_reset]
+with_cache = "Empties the data partition, apps, accounts, settings and internal storage included, and formats the metadata and cache partitions"
+without_cache = "Empties the data partition, apps, accounts, settings and internal storage included, and formats the metadata partition"
+
+# What comes after an install the system asked for.
+[installed.leaving]
+power_off = "Powering off shortly."
+reboot = "Rebooting shortly."
+
+# The wipe page: everything, as a factory reset does, or parts on their own.
+[wipe]
+wiping = "Wiping"
+wiping_share = "Wiping {p}%"
+wiped = "Wiped"
+not_wiped = "Not wiped"
+incomplete = "Wipe incomplete"
+keep_power = "Don't power off until it's wiped."
+reset = "Factory reset"
+all = "All data"
+# All that the cache partition holds.
+everything = "Everything"
+stays = "The system and installed updates stay. The phone has to be set up again afterwards."
+note = "Wiping app data or app caches needs the data partition decrypted first. What is wiped can't be brought back."
+
+# Exactly what each choice of the wipe page erases.
+[wipe.what]
+app_data = "/data/data, /data/user, /data/user_de, and Android/data and Android/media in internal storage. Apps go back to how they were first installed"
+media = "/data/media: the photos, videos and files in /sdcard"
+app_caches = "cache and code_cache in each app's data, and cache in Android/data. Apps make them again as they need them"
+system_caches = "/data/system/package_cache, /data/resource-cache and /data/cache, made again at the next start"
+art = "/data/dalvik-cache, /data/misc/apexdata/com.android.art/dalvik-cache and /data/ota, compiled again at the next start, which then takes longer"
+logs = "System logs and crash records, such as /data/tombstones, /data/anr, /data/system/dropbox and /data/misc/logd, each user's bug reports"
+updates = "System update packages in /data/ota_package"
+cache = "Formats the cache partition, keeping the logs in its recovery folder"
+
+# The same, on a phone that keeps `n` log folders of its own.
+[wipe.what.logs_and_own]
+one = "System logs and crash records, such as /data/tombstones, /data/anr, /data/system/dropbox and /data/misc/logd, each user's bug reports, and this phone's own log folder"
+other = "System logs and crash records, such as /data/tombstones, /data/anr, /data/system/dropbox and /data/misc/logd, each user's bug reports, and this phone's own {n} log folders"
+
+[search]
+# In the search bar and the search field while nothing is typed.
+hint = "Search features and partitions"
+how = "Type the name of a feature or partition, such as backup to find Backup."
+none = "Nothing found for “{typed}”"
+# The keyboard's key that searches, and the page's name.
+search = "Search"
+# Where a page found is, under its name.
+in_about = "Settings > About phone"
+in_specs = "Settings > About phone > All specs"
+
+# What each page answers to besides its title: words in small Latin
+# letters and digits, as the keyboard types them, with a space between
+# them. A language written in other letters gives its words as it writes
+# them in Latin ones. The English words answer in every language, so the
+# names every language borrows, such as adb and ota, are given here alone.
+[search.keys]
+wlan = "wifi wlan"
+dual_boot = "dualboot multiboot linux"
+install = "install"
+from_storage = "sdcard zip"
+from_usb_drive = "usb otg"
+from_computer = "sideload adb"
+backup = "backup"
+restore = "restore"
+mount = "mount umount"
+wipe = "wipe format"
+advanced = "advanced"
+files = "files file"
+terminal = "terminal shell"
+relabel = "context restorecon label"
+filesystems = "fsck filesystem f2fs ext4"
+logs = "logs dmesg"
+update = "update ota merge snapshot download"
+settings = "settings"
+dark_mode = "dark theme"
+brightness = "brightness"
+screen_timeout = "timeout"
+vibration_intensity = "intensity strength"
+touch_vibration = "vibrate haptic"
+file_transfer = "mtp usb"
+language = "language english"
+time_zone = "timezone"
+reboot = "reboot fastboot bootloader edl"
+slot = "slot"
+about = "about version"
+skyward_update = "update upgrade release github"
+specs = "specs"
+license = "license gpl"
+fonts = "font misans kirkmono"
+
+# The backup page: what to take, where it goes, and how.
+[backup]
+contents = "Contents"
+boot_holds = "boot, init_boot, vendor_boot, dtbo, vbmeta and recovery"
+system_holds = "The current slot's partitions in super"
+data_holds = "Apps, accounts and settings, without internal storage, the screen lock or fingerprints"
+data_holds_locked = "Apps, accounts and settings, without internal storage, the screen lock or fingerprints. Decrypt first"
+modem_holds = "IMEI, modem settings and sensor calibration"
+save_to = "Save to"
+free = "{free} free"
+free_unknown = "Free space unknown"
+# A USB drive that is plugged in.
+connected = "Connected"
+compress = "Compress"
+compress_note = "Smaller, and slower to make"
+verify = "Verify when done"
+verify_note = "Checks the backup's files are whole"
+note = "Backups go in the Skyward/backups folder, named by when they began."
+
+# The restore page: the backups found, and one of them.
+[restore]
+backups = "Backups"
+none = "No backups"
+note = "Backups are looked for in the Skyward/backups folders of internal storage and the USB drive. Internal storage needs the data partition decrypted first."
+title = "Restore backup"
+folder = "Folder"
+unreadable = "This backup can't be read. It may not have finished, or it may be damaged. {why}"
+made = "Made"
+system_version = "System version"
+contents = "Contents"
+overwrites = "Restoring writes the backup over what the parts chosen hold now."
+data_note = "The data partition gets its apps, accounts and settings back, and internal storage, the screen lock and fingerprints stay as they are. After a factory reset, an earlier backup of the data partition can't be restored."
+other_version = "This backup is from {was}, and this phone runs {now}. Restoring only one of the boot and system partitions may keep the phone from starting."
+delete = "Delete backup"
+ask_delete = "Delete this backup? It can't be brought back."
+
+# Backing up or restoring under way, and how it ended.
+[backup.job]
+backing_up = "Backing up"
+backing_up_part = "Backing up {name}"
+backing_up_share = "Backing up {p}%"
+backed_up = "Backed up"
+backed_up_of = "Backed up {passed} of {total}"
+restoring = "Restoring"
+restoring_part = "Restoring {name}"
+restoring_share = "Restoring {p}%"
+restored = "Restored"
+restored_of = "Restored {passed} of {total}"
+verifying = "Verifying"
+verifying_part = "Verifying {name}"
+verifying_share = "Verifying {p}%"
+verified = "Verified"
+verified_of = "Verified {passed} of {total}"
+not_started = "Not started"
+not_verified = "Not verified"
+not_backed_up = "Not backed up"
+not_restored = "Not restored"
+reading = "Reading the backup"
+checking = "Checking the backup against this phone"
+sizing = "Working out the backup's size"
+nothing_saved = "No backup was saved."
+saved_to_storage = "Saved to Skyward/backups/{name} in internal storage"
+saved_to_usb_drive = "Saved to Skyward/backups/{name} on the USB drive"
+backup_complete = "Backup complete"
+backup_incomplete = "Backup incomplete"
+backup_failed = "Backup failed"
+cant_back_up = "Can't back up"
+restore_complete = "Restore complete"
+restore_incomplete = "Restore incomplete"
+restore_failed = "Restore failed"
+cant_restore = "Can't restore"
+uses_restored = "The phone uses what was restored once it reboots."
+partly_written = "Part of it was written, so the phone may not start properly after a reboot. Restore again, and reboot once it's done."
+backup_keep_power = "Don't power off until the backup is done. Stopping deletes the unfinished backup."
+backup_keep_usb_drive = "Keep the USB drive in and don't power off until the backup is done. Stopping deletes the unfinished backup."
+restore_keep_power = "Don't power off until the restore is done."
+restore_keep_usb_drive = "Keep the USB drive in and don't power off until the restore is done."
+nothing_until_verified = "Nothing is written until the backup is verified."
+users_gone = "The users these folders belonged to no longer exist, so what they hold wasn't restored: {folders}"
+
+# The partitions whose filesystems can be repaired or changed, and the
+# page of one.
+[filesystems]
+reading = "Reading the partitions"
+none = "No partitions to repair"
+note = "Only the partitions in this phone's partition table that can be formatted show here."
+# In place of the filesystem of a partition that holds none known.
+unrecognized = "Unrecognized"
+mount_point = "Mount point"
+filesystem = "Filesystem"
+repair = "Repair the filesystem"
+repair_note = "Checks the whole filesystem and fixes the errors found"
+change_to = "Change to {fs}"
+cant_change = "This partition's filesystem can't be changed."
+data_closes = "The data partition closes for the repair, and opens again from Decrypt once it's done."
+cant_undo = "Once changed, what the partition held can't be brought back."
+# What changing a partition's filesystem erases.
+formats_data_and_cache = "Formats the data, cache and metadata partitions, emptying all of this phone's data"
+formats_data = "Formats the data and metadata partitions, emptying all of this phone's data"
+formats = "Formats the {name} partition, emptying all it holds"
+
+# The title of the page that works on whole partitions.
+[parts.title]
+wipe = "Wipe partitions"
+unshare = "Unshare blocks"
+repair = "Repair filesystem"
+format = "Change filesystem"
+
+# What comes once work the system asked for is done.
+[parts.leaving]
+power_off = "Powers off on its own once done."
+reboot = "Reboots on its own once done."
+
+# Over what the program that did the work printed.
+[parts]
+output = "Program output"
+
+# The file manager, and the pages of one file or folder.
+[files]
+copy_here = "Copy here"
+move_here = "Move here"
+root = "Root"
+none = "No files"
+unreadable = "This folder can't be read"
+name = "Name"
+holds = "Holds"
+points_to = "Points to"
+modified = "Modified"
+permissions = "Permissions"
+# A file's permissions as `ls -l` prints them, and who owns it.
+owned_by = "{mode}, owner {uid}, group {gid}"
+flash = "Flash"
+edit = "Edit"
+copy = "Copy"
+move_to = "Move"
+rename = "Rename"
+change_permissions = "Change permissions"
+delete = "Delete"
+ask_delete = "Delete “{name}”? It can't be brought back."
+ask_delete_folder = "Delete “{name}” and everything in it? It can't be brought back."
+file_info = "File info"
+folder_info = "Folder info"
+# Under the field a new name is typed in.
+rename_note = "A name can't hold “/”. Tap Done to save it."
+
+# A file's size as the list writes it, and to the byte.
+[files.size]
+one = "{size} ({n} byte)"
+other = "{size} ({n} bytes)"
+
+# The switches of a file's permission bits.
+[files.mode]
+bits = "{bits}, {octal}"
+owner = "Owner"
+group = "Group"
+others = "Others"
+read = "Read"
+write = "Write"
+execute = "Execute"
+special = "Special"
+sticky = "Sticky"
+
+# The folder an entry goes to already holds its name.
+[files.clash]
+title = "Name taken"
+there = "“{into}” already holds an entry named “{name}”."
+replace = "Replace"
+replace_note = "Writes over the entry there"
+skip = "Skip"
+skip_copy = "Keeps the entry there, and doesn't copy this one"
+skip_move = "Keeps the entry there, and doesn't move this one"
+keep_both = "Keep both"
+keep_both_note = "Gives this one a new name"
+
+# Copying, moving or deleting under way, and how it ended short.
+[files.job]
+copying = "Copying"
+copy_incomplete = "Copy incomplete"
+copy_stopped = "Stopped. Part of it may have been copied into the folder."
+copy_failed = "Couldn't copy it: {why}"
+copied_of = "{did} of {total} copied"
+copied_items = "{did} of {total} items copied"
+moving = "Moving"
+move_incomplete = "Move incomplete"
+move_stopped = "Stopped. Part of it may have been moved into the folder."
+move_failed = "Couldn't move it: {why}"
+moved_of = "{did} of {total} moved"
+moved_items = "{did} of {total} items moved"
+deleting = "Deleting"
+delete_incomplete = "Delete incomplete"
+delete_stopped = "Stopped. Part of it may have been deleted."
+delete_failed = "Couldn't delete it: {why}"
+deleted_items = "{did} of {total} items deleted"
+
+# The keyboard's keys that are named in words.
+[keyboard]
+enter = "Enter"
+new_line = "Return"
+space = "Space"
+delete = "Delete"
+# On the round key that ends a screen lock's code typed on the keypad. The
+# key is as wide as seven letters or so.
+confirm = "Decrypt"
+
+[time_zone]
+note = "The status bar and the pages tell times in the zone chosen."
+
+[time_zone.name]
+china = "China Standard Time"
+hong_kong = "Hong Kong Time"
+taipei = "Taipei Time"
+japan = "Japan Standard Time"
+utc = "Coordinated Universal Time"
+britain = "British Time"
+central_europe = "Central European Time"
+us_eastern = "Eastern Time"
+us_pacific = "Pacific Time"
+
+# The cities each zone is known by.
+[time_zone.cities]
+china = "Beijing, Shanghai"
+hong_kong = "Hong Kong"
+taipei = "Taipei"
+japan = "Tokyo"
+britain = "London"
+central_europe = "Berlin, Paris"
+us_eastern = "New York"
+us_pacific = "Los Angeles"
+
+# What a backup can take.
+[backup.part]
+boot = "Boot partitions"
+system = "System partitions"
+data = "data partition"
+modem = "Modem and EFS"
+
+[usb_drive]
+unreadable = "This USB drive can't be read"
+wanted = "Connect a USB drive through OTG"
+
+# What the pages say for a moment at the bottom of the screen, of a touch
+# that did nothing or of work that just ended.
+[toast]
+slide_right = "Hold the round button and slide it right"
+hold_power = "Hold the power key"
+decrypt_first = "Decrypt first"
+data_opening = "Opening the data partition. Try again shortly"
+open_data_first = "Open the data partition in Decrypt first"
+install_unfinished = "The last install hasn't ended. Try again shortly"
+choose_logs = "Choose the logs to export"
+choose_wipe = "Choose what to wipe"
+choose_backup = "Choose what to back up"
+choose_restore = "Choose what to restore"
+decrypt_to_back_up = "Decrypt before backing up the data partition"
+decrypt_to_restore = "Decrypt before restoring the data partition"
+slot_already_next = "Slot {slot} already starts next"
+slot_starts_next = "Slot {slot} starts next"
+switch_failed = "Couldn't switch: {why}"
+remove_failed = "Couldn't remove: {why}"
+enter_lock = "Enter the screen lock"
+pattern_short = "Connect at least 4 dots"
+pattern_keys = "When the pattern is done, press the power key again on its last dot"
+brightness_keys = "Set the brightness with the volume keys, then press the power key"
+vibration_keys = "Set the vibration with the volume keys, then press the power key"
+enter_name = "Enter a name"
+name_dots = "A name can't be “.” or “..”"
+name_slash = "A name can't hold “/”"
+name_taken = "This folder already has “{name}”"
+renamed = "Renamed"
+inside_itself = "“{name}” can't go inside itself"
+already_there = "“{name}” is already in this folder"
+copied = "Copied"
+moved = "Moved"
+deleted = "Deleted"
+saved = "Saved"
+save_failed = "Couldn't save it: {why}"
+read_failed = "Couldn't read it: {why}"
+too_big_to_edit = "Files over 2 MB can't be edited"
+not_text = "Only UTF-8 text files can be edited"
+permissions_failed = "Couldn't change the permissions: {why}"
+permissions_unsupported = "Permissions can't be changed here"
+wep_unsupported = "WEP networks aren't supported"
+enterprise_unsupported = "Networks that need an account sign-in aren't supported"
+enter_network_name = "Enter the network's name"
+network_name_long = "A network's name can't be over {max} characters"
+enter_password = "Enter a password"
+password_length = "Enter a password of 8 to 63 characters"
+
+# Why going back does nothing while work is under way.
+[toast.back]
+wait_or_stop = "Wait for it to finish, or stop it, before going back"
+wait = "Wait for it to finish before going back"
+writing = "Writing. Wait for it to finish"
+restoring = "Restoring. Wait for it to finish"
+installing = "Installing. Wait for it to finish"
+flashing = "Flashing. Wait for it to finish"
+wiping = "Wiping. Wait for it to finish"
+reading = "Reading the file. Try again shortly"
+unsaved = "Changes aren't saved. Go back again to discard them"
+
+# Skyward's own licence. The languages other than English read `notice`,
+# then the licence's own words in English under `original`.
+[license]
+terms_title = "License"
+terms = "GNU General Public License, version 3 or later (GPL-3.0-or-later)"
+notice = "Skyward is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.\n\nSkyward is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details."
+original = "Original"
+# Whether the language reads the licence's own words, and so needs no
+# notice ahead of them.
+original_alone = true
+
+# The typefaces, and the terms each is used under.
+[fonts]
+typeface = "Typeface"
+version = "Version"
+copyright = "Copyright"
+interface_text = "Interface text"
+misans = "The interface text is set in Xiaomi's MiSans, used free of charge under the MiSans Font Intellectual Property License Agreement. The font files are unchanged, and come with Skyward alone, never on their own.\n\nThe agreement in full is on the MiSans website."
+terminal_text = "Terminal text"
+ofl = "SIL Open Font License, version 1.1 (OFL-1.1)"
+mono = "The terminal text is set in the monospaced Kirk Mono. Its license lets the font be used, changed and passed on freely, but not sold on its own.\n\nThe license in full is at /skyward/KirkMono-OFL.txt, and on openfontlicense.org."
+
+# The two systems a phone can hold, and switching between them.
+[systems]
+main = "Main system"
+second = "Second system"
+second_failed = "The second system couldn't start"
+switching = "Switching systems"
+switching_to = "Switching to {name}"
+writing_boot_images = "Writing its boot images"
+removing = "Removing the second system"
+giving_room_back = "Giving its room back to the data partition"
+keep_power = "Don't power off until it's done."
+unreadable = "Couldn't read the systems"
+install = "Install a system"
+choose_package = "Choose the second system's package"
+what = "Tap a card to pick a system. Switching rewrites only the boot and init_boot partitions of the slot that starts next, and leaves the main system's other partitions as they are. The second system's files are kept in the data partition."
+rewritten = "Something else has written the boot partitions since Skyward put the second system's boot images there. Picking the main system and sliding to confirm writes the main system's saved boot images over what is there now; until then, nothing is installed, wiped or backed up."
+unrecorded = "The boot partitions hold a second system's boot images, and what Skyward kept of them is gone, so it can't put the main system's back. Flash the main system's boot and init_boot images again."
+changed = "The main system's vendor_boot or dtbo partition has changed since the second system was installed, so the second system may not start properly."
+space_used = "Space used"
+remove = "Remove the second system"
+ask_remove = "Remove the second system and all its data? It can't be brought back."
+ask_remove_running = "The phone goes back to the main system first, then the second system and all its data are removed for good."
+
+# The phone's own fastbootd serving the computer.
+[fastboot]
+status = "Status"
+running = "Running"
+not_running = "Not running"
+connected = "Computer connected"
+connecting = "Connecting"
+no_computer = "No computer"
+note = "fastboot commands on the computer can flash partitions, the logical ones in super among them."
+leave = "Leave fastboot"
+reboot_to_bootloader = "Reboot to bootloader"
+keys = "Choose with the volume keys, and press the power key to confirm."
+
+# Where to go once what the system asked for has stopped or cannot be done.
+[afterwards]
+enter_recovery = "Enter recovery"
+back_home = "Back to home"
+
+# Wiping under way, as the system or the wipe page started it.
+[erase]
+wipe_cache = "Wipe cache"
+all_then_power_off = "All of this phone's data is being wiped, and it powers off on its own once done."
+all_then_reboot = "All of this phone's data is being wiped, and it reboots on its own once done."
+made_anew = "The data partition is made anew at the next start, which then takes longer."
+
+# The system could not start Android, and asks whether to wipe all data.
+[cant_start]
+title = "Can't start the system"
+what = "The system couldn't start, and this phone's data may be damaged. If every start ends on this page, a factory reset may help, though it wipes all of this phone's data."
+starts_again = "Starts the system again"
+wipes_nothing = "Wipes nothing"
+cant_undo = "Data a factory reset wipes can't be brought back."
+
+# Something the system asked of the recovery that it does not do.
+[unhandled]
+title = "Can't handle the request"
+request = "Request"
+note = "Skyward doesn't support this request, and changed nothing on this phone."
+
+# Choosing a file to install.
+[choose]
+title = "Choose a file"
+none = "Nothing here to install"
+no_usb_drive = "No USB drive"
+connect_usb_drive = "Connect a USB drive through OTG to see its files here."
+usb_drive_format = "Use a USB drive formatted as FAT32 or exFAT. {why}"

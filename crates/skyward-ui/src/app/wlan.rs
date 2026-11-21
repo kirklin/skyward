@@ -42,10 +42,8 @@ pub(super) const SSID_MAX: usize = 32;
 /// What turns down a password the protection `security` cannot take.
 pub(super) fn refused(l: Lang, security: Security, password: &str) -> Option<&'static str> {
     match security {
-        Security::Psk | Security::PskSae if !(8..=63).contains(&password.len()) => {
-            Some(l.pick(["请输入 8 到 63 位密码", "請輸入 8 到 63 個字元的密碼", "Enter a password of 8 to 63 characters"]))
-        }
-        _ if password.is_empty() => Some(l.pick(["请输入密码", "請輸入密碼", "Enter a password"])),
+        Security::Psk | Security::PskSae if !(8..=63).contains(&password.len()) => Some(l.pick(texts::toast::PASSWORD_LENGTH)),
+        _ if password.is_empty() => Some(l.pick(texts::toast::ENTER_PASSWORD)),
         _ => None,
     }
 }

@@ -683,6 +683,10 @@ enum Line {
 /// Run update_engine on the package, telling the screen how far it is,
 /// and give its exit code.
 fn apply<S>(ctx: &Context, mount: &Mount<S>, update: &Update) -> Result<i32> {
+    // How far the program is in writing the system is how much of the
+    // payload it has read, followed from before it starts so that none of
+    // its reads is missed.
+    mount.follow(update.payload_offset, update.payload_size);
     let (status_read, status_write) = pipe()?;
     let status_fd = status_write.as_raw_fd();
     let mut command = std::process::Command::new(ota::PROGRAM);
@@ -726,7 +730,6 @@ fn apply<S>(ctx: &Context, mount: &Mount<S>, update: &Update) -> Result<i32> {
 
     let total = update.payload_size;
     let mut stage = Stage::Writing { done: 0, total };
-    mount.watch_payload(update.payload_offset, total);
     ctx.send(Event::Progress(stage.clone()));
     let mut told = Instant::now();
     let (mut partitions, mut verifying, mut finishing, mut error) = (0, None, false, None);
@@ -746,7 +749,7 @@ fn apply<S>(ctx: &Context, mount: &Mount<S>, update: &Update) -> Result<i32> {
         } else if let Some((index, partition)) = &verifying {
             Stage::Verifying { index: *index, count: partitions.max(index + 1), partition: partition.clone() }
         } else {
-            Stage::Writing { done: mount.payload_read().min(total), total }
+            Stage::Writing { done: mount.followed(), total }
         };
         let moved_on = std::mem::discriminant(&now) != std::mem::discriminant(&stage);
         if now != stage && (moved_on || told.elapsed() >= PROGRESS_EVERY) {

@@ -15,8 +15,7 @@ use std::fs::File;
 use std::mem::size_of;
 use std::os::unix::fs::FileExt;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 use zerocopy::{FromBytes, IntoBytes};
 
 pub const MOUNT_POINT: &str = "/sideload";
@@ -109,12 +108,62 @@ pub(crate) fn file_block(size: u64) -> u32 {
     u32::try_from(fits).map_or(u32::MAX, |b| b.max(FILE_BLOCK))
 }
 
-/// The range of the package that is its update's payload, watched once the
-/// package is known; bytes read from it are the update's progress.
-#[derive(Default)]
-pub(crate) struct Payload {
-    pub(crate) start: AtomicU64,
-    pub(crate) len: AtomicU64,
+/// How much of one part of the package has been read, kept where the
+/// installer can ask from a thread of its own while the package is served.
+/// The installer names the part once it knows where it lies, as an
+/// update's payload lies inside its zip. From then on a block counts the
+/// first time a read reaches it, for as many of its bytes as lie in the
+/// part: what was read before the part was named, what is read again and
+/// what lies outside the part add nothing, and the count comes to the
+/// part's size once all of it has been read.
+#[derive(Clone)]
+pub struct Followed(Arc<Mutex<Part>>);
+
+struct Part {
+    block_size: u64,
+    start: u64,
+    end: u64,
+    /// The blocks a read has reached since the part was named.
+    reached: Vec<bool>,
+    read: u64,
+}
+
+impl Followed {
+    fn new(offer: Offer) -> Followed {
+        let part = Part { block_size: u64::from(offer.block_size), start: 0, end: 0, reached: vec![false; offer.blocks() as usize], read: 0 };
+        Followed(Arc::new(Mutex::new(part)))
+    }
+
+    fn part(&self) -> MutexGuard<'_, Part> {
+        self.0.lock().expect("nothing panics while the part followed is held")
+    }
+
+    /// Follow the `len` bytes of the package from `start`, from now on.
+    pub fn follow(&self, start: u64, len: u64) {
+        let mut part = self.part();
+        part.start = start;
+        part.end = start + len;
+        part.reached.fill(false);
+        part.read = 0;
+    }
+
+    /// How many of the part's bytes reads have reached since it was named.
+    pub fn read(&self) -> u64 {
+        self.part().read
+    }
+
+    /// A read reached block `index`.
+    fn reach(&self, index: u64) {
+        let mut part = self.part();
+        // A block past the package's end holds none of it.
+        let Some(reached) = part.reached.get_mut(index as usize) else { return };
+        if std::mem::replace(reached, true) {
+            return;
+        }
+        let from = (index * part.block_size).max(part.start);
+        let to = ((index + 1) * part.block_size).min(part.end);
+        part.read += to.saturating_sub(from);
+    }
 }
 
 /// The filesystem's state: the package's blocks as served so far.
@@ -127,12 +176,7 @@ pub struct Server {
     block: Vec<u8>,
     /// Every read after a fault fails too.
     fault: Option<Fault>,
-    /// The furthest byte any read reached.
-    served: u64,
-    /// The range of the package that is the update's payload, watched by
-    /// the mount, and the bytes of it reads have served.
-    pub(crate) payload: Arc<Payload>,
-    pub(crate) payload_read: u64,
+    followed: Followed,
 }
 
 impl Server {
@@ -143,19 +187,14 @@ impl Server {
             current: None,
             block: vec![0; offer.block_size as usize],
             fault: None,
-            served: 0,
-            payload: Arc::new(Payload::default()),
-            payload_read: 0,
+            followed: Followed::new(offer),
         }
     }
 
-    pub fn served(&self) -> u64 {
-        self.served
-    }
-
-    /// How many bytes of the payload reads have served so far.
-    pub fn payload_read(&self) -> u64 {
-        self.payload_read
+    /// The part of the package whose reading is followed, for another
+    /// thread to name it and to ask after it.
+    pub fn followed(&self) -> Followed {
+        self.followed.clone()
     }
 
     pub fn fault(&self) -> Option<&Fault> {
@@ -258,20 +297,11 @@ impl Server {
                 self.fault = Some(e);
                 return error(unique, libc::EIO);
             }
+            self.followed.reach(index);
             let take = (block_size as usize - within).min(size - data.len());
             data.extend_from_slice(&self.block[within..within + take]);
             at += take as u64;
         }
-        let start = offset.min(self.offer.size);
-        let end = at.min(self.offer.size);
-        let base = self.payload.start.load(Ordering::Relaxed);
-        let len = self.payload.len.load(Ordering::Relaxed);
-        let from = start.max(base);
-        let to = end.min(base.saturating_add(len));
-        if to > from {
-            self.payload_read += to - from;
-        }
-        self.served = self.served.max(end);
         reply(unique, &data)
     }
 
@@ -316,7 +346,7 @@ pub use device::{mount, Mount, Mounted};
 
 #[cfg(target_os = "android")]
 mod device {
-    use super::{Fault, Handled, Payload, Server, Source, EXIT, MOUNT_POINT};
+    use super::{Fault, Followed, Handled, Server, Source, EXIT, MOUNT_POINT};
     use crate::adb::Offer;
     use anyhow::{Context, Result};
     use std::ffi::CString;
@@ -325,8 +355,6 @@ mod device {
     use std::os::fd::AsRawFd;
     use std::os::unix::fs::OpenOptionsExt;
     use std::path::Path;
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::sync::Arc;
     use std::thread::{self, JoinHandle};
 
     /// Big enough for any request: the kernel asks for at least 8 KiB, and
@@ -342,9 +370,7 @@ mod device {
     /// The filesystem, served from a thread of its own out of `S`.
     pub struct Mount<S> {
         thread: JoinHandle<(S, Result<Option<Fault>>)>,
-        served: Arc<AtomicU64>,
-        payload: Arc<Payload>,
-        payload_read: Arc<AtomicU64>,
+        followed: Followed,
     }
 
     /// Mount the package `offer` describes at /sideload, read-only.
@@ -380,27 +406,21 @@ mod device {
     impl Mounted {
         /// Serve the package from `source`.
         pub fn serve<S: Source + Send + 'static>(self, source: S) -> Mount<S> {
-            let served = Arc::new(AtomicU64::new(0));
-            let payload = Arc::new(Payload::default());
-            let watched = payload.clone();
-            let payload_read = Arc::new(AtomicU64::new(0));
-            let reach = served.clone();
-            let reading = payload_read.clone();
+            let mut server = Server::new(self.offer);
+            let followed = server.followed();
             let thread = thread::Builder::new()
                 .name("sideload-fuse".into())
                 .spawn(move || {
                     let mut source = source;
-                    let mut server = Server::new(self.offer);
-                    server.payload = watched;
-                    let result = serve(&self.dev, &mut server, &mut source, &reach, &reading);
+                    let result = serve(&self.dev, &mut server, &mut source);
                     (source, result.map(|()| server.fault().cloned()))
                 })
                 .expect("the FUSE thread starts");
-            Mount { thread, served, payload, payload_read }
+            Mount { thread, followed }
         }
     }
 
-    fn serve(dev: &File, server: &mut Server, source: &mut impl Source, served: &AtomicU64, payload_read: &AtomicU64) -> Result<()> {
+    fn serve(dev: &File, server: &mut Server, source: &mut impl Source) -> Result<()> {
         let mut buf = vec![0u8; REQUEST_BUFFER];
         loop {
             let n = match { dev }.read(&mut buf) {
@@ -412,8 +432,6 @@ mod device {
             };
             let mut fetch = |index: u64, out: &mut [u8]| source.read_block(index, out);
             let handled = server.handle(&buf[..n], &mut fetch)?;
-            served.store(server.served(), Ordering::Relaxed);
-            payload_read.store(server.payload_read(), Ordering::Relaxed);
             match handled {
                 Handled::Reply(r) => answer(dev, &r)?,
                 Handled::Silent => {}
@@ -433,21 +451,16 @@ mod device {
     }
 
     impl<S> Mount<S> {
-        /// How far into the package reads have reached.
-        pub fn served(&self) -> u64 {
-            self.served.load(Ordering::Relaxed)
+        /// Follow the reading of the `len` bytes of the package from
+        /// `start`, from now on: an update's payload, which the program
+        /// that installs it reads from its start to its end.
+        pub fn follow(&self, start: u64, len: u64) {
+            self.followed.follow(start, len);
         }
 
-        /// Watch the package's payload range, so the bytes read from it can
-        /// be told from the package's directory and metadata.
-        pub fn watch_payload(&self, start: u64, size: u64) {
-            self.payload.start.store(start, Ordering::Relaxed);
-            self.payload.len.store(size, Ordering::Relaxed);
-        }
-
-        /// How many bytes of the payload reads have served.
-        pub fn payload_read(&self) -> u64 {
-            self.payload_read.load(Ordering::Relaxed)
+        /// How many bytes of the part followed reads have reached.
+        pub fn followed(&self) -> u64 {
+            self.followed.read()
         }
 
         /// Stop serving and unmount. The source always comes back; the
@@ -474,9 +487,13 @@ mod device {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::package::{identify, Package};
     use polyfuse_kernel::fuse_open_in;
     use std::cell::Cell;
+    use std::io::{Cursor, Read, Seek, SeekFrom, Write};
     use zerocopy::Immutable;
+    use zip::write::SimpleFileOptions;
+    use zip::CompressionMethod;
 
     fn request<T: IntoBytes + Immutable>(opcode: fuse_opcode, node: u64, body: &T) -> Vec<u8> {
         request_raw(opcode, node, body.as_bytes())
@@ -568,11 +585,9 @@ mod tests {
         let (mut server, mut fetch) = (server_for(&pkg), fetch_from(&pkg, &fetches));
         let (_, body) = split(server.handle(&read_request(4000, 4096), &mut fetch).unwrap());
         assert_eq!(body, pkg[4000..8096]);
-        assert_eq!(server.served(), 8096);
         let (_, body) = split(server.handle(&read_request(8192, 4096), &mut fetch).unwrap());
         assert_eq!(&body[..2048], &pkg[8192..]);
         assert!(body[2048..].iter().all(|&b| b == 0));
-        assert_eq!(server.served(), 10_240);
         let (_, body) = split(server.handle(&read_request(12_288, 100), &mut fetch).unwrap());
         assert_eq!(body, vec![0; 100]);
         // Blocks 0, 1 and 2; the block past the end needs no fetch.
@@ -580,17 +595,125 @@ mod tests {
     }
 
     #[test]
-    fn only_bytes_of_the_payload_range_count() {
+    fn a_part_followed_counts_each_of_its_blocks_once_from_when_it_is_named() {
         let (pkg, fetches) = (package(), Cell::new(0));
         let (mut server, mut fetch) = (server_for(&pkg), fetch_from(&pkg, &fetches));
-        server.payload.start.store(4096, Ordering::Relaxed);
-        server.payload.len.store(4096, Ordering::Relaxed);
+        let followed = server.followed();
+        server.handle(&read_request(8192, 2048), &mut fetch).unwrap();
         server.handle(&read_request(0, 4096), &mut fetch).unwrap();
-        assert_eq!(server.payload_read(), 0, "the package before the payload is not it");
-        server.handle(&read_request(4096, 4096), &mut fetch).unwrap();
-        assert_eq!(server.payload_read(), 4096);
-        server.handle(&read_request(4096, 4096), &mut fetch).unwrap();
-        assert_eq!(server.payload_read(), 8192, "a read again counts again, and the caller clamps");
+        assert_eq!(followed.read(), 0, "no part is named yet");
+        // 4000 bytes from inside the second block to inside the third.
+        followed.follow(5000, 4000);
+        assert_eq!(followed.read(), 0, "what was read before the part was named is not counted");
+        server.handle(&read_request(0, 4096), &mut fetch).unwrap();
+        assert_eq!(followed.read(), 0, "the block before the part holds none of it");
+        server.handle(&read_request(4096, 100), &mut fetch).unwrap();
+        assert_eq!(followed.read(), 3192, "the second block, from the part's start");
+        server.handle(&read_request(6000, 2000), &mut fetch).unwrap();
+        assert_eq!(followed.read(), 3192, "a block read again adds nothing");
+        server.handle(&read_request(8192, 2048), &mut fetch).unwrap();
+        assert_eq!(followed.read(), 4000, "the third block, read before the part was named, counts now, up to the part's end");
+        server.handle(&read_request(12_288, 100), &mut fetch).unwrap();
+        assert_eq!(followed.read(), 4000, "past the package's end there is none of the part");
+    }
+
+    #[test]
+    fn a_read_across_blocks_reaches_each_of_them_and_a_part_named_anew_starts_from_nothing() {
+        let (pkg, fetches) = (package(), Cell::new(0));
+        let (mut server, mut fetch) = (server_for(&pkg), fetch_from(&pkg, &fetches));
+        let followed = server.followed();
+        followed.follow(0, 10_240);
+        server.handle(&read_request(4000, 4096), &mut fetch).unwrap();
+        assert_eq!(followed.read(), 8192);
+        followed.follow(8192, 2048);
+        assert_eq!(followed.read(), 0);
+        server.handle(&read_request(8192, 4096), &mut fetch).unwrap();
+        assert_eq!(followed.read(), 2048, "the short last block is all of the part");
+    }
+
+    /// The package as a program reads it through the filesystem: each read
+    /// is a request the server answers.
+    struct Through<'a> {
+        server: &'a mut Server,
+        package: &'a [u8],
+        at: u64,
+    }
+
+    impl Read for Through<'_> {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let left = (self.package.len() as u64).saturating_sub(self.at);
+            let n = (buf.len() as u64).min(left) as usize;
+            if n == 0 {
+                return Ok(0);
+            }
+            let fetches = Cell::new(0);
+            let mut fetch = fetch_from(self.package, &fetches);
+            let (header, body) = split(self.server.handle(&read_request(self.at, n as u32), &mut fetch).unwrap());
+            assert_eq!(header.error, 0);
+            buf[..n].copy_from_slice(&body);
+            self.at += n as u64;
+            Ok(n)
+        }
+    }
+
+    impl Seek for Through<'_> {
+        fn seek(&mut self, to: SeekFrom) -> std::io::Result<u64> {
+            let at = match to {
+                SeekFrom::Start(at) => Some(at),
+                SeekFrom::End(by) => (self.package.len() as u64).checked_add_signed(by),
+                SeekFrom::Current(by) => self.at.checked_add_signed(by),
+            };
+            self.at = at.ok_or(std::io::ErrorKind::InvalidInput)?;
+            Ok(self.at)
+        }
+    }
+
+    /// An update package: a zip with its payload stored as it is, what
+    /// tells of the payload after it, and the zip's directory at its end.
+    fn update_package(payload: &[u8]) -> Vec<u8> {
+        let entries: [(&str, &[u8]); 3] = [
+            ("payload.bin", payload),
+            ("payload_properties.txt", b"FILE_SIZE=40000\n"),
+            ("META-INF/com/android/metadata", b"ota-type=AB\npre-device=ishtar\n"),
+        ];
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        for (name, data) in entries {
+            zip.start_file(name, SimpleFileOptions::default().compression_method(CompressionMethod::Stored)).unwrap();
+            zip.write_all(data).unwrap();
+        }
+        zip.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn an_update_s_payload_is_followed_from_nothing_to_all_of_it_whatever_else_of_the_zip_was_read() {
+        let payload: Vec<u8> = (0..40_000u32).map(|i| (i % 251) as u8).collect();
+        let pkg = update_package(&payload);
+        let mut server = server_for(&pkg);
+        let followed = server.followed();
+        // Telling what the package is reads its start and the zip's
+        // directory, at its end, before anything is known of the payload.
+        let whole = Through { server: &mut server, package: &pkg, at: 0 };
+        let Package::Update(update) = identify(whole).unwrap() else { panic!("an update package") };
+        assert_eq!(update.payload_size, 40_000);
+        followed.follow(update.payload_offset, update.payload_size);
+        assert_eq!(followed.read(), 0, "none of the payload has been read for the update yet");
+        // The program that installs the update reads the payload from its
+        // start to its end.
+        let mut through = Through { server: &mut server, package: &pkg, at: update.payload_offset };
+        let (mut taken, mut chunk) = (0u64, vec![0u8; 3000]);
+        while taken < update.payload_size {
+            let want = (update.payload_size - taken).min(chunk.len() as u64) as usize;
+            through.read_exact(&mut chunk[..want]).unwrap();
+            taken += want as u64;
+            let read = followed.read();
+            assert!((taken..=taken + 4096).contains(&read), "{read} of the payload counted with {taken} taken");
+            assert!(read <= update.payload_size);
+        }
+        assert_eq!(followed.read(), update.payload_size, "all of the payload, and no more");
+        // The zip's directory read again, as a program closing the file may.
+        through.seek(SeekFrom::End(-64)).unwrap();
+        through.read_exact(&mut chunk[..64]).unwrap();
+        assert_eq!(followed.read(), update.payload_size);
     }
 
     #[test]

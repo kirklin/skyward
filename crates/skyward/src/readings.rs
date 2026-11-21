@@ -10,14 +10,15 @@ use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
-/// The battery is read this often, and at once when asked; all the
-/// readings every so many times instead.
+/// The battery and the port are read this often, and at once when asked;
+/// all the readings every so many times instead.
 const BATTERY_EVERY: Duration = Duration::from_secs(1);
 const ALL_EVERY: u32 = 30;
 
 pub enum Reading {
-    /// The battery, and when reading it started.
-    Battery(Result<Option<Battery>>, Instant),
+    /// The battery, whether a computer has the USB port, and when reading
+    /// them started.
+    Status(Result<Option<Battery>>, bool, Instant),
     /// All the readings, and when taking them started.
     All(Box<Result<DeviceInfo>>, Instant),
 }
@@ -54,7 +55,7 @@ impl Readings {
                     let reading = if !at_once && ticks.is_multiple_of(ALL_EVERY) {
                         Reading::All(Box::new(skyward_info::collect(&cfg)), at)
                     } else {
-                        Reading::Battery(skyward_info::battery_now(), at)
+                        Reading::Status(skyward_info::battery_now(), skyward_info::usb_connected(), at)
                     };
                     if !tell.tell(reading) {
                         return;

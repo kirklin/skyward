@@ -16,6 +16,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const CPU: &str = "/sys/devices/system/cpu";
 const POWER_SUPPLY: &str = "/sys/class/power_supply";
+const UDC: &str = "/sys/class/udc";
 const SYS_BLOCK: &str = "/sys/class/block";
 
 /// What the recovery shows about the device. A source that may legitimately
@@ -46,6 +47,8 @@ pub struct DeviceInfo {
     pub kernel: String,
     pub storage: Storage,
     pub battery: Option<Battery>,
+    /// Whether a computer has the USB port set up.
+    pub usb: bool,
     pub slot: Option<Slot>,
     pub snapshot: SnapshotState,
     pub boot: Boot,
@@ -170,6 +173,7 @@ pub fn collect_with(cfg: &DeviceConfig, battery: Option<Battery>) -> Result<Devi
         kernel: kernel_release()?,
         storage: storage()?,
         battery,
+        usb: usb_connected(),
         slot: skyward_vab::current_slot()?,
         snapshot: skyward_vab::snapshot_state()?,
         boot: Boot { unlocked, verified: skyward_block::boot_param("androidboot.verifiedbootstate")? },
@@ -360,6 +364,17 @@ pub fn battery_now() -> Result<Option<Battery>> {
     battery(Path::new(POWER_SUPPLY))
 }
 
+/// Whether a computer has the USB port set up: one of the port's device
+/// controllers is `configured` by a host, which a charger never does.
+pub fn usb_connected() -> bool {
+    usb_connected_at(Path::new(UDC))
+}
+
+fn usb_connected_at(root: &Path) -> bool {
+    let Ok(entries) = fs::read_dir(root) else { return false };
+    entries.flatten().any(|e| read_opt(e.path().join("state")).is_ok_and(|s| s.as_deref() == Some("configured")))
+}
+
 /// The first power supply whose type is `Battery`; `None` while no fuel-gauge
 /// driver is loaded.
 fn battery(root: &Path) -> Result<Option<Battery>> {
@@ -504,6 +519,21 @@ mod tests {
         supply("ucsi-source-psy-soc:qcom,pmic_glink:qcom,ucsi1", &[("online", "0")]);
         supply("wireless", &[("online", "1")]);
         assert!(battery(&supplies).unwrap().expect("a battery").plugged, "on a wireless charger");
+    }
+
+    #[test]
+    fn a_computer_configures_the_port_and_a_charger_does_not() {
+        let class = tempfile::tempdir().unwrap();
+        let udc = class.path().join("udc");
+        let port = udc.join("a600000.dwc3");
+        fs::create_dir_all(&port).unwrap();
+        for state in ["not attached", "attached", "powered", "default", "address", "suspended"] {
+            fs::write(port.join("state"), format!("{state}\n")).unwrap();
+            assert!(!usb_connected_at(&udc), "{state:?} is no computer");
+        }
+        fs::write(port.join("state"), "configured\n").unwrap();
+        assert!(usb_connected_at(&udc), "the host set the port up");
+        assert!(!usb_connected_at(&class.path().join("missing")), "no controller, no computer");
     }
 
     #[test]

@@ -14,6 +14,7 @@ impl App {
             clock,
             battery: battery.map(|b| (b.level, b.charging().then_some(if b.quick { Bolt::Quick } else { Bolt::Charging }))),
             wlan: self.wlan_mark(),
+            usb: info.usb,
             data: match self.state.data {
                 Data::Erased => None,
                 Data::Open => Some(true),
@@ -821,8 +822,9 @@ mod tests {
         assert_eq!(lock(&mut app, Data::Locked { user: 0, keys: Keys::Digits, checking: false }), Some(false), "shut while its files are out of reach");
         assert_eq!(lock(&mut app, Data::Open), Some(true));
         assert_eq!(lock(&mut app, Data::Erased), None, "nothing to open once wiped");
+        assert!(app.bar("12:00", &DeviceInfo { usb: true, ..info() }).usb, "a computer on the port shows");
         let none = app.bar("12:00", &info());
-        assert_eq!((none.slot, none.temp), (None, None), "a phone without slots or a fuel gauge");
+        assert_eq!((none.usb, none.slot, none.temp), (false, None, None), "a phone without a computer, slots or a fuel gauge");
     }
 
     #[test]

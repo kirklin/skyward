@@ -1651,17 +1651,24 @@ impl<'a> Pages<'a> {
     fn take_readings(&mut self, now: u64) -> Result<()> {
         for reading in self.readings.taken() {
             match reading {
-                Reading::Battery(battery, at) => {
+                Reading::Status(battery, usb, at) => {
                     if self.asked.is_some_and(|asked| at >= asked) {
                         self.asked = None;
                     }
                     untaken(&mut self.unread.battery, "the battery", battery.as_ref().err())?;
-                    if let Ok(battery) = battery
-                        && battery != self.info.battery
-                    {
-                        plug(&mut self.app, &self.info.battery, &battery, now)?;
-                        self.info.battery = battery;
-                        self.app.refresh();
+                    if let Ok(battery) = battery {
+                        let battery_changed = battery != self.info.battery;
+                        let usb_changed = usb != self.info.usb;
+                        if battery_changed {
+                            plug(&mut self.app, &self.info.battery, &battery, now)?;
+                            self.info.battery = battery;
+                        }
+                        if usb_changed {
+                            self.info.usb = usb;
+                        }
+                        if battery_changed || usb_changed {
+                            self.app.refresh();
+                        }
                     }
                 }
                 Reading::All(all, at) => {

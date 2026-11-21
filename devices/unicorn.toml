@@ -1,0 +1,103 @@
+[device]
+codename = "unicorn"
+brand = "Xiaomi"
+model = "Xiaomi 12S Pro"
+ab = true
+soc = { hans = "第一代骁龙®8+移动平台", hant = "Snapdragon® 8+ Gen 1 行動平台", en = "Snapdragon® 8+ Gen 1 Mobile Platform" }
+os_version_prop = "ro.build.version.incremental"
+# The ST panel needs touch_report to turn its raw frames into input
+# events. Both touch programs run without the Android service managers.
+services_before_binder = true
+
+[display]
+# Native panel mode. Stock scales 1080x2400 at 420 dpi, giving 560 dpi
+# at the same UI scale in the 1440x3200 mode.
+width = 1440
+height = 3200
+density = 560
+diagonal = 6.73
+
+[modules]
+sources = ["vendor_boot", "vendor_dlkm", "vendor"]
+# The FocalTech driver is in vendor_boot; the ST driver and the shared
+# Xiaomi touch layer are in vendor_dlkm.
+load = ["xiaomi_touch", "focaltech_fts", "fts_touch_spi"]
+
+[firmware]
+partition = "modem"
+# Stock recovery binds modem's image directory over /vendor/firmware.
+# Keep modem available at /vendor/firmware_mnt and /firmware, and expose
+# the vendor files again for the ST controller and QCA6490.
+uncover_vendor = true
+
+[partitions]
+# The QCA6490 firmware tree links to persist for the board's WLAN MAC.
+mounted = ["persist"]
+
+# From vendor.xiaomi.hw.touchfeature@1.0-service.rc. These files are
+# present in recovery and used by the touch programs.
+[[owners]]
+user = "system"
+group = "system"
+mode = 0o664
+paths = [
+    "/dev/xiaomi-touch",
+    "/dev/xiaomi-touch-knock",
+    "/proc/tp_hal_version",
+    "/sys/class/touch/touch_dev/enable_touch_raw",
+    "/sys/class/touch/touch_dev/enable_touch_delta",
+    "/sys/class/touch/touch_dev/touch_thp_cmd",
+    "/sys/class/touch/touch_dev/touch_thp_cmd_data",
+    "/sys/class/touch/touch_dev/touch_thp_dump",
+    "/sys/class/touch/touch_dev/touch_thp_mem_notify",
+    "/sys/class/touch/touch_dev/touch_thp_rx_num",
+    "/sys/class/touch/touch_dev/touch_thp_tx_num",
+    "/sys/class/touch/touch_dev/touch_thp_x_resolution",
+    "/sys/class/touch/touch_dev/touch_thp_y_resolution",
+    "/sys/class/touch/touch_dev/update_rawdata",
+    "/sys/class/touch/touch_dev/palm_sensor_data",
+    "/sys/class/touch/touch_dev/suspend_state",
+]
+
+[[service]]
+path = "/vendor/bin/touch_report"
+libraries = ["/vendor/lib64", "/system/lib64"]
+user = "system"
+groups = ["system", "uhid", "input"]
+capabilities = ["SYS_NICE"]
+
+[[service]]
+path = "/vendor/bin/touchsensor"
+libraries = ["/vendor/lib64", "/system/lib64"]
+user = "system"
+groups = ["system", "uhid", "input"]
+
+[wlan]
+modules = ["qca_cld3_qca6490"]
+writes = [{ path = "/sys/kernel/cnss/fs_ready", value = "1" }]
+interface = "wlan0"
+supplicant = "/vendor/bin/hw/wpa_supplicant"
+# The Android 12 recovery lacks libbinder_ndk. The installed system
+# provides Binder, and VNDK 31 supplies the vendor HIDL and crypto ABIs.
+libraries = ["/vendor/lib64", "/mnt/system/system/lib64"]
+installed_hidl = true
+service = "android.hardware.wifi.supplicant@1.4::ISupplicant/default"
+probe = "http://connect.rom.miui.com/generate_204"
+
+[update]
+server = "https://update.miui.com/updates/miotaV3.php"
+
+[stock]
+version = "OS3.0.4.0.VLECNXM"
+package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS3.0.4.0.VLECNXM/unicorn-ota_full-OS3.0.4.0.VLECNXM-user-15.0-9be4b80759.zip"
+recovery = "1d8a136d5f4579114d52da561042db828940d972eff859d3ada513c88db494bd"
+
+# AW86927 plays the stock RAM waveform through force feedback. The
+# standard click (0) felt clearer than the heavy click on the phone.
+# Use a stock waveform for screen-off too: the QTI sample format is not
+# the interface used by this driver.
+[haptics]
+click = 0
+ticks = 0
+resonance = "/sys/bus/i2c/drivers/awinic_haptic/6-005a/f0_value"
+strength = { lightest = 0.35, strongest = 1.0 }

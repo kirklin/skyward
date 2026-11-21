@@ -57,17 +57,10 @@ impl Haptics {
     pub fn open(cfg: &skyward_config::Haptics) -> Result<Haptics> {
         let (path, dev) = motor()?;
         let hz = resonance(&cfg.resonance)?;
-        let click = match cfg.click {
-            Some(id) => {
-                eprintln!("haptics {}: clicks with waveform {id}, ticks made for a motor swinging at {hz} Hz", path.display());
-                Click::Kept(id)
-            }
-            None => {
-                eprintln!("haptics {}: clicks and ticks made for a motor swinging at {hz} Hz", path.display());
-                Click::Samples { data: made(hz), rate: RATE }
-            }
-        };
-        let ticks = Click::Samples { data: ticks(hz), rate: TICKS_RATE };
+        let click = cfg.click.map_or_else(|| Click::Samples { data: made(hz), rate: RATE }, Click::Kept);
+        let ticks = cfg.ticks.map_or_else(|| Click::Samples { data: ticks(hz), rate: TICKS_RATE }, Click::Kept);
+        let describe = |waveform: Option<i16>| waveform.map_or_else(|| format!("samples at {hz} Hz"), |id| format!("waveform {id}"));
+        eprintln!("haptics {}: click uses {}, screen-off feedback uses {}", path.display(), describe(cfg.click), describe(cfg.ticks));
         Ok(Haptics { dev, click, ticks, strength: cfg.strength, playing: Arc::new(Mutex::new(None)), clicks: 0 })
     }
 

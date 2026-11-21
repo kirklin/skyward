@@ -537,6 +537,10 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
     std::fs::write(FIRMWARE_FALLBACK, "1").with_context(|| format!("write 1 to {FIRMWARE_FALLBACK}"))?;
     if let Some(firmware) = &cfg.firmware {
         mount_firmware(&firmware.partition)?;
+        let vendor = Path::new("/vendor/firmware");
+        if firmware.uncover_vendor && skyward_block::mount::is_mount_point(vendor)? {
+            skyward_block::mount::umount(vendor).context("expose the vendor partition's firmware directory")?;
+        }
     }
     for name in &cfg.partitions.mounted {
         let at = skyward_block::fstab::mount(name)?;
@@ -549,6 +553,10 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
         let handed = hand_over(&cfg.owners)?;
         skyward_sys::kmsg(&format!("{handed} of the phone's own files handed to the accounts its init gives them"))?;
     }
+    let libraries = secure::libraries()?;
+    if cfg.device.services_before_binder {
+        services::start(&services, libraries.as_deref())?;
+    }
     // What the phone describes is known wherever its partitions could be
     // read at all; what they say of its keys may still not be.
     let (described, found) = match found {
@@ -560,7 +568,8 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
     // programs and of those that use the phone's keys together.
     let key_programs = found.as_deref().map(keys::programs).unwrap_or_default();
     let programs = || services.iter().map(|p| &p.service).chain(&key_programs);
-    let hardware: Vec<String> = programs().filter_map(|s| s.ready_hardware_service.clone()).collect();
+    let (hidl_wlan, aidl_wlan) = cfg.wlan.iter().map(|w| w.service.as_str()).partition::<Vec<_>, _>(|s| s.contains("::"));
+    let hardware: Vec<String> = programs().filter_map(|s| s.ready_hardware_service.clone()).chain(hidl_wlan.into_iter().map(str::to_owned)).collect();
     if !hardware.is_empty() {
         secure::prepare_hardware_directory(&hardware)?;
         skyward_sys::kmsg("the directory for the phone's hardware services can run")?;
@@ -575,7 +584,7 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
     if found.as_deref().is_ok_and(keys::serves_elements) {
         registering.push(skyward_omapi::SERVICE.to_string());
     }
-    registering.extend(cfg.wlan.iter().map(|w| w.service.clone()));
+    registering.extend(aidl_wlan.into_iter().map(str::to_owned));
     // A program may register more than the recovery waits for, as the
     // WLAN's supplicant registers its maker's own service beside
     // Android's, and ends where the directory turns one of them away. So
@@ -587,11 +596,12 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
         secure::publish_descriptions(&told)?;
         skyward_sys::kmsg(&format!("the service directory is told of {} of the phone's own services", told.len()))?;
     }
-    let libraries = secure::libraries()?;
     if let Some(dir) = &libraries {
         skyward_sys::kmsg(&format!("the phone's own libraries are at {}", dir.display()))?;
     }
-    services::start(&services, libraries.as_deref())?;
+    if !cfg.device.services_before_binder {
+        services::start(&services, libraries.as_deref())?;
+    }
     let steps = found.context("make out from the phone's partitions how its keys are used")?;
     for line in keys::describe(&steps) {
         skyward_sys::kmsg(&format!("for the phone's keys: {}", line.replace("\n  ", ", ")))?;

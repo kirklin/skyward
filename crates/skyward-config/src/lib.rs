@@ -122,9 +122,12 @@ pub struct Wlan {
     /// the libraries of the vendor interface the phone was built against.
     #[serde(default)]
     pub libraries: Vec<String>,
-    /// The service it registers with the service directory as it starts,
-    /// which the directory takes only from a program the running system
-    /// describes.
+    /// The recovery lacks the Binder setup and libraries this HIDL
+    /// supplicant needs. Use the installed system's runtime and directory.
+    #[serde(default)]
+    pub installed_hidl: bool,
+    /// The AIDL or HIDL service it registers as it starts. Its service
+    /// directory takes it only from a program the running system describes.
     pub service: String,
     /// The page the stock system asks over plain HTTP to tell whether a
     /// network reaches the internet, which answers 204 with nothing.
@@ -147,6 +150,10 @@ pub struct Write {
 pub struct FirmwarePartition {
     /// The partition's name, without the slot it is of.
     pub partition: String,
+    /// Remove stock recovery's mount over /vendor/firmware after the
+    /// modem firmware can also be reached under /firmware/image.
+    #[serde(default)]
+    pub uncover_vendor: bool,
 }
 
 /// A file a driver asks the firmware loader for, and where it is.
@@ -204,13 +211,17 @@ const DATA: &str = "/data";
 /// The vibration motor, played through the kernel's force-feedback events:
 /// its click, a waveform its driver keeps or one made from samples at the
 /// motor's resonant frequency, which the driver plays as they are given,
-/// and the ticks of the screen going off by the power key, made too.
+/// and the ticks of the screen going off by the power key, kept or made too.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Haptics {
     /// The driver's number for a click waveform it keeps, on phones whose
     /// driver plays the waveforms it keeps.
     #[serde(default)]
     pub click: Option<i16>,
+    /// The driver's waveform for screen-off feedback, where it plays
+    /// presets instead of synthesized samples.
+    #[serde(default)]
+    pub ticks: Option<i16>,
     /// The file the driver says the motor's resonant frequency in, in
     /// tenths of a hertz whatever its label.
     pub resonance: String,
@@ -271,6 +282,9 @@ pub struct Device {
     /// System property that carries the vendor OS version.
     #[serde(default = "default_os_version_prop")]
     pub os_version_prop: String,
+    /// Start the configured local programs before setting up Binder.
+    #[serde(default)]
+    pub services_before_binder: bool,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -525,6 +539,12 @@ impl DeviceConfig {
             );
         }
         for s in &cfg.services {
+            ensure!(
+                !cfg.device.services_before_binder
+                    || (s.ready_service.is_none() && s.ready_hardware_service.is_none() && s.registers.is_empty()),
+                "[[service]] {}: a program started before Binder cannot register or wait for a Binder service",
+                s.path
+            );
             ensure!(s.user.is_none() || !s.groups.is_empty(), "[[service]] {}: a program given a user is given its group too", s.path);
             for name in s.user.iter().chain(&s.groups) {
                 ensure!(!name.is_empty() && !name.contains(char::is_whitespace), "[[service]] {}: {name:?} is not an account's name", s.path);
@@ -642,7 +662,16 @@ mod tests {
         let cfg = DeviceConfig::parse(include_str!("../../../devices/ishtar.toml")).unwrap();
         let haptics = cfg.haptics.expect("the 13 Ultra has a motor");
         assert_eq!((haptics.click, haptics.resonance.as_str()), (Some(0), "/sys/class/qcom-haptics/lra_frequency_hz"));
+        assert_eq!(haptics.ticks, None, "the 13 Ultra makes its screen-off ticks");
         assert_eq!(haptics.strength, Strength { lightest: 0.5, strongest: 1.0 });
+    }
+
+    #[test]
+    fn unicorn_uses_stock_waveforms_for_both_kinds_of_feedback() {
+        let cfg = DeviceConfig::parse(include_str!("../../../devices/unicorn.toml")).unwrap();
+        let haptics = cfg.haptics.expect("the 12S Pro has an Awinic motor");
+        assert_eq!((haptics.click, haptics.ticks), (Some(0), Some(0)));
+        assert_eq!(haptics.strength, Strength { lightest: 0.35, strongest: 1.0 });
     }
 
     #[test]
@@ -699,7 +728,7 @@ mod tests {
             [Write { path: "/sys/class/touch/touch_dev/enable_touch_raw".into(), value: "0".into() }],
             "its controller reports positions itself"
         );
-        assert_eq!(cfg.firmware, Some(FirmwarePartition { partition: "modem".into() }));
+        assert_eq!(cfg.firmware, Some(FirmwarePartition { partition: "modem".into(), uncover_vendor: false }));
         assert_eq!(cfg.partitions.mounted, ["persist"], "the secure world keeps its own files there");
         let [post_boot] = &cfg.services[..] else { panic!("one program: those that use the phone's keys are read from the phone's own partitions") };
         assert_eq!(post_boot.path, "/vendor/bin/sh");
@@ -773,6 +802,24 @@ mod tests {
     }
 
     #[test]
+    fn only_programs_without_binder_dependencies_can_start_before_binder() {
+        let unicorn = DeviceConfig::parse(include_str!("../../../devices/unicorn.toml")).unwrap();
+        assert!(unicorn.device.services_before_binder);
+        let ishtar = DeviceConfig::parse(include_str!("../../../devices/ishtar.toml")).unwrap();
+        assert!(!ishtar.device.services_before_binder);
+
+        let config = "[device]\ncodename = \"phone\"\nservices_before_binder = true\n[[service]]\npath = \"/vendor/bin/example\"\n";
+        for field in [
+            "ready_service = \"android.example.IExample/default\"\n",
+            "ready_hardware_service = \"android.example@1.0::IExample/default\"\n",
+            "registers = [\"android.example.IExample/default\"]\n",
+        ] {
+            let err = DeviceConfig::parse(&format!("{config}{field}")).unwrap_err();
+            assert!(err.to_string().contains("started before Binder"));
+        }
+    }
+
+    #[test]
     fn each_phone_names_the_stock_build_its_recovery_is_made_on() {
         for (text, version) in [
             (include_str!("../../../devices/nezha.toml"), "OS4.0.4.0.XPACNXM"),
@@ -785,6 +832,7 @@ mod tests {
             (include_str!("../../../devices/athens.toml"), "OS4.0.4.0.XPICNXM"),
             (include_str!("../../../devices/fuxi.toml"), "OS3.0.309.0.WMCCNXM"),
             (include_str!("../../../devices/nuwa.toml"), "OS3.0.312.0.WMBCNXM"),
+            (include_str!("../../../devices/unicorn.toml"), "OS3.0.4.0.VLECNXM"),
             (include_str!("../../../devices/houji.toml"), "OS3.0.307.0.WNCCNXM"),
             (include_str!("../../../devices/shennong.toml"), "OS3.0.309.0.WNBCNXM"),
             (include_str!("../../../devices/aurora.toml"), "OS3.0.308.0.WNACNXM"),

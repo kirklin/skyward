@@ -15,9 +15,11 @@ use skyward_ui::app::{
     MountFailure, MountRow, Part, PartKind, PartStop, Pick, Place, Screen, SkywardEnd, SkywardJob, SkywardStage, Source, SystemChoice,
     SystemsWork, TermEnd, Touch, UsbDrive, UsbLink, SCREEN_OFF,
 };
+use skyward_ui::canvas::Drawn;
 use skyward_ui::widgets::{self, Bar, Bolt, Cap, Layer};
 use skyward_ui::{editor, fmt, pages, Canvas, Ctx, Fonts, Lang, Theme};
 use skyward_vab::{BootSlots, FailureCode, Hold, Slot, SnapshotState, Standing};
+use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
@@ -134,6 +136,7 @@ fn main() -> Result<()> {
         None => Lang::Hans,
     };
     LANG.set(lang).expect("the language is chosen once");
+    skyward_ui::canvas::watch_texts();
 
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let font_path = font_path()?;
@@ -1610,6 +1613,11 @@ fn font_path() -> Result<PathBuf> {
     Err(anyhow!("no font found; set SKYWARD_FONT to a .ttf/.ttc path"))
 }
 
+/// Write `canvas` as a PNG, and say which of the texts drawn since the last
+/// one was written did not fit its place: among the names the samples make
+/// long on purpose, a text the language writes too long. A text is cut
+/// short where it has a room to end in; where it has none, it runs past
+/// the screen's edge or into the text beside it.
 fn write_png(path: &Path, canvas: &Canvas) -> Result<()> {
     let file = File::create(path)?;
     let w = BufWriter::new(file);
@@ -1617,5 +1625,35 @@ fn write_png(path: &Path, canvas: &Canvas) -> Result<()> {
     enc.set_color(png::ColorType::Rgba);
     enc.set_depth(png::BitDepth::Eight);
     enc.write_header()?.write_image_data(&canvas.data)?;
+    let shot = path.file_stem().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+    let watched = skyward_ui::canvas::take_watched();
+    for text in &watched.cut {
+        println!("cut short in {shot}: {text}");
+    }
+    for (text, part) in &watched.smaller {
+        println!("set at {:.0}% in {shot}: {text}", part * 100.0);
+    }
+    // Of what was drawn for this picture, only what was drawn on a canvas
+    // of its size lies where the picture shows it; a text drawn again in
+    // the same place, as a page drawn twice draws it, is one text.
+    let runs: Vec<&Drawn> = watched.drawn.iter().filter(|run| run.canvas == (canvas.w, canvas.h) && !run.text.trim().is_empty()).collect();
+    let mut said = BTreeSet::new();
+    for (k, run) in runs.iter().enumerate() {
+        if (run.left < -EDGE || run.right > canvas.w as f32 + EDGE) && said.insert(run.text.clone()) {
+            println!("past the edge in {shot}: {}", run.text);
+        }
+        for other in &runs[k + 1..] {
+            let same = run.text == other.text && run.left == other.left && run.top == other.top;
+            let across = run.left.max(other.left) + EDGE < run.right.min(other.right);
+            let down = run.top.max(other.top) + EDGE < run.bottom.min(other.bottom);
+            if !same && across && down && said.insert(format!("{}\n{}", run.text, other.text)) {
+                println!("overlap in {shot}: {} | {}", run.text, other.text);
+            }
+        }
+    }
     Ok(())
 }
+
+/// How far, in pixels, a text's box may reach past the screen's edge or
+/// into another's before the preview says so.
+const EDGE: f32 = 1.0;

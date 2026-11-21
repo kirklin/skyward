@@ -62,6 +62,17 @@ pub fn files(entries: &[Entry]) -> bool {
     entries.iter().any(|e| e.extra("fileencryption").is_some())
 }
 
+/// Whether the system makes the partition an entry names afresh as it
+/// starts, once the partition has been emptied: the phone's table has to
+/// call it formattable, and where the table has it encrypted whole, to say
+/// where its key is kept as well, for the system makes the key anew with
+/// the filesystem.
+pub fn made_afresh(entry: &Entry) -> bool {
+    let formattable = entry.extras.iter().any(|e| e == "formattable");
+    let key_kept = entry.extra("metadata_encryption").is_none() || entry.extra("keydirectory").is_some();
+    formattable && key_kept
+}
+
 /// Where the phone keeps the key for the filesystem an entry describes.
 pub fn key_dir(entry: &Entry) -> Result<PathBuf> {
     let dir = entry.extra("keydirectory").context("the phone says where the key for its data partition is not")?;
@@ -146,6 +157,18 @@ mod tests {
         let plain = [entry(PLAIN), entry("latemount,wait")];
         assert_eq!(whole(&plain).unwrap(), None);
         assert!(!files(&plain));
+    }
+
+    #[test]
+    fn an_emptied_partition_is_made_afresh_where_the_table_lets_the_system() {
+        assert!(made_afresh(&entry(STOCK[0])));
+        assert!(made_afresh(&entry(FILES_ONLY)), "its keys are in the partition, and go and come with it");
+        assert!(made_afresh(&entry(PLAIN)));
+        assert!(!made_afresh(&entry("latemount,wait,quota")), "not formattable");
+        assert!(
+            !made_afresh(&entry("latemount,wait,formattable,metadata_encryption=aes-256-xts:wrappedkey_v0")),
+            "encrypted whole with nowhere said for the key"
+        );
     }
 
     #[test]

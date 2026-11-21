@@ -60,7 +60,10 @@ pub fn unlocked(dir: &Path) -> Result<bool> {
     policy[..8].copy_from_slice(&(POLICY_BYTES as u64).to_ne_bytes());
     if unsafe { libc::ioctl(folder.as_raw_fd(), GET_POLICY as libc::Ioctl, policy.as_mut_ptr()) } != 0 {
         let e = std::io::Error::last_os_error();
-        if e.raw_os_error() == Some(libc::ENODATA) {
+        // The folder is not encrypted, or its filesystem was made without
+        // the means to encrypt any, as one that holds a partition the
+        // phone keeps plain may be.
+        if matches!(e.raw_os_error(), Some(libc::ENODATA | libc::EOPNOTSUPP)) {
             return Ok(true);
         }
         return Err(e).with_context(|| format!("read how {} is encrypted", dir.display()));

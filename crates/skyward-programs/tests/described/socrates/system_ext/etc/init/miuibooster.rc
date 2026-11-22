@@ -1,0 +1,25 @@
+service miuibooster /system_ext/xbin/miuibooster
+  class main
+  user root
+  socket miui_booster stream 660 system system
+  oneshot
+
+on post-fs-data
+  mkdir /data/system/framepredict 0755 system system
+  restorecon_recursive /data/system/framepredict
+
+on property:miuibooster.framepredict.cloud.dev="cloud_whitelist"
+  write /data/system/framepredict/cloud_whitelist ""
+  chown system system /data/system/framepredict/cloud_whitelist
+  chmod 0755 /data/system/framepredict/cloud_whitelist
+
+on property:miuibooster.framepredict.cloud.dev="cloud_cpu_model"
+  write /data/system/framepredict/cloud_cpu_model ""
+  chown system system /data/system/framepredict/cloud_cpu_model
+  chmod 0755 /data/system/framepredict/cloud_cpu_model
+
+
+on property:miuibooster.framepredict.cloud.dev="cloud_gpu_model"
+  write /data/system/framepredict/cloud_gpu_model ""
+  chown system system /data/system/framepredict/cloud_gpu_model
+  chmod 0755 /data/system/framepredict/cloud_gpu_model

@@ -1,0 +1,27 @@
+#on post-fs-data
+#	mkdir /data/vendor/ddr_freq 2771 root log
+
+#ddr freq stop service
+service mem_bin_s /vendor/bin/ddr_freq --s
+	class main
+	disabled
+	user root
+	oneshot
+	seclabel u:r:ddr_freq:s0
+
+#ddr_freq start service
+service mem_bin_w /vendor/bin/ddr_freq --w /data/mqsas/cloud
+	class main
+	disabled
+	user root
+	oneshot
+	seclabel u:r:ddr_freq:s0
+
+on property:persist.sys.stability.ddr_freq_enable=0
+	start mem_bin_s
+	setprop persist.sys.stability.ddr_freq_enable 3
+
+on property:persist.sys.stability.ddr_freq_enable=1
+	start mem_bin_w
+	setprop persist.sys.stability.ddr_freq_enable 2
+

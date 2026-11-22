@@ -287,6 +287,18 @@ fn ishtar_s_programs_are_found_as_they_were_started_on_the_phone_and_its_opener_
     assert_eq!(steps.len(), found.len(), "a phone without a weaver");
 }
 
+/// The K60 Pro, a phone of the 13 Ultra's chip and year: it starts the
+/// programs the 13 Ultra does, each as the 13 Ultra's init has it.
+#[test]
+fn socrates_s_programs_are_the_13_ultra_s() {
+    let found = |codename: &str| {
+        let properties = [("ro.boot.hardware", "qcom"), ("ro.boot.product.vendor.sku", "kalama"), ("ro.boot.product.hardware.sku", codename)];
+        let steps = secure::steps(&phone(codename, &properties)).unwrap();
+        secure::programs(&steps).into_iter().cloned().collect::<Vec<Started>>()
+    };
+    assert_eq!(found("socrates"), found("ishtar"));
+}
+
 /// A phone that carries the libraries its partitions were built against
 /// as a bundle of their own. A program on the vendor partition looks in
 /// the bundle after its partition's folders and before the installed

@@ -1,0 +1,25 @@
+# MIUI ADD: Rust_RuntimeExtension
+service hyos_spawner /system_ext/bin/hyos_spawner /system_ext/bin --spawner --start-spawner-server
+    user root
+    group system
+    socket hyos_spawner stream 0660 root system
+    disabled
+
+on property:init.svc.zygote=running
+    setprop rust.runtime_version 1.3.0
+
+on property:init.svc.zygote=running && property:rust.runtime_active=1
+    start hyos_spawner
+
+on property:persist.sys.rust_runtime_active=0
+    stop hyos_spawner
+
+on property:init.svc.zygote=stopped
+    stop hyos_spawner
+
+on property:init.svc.zygote=stopping
+    stop hyos_spawner
+
+on property:init.svc.zygote=restarting
+    stop hyos_spawner
+# END Rust_RuntimeExtension

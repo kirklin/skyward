@@ -40,6 +40,12 @@ pub(crate) fn share(strength: &Strength, position: f32) -> f32 {
     strength.lightest * (strength.strongest / strength.lightest).powf(position.clamp(0.0, 1.0))
 }
 
+/// `samples` each made `share` of itself, for a driver that is given the
+/// strength in the samples it plays.
+pub(crate) fn scaled(samples: &[i8], share: f32) -> Vec<i8> {
+    samples.iter().map(|&sample| (f32::from(sample) * share).round() as i8).collect()
+}
+
 /// A click's samples at [`RATE`] for a motor that swings at `hz`: whole
 /// swings that drive it, then swings turned over that stop it.
 pub(crate) fn made(hz: f32) -> Vec<i8> {
@@ -115,5 +121,20 @@ mod tests {
         assert!((share(&s, 0.5) - 0.5).abs() < 1e-6);
         assert!((share(&s, 0.25) / share(&s, 0.0) - share(&s, 1.0) / share(&s, 0.75)).abs() < 1e-6, "each step the same factor");
         assert_eq!((share(&s, -1.0), share(&s, 2.0)), (0.25, 1.0), "no further than its ends");
+    }
+
+    #[test]
+    fn samples_made_a_share_of_themselves_swing_the_same_way_less_far() {
+        let click = made(172.4);
+        assert_eq!(scaled(&click, 1.0), click, "the whole of them is as they were made");
+        assert!(scaled(&click, 0.0).iter().all(|&s| s == 0), "none of them is still");
+        let s = Strength { lightest: 0.15, strongest: 1.0 };
+        let peaks: Vec<i8> = [0.0, 0.5, 1.0].iter().map(|&position| *scaled(&click, share(&s, position)).iter().max().unwrap()).collect();
+        assert_eq!(peaks, [19, 49, 127], "the slider's ends and its middle");
+        for (&was, &now) in click.iter().zip(&scaled(&click, 0.415)) {
+            assert!(now.unsigned_abs() <= was.unsigned_abs() && (now == 0 || now.signum() == was.signum()), "{was} became {now}");
+        }
+        let ticking = ticks(TICKS_HZ);
+        assert!(ticking.iter().zip(&scaled(&ticking, 0.415)).all(|(&was, &now)| was != 0 || now == 0), "still between the ticks");
     }
 }

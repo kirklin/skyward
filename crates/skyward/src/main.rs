@@ -163,7 +163,8 @@ enum Cmd {
     },
     /// Set the system clock from the RTC and the offset Android keeps on
     /// persist, as the recovery does when it starts, and print the time in
-    /// China, the first of the time zones the settings offer.
+    /// China, whose zone the clock keeps until the installed system's is
+    /// known or another is chosen.
     #[cfg(target_os = "android")]
     Clock,
     /// Say whether a service has registered with the phone's service
@@ -330,7 +331,8 @@ fn main() -> Result<()> {
         #[cfg(target_os = "android")]
         Cmd::Clock => {
             let ms = skyward_sys::clock::set_from_rtc()?;
-            println!("{}", skyward_ui::fmt::datetime(skyward_ui::Lang::En, (ms / 1000) as i64, 0));
+            let china = skyward_ui::app::listed(skyward_ui::app::FIRST_ZONE).context("the first zone is one listed")?;
+            println!("{}", skyward_ui::fmt::datetime(skyward_ui::Lang::En, (ms / 1000) as i64, skyward_ui::fmt::rules(china)));
             Ok(())
         }
         #[cfg(target_os = "android")]

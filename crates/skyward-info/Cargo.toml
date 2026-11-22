@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 libc = { workspace = true }
+prost = "0.14.4"
 rsproperties = { version = "0.6.0", features = ["builder"] }
 skyward-block = { path = "../skyward-block" }
 skyward-config = { path = "../skyward-config" }

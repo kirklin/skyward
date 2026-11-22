@@ -12,8 +12,8 @@ use skyward_systems::{Named, Other, Overview, Who};
 use skyward_ui::app::{
     Action, Adding, App, Asked, BackupAt, BackupEnd, BackupEntry, BackupJob, BackupRefusal, Choice, Clip, Damage, Data, DownloadEnd,
     DownloadJob, EraseStop, Field, FileKind, FileOp, FileRow, FileTask, FsAction, FsRow, Have, Held, Install, ItemEnd, JobEnd, Key, Keys,
-    MountFailure, MountRow, Part, PartKind, PartStop, Pick, Place, Screen, SkywardEnd, SkywardJob, SkywardStage, Source, SystemChoice,
-    SystemsWork, TermEnd, Touch, UsbDrive, UsbLink, SCREEN_OFF,
+    MountFailure, MountRow, Part, PartKind, PartStop, Pick, Place, Region, Screen, SkywardEnd, SkywardJob, SkywardStage, Source, State,
+    SystemChoice, SystemsWork, TermEnd, Touch, UsbDrive, UsbLink, SCREEN_OFF, listed,
 };
 use skyward_ui::canvas::Drawn;
 use skyward_ui::widgets::{self, Bar, Bolt, Cap, Layer};
@@ -316,7 +316,7 @@ fn main() -> Result<()> {
     // The pages the remaining features open, each with what it would show.
     let made = |place, made, size, parts, system: &str| {
         let held = Held { made, size, parts, device: cfg.device.codename.clone(), system: Some(system.into()), slot: Some(Slot::B) };
-        BackupEntry { place, name: fmt::stamp(made, 0), held: Ok(held) }
+        BackupEntry { place, name: fmt::stamp(made, State::default().zone()), held: Ok(held) }
     };
     let backups = vec![
         made(Place::Storage, 1_792_348_260, 6_214_000_000, [true, true, false, true], "OS4.0.4.0.XPACNXM"),
@@ -398,7 +398,7 @@ fn main() -> Result<()> {
     let adding = |app: &mut App, name: &str, security: Security, field: Field, choosing: bool| {
         app.state.adding = Some(Adding { name: name.into(), security, field, choosing });
     };
-    let pages: [PageShot; 178] = [
+    let pages: [PageShot; 185] = [
         ("11-install-light-locked", Screen::Install, false, &|app| {
             app.state.data = Data::Locked { user: 0, keys: Keys::Digits, checking: false };
         }),
@@ -856,8 +856,21 @@ fn main() -> Result<()> {
             app.term_ended(TermEnd::Exited(0));
         }),
         ("55-language-light", Screen::Language, false, &|_| {}),
-        ("56-time-zone-light", Screen::TimeZone, false, &|_| {}),
-        ("56-time-zone-dark-london", Screen::TimeZone, true, &|app| app.state.time_zone = 5),
+        ("56-time-zone-light-system", Screen::TimeZone, false, &|app| app.set_system_zone("Asia/Shanghai").expect("a zone the recovery carries")),
+        ("56-time-zone-light-system-unlisted", Screen::TimeZone, false, &|app| app.set_system_zone("Asia/Kabul").expect("a zone the recovery carries")),
+        ("56-time-zone-dark-chosen", Screen::TimeZone, true, &|app| {
+            app.set_system_zone("Europe/Rome").expect("a zone the recovery carries");
+            app.state.follow_system_zone = false;
+            app.state.time_zone = listed("Europe/London").expect("London is listed");
+        }),
+        ("56-time-zone-light-no-system", Screen::TimeZone, false, &|_| {}),
+        ("56-time-zones-light-americas", Screen::TimeZones(Region::Americas), false, &|_| {}),
+        ("56-time-zones-dark-europe-africa", Screen::TimeZones(Region::EuropeAfrica), true, &|app| {
+            app.state.time_zone = listed("Europe/London").expect("London is listed");
+        }),
+        ("56-time-zones-light-russia", Screen::TimeZones(Region::Russia), false, &|_| {}),
+        ("56-time-zones-light-asia", Screen::TimeZones(Region::Asia), false, &|_| {}),
+        ("56-time-zones-light-oceania", Screen::TimeZones(Region::Oceania), false, &|_| {}),
         ("57-logs-light", Screen::Logs, false, &|_| {}),
         ("113-update-light-waiting", Screen::Update, false, &|app| app.set_update(Standing::Waiting)),
         ("114-update-dark-merging", Screen::Update, true, &|app| app.set_update(Standing::Merging(0.37))),
@@ -1499,6 +1512,7 @@ fn opened(screen: Screen, w: u32, h: u32, ppd: f32) -> App {
     let mut app = App::new(screen, w, h, ppd);
     app.state.lang = lang();
     app.state.data = Data::Open;
+    app.set_now(LISTED);
     app
 }
 
@@ -1547,6 +1561,7 @@ fn nezha(cfg: &DeviceConfig) -> DeviceInfo {
         os_version: Some("OS4.0.4.0.XPACNXM".into()),
         android: Some("17".into()),
         locale: Some("zh-CN".into()),
+        time_zone: Some("Asia/Shanghai".into()),
         security_patch: Some(PatchLevel { year: 2026, month: 10, day: 1 }),
         kernel: "6.12.69-android16-6-g43b5ab7e247d-abogki561813157-4k".into(),
         storage: Storage { total: 1_039_535_157_248, free: Some(620_652_802_048) },

@@ -48,6 +48,17 @@ impl App {
                 self.refresh();
                 return vec![Effect::Wlan(on)];
             }
+            // The zone the system's gave the clock stays as the one chosen,
+            // where it is one the pages list.
+            Action::Toggle(Switch::SystemTimeZone) => {
+                if self.state.follow_system_zone
+                    && let Some(at) = self.state.zone_listed()
+                {
+                    self.state.time_zone = at;
+                }
+                self.state.follow_system_zone = !self.state.follow_system_zone;
+                self.refresh();
+            }
             Action::Toggle(switch) => {
                 let on = match switch {
                     Switch::Vibrate => &mut self.state.vibrate,
@@ -57,7 +68,7 @@ impl App {
                     Switch::Signature => &mut self.state.check_signature,
                     Switch::KeepRecovery => &mut self.state.keep_recovery,
                     Switch::ShowPassword => &mut self.state.show_password,
-                    Switch::Wlan => unreachable!("the WLAN switch is turned above"),
+                    Switch::Wlan | Switch::SystemTimeZone => unreachable!("the switch is turned above"),
                 };
                 *on = !*on;
                 let now_on = *on;
@@ -241,6 +252,7 @@ impl App {
             }
             Action::TimeZone(k) => {
                 self.state.time_zone = k;
+                self.state.follow_system_zone = false;
                 self.refresh();
             }
             Action::Language(l) => {

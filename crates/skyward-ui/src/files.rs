@@ -7,6 +7,7 @@ use crate::geom::Rect;
 use crate::lang::Lang;
 use crate::theme::Theme;
 use crate::widgets;
+use jiff::tz::TimeZone;
 use std::f32::consts::FRAC_PI_2;
 use std::path::{Component, Path};
 
@@ -223,10 +224,9 @@ pub fn rows(t: &Theme, f: &Fonts, entries: &[FileRow], action: fn(usize) -> Acti
 
 /// Entry `e`'s row over the whole of `c`, sized for it: its icon, its name
 /// on up to two lines, the line under it in `l` with dates told against
-/// `now` in the zone at `zone` in [`crate::app::TIME_ZONES`], and a chevron
-/// for what opens as a folder.
+/// `now` in `zone`, and a chevron for what opens as a folder.
 #[allow(clippy::too_many_arguments)]
-pub fn row(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, e: &FileRow, now: i64, zone: usize) {
+pub fn row(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, e: &FileRow, now: i64, zone: &TimeZone) {
     let m = &t.m;
     let p = palette(t);
     c.clear(p.page);

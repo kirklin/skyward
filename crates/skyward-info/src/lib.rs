@@ -42,6 +42,9 @@ pub struct DeviceInfo {
     /// The locale the installed system is built to start in, such as
     /// `zh-CN`.
     pub locale: Option<String>,
+    /// The time zone the installed system is built to start in, by its
+    /// name in the tz database, such as `Asia/Shanghai`.
+    pub time_zone: Option<String>,
     pub security_patch: Option<PatchLevel>,
     pub kernel: String,
     pub storage: Storage,
@@ -166,6 +169,7 @@ pub fn collect_with(cfg: &DeviceConfig, battery: Option<Battery>) -> Result<Devi
         os_version: system.get(&cfg.device.os_version_prop),
         android: system.get("ro.build.version.release"),
         locale: system.get("ro.product.locale"),
+        time_zone: system.get(TIME_ZONE).filter(|zone| !zone.is_empty()),
         security_patch: system.get("ro.build.version.security_patch").map(|s| s.parse()).transpose()?,
         kernel: kernel_release()?,
         storage: storage()?,
@@ -174,6 +178,48 @@ pub fn collect_with(cfg: &DeviceConfig, battery: Option<Battery>) -> Result<Devi
         snapshot: skyward_vab::snapshot_state()?,
         boot: Boot { unlocked, verified: skyward_block::boot_param("androidboot.verifiedbootstate")? },
     })
+}
+
+/// The property Android keeps its time zone under, by the zone's name in
+/// the tz database: the one a build starts in among its build properties,
+/// and the one set since among the properties init keeps.
+const TIME_ZONE: &str = "persist.sys.timezone";
+
+/// Where init keeps the properties that last from one start to the next,
+/// from the top of the data partition.
+const KEPT_PROPS: &str = "property/persistent_properties";
+
+/// init's `PersistentProperties` from persistent_properties.proto.
+#[derive(Clone, PartialEq, prost::Message)]
+struct KeptProps {
+    #[prost(message, repeated, tag = "1")]
+    properties: Vec<KeptProp>,
+}
+
+/// Its `PersistentPropertyRecord`.
+#[derive(Clone, PartialEq, prost::Message)]
+struct KeptProp {
+    #[prost(string, optional, tag = "1")]
+    name: Option<String>,
+    #[prost(string, optional, tag = "2")]
+    value: Option<String>,
+}
+
+/// The time zone the installed system is set to, by its name in the tz
+/// database, as init keeps it in the data partition mounted at `data`. A
+/// data partition made afresh keeps none until the system has started from
+/// it.
+pub fn kept_time_zone(data: &Path) -> Result<Option<String>> {
+    use prost::Message;
+    let path = data.join(KEPT_PROPS);
+    let bytes = match fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e).with_context(|| format!("read {}", path.display())),
+    };
+    let kept = KeptProps::decode(bytes.as_slice()).with_context(|| format!("read {} as init's kept properties", path.display()))?;
+    let zone = kept.properties.into_iter().find(|p| p.name.as_deref() == Some(TIME_ZONE)).and_then(|p| p.value);
+    Ok(zone.filter(|zone| !zone.is_empty()))
 }
 
 /// Build properties of the system the About page describes.
@@ -444,6 +490,23 @@ mod tests {
         let text = "MemTotal:       15472464 kB\nMemFree:         2381608 kB\n";
         assert_eq!(mem_total(text).unwrap(), 15_472_464);
         assert!(mem_total("MemFree: 1 kB\n").is_err());
+    }
+
+    #[test]
+    fn the_time_zone_the_system_is_set_to_is_read_from_what_init_keeps() {
+        use prost::Message;
+        let record = |name: &str, value: &str| KeptProp { name: Some(name.into()), value: Some(value.into()) };
+        let data = tempfile::tempdir().unwrap();
+        assert_eq!(kept_time_zone(data.path()).unwrap(), None, "a data partition made afresh");
+        let file = data.path().join(KEPT_PROPS);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        let kept = KeptProps { properties: vec![record("persist.sys.locale", "tr-TR"), record(TIME_ZONE, "Europe/Istanbul"), record("persist.sys.timezone_confidence", "100")] };
+        fs::write(&file, kept.encode_to_vec()).unwrap();
+        assert_eq!(kept_time_zone(data.path()).unwrap().as_deref(), Some("Europe/Istanbul"));
+        fs::write(&file, KeptProps { properties: vec![record("persist.sys.locale", "tr-TR"), record(TIME_ZONE, "")] }.encode_to_vec()).unwrap();
+        assert_eq!(kept_time_zone(data.path()).unwrap(), None, "a system that has set none");
+        fs::write(&file, [0xff, 0xff, 0xff]).unwrap();
+        assert!(kept_time_zone(data.path()).is_err(), "a file that is not init's");
     }
 
     #[test]

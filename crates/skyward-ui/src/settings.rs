@@ -2,10 +2,10 @@
 //! the Settings page's, the install page's options, what a backup takes and
 //! where it goes, and which logs are exported where. They are kept as JSON,
 //! each value as what it means, a language as its locale, a time in seconds,
-//! a time zone, a part or a place by its name, so a later version that lists
-//! them otherwise reads them the same.
+//! a time zone by its name in the tz database, a part or a place by its
+//! name, so a later version that lists them otherwise reads them the same.
 
-use crate::app::{Place, State, SCREEN_OFF, TIME_ZONES};
+use crate::app::{Place, State, SystemZone, SCREEN_OFF, TIME_ZONES};
 use crate::Lang;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -42,8 +42,14 @@ pub struct Settings {
     /// How long the screen stays on with nothing touched, in seconds; 0
     /// keeps it on.
     pub screen_off: u64,
-    /// The time zone, by its name in the tz database.
+    /// The clock keeps the time zone the installed system is set to.
+    pub follow_system_time_zone: bool,
+    /// The time zone chosen on its pages, by its name in the tz database.
     pub time_zone: String,
+    /// The time zone the installed system was last seen set to, by its
+    /// name in the tz database, for a start before the data partition
+    /// opens.
+    pub system_time_zone: Option<String>,
     pub vibrate: bool,
     /// The vibration slider's place, from 0 at its left end to 1.
     pub vibration: f32,
@@ -122,7 +128,9 @@ impl Settings {
             dark: state.dark,
             brightness: state.brightness,
             screen_off: SCREEN_OFF[state.screen_off].map_or(0, |ms| ms / 1000),
-            time_zone: TIME_ZONES[state.time_zone].2.to_string(),
+            follow_system_time_zone: state.follow_system_zone,
+            time_zone: TIME_ZONES[state.time_zone].tz.to_string(),
+            system_time_zone: state.system_zone.as_ref().map(|zone| zone.name.clone()),
             vibrate: state.vibrate,
             vibration: state.vibration,
             file_transfer: state.file_transfer,
@@ -176,8 +184,12 @@ impl Settings {
         if let Some(at) = SCREEN_OFF.iter().position(|off| off.map_or(0, |ms| ms / 1000) == self.screen_off) {
             state.screen_off = at;
         }
-        if let Some(at) = TIME_ZONES.iter().position(|zone| zone.2 == self.time_zone) {
+        state.follow_system_zone = self.follow_system_time_zone;
+        if let Some(at) = TIME_ZONES.iter().position(|zone| zone.tz == self.time_zone) {
             state.time_zone = at;
+        }
+        if let Some(zone) = self.system_time_zone.as_deref().and_then(|name| SystemZone::named(name).ok()) {
+            state.system_zone = Some(zone);
         }
         state.vibrate = self.vibrate;
         if (0.0..=1.0).contains(&self.vibration) {
@@ -214,7 +226,7 @@ fn picked<const N: usize>(kept: &[String], all: &[&str; N]) -> [bool; N] {
 /// What the settings file held as the recovery started.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Kept {
-    Settings(Settings),
+    Settings(Box<Settings>),
     /// No settings: no file, or one that does not read as settings.
     Nothing,
     /// Where the file is could not be read; it is left alone this time.
@@ -246,7 +258,7 @@ pub struct Keeper {
 impl Keeper {
     pub fn new(kept: &Kept) -> Keeper {
         let holds = match kept {
-            Kept::Settings(settings) => Some(Some(settings.clone())),
+            Kept::Settings(settings) => Some(Some(settings.as_ref().clone())),
             Kept::Nothing => Some(None),
             Kept::Unreadable => None,
         };
@@ -295,6 +307,12 @@ impl Keeper {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::listed;
+
+    /// Where a zone is in [`TIME_ZONES`], by its name in the tz database.
+    fn zone(tz: &str) -> usize {
+        listed(tz).expect("a zone listed")
+    }
 
     #[test]
     fn the_settings_go_round_through_their_file() {
@@ -304,7 +322,9 @@ mod tests {
             dark: true,
             brightness: 0.7,
             screen_off: 6,
-            time_zone: 7,
+            follow_system_zone: false,
+            time_zone: zone("America/New_York"),
+            system_zone: Some(SystemZone::named("Asia/Kabul").unwrap()),
             vibrate: false,
             vibration: 0.4,
             file_transfer: false,
@@ -322,16 +342,21 @@ mod tests {
         let mut back = State::default();
         kept.apply(&mut back);
         assert_eq!(Settings::of(&back), Settings::of(&state));
-        assert_eq!((back.lang, back.screen_off, back.time_zone), (Lang::En, 6, 7));
+        assert_eq!((back.lang, back.screen_off, back.time_zone), (Lang::En, 6, zone("America/New_York")));
+        assert!(!back.follow_system_zone);
+        assert_eq!(back.system_zone, state.system_zone, "a zone of the system's that the pages do not list");
     }
 
     #[test]
     fn each_value_is_kept_as_what_it_means() {
-        let state = State { screen_off: 3, time_zone: 1, backup: [true, false, false, true], ..State::default() };
+        let system = Some(SystemZone::named("Europe/Rome").unwrap());
+        let state = State { screen_off: 3, time_zone: zone("Asia/Hong_Kong"), system_zone: system, backup: [true, false, false, true], ..State::default() };
         let text = Settings::of(&state).text();
         let json: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(json["screen_off"], 120, "two minutes, in seconds");
         assert_eq!(json["time_zone"], "Asia/Hong_Kong");
+        assert_eq!(json["follow_system_time_zone"], true, "the system's zone is followed until one is chosen");
+        assert_eq!(json["system_time_zone"], "Europe/Rome", "by the name the system gives it");
         assert_eq!(json["backup"]["parts"], serde_json::json!(["boot", "modem"]));
         assert_eq!(json["logs"]["to"], "temporary");
         assert_eq!(json["spoken"], "zh-Hans");
@@ -359,6 +384,7 @@ mod tests {
             vibration: f32::NAN,
             screen_off: 7,
             time_zone: "Mars/Olympus".into(),
+            system_time_zone: Some("Mars/Olympus".into()),
             backup: Backup { parts: vec!["boot".into(), "photos".into()], to: "cloud".into(), ..Backup::default() },
             logs: Logs { kinds: vec!["kernel".into()], to: "printer".into() },
             ..Settings::default()
@@ -369,13 +395,14 @@ mod tests {
         assert_eq!((state.brightness, state.vibration), (start.brightness, start.vibration));
         assert_eq!((state.screen_off, state.time_zone, state.backup_to, state.logs_to), (start.screen_off, start.time_zone, start.backup_to, start.logs_to));
         assert!(!state.language_chosen);
+        assert_eq!(state.system_zone, None, "a zone the recovery carries no rules for");
         assert_eq!(state.backup, [true, false, false, false], "a part this version has not is left out");
         assert_eq!(state.logs, [false, true]);
     }
 
     #[test]
     fn changed_settings_are_written_once_they_have_stood_for_a_moment() {
-        let mut keeper = Keeper::new(&Kept::Settings(Settings::default()));
+        let mut keeper = Keeper::new(&Kept::Settings(Box::default()));
         assert_eq!(keeper.due(Settings::default(), 0), None, "what the file holds is not written again");
         let dark = Settings { dark: true, ..Settings::default() };
         assert_eq!(keeper.due(dark.clone(), 1_000), None);

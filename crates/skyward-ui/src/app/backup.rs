@@ -214,7 +214,7 @@ mod tests {
             system: Some("OS3.0.305.0.WMACNXM".into()),
             slot: Some(Slot::B),
         };
-        BackupEntry { place, name: fmt::stamp(made, 0), held: Ok(held) }
+        BackupEntry { place, name: fmt::stamp(made, State::default().zone()), held: Ok(held) }
     }
 
     #[test]
@@ -243,7 +243,7 @@ mod tests {
         assert_eq!(parts, [Action::RestorePart(0), Action::RestorePart(1), Action::RestorePart(3)], "only what the backup holds");
         tap(&mut app, &f, &i, Action::RestorePart(1));
         assert_eq!(app.state.restore.as_ref().map(|r| r.1), Some([true, false, false, true]));
-        let name = fmt::stamp(1_792_348_260, 0);
+        let name = fmt::stamp(1_792_348_260, State::default().zone());
         assert_eq!(swipe(&mut app, &f, &i, Confirm::Restore), vec![Effect::Restore {
             place: Place::Storage,
             name: name.clone(),

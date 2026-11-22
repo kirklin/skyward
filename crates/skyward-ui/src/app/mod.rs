@@ -136,7 +136,11 @@ pub enum Screen {
     /// started.
     PartWork,
     Language,
+    /// Whether the clock keeps the installed system's time zone, and the
+    /// parts of the world to choose one from.
     TimeZone,
+    /// The time zones of one part of the world.
+    TimeZones(Region),
     /// Saving the logs, as a bug report asks for them.
     Logs,
     /// Where an update the system installed stands, and merging it into

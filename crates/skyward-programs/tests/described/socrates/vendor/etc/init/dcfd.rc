@@ -1,0 +1,4 @@
+service vendor.qsap.dcfd /vendor/bin/qsap_dcfd
+    class main
+    user radio
+    group radio

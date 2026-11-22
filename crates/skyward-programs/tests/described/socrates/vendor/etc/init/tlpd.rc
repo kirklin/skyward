@@ -1,0 +1,21 @@
+# Copyright (c) 2021-2023 Qualcomm Technologies, Inc.
+# All Rights Reserved.
+# Confidential and Proprietary - Qualcomm Technologies, Inc.
+#
+on boot
+    #Create Throughput Latency Processing Daemon socket area
+    mkdir /dev/socket/tlpd 0750 radio radio
+
+on post-fs-data
+    #Create TLPD daemon dir
+    mkdir /data/vendor/tlpd 0770 radio radio
+    chmod 0770 /data/vendor/tlpd
+
+service vendor.tlpd /system/vendor/bin/tlpd boot
+    class main
+    user radio
+    group radio
+    disabled
+
+on property:ro.board.platform=kalama
+    enable vendor.tlpd

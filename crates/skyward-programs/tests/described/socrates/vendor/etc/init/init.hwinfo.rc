@@ -1,0 +1,35 @@
+
+#hwinfo read hardware file_node service
+service hwinfo /vendor/bin/hwinfo
+    class core
+    user root
+    group root
+    disabled
+    oneshot
+    seclabel u:r:hwinfo:s0
+
+on property:vendor.camera.sensor.frontMain.fuseID=* \
+        && property:vendor.camera.sensor.rearMain.fuseID=* \
+        && property:vendor.camera.sensor.rearTele.fuseID=* \
+        && property:vendor.camera.sensor.rearUltra.fuseID=* \
+        && property:vendor.hardwareinfo.finish=
+    start hwinfo
+
+on property:vendor.camera.sensor.frontMain.fuseID=* \
+        && property:vendor.camera.sensor.rearMain.fuseID=* \
+        && property:vendor.camera.sensor.rearUltra.fuseID=* \
+        && property:vendor.hardwareinfo.finish=
+    start hwinfo
+
+on property:vendor.camera.sensor.frontMain.fuseID=* \
+        && property:vendor.camera.sensor.rearMain.fuseID=* \
+        && property:vendor.camera.sensor.rearDepth.fuseID=* \
+        && property:vendor.hardwareinfo.finish=
+    start hwinfo
+
+on property:vendor.camera.sensor.frontMain.fuseID=* \
+        && property:vendor.camera.sensor.rearMain.fuseID=* \
+        && property:vendor.camera.sensor.rearMacro.fuseID=* \
+        && property:vendor.camera.sensor.rearUltra.fuseID=* \
+        && property:vendor.hardwareinfo.finish=
+    start hwinfo

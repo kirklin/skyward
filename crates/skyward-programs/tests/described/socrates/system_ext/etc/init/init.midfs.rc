@@ -1,0 +1,16 @@
+on boot
+    mkdir /mnt/dfs 0771 system system
+    chown root system /proc/fs/cifs/ConnStat
+
+service midfs system_ext/bin/midfs
+    socket midfs stream 0660 system system
+    class main
+    user system
+    disabled
+    group system media_rw
+    capabilities SYS_ADMIN
+
+on property:sys.dfs.server.ctrl=true
+    start midfs
+on property:sys.dfs.server.ctrl=false
+    stop midfs

@@ -119,6 +119,7 @@ not been verified.
 | 🚧 Xiaomi 17 Pro | `pandora` | OS4.0.4.0.XBLCNXM (Android 17) |
 | 🚧 Xiaomi 17 Pro Max | `popsicle` | OS4.0.4.0.XPBCNXM (Android 17) |
 | 🚧 Xiaomi 17 Max | `byron` | OS3.0.310.0.WAFCNXM (Android 16) |
+| 🚧 REDMI K60 Pro | `socrates` | OS3.0.304.0.WMKCNXM (Android 16) |
 | 🚧 REDMI K80 | `zorn` | OS3.0.309.0.WOKCNXM (Android 16) |
 | 🚧 REDMI K80 Pro | `miro` | OS3.0.305.0.WOMCNXM (Android 16) |
 | 🚧 REDMI K90 | `annibale` | OS3.0.307.0.WPKCNXM (Android 16) |

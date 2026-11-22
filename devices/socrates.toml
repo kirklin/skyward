@@ -82,8 +82,45 @@ user = "system"
 groups = ["system", "uhid", "input"]
 capabilities = ["SYS_NICE"]
 
+# WLAN: the 13 Ultra's WCN7850, driven by qca_cld3_kiwi_v2 over the cnss2
+# platform driver, with the settings and the MAC address given to the
+# firmware loader again as on the 13 Ultra: the settings from the vendor
+# partition, the address from persist. The phone's init makes the folder
+# the address is kept in, /mnt/vendor/persist/kiwi_v2, and nothing in it;
+# a phone seen had no address there, and the driver starts without one as
+# it does in the phone's own system.
+[wlan]
+modules = ["qca_cld3_kiwi_v2"]
+writes = [{ path = "/sys/kernel/cnss/fs_ready", value = "1" }]
+firmware = [
+    { name = "wlan/qca_cld/kiwi_v2/WCNSS_qcom_cfg.ini", path = "/vendor/etc/wifi/kiwi_v2/WCNSS_qcom_cfg.ini" },
+    { name = "wlan/qca_cld/kiwi_v2/wlan_mac.bin", partition = "persist", path = "kiwi_v2/wlan_mac.bin", optional = true },
+]
+interface = "wlan0"
+supplicant = "/vendor/bin/hw/wpa_supplicant"
+libraries = ["/vendor/lib64", "/system/lib64"]
+service = "android.hardware.wifi.supplicant.ISupplicant/default"
+probe = "http://connect.rom.miui.com/generate_204"
+
+# The update server the stock updater of the Chinese system asks.
+[update]
+server = "https://update.miui.com/updates/miotaV3.php"
+
 # Official Android 16 OTA used as the recovery ramdisk base.
 [stock]
 version = "OS3.0.304.0.WMKCNXM"
 package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS3.0.304.0.WMKCNXM/socrates-ota_full-OS3.0.304.0.WMKCNXM-user-16.0-694e581e9e.zip"
 recovery = "a1ed92db62fb0915b20309c5fe80b9181c6cf3ecef7d76e68503a2e1e9ff8c88"
+
+# qcom-hv-haptics, which says the motor's resonant frequency in
+# lra_frequency_hz as on the 13 Ultra. The click is made from samples at
+# that frequency. The phone's kernel plays samples at up to 7800 mV and at
+# two strengths alone, 0x2fff of 0x7fff for any magnitude short of the
+# full one (haptics_load_custom_effect in the kernel source Xiaomi
+# publishes for the phone, drivers/input/misc/qcom-hv-haptics.c), so the
+# magnitude stays full and the samples carry the strength; the strengths
+# are those the slider was tried with on the phone.
+[haptics]
+resonance = "/sys/class/qcom-haptics/lra_frequency_hz"
+scale_samples = true
+strength = { lightest = 0.15, strongest = 1.0 }

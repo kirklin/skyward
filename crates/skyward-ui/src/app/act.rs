@@ -22,6 +22,8 @@ impl App {
                 return self.arrive_at(s);
             }
             Action::OpenData => return self.open_data(),
+            Action::OpenRootModule(at) => self.open_root_module(at),
+            Action::ChooseRootChange(change) => self.choose_root_change(change),
             Action::Skip => {
                 self.leave(true);
                 if self.stack.len() > 1 {
@@ -778,6 +780,7 @@ impl App {
                 (Some(Ok(slots)), _) => self.say(&texts::toast::slot_already_next(l, slots.active.letter()), now),
                 _ => self.say(l.pick(texts::slot::UNREADABLE), now),
             },
+            Confirm::RootModule => fx.extend(self.confirm_root_change()),
             Confirm::FactoryReset => fx.push(Effect::FactoryReset),
             Confirm::Merge => {
                 if self.state.update == Standing::Waiting {

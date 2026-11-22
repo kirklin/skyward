@@ -4,6 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub mod modprobe;
+pub mod root;
 
 /// Where a module source's files are in the recovery: the vendor_boot
 /// ramdisk's modules under /lib/modules, the vendor_dlkm and vendor

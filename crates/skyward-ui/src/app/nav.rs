@@ -92,6 +92,10 @@ impl App {
             Screen::Mount => self.state.mount_failure = None,
             // A slot picked and not switched to is put down.
             Screen::Slot => self.state.next_slot = None,
+            Screen::RootModule => {
+                self.state.root_module_id = None;
+                self.state.root_change = None;
+            }
             // So is a system; the page stays while the boot partitions are
             // being written, which nothing may cut short.
             Screen::Systems => {
@@ -268,6 +272,7 @@ impl App {
         // changed what it holds.
         match self.screen() {
             Screen::Restore => fx.push(self.find_backups()),
+            Screen::RootModules => fx.extend(self.arrive_at(Screen::RootModules)),
             Screen::Filesystem | Screen::Filesystems if left == Screen::PartWork => fx.push(Effect::ReadFilesystems),
             _ => {}
         }
@@ -287,6 +292,7 @@ impl App {
             Screen::Mount => vec![Effect::ReadMounts],
             Screen::Filesystems => vec![Effect::ReadFilesystems],
             Screen::Slot | Screen::Reboot => vec![Effect::ReadSlots],
+            Screen::RootModules if self.state.data.storage_open() => vec![Effect::ReadRootModules],
             Screen::Systems => vec![Effect::ReadSystems],
             Screen::Restore => vec![self.find_backups()],
             Screen::Files => vec![Effect::ReadDir(self.state.files.path.clone())],

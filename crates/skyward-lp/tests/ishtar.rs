@@ -1,4 +1,5 @@
 use skyward_lp::{read, read_image, write, Extent, Geometry, ATTR_READONLY, ATTR_UPDATED, HEADER_FLAG_VIRTUAL_AB_DEVICE};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 /// The first 405504 bytes of the super partition of a Xiaomi 13 Ultra on
@@ -133,12 +134,14 @@ fn metadata_written_back_is_what_liblp_wrote() {
     for slot in 0..3 {
         write(&path, &read(&path, slot).unwrap(), &[slot]).unwrap();
     }
-    let head = std::fs::read(&path).map(|mut data| {
-        data.truncate(405_504);
-        data
-    });
+    // Only the start is read back: the rest of super is a hole of nine
+    // gigabytes.
+    let was = std::fs::read(fixture()).unwrap();
+    let mut head = vec![0u8; was.len()];
+    let read_back = std::fs::File::open(&path).and_then(|mut file| file.read_exact(&mut head));
     std::fs::remove_file(&path).unwrap();
-    assert!(head.unwrap() == std::fs::read(fixture()).unwrap(), "every copy reads as it did, byte for byte");
+    read_back.unwrap();
+    assert!(head == was, "every copy reads as it did, byte for byte");
 }
 
 #[test]

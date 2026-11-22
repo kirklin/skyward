@@ -65,6 +65,11 @@ pub struct DeviceConfig {
     /// libraries it needs.
     #[serde(default)]
     pub logd: Option<Logd>,
+    /// Libraries of the phone's own partitions that the recovery's own
+    /// library folder lacks, put there before the programs that use the
+    /// phone's keys start.
+    #[serde(default)]
+    pub libraries: Option<Libraries>,
     /// Files the phone's own init hands to an account as it boots, before
     /// the programs that open them start; a recovery runs none of init's
     /// boot actions.
@@ -233,6 +238,15 @@ pub struct Logd {
     /// Libraries of the installed system it loads that the recovery's own
     /// library folder lacks, put there before it is started.
     pub libraries: Vec<String>,
+}
+
+/// Libraries of the phone's own partitions to put beside the recovery's
+/// own before the programs that use the phone's keys start.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Libraries {
+    /// Each an absolute path to the file the phone keeps, which is put
+    /// under the recovery's own library folder as the name it has.
+    pub paths: Vec<String>,
 }
 
 /// Files the phone's own init hands to one account as it boots, each given
@@ -554,6 +568,13 @@ impl DeviceConfig {
                 ensure!(path.is_absolute() && plain && path.file_name().is_some(), "[logd] libraries: {library} is not an absolute path to a file");
             }
         }
+        if let Some(libraries) = &cfg.libraries {
+            for library in &libraries.paths {
+                let path = Path::new(library);
+                let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
+                ensure!(path.is_absolute() && plain && path.file_name().is_some(), "[libraries] paths: {library} is not an absolute path to a file");
+            }
+        }
         for owners in &cfg.owners {
             for name in [&owners.user, &owners.group] {
                 ensure!(!name.is_empty() && !name.contains(char::is_whitespace), "[[owners]] {name:?} is not an account's name");
@@ -666,6 +687,33 @@ mod tests {
         assert!(with("/mnt/system/system/lib64/libcap.so").is_ok());
         for bad in ["lib64/libcap.so", "/", "/mnt/system/../lib64/libcap.so", ""] {
             assert!(with(bad).is_err(), "{bad} is refused");
+        }
+    }
+
+    #[test]
+    fn a_library_for_the_keys_is_an_absolute_path_to_a_file() {
+        let with = |library: &str| DeviceConfig::parse(&format!("[device]\ncodename = \"x\"\n[libraries]\npaths = [\"{library}\"]\n"));
+        assert!(with("/vendor/lib64/hw/libqtigatekeeper.so").is_ok());
+        for bad in ["vendor/lib64/hw/libqtigatekeeper.so", "/", "/vendor/../lib64/x.so", ""] {
+            assert!(with(bad).is_err(), "{bad} is refused");
+        }
+    }
+
+    #[test]
+    fn haotian_is_given_the_libraries_its_programs_are_linked_against() {
+        let cfg = DeviceConfig::parse(include_str!("../../../devices/haotian.toml")).unwrap();
+        let libraries = cfg.libraries.expect("this system version has no vndk, so the keys' programs need some");
+        assert_eq!(
+            libraries.paths,
+            [
+                "/mnt/system/system/lib64/libvndksupport.so",
+                "/mnt/system/system/lib64/bootstrap/libdl_android.so",
+                "/vendor/lib64/hw/libqtigatekeeper.so",
+                "/vendor/lib64/hw/libEseUtils.so",
+            ]
+        );
+        for other in [include_str!("../../../devices/nezha.toml"), include_str!("../../../devices/ishtar.toml")] {
+            assert_eq!(DeviceConfig::parse(other).unwrap().libraries, None, "this one needs none extra");
         }
     }
 

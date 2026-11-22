@@ -562,6 +562,13 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
         let handed = hand_over(&cfg.owners)?;
         skyward_sys::kmsg(&format!("{handed} of the phone's own files handed to the accounts its init gives them"))?;
     }
+    // The programs that use the phone's keys are linked against libraries
+    // the recovery's own folder does not hold, so these are in place before
+    // any of them starts.
+    if let Some(libraries) = &cfg.libraries {
+        let placed = place_libraries(libraries)?;
+        skyward_sys::kmsg(&format!("{placed} of the phone's own libraries put beside the recovery's"))?;
+    }
     // What the phone describes is known wherever its partitions could be
     // read at all; what they say of its keys may still not be.
     let (described, found) = match found {
@@ -662,16 +669,41 @@ const LOGD_READY: std::time::Duration = std::time::Duration::from_secs(5);
 #[cfg(target_os = "android")]
 fn start_logd(logd: &skyward_config::Logd) -> Result<()> {
     for library in &logd.libraries {
-        let from = Path::new(library);
-        let to = Path::new(RECOVERY_LIBRARIES).join(from.file_name().expect("the configuration names each library's file"));
-        let mut part = to.clone().into_os_string();
-        part.push(".part");
-        std::fs::copy(from, &part).with_context(|| format!("copy {library} to {}", Path::new(&part).display()))?;
-        std::fs::rename(&part, &to).with_context(|| format!("put {} in place", to.display()))?;
+        beside_the_recoverys(library)?;
     }
     skyward_sys::set_prop("ctl.start", "logd")?;
     skyward_sys::wait_prop("logd.ready", "true", LOGD_READY)?;
     skyward_sys::kmsg(&format!("logd runs with {} libraries of the installed system", logd.libraries.len()))
+}
+
+/// Put one of the phone's own libraries beside the recovery's own, under
+/// the name it has there.
+#[cfg(target_os = "android")]
+fn beside_the_recoverys(library: &str) -> Result<()> {
+    let from = Path::new(library);
+    let to = Path::new(RECOVERY_LIBRARIES).join(from.file_name().expect("the configuration names each library's file"));
+    let mut part = to.clone().into_os_string();
+    part.push(".part");
+    std::fs::copy(from, &part).with_context(|| format!("copy {library} to {}", Path::new(&part).display()))?;
+    std::fs::rename(&part, &to).with_context(|| format!("put {} in place", to.display()))
+}
+
+/// Put the libraries the phone keeps where a recovery's loader does not
+/// look beside the recovery's own, and say how many are there: the programs
+/// that use the phone's keys are linked against them, and on a phone whose
+/// partitions were built against no bundle of libraries that the recovery
+/// carries, nothing else puts them within reach. One that cannot be put
+/// there is left for the program that needs it to complain of.
+#[cfg(target_os = "android")]
+fn place_libraries(libraries: &skyward_config::Libraries) -> Result<usize> {
+    let mut placed = 0;
+    for library in &libraries.paths {
+        match beside_the_recoverys(library) {
+            Ok(()) => placed += 1,
+            Err(e) => skyward_sys::kmsg(&format!("{e:#}"))?,
+        }
+    }
+    Ok(placed)
 }
 
 /// Have the parts of the secure world that keep keys agree on the key they

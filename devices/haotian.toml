@@ -38,6 +38,25 @@ group = "system"
 mode = 0o660
 paths = ["/dev/st54spi_gpio"]
 
+# The libraries the phone's own programs are linked against that the
+# recovery's library folder does not hold. A phone of this system version
+# has no bundle of libraries for its partitions to have been built
+# against: ro.vndk.version is not set and there is no vndk apex. So the
+# programs that use the phone's keys start with the recovery's own few and
+# give up one after another: the key service wants libvndksupport and the
+# libdl_android the runtime carries, the credential service the
+# implementation its vendor partition keeps in its hw folder, and the
+# secure element's service its own. Each is taken from where the phone
+# keeps it and put beside the recovery's own, as the 17 Ultra's logd is
+# given the two it loads.
+[libraries]
+paths = [
+    "/mnt/system/system/lib64/libvndksupport.so",
+    "/mnt/system/system/lib64/bootstrap/libdl_android.so",
+    "/vendor/lib64/hw/libqtigatekeeper.so",
+    "/vendor/lib64/hw/libEseUtils.so",
+]
+
 # As on the 17 Ultra, no init script of the phone's starts touch_report:
 # the touch feature service turns the controller's raw frames into
 # touches with /odm/lib64/libtouchreport.so, and a recovery runs none of

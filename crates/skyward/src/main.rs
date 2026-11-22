@@ -242,8 +242,12 @@ fn main() -> Result<()> {
         Cmd::Load { config, names } => {
             let cfg = DeviceConfig::load(&config)?;
             let names = if names.is_empty() { cfg.modules.load.clone() } else { names };
-            for path in load_modules(&cfg, &names)? {
+            let loaded = load_modules(&cfg, &names)?;
+            for path in &loaded.taken {
                 println!("{}", path.display());
+            }
+            for (path, why) in &loaded.refused {
+                eprintln!("{} not loaded: {why}", path.display());
             }
             Ok(())
         }
@@ -506,7 +510,7 @@ fn lp(super_dev: &Path, slot: Option<u32>) -> Result<()> {
 }
 
 /// Load `names` from the module sources the configuration lists.
-fn load_modules(cfg: &DeviceConfig, names: &[String]) -> Result<Vec<PathBuf>> {
+fn load_modules(cfg: &DeviceConfig, names: &[String]) -> Result<skyward_modules::Loaded> {
     let dirs = cfg.modules.sources.iter().map(|s| skyward_modules::source_dir(s)).collect::<Result<Vec<_>>>()?;
     skyward_modules::load(&dirs, names)
 }
@@ -547,8 +551,12 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
         let at = skyward_block::fstab::mount(name)?;
         skyward_sys::kmsg(&format!("{name} is mounted on {}", at.display()))?;
     }
-    for path in load_modules(cfg, &cfg.modules.load)? {
+    let loaded = load_modules(cfg, &cfg.modules.load)?;
+    for path in &loaded.taken {
         skyward_sys::kmsg(&format!("loaded {}", path.display()))?;
+    }
+    for (path, why) in &loaded.refused {
+        skyward_sys::kmsg(&format!("did not load {}: {why}", path.display()))?;
     }
     if !cfg.owners.is_empty() {
         let handed = hand_over(&cfg.owners)?;

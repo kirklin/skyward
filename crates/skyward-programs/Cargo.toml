@@ -9,6 +9,8 @@ workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+# Reads the libraries a program of the phone's asks its loader for.
+object = { version = "0.40.0", default-features = false, features = ["read_core", "elf", "std"] }
 # The descriptions of the services a phone's own programs register are XML.
 roxmltree = "0.21.2"
 skyward-config = { path = "../skyward-config" }

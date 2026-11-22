@@ -8,7 +8,7 @@ use skyward_config::Service;
 use skyward_programs::naming::{self, Does};
 use skyward_programs::phone::{Happens, Partition, Phone, PARTITIONS};
 use skyward_programs::script::{Socket, SocketKind};
-use skyward_programs::secure::{self, Started, Step};
+use skyward_programs::secure::{self, Driver, Started, Step};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -40,13 +40,15 @@ fn with_bundle(codename: &str, properties: &[(&str, &str)], bundle: Option<&Path
     Phone::read(partitions, properties, bundle).unwrap()
 }
 
-/// The steps, each as the name of the program's file, or as the secure
-/// element service where the recovery serves it.
+/// The steps, each as the name of the program's file, as the module of
+/// the driver loaded, or as the secure element service where the recovery
+/// serves it.
 fn names(steps: &[Step]) -> Vec<&str> {
     steps
         .iter()
         .map(|step| match step {
             Step::Start(started) => started.service.path.rsplit('/').next().unwrap(),
+            Step::Drive(driver) => driver.module,
             Step::ServeElements => "(the secure element service)",
         })
         .collect()
@@ -117,17 +119,21 @@ fn builds(codename: &str, partition: &str) -> Vec<String> {
 /// recovery asks, whichever build of the hardware the phone is: the odm
 /// partition's description is the one named after the phone where it has
 /// one, and the vendor partition's any of those it carries. A phone with a
-/// weaver starts what the weaver goes through before it. No service is
-/// told of as registered by two programs, all the phone describes reads
-/// back from the description written of it for the service directory, what
-/// the programs register among it, and every account a program runs as or
-/// is handed a socket of is one the phone's own lists of accounts give a
-/// number.
+/// weaver starts what the weaver goes through before it, and one whose
+/// weaver is NXP's, whose secure element is in its NFC controller, loads
+/// the controller's driver right before the secure element's own service,
+/// which opens the node the driver makes; no other phone loads a driver.
+/// No service is told of as registered by two programs, all the phone
+/// describes reads back from the description written of it for the service
+/// directory, what the programs register among it, and every account a
+/// program runs as or is handed a socket of is one the phone's own lists
+/// of accounts give a number.
 #[test]
 fn every_phone_names_one_program_for_each_service() {
     let mut codenames: Vec<String> = std::fs::read_dir(described("")).unwrap().map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned()).collect();
     codenames.sort();
     assert!(codenames.len() >= 21, "the phones described are {codenames:?}");
+    let mut with_nxp_s_weaver: Vec<&str> = Vec::new();
     for codename in &codenames {
         let mut vendor = builds(codename, "vendor");
         if vendor.is_empty() {
@@ -158,6 +164,16 @@ fn every_phone_names_one_program_for_each_service() {
         if let Some(weaver) = steps.iter().position(|name| name.contains("weaver-service")) {
             assert!(weaver > 0 && (steps[weaver - 1].contains("secure_element") || steps[weaver - 1] == "(the secure element service)"), "{codename}: {steps:?}");
         }
+        let drivers: Vec<(usize, &Driver)> = first.iter().enumerate().filter_map(|(at, step)| if let Step::Drive(driver) = step { Some((at, driver)) } else { None }).collect();
+        match steps.iter().any(|name| name.ends_with("weaver-service.nxp-qti")) {
+            true => {
+                let [(at, driver)] = drivers[..] else { panic!("{codename} loads one driver: {steps:?}") };
+                assert_eq!(*driver, Driver { module: "nxp-nci", node: "/dev/nq-nci" }, "{codename}");
+                assert!(steps[at + 1].contains("secure_element"), "{codename}: {steps:?}");
+                with_nxp_s_weaver.push(codename);
+            }
+            false => assert!(drivers.is_empty(), "{codename}: {steps:?}"),
+        }
         let lists: Vec<String> = ["vendor/etc/passwd", "odm/etc/passwd", "vendor/etc/group", "odm/etc/group"].iter().map(|list| described(codename).join(list).to_string_lossy().into_owned()).collect();
         let known = skyward_sys::ueventd::accounts(&lists.iter().map(String::as_str).collect::<Vec<_>>());
         let mut registered: Vec<&String> = Vec::new();
@@ -178,6 +194,7 @@ fn every_phone_names_one_program_for_each_service() {
         }
         println!("{codename}: {}", steps.join(", "));
     }
+    assert_eq!(with_nxp_s_weaver, ["annibale", "athens", "aurora", "byron", "houji", "miro", "myron", "pandora", "popsicle", "shennong", "warsaw", "zorn"]);
 }
 
 /// The 17 Ultra in the build whose weaver is Goodix's, which goes through

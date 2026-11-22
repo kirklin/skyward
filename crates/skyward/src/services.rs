@@ -1,11 +1,13 @@
 use anyhow::{bail, ensure, Context, Result};
 use procfs::process::{FDTarget, MMapPath, Process};
 use skyward_config::Service;
+use skyward_programs::loaded;
 use skyward_programs::script::{Socket, SocketKind};
 use skyward_programs::secure::Started;
 use skyward_sys::ueventd;
 use skyward_vab::Mounted;
 use std::collections::{BTreeSet, HashMap};
+use std::ffi::{CStr, CString};
 use std::fs;
 use std::io;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
@@ -113,7 +115,62 @@ fn readied(program: &Started, libraries: Option<&Path>, known: &HashMap<String, 
     }
     let who = Credentials::of(&s, known)?;
     let given = Given::of(program, known)?;
+    if who.uid != 0 && carries_capabilities(&s.path)? {
+        bring_within_reach(&s)?;
+    }
     Ok((s, who, given))
+}
+
+/// The attribute the kernel keeps the capabilities of a file's own in.
+const FILE_CAPABILITIES: &CStr = c"security.capability";
+
+/// Whether the file at `path` carries capabilities of its own. A program
+/// that does and runs as another account than root starts with more than
+/// whoever starts it has, and the kernel has its loader take no folders
+/// from them: the loader looks in its own alone.
+fn carries_capabilities(path: &str) -> Result<bool> {
+    let file = CString::new(path).with_context(|| format!("{path} has a zero byte in its name"))?;
+    let length = unsafe { libc::getxattr(file.as_ptr(), FILE_CAPABILITIES.as_ptr(), std::ptr::null_mut(), 0) };
+    if length >= 0 {
+        return Ok(length > 0);
+    }
+    let error = io::Error::last_os_error();
+    match error.raw_os_error() {
+        Some(libc::ENODATA) | Some(libc::EOPNOTSUPP) => Ok(false),
+        _ => Err(error).with_context(|| format!("read the capabilities {path} carries")),
+    }
+}
+
+/// Put within the loader's reach the libraries `s` asks for that it finds
+/// in none of its own folders: each is copied into the first of them, the
+/// recovery's own, from the first folder `s` names that has it, where it
+/// would have been found had the loader taken those folders. Copies stay
+/// for the recovery's life, and a later start finds them there.
+fn bring_within_reach(s: &Service) -> Result<()> {
+    let loader: Vec<PathBuf> = loaded::OWN_FOLDERS.iter().map(PathBuf::from).collect();
+    let named: Vec<PathBuf> = s.libraries.iter().map(PathBuf::from).collect();
+    let own = &loader[0];
+    let beyond = loaded::beyond(Path::new(&s.path), &loader, &named, own)?;
+    for library in &beyond.elsewhere {
+        let put = place(library, own)?;
+        skyward_sys::kmsg(&format!("{} is at {} for {}, whose loader takes no folders from the recovery", library.display(), put.display(), s.path))?;
+    }
+    for name in &beyond.nowhere {
+        skyward_sys::kmsg(&format!("{} asks for {name}, which none of its folders has", s.path))?;
+    }
+    Ok(())
+}
+
+/// Copy `library` into `folder` under its own name and give where it is
+/// put. It is copied under another name and renamed into place, so a
+/// program that has an earlier copy open keeps the one it has.
+pub fn place(library: &Path, folder: &Path) -> Result<PathBuf> {
+    let to = folder.join(library.file_name().with_context(|| format!("{} names no file", library.display()))?);
+    let mut part = to.clone().into_os_string();
+    part.push(".part");
+    fs::copy(library, &part).with_context(|| format!("copy {} to {}", library.display(), Path::new(&part).display()))?;
+    fs::rename(&part, &to).with_context(|| format!("put {} in place", to.display()))?;
+    Ok(to)
 }
 
 /// Start the program, wait until it ends and give how it ended.

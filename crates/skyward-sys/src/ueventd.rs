@@ -119,13 +119,7 @@ pub fn rules(text: &str, known: &HashMap<String, u32>) -> Vec<Rule> {
 pub fn apply() -> anyhow::Result<usize> {
     use anyhow::Context;
     use std::path::Path;
-    let known = accounts(&PASSWD_FILES.iter().chain(GROUP_FILES.iter()).copied().collect::<Vec<_>>());
-    let mut rules = Vec::new();
-    for file in RULE_FILES {
-        if let Ok(text) = std::fs::read_to_string(file) {
-            rules.extend(super::ueventd::rules(&text, &known));
-        }
-    }
+    let rules = described();
     let mut changed = 0;
     for node in nodes(Path::new("/dev"))? {
         if let Some(rule) = rules.iter().rev().find(|r| r.matches(&node)) {
@@ -134,6 +128,31 @@ pub fn apply() -> anyhow::Result<usize> {
         }
     }
     Ok(changed)
+}
+
+/// Give the one device node `node` the owner and permissions the phone's
+/// own rules give it: a node made since [`apply`] went over those there
+/// then, as a driver loaded since makes its own.
+#[cfg(target_os = "android")]
+pub fn apply_to(node: &str) -> anyhow::Result<()> {
+    use anyhow::Context;
+    let rules = described();
+    let rule = rules.iter().rev().find(|r| r.matches(node)).with_context(|| format!("none of the phone's rules for its device nodes names {node}"))?;
+    set(node, rule).with_context(|| format!("give {node} the owner and permissions its phone describes"))
+}
+
+/// The rules the phone's own partitions give for its device nodes, in the
+/// order they are written.
+#[cfg(target_os = "android")]
+fn described() -> Vec<Rule> {
+    let known = accounts(&PASSWD_FILES.iter().chain(GROUP_FILES.iter()).copied().collect::<Vec<_>>());
+    let mut out = Vec::new();
+    for file in RULE_FILES {
+        if let Ok(text) = std::fs::read_to_string(file) {
+            out.extend(rules(&text, &known));
+        }
+    }
+    out
 }
 
 /// Every device node under `dir`, which a recovery's /dev holds few enough

@@ -105,8 +105,12 @@ const NODE_MADE: Duration = Duration::from_secs(5);
 /// and permissions the phone's own rules give it, which the secure
 /// element's service opens it by.
 fn drive(driver: &Driver, modules: &[PathBuf]) -> Result<()> {
-    for path in skyward_modules::load(modules, &[driver.module.to_string()])? {
+    let loaded = skyward_modules::load(modules, &[driver.module.to_string()])?;
+    for path in &loaded.taken {
         skyward_sys::kmsg(&format!("loaded {}", path.display()))?;
+    }
+    for (path, why) in &loaded.refused {
+        skyward_sys::kmsg(&format!("did not load {}: {why}", path.display()))?;
     }
     skyward_sys::wait_file(Path::new(driver.node), NODE_MADE).with_context(|| format!("wait for the node {} makes", driver.module))?;
     skyward_sys::ueventd::apply_to(driver.node)?;

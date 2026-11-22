@@ -243,8 +243,12 @@ fn main() -> Result<()> {
         Cmd::Load { config, names } => {
             let cfg = DeviceConfig::load(&config)?;
             let names = if names.is_empty() { cfg.modules.load.clone() } else { names };
-            for path in load_modules(&cfg, &names)? {
+            let loaded = load_modules(&cfg, &names)?;
+            for path in &loaded.taken {
                 println!("{}", path.display());
+            }
+            for (path, why) in &loaded.refused {
+                eprintln!("{} not loaded: {why}", path.display());
             }
             Ok(())
         }
@@ -515,7 +519,7 @@ fn module_folders(cfg: &DeviceConfig) -> Result<Vec<PathBuf>> {
 }
 
 /// Load `names` from the module sources the configuration lists.
-fn load_modules(cfg: &DeviceConfig, names: &[String]) -> Result<Vec<PathBuf>> {
+fn load_modules(cfg: &DeviceConfig, names: &[String]) -> Result<skyward_modules::Loaded> {
     skyward_modules::load(&module_folders(cfg)?, names)
 }
 
@@ -555,12 +559,23 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
         let at = skyward_block::fstab::mount(name)?;
         skyward_sys::kmsg(&format!("{name} is mounted on {}", at.display()))?;
     }
-    for path in load_modules(cfg, &cfg.modules.load)? {
+    let loaded = load_modules(cfg, &cfg.modules.load)?;
+    for path in &loaded.taken {
         skyward_sys::kmsg(&format!("loaded {}", path.display()))?;
+    }
+    for (path, why) in &loaded.refused {
+        skyward_sys::kmsg(&format!("did not load {}: {why}", path.display()))?;
     }
     if !cfg.owners.is_empty() {
         let handed = hand_over(&cfg.owners)?;
         skyward_sys::kmsg(&format!("{handed} of the phone's own files handed to the accounts its init gives them"))?;
+    }
+    // The programs that use the phone's keys are linked against libraries
+    // the recovery's own folder does not hold, so these are in place before
+    // any of them starts.
+    if let Some(libraries) = &cfg.libraries {
+        let placed = place_libraries(libraries)?;
+        skyward_sys::kmsg(&format!("{placed} of the phone's own libraries put beside the recovery's"))?;
     }
     // What the phone describes is known wherever its partitions could be
     // read at all; what they say of its keys may still not be.
@@ -667,6 +682,24 @@ fn start_logd(logd: &skyward_config::Logd) -> Result<()> {
     skyward_sys::set_prop("ctl.start", "logd")?;
     skyward_sys::wait_prop("logd.ready", "true", LOGD_READY)?;
     skyward_sys::kmsg(&format!("logd runs with {} libraries of the installed system", logd.libraries.len()))
+}
+
+/// Put the libraries the phone keeps where a recovery's loader does not
+/// look beside the recovery's own, and say how many are there: the programs
+/// that use the phone's keys are linked against them, and on a phone whose
+/// partitions were built against no bundle of libraries that the recovery
+/// carries, nothing else puts them within reach. One that cannot be put
+/// there is left for the program that needs it to complain of.
+#[cfg(target_os = "android")]
+fn place_libraries(libraries: &skyward_config::Libraries) -> Result<usize> {
+    let mut placed = 0;
+    for library in &libraries.paths {
+        match services::place(Path::new(library), Path::new(RECOVERY_LIBRARIES)) {
+            Ok(_) => placed += 1,
+            Err(e) => skyward_sys::kmsg(&format!("{e:#}"))?,
+        }
+    }
+    Ok(placed)
 }
 
 /// Have the parts of the secure world that keep keys agree on the key they

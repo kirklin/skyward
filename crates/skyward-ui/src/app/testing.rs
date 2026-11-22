@@ -281,6 +281,12 @@ pub(super) fn joined(name: &str, stage: Joining) -> Wlan {
     }
 }
 
+/// Partitions an image can go to, each of which the phone has in both
+/// slots.
+pub(super) fn slotted(names: &[&str]) -> Vec<FlashTarget> {
+    names.iter().map(|name| FlashTarget { name: name.to_string(), place: FlashPlace::Slotted }).collect()
+}
+
 pub(super) fn connected(name: &str) -> Wlan {
     use std::net::Ipv4Addr;
     joined(

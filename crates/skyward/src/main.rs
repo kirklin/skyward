@@ -920,7 +920,19 @@ fn identify(path: &Path) -> Result<()> {
                 println!("all user data is erased once it is in, after the user agrees");
             }
         }
-        Package::Image(kind) => println!("{kind:?}, for {}", kind.partitions().join(" or ")),
+        Package::Image(image) => {
+            let how = if image.layout.sparse { ", in the sparse format" } else { "" };
+            println!("an image of {:?}, {} bytes in its partition{how}", image.kind, image.layout.size);
+            #[cfg(target_os = "android")]
+            {
+                use skyward_install::image::{named, targets};
+                let name = path.file_name().and_then(|name| name.to_str()).map(named);
+                let logical = skyward_vab::slot_names(booted_slot()?)?;
+                for target in targets(image.kind, name, Path::new(skyward_block::BY_NAME), &logical)? {
+                    println!("for {}, {:?}", target.name, target.place);
+                }
+            }
+        }
         Package::Script => println!("a zip that installs itself with a script"),
         Package::System(c) => {
             println!("the system {} {} ({}), to install beside the installed one", c.manifest.name, c.manifest.version, c.manifest.id);

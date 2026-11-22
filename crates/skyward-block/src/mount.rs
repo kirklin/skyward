@@ -45,6 +45,58 @@ pub fn split_options(options: &[String]) -> (u64, String) {
     (flags, own.join(","))
 }
 
+/// What the kernel's table of mounts shows among a mount's options without
+/// its having been asked for: the access times it keeps unless told
+/// otherwise, and that the filesystem keeps labels.
+const REPORTED: [&str; 2] = ["relatime", "seclabel"];
+
+/// A mount of a device as the kernel's table of mounts shows it, which is
+/// what it takes to make it again.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Kept {
+    pub point: std::path::PathBuf,
+    pub filesystem: String,
+    /// The folder of the filesystem that shows at the mount point: its
+    /// root, or a folder below it where the mount is a view of one.
+    pub root: std::path::PathBuf,
+    /// The options of this mount alone, and those of the filesystem, which
+    /// every mount of it has; without the ones in [`REPORTED`].
+    pub own: Vec<String>,
+    pub shared: Vec<String>,
+}
+
+/// The words of a mount's options as the kernel's table shows them, each
+/// with its value where it has one, in their order by name, without the
+/// ones the kernel reports unasked.
+pub fn option_words<'a>(shown: impl IntoIterator<Item = (&'a str, Option<&'a str>)>) -> Vec<String> {
+    let mut words: Vec<String> = shown
+        .into_iter()
+        .filter(|(name, _)| !REPORTED.contains(name))
+        .map(|(name, value)| match value {
+            Some(value) => format!("{name}={value}"),
+            None => name.to_string(),
+        })
+        .collect();
+    words.sort_unstable();
+    words
+}
+
+impl Kept {
+    /// The options that mount the filesystem afresh as this mount shows
+    /// it: the filesystem's own, read-only where either says so.
+    pub fn options(&self) -> Vec<String> {
+        let read_only = self.read_only() || self.shared.iter().any(|w| w == "ro");
+        let mut options: Vec<String> = self.own.iter().chain(&self.shared).filter(|w| *w != "ro" && *w != "rw").cloned().collect();
+        options.push(if read_only { "ro" } else { "rw" }.to_string());
+        options
+    }
+
+    /// Whether this mount alone is read-only, whatever the filesystem is.
+    pub fn read_only(&self) -> bool {
+        self.own.iter().any(|w| w == "ro")
+    }
+}
+
 /// The mount that shows at a mount point.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Visible {
@@ -83,7 +135,7 @@ fn statvfs(path: &Path) -> io::Result<libc::statvfs> {
 
 #[cfg(target_os = "android")]
 mod sys {
-    use super::{Visible, FILESYSTEMS};
+    use super::{Kept, Visible, FILESYSTEMS};
     use anyhow::{bail, Context, Result};
     use procfs::process::{all_processes, MMapPath, MountInfo, MountOptFields, Process};
     use procfs::{ProcError, ProcResult};
@@ -192,6 +244,72 @@ mod sys {
             }
         }
         Ok(out)
+    }
+
+    /// Unmount `device` wherever it is mounted, the mount made last first,
+    /// for it to be written whole, and give what makes each mount again, in
+    /// the order they were made. Where one of them does not come off, as
+    /// while a program holds a file of it, those that did are made again
+    /// and the device is left as it was.
+    pub fn release(device: &Path) -> Result<Vec<Kept>> {
+        let number = crate::devnum(device)?;
+        let mut kept = Vec::new();
+        for m in mounts()? {
+            let (major, minor) = m.majmin.split_once(':').with_context(|| format!("device number {:?}", m.majmin))?;
+            if (major.parse::<u32>()?, minor.parse::<u32>()?) == number {
+                let words = |options: &HashMap<String, Option<String>>| super::option_words(options.iter().map(|(k, v)| (k.as_str(), v.as_deref())));
+                kept.push(Kept {
+                    point: m.mount_point.clone(),
+                    filesystem: m.fs_type.clone(),
+                    root: PathBuf::from(&m.root),
+                    own: words(&m.mount_options),
+                    shared: words(&m.super_options),
+                });
+            }
+        }
+        for (done, mount) in kept.iter().enumerate().rev() {
+            if let Err(e) = umount(&mount.point) {
+                let holders: Vec<String> = holding(number)?.into_iter().map(|(pid, name)| format!("{name} ({pid})")).collect();
+                let e = e.context(format!("{} is held by {}", device.display(), if holders.is_empty() { "no program".to_string() } else { holders.join(", ") }));
+                return Err(match again(device, &kept[done + 1..], &kept[..=done]) {
+                    Ok(()) => e,
+                    Err(r) => e.context(format!("mounting it again where it had come off failed too: {r:#}")),
+                });
+            }
+        }
+        Ok(kept)
+    }
+
+    /// Mount `device` again as [`release`] found it: the filesystem where
+    /// the first of `kept` that showed its root had it, with the options it
+    /// had, and every other mount as the view of it that it was.
+    pub fn restore(device: &Path, kept: &[Kept]) -> Result<()> {
+        again(device, kept, &[])
+    }
+
+    /// Make the mounts `off` of `device` again, beside those of it that are
+    /// `on` still. Every mount but the first of the filesystem is a view of
+    /// one that shows its root, with the flags of its own it had.
+    fn again(device: &Path, off: &[Kept], on: &[Kept]) -> Result<()> {
+        let whole = |m: &&Kept| m.root == Path::new("/");
+        let shown = match on.iter().find(whole) {
+            Some(shown) => shown,
+            None => {
+                let Some(first) = off.iter().find(whole) else {
+                    anyhow::ensure!(off.is_empty(), "{} was mounted nowhere whole, only folders of it", device.display());
+                    return Ok(());
+                };
+                mount(device, &first.point, &first.filesystem, &first.options())?;
+                first
+            }
+        };
+        for view in off.iter().filter(|m| !std::ptr::eq(*m, shown)) {
+            let from = shown.point.join(view.root.strip_prefix("/").with_context(|| format!("the folder {} of a filesystem", view.root.display()))?);
+            bind(&from, &view.point)?;
+            let (flags, _) = super::split_options(&view.own);
+            remount(&view.point, libc::MS_REMOUNT | libc::MS_BIND | flags as libc::c_ulong, "a view with its own flags")?;
+        }
+        Ok(())
     }
 
     /// Mount what shows at `target` again with the flags it has, writable
@@ -428,7 +546,7 @@ mod sys {
 
 #[cfg(not(target_os = "android"))]
 mod sys {
-    use super::Visible;
+    use super::{Kept, Visible};
     use anyhow::{bail, Result};
     use std::collections::{BTreeSet, HashMap};
     use std::path::Path;
@@ -485,6 +603,14 @@ mod sys {
         bail!("this host does not mount {}", target.display())
     }
 
+    pub fn release(device: &Path) -> Result<Vec<Kept>> {
+        bail!("this host has no mount table to look up {}", device.display())
+    }
+
+    pub fn restore(device: &Path, _kept: &[Kept]) -> Result<()> {
+        bail!("this host does not mount {}", device.display())
+    }
+
     pub fn holders() -> Result<HashMap<(u32, u32), BTreeSet<String>>> {
         bail!("this host does not look up which programs hold a filesystem")
     }
@@ -495,8 +621,8 @@ mod sys {
 }
 
 pub use sys::{
-    bind, holders, holding, is_mount_point, mount, mount_ids, mount_ro, mount_ro_over, points_of, remount_writable, umount,
-    umount_detach, umount_detach_over, umount_over, visible,
+    bind, holders, holding, is_mount_point, mount, mount_ids, mount_ro, mount_ro_over, points_of, release, remount_writable, restore,
+    umount, umount_detach, umount_detach_over, umount_over, visible,
 };
 
 #[cfg(test)]
@@ -514,6 +640,110 @@ mod tests {
         assert_eq!(own, "discard,reserve_root=32768,resgid=1065,fsync_mode=nobarrier,inlinecrypt,gc_merge,atgc");
         let (flags, own) = split_options(&["ro".into(), "defaults".into(), String::new()]);
         assert_eq!((flags, own.as_str()), (1, ""), "read-only, and nothing for the filesystem");
+    }
+
+    #[test]
+    fn a_mount_is_made_again_from_what_the_kernels_table_shows_of_it() {
+        // The firmware partition of a Xiaomi 13 Ultra, as its recovery
+        // mounts it.
+        let shared = [
+            ("ro", None),
+            ("context", Some("u:object_r:firmware_file:s0")),
+            ("uid", Some("1000")),
+            ("gid", Some("1000")),
+            ("fmask", Some("0337")),
+            ("dmask", Some("0227")),
+            ("codepage", Some("437")),
+            ("iocharset", Some("iso8859-1")),
+            ("shortname", Some("lower")),
+            ("errors", Some("remount-ro")),
+        ];
+        let kept = Kept {
+            point: "/vendor/firmware_mnt".into(),
+            filesystem: "vfat".into(),
+            root: "/".into(),
+            own: option_words([("ro", None), ("relatime", None)]),
+            shared: option_words(shared),
+        };
+        assert_eq!(kept.own, ["ro"], "the kernel keeps relative access times unasked");
+        assert!(kept.read_only());
+        let (flags, data) = split_options(&kept.options());
+        assert_eq!(flags, 1, "read-only");
+        assert_eq!(
+            data,
+            "codepage=437,context=u:object_r:firmware_file:s0,dmask=0227,errors=remount-ro,fmask=0337,gid=1000,iocharset=iso8859-1,shortname=lower,uid=1000"
+        );
+        // A writable filesystem whose labels the kernel reports.
+        let data = Kept {
+            point: "/data".into(),
+            filesystem: "f2fs".into(),
+            root: "/".into(),
+            own: option_words([("rw", None), ("nosuid", None), ("nodev", None), ("noatime", None)]),
+            shared: option_words([("rw", None), ("lazytime", None), ("seclabel", None), ("discard", None), ("reserve_root", Some("32768"))]),
+        };
+        assert!(!data.read_only());
+        let (flags, own) = split_options(&data.options());
+        assert_eq!(flags, (1 << 10) | (1 << 1) | (1 << 2) | (1 << 25), "noatime, nosuid, nodev and lazytime, writable");
+        assert_eq!(own, "discard,reserve_root=32768");
+    }
+
+    /// Whether `point` shows a mount of the device numbered `device`.
+    #[cfg(target_os = "android")]
+    fn shows(point: &Path, device: (u32, u32)) -> bool {
+        visible(point).unwrap().is_some_and(|v| v.device == device)
+    }
+
+    #[cfg(target_os = "android")]
+    #[test]
+    fn on_the_phone_a_device_comes_off_everywhere_it_is_mounted_and_goes_back_as_it_was() {
+        let run = |program: &str, args: &[&str]| {
+            let out = std::process::Command::new(program).args(args).output().unwrap();
+            assert!(out.status.success(), "{program} {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+            String::from_utf8(out.stdout).unwrap().trim().to_string()
+        };
+        let at = std::env::temp_dir().join(format!("skyward-mounts-{}", std::process::id()));
+        let (image, whole, view) = (at.join("image"), at.join("whole"), at.join("view"));
+        for folder in [&whole, &view] {
+            std::fs::create_dir_all(folder).unwrap();
+        }
+        std::fs::File::create(&image).unwrap().set_len(64 << 20).unwrap();
+        let device = std::path::PathBuf::from(run("/system/bin/losetup", &["-f", "--show", image.to_str().unwrap()]));
+        crate::erase::make(&device, "ext4", &[], false).unwrap();
+        let number = crate::devnum(&device).unwrap();
+        mount(&device, &whole, "ext4", &["noatime".into(), "nosuid".into(), "errors=remount-ro".into()]).unwrap();
+        std::fs::create_dir(whole.join("folder")).unwrap();
+        std::fs::write(whole.join("folder/file"), b"kept").unwrap();
+        // A view of one of its folders, read-only though the filesystem
+        // is writable.
+        bind(&whole.join("folder"), &view).unwrap();
+        let at_view = std::ffi::CString::new(view.to_str().unwrap()).unwrap();
+        let read_only = libc::MS_REMOUNT | libc::MS_BIND | libc::MS_RDONLY;
+        assert_eq!(unsafe { libc::mount(std::ptr::null(), at_view.as_ptr(), std::ptr::null(), read_only, std::ptr::null()) }, 0);
+        assert!(std::fs::write(view.join("more"), b"x").is_err(), "the view is read-only");
+        std::fs::write(whole.join("other"), b"x").unwrap();
+
+        let kept = release(&device).unwrap();
+        assert_eq!(kept.iter().map(|m| m.point.clone()).collect::<Vec<_>>(), [whole.clone(), view.clone()]);
+        assert_eq!(kept[1].root, Path::new("/folder"));
+        assert!(!kept[0].read_only() && kept[1].read_only());
+        assert!(points_of(number).unwrap().is_empty(), "it is mounted nowhere");
+        restore(&device, &kept).unwrap();
+        assert!(shows(&whole, number) && shows(&view, number));
+        assert_eq!(std::fs::read(view.join("file")).unwrap(), b"kept");
+        assert!(std::fs::write(view.join("more"), b"x").is_err(), "the view is read-only again");
+        std::fs::write(whole.join("more"), b"x").unwrap();
+
+        // A program holding one of its files keeps it where it is, on every
+        // mount point it had.
+        let held = std::fs::File::open(whole.join("folder/file")).unwrap();
+        let err = release(&device).unwrap_err();
+        assert!(format!("{err:#}").contains("is held by"), "{err:#}");
+        assert!(shows(&whole, number) && shows(&view, number), "nothing came off for good");
+        drop(held);
+        assert_eq!(release(&device).unwrap(), kept, "mounted again, it shows as it did");
+
+        run("/system/bin/losetup", &["-d", device.to_str().unwrap()]);
+        std::fs::remove_dir_all(&at).unwrap();
     }
 
     #[test]

@@ -46,12 +46,16 @@ pub enum Pick {
 impl Pick {
     pub const ALL: [Pick; 3] = [Pick::Current, Pick::Other, Pick::Both];
 
-    /// The slots this means on a phone running from `current`.
-    pub fn slots(self, current: Slot) -> Vec<Slot> {
-        match self {
-            Pick::Current => vec![current],
-            Pick::Other => vec![current.other()],
-            Pick::Both => vec![Slot::A, Slot::B],
+    /// The slots this means on a phone running from `current`, for a
+    /// partition that lies in `place`: the ones picked where the phone has
+    /// it in each slot, the one it runs from where it is a logical
+    /// partition, and none where the phone has it once.
+    pub fn slots(self, place: FlashPlace, current: Slot) -> Vec<Slot> {
+        match (place, self) {
+            (FlashPlace::Single, _) => Vec::new(),
+            (FlashPlace::Logical, _) | (FlashPlace::Slotted, Pick::Current) => vec![current],
+            (FlashPlace::Slotted, Pick::Other) => vec![current.other()],
+            (FlashPlace::Slotted, Pick::Both) => vec![Slot::A, Slot::B],
         }
     }
 }
@@ -83,7 +87,7 @@ pub enum Install {
     /// `overwriting` says whether the update writes over the running
     /// system.
     Updating { version: Option<String>, stage: Option<Stage>, overwriting: bool },
-    Flashing { partition: &'static str, stage: Option<Stage> },
+    Flashing { partition: String, stage: Option<Stage> },
     /// A zip with an install script waits for the user to agree to run it.
     ConfirmingScript,
     /// A system to install beside the installed one waits for the room its
@@ -106,12 +110,12 @@ pub enum Install {
 }
 
 /// What a failed install may have left broken.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Damage {
     /// The update had begun writing over the running system.
     System,
     /// The image had begun going into this partition.
-    Partition(&'static str),
+    Partition(String),
     /// The install script had begun to run, and may have written to any
     /// partition.
     Script,
@@ -121,9 +125,10 @@ pub enum Damage {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Choice {
     pub kind: ImageKind,
+    /// The bytes it takes in a partition.
     pub size: u64,
-    /// The partitions it fits, the likeliest first.
-    pub partitions: Vec<&'static str>,
+    /// The partitions it can go to, the likeliest first.
+    pub partitions: Vec<FlashTarget>,
     /// Which of them is chosen.
     pub partition: usize,
     pub pick: Pick,
@@ -264,8 +269,11 @@ impl App {
             Event::Done(outcome) | Event::Finished(outcome) => {
                 let damage = match (&outcome, &*install) {
                     (Outcome::Failed(_), Install::Updating { overwriting: true, .. }) => Some(Damage::System),
+                    // A logical partition made as large as the image no
+                    // longer holds what it held, written to or not.
+                    (Outcome::Failed(_), Install::Flashing { partition, stage: Some(Stage::Resizing) }) => Some(Damage::Partition(partition.clone())),
                     (Outcome::Failed(_), Install::Flashing { partition, stage: Some(Stage::Flashing { done, .. }) }) if *done > 0 => {
-                        Some(Damage::Partition(partition))
+                        Some(Damage::Partition(partition.clone()))
                     }
                     (Outcome::Failed(_), Install::Scripting { running: true, .. }) => Some(Damage::Script),
                     _ => None,
@@ -344,22 +352,18 @@ mod tests {
         let mut app = sideloading(&f, &i);
         app.install(Event::Checking { size: 201_326_592 }, 0);
         let kind = ImageKind::Boot { kernel: true, ramdisk: skyward_install::Ramdisk::Recovery };
-        app.install(Event::Image { kind, size: 201_326_592, partitions: vec!["recovery", "boot"] }, 0);
+        app.install(Event::Image { kind, size: 201_326_592, partitions: slotted(&["recovery", "boot"]) }, 0);
         // The image lit the panel, so the user looks and taps past the wake
         // guard.
         tap_at(&mut app, &f, &i, Action::FlashPartition(1), 1000);
         tap_at(&mut app, &f, &i, Action::FlashSlots(Pick::Both), 1000);
-        let track = app.frame(&f, &i).hits.iter().find(|h| h.action == Action::Confirm(Confirm::Flash)).unwrap().rect;
-        let y = track.centre().1 - app.top().1;
-        app.touch(Touch::Down(track.x + track.h / 2.0, y), &f, 1000);
-        app.touch(Touch::Move(track.x + track.w, y), &f, 1000);
-        assert_eq!(app.touch(Touch::Up, &f, 1000), vec![Effect::Flash { partition: "boot", pick: Pick::Both }]);
-        assert_eq!(app.state.install, Install::Flashing { partition: "boot", stage: None });
+        assert_eq!(swipe_to_flash(&mut app, &f, &i), vec![Effect::Flash { partition: "boot".into(), place: FlashPlace::Slotted, pick: Pick::Both }]);
+        assert_eq!(app.state.install, Install::Flashing { partition: "boot".into(), stage: None });
         app.install(Event::Progress(Stage::Flashing { done: 10, total: 40 }), 1000);
-        assert_eq!(app.state.install, Install::Flashing { partition: "boot", stage: Some(Stage::Flashing { done: 10, total: 40 }) });
+        assert_eq!(app.state.install, Install::Flashing { partition: "boot".into(), stage: Some(Stage::Flashing { done: 10, total: 40 }) });
         app.key(Key::Back, 1000);
         assert_eq!(app.screen(), Screen::Installing, "a partition being written keeps the page");
-        app.install(Event::Finished(Outcome::Flashed { partition: "boot", slots: vec![Slot::A, Slot::B] }), 1000);
+        app.install(Event::Finished(Outcome::Flashed { partition: "boot".into(), slots: vec![Slot::A, Slot::B] }), 1000);
         assert!(matches!(app.state.install, Install::Finished { damage: None, .. }), "a flash that worked broke nothing");
         assert_eq!(tap_at(&mut app, &f, &i, Action::RebootTo(Target::System), 2000), vec![Effect::Reboot(Target::System)]);
         app.key(Key::Back, 2000);
@@ -403,15 +407,68 @@ mod tests {
         assert!(matches!(app.state.install, Install::Finished { damage: None, .. }));
     }
 
+    /// Swipe the flash page's track to its end, at a time past the wake
+    /// guard, and give what the page asks for.
+    fn swipe_to_flash(app: &mut App, f: &Fonts, i: &DeviceInfo) -> Vec<Effect> {
+        let track = app.frame(f, i).hits.iter().find(|h| h.action == Action::Confirm(Confirm::Flash)).unwrap().rect;
+        let y = track.centre().1 - app.top().1;
+        app.touch(Touch::Down(track.x + track.h / 2.0, y), f, 1000);
+        app.touch(Touch::Move(track.x + track.w, y), f, 1000);
+        app.touch(Touch::Up, f, 1000)
+    }
+
+    #[test]
+    fn a_filesystem_image_goes_to_a_logical_partition_of_the_slot_the_phone_runs_from() {
+        let (f, i) = (fonts(), info());
+        let mut app = sideloading(&f, &i);
+        let logical = |name: &str| FlashTarget { name: name.into(), place: FlashPlace::Logical };
+        let mut partitions = slotted(&["modem"]);
+        partitions.extend([logical("odm"), logical("vendor")]);
+        let kind = ImageKind::Filesystem(skyward_install::Filesystem::Erofs);
+        app.install(Event::Image { kind, size: 1 << 30, partitions }, 0);
+        // The partition its file is named for comes first, and the phone
+        // has it in both slots, which are there to pick.
+        let picks = |app: &mut App| app.frame(&f, &i).hits.iter().filter(|h| matches!(h.action, Action::FlashSlots(_))).count();
+        assert_eq!(picks(&mut app), 3);
+        tap_at(&mut app, &f, &i, Action::FlashSlots(Pick::Both), 1000);
+        tap_at(&mut app, &f, &i, Action::FlashPartition(2), 1000);
+        assert_eq!(picks(&mut app), 0, "a logical partition is the running slot's, with nothing to pick");
+        assert_eq!(swipe_to_flash(&mut app, &f, &i), vec![Effect::Flash { partition: "vendor".into(), place: FlashPlace::Logical, pick: Pick::Both }]);
+        assert_eq!(Pick::Both.slots(FlashPlace::Logical, Slot::B), [Slot::B], "whatever was picked for another partition");
+        assert_eq!(Pick::Other.slots(FlashPlace::Slotted, Slot::B), [Slot::A]);
+        assert!(Pick::Current.slots(FlashPlace::Single, Slot::A).is_empty(), "super is in no slot");
+        // Once it is made as large as the image it no longer holds what it
+        // held, though nothing of the image is in it yet.
+        app.install(Event::Progress(Stage::Resizing), 1000);
+        app.install(Event::Finished(Outcome::Failed(Failure::Error("map vendor_b".into()))), 1000);
+        assert_eq!(
+            app.state.install,
+            Install::Finished { outcome: Outcome::Failed(Failure::Error("map vendor_b".into())), damage: Some(Damage::Partition("vendor".into())) }
+        );
+    }
+
+    #[test]
+    fn a_whole_super_is_flashed_to_no_slot() {
+        let (f, i) = (fonts(), info());
+        let mut app = sideloading(&f, &i);
+        let partitions = vec![FlashTarget { name: "super".into(), place: FlashPlace::Single }];
+        app.install(Event::Image { kind: ImageKind::Super, size: 9_663_676_416, partitions }, 0);
+        assert!(!app.frame(&f, &i).hits.iter().any(|h| matches!(h.action, Action::FlashSlots(_))));
+        assert_eq!(swipe_to_flash(&mut app, &f, &i), vec![Effect::Flash { partition: "super".into(), place: FlashPlace::Single, pick: Pick::Current }]);
+        app.install(Event::Finished(Outcome::Flashed { partition: "super".into(), slots: Vec::new() }), 1000);
+        assert!(matches!(app.state.install, Install::Finished { damage: None, .. }));
+        app.frame(&f, &i);
+    }
+
     #[test]
     fn an_image_that_failed_part_way_names_its_partition() {
         let (f, i) = (fonts(), info());
         let mut app = sideloading(&f, &i);
-        app.install(Event::Image { kind: ImageKind::Dtbo, size: 1 << 20, partitions: vec!["dtbo"] }, 0);
-        app.state.install = Install::Flashing { partition: "dtbo", stage: None };
+        app.install(Event::Image { kind: ImageKind::Dtbo, size: 1 << 20, partitions: slotted(&["dtbo"]) }, 0);
+        app.state.install = Install::Flashing { partition: "dtbo".into(), stage: None };
         app.install(Event::Progress(Stage::Flashing { done: 1 << 20, total: 4 << 20 }), 0);
         app.install(Event::Finished(Outcome::Failed(Failure::Disconnected)), 0);
-        assert!(matches!(app.state.install, Install::Finished { damage: Some(Damage::Partition("dtbo")), .. }));
+        assert_eq!(app.state.install, Install::Finished { outcome: Outcome::Failed(Failure::Disconnected), damage: Some(Damage::Partition("dtbo".into())) });
     }
 
     #[test]

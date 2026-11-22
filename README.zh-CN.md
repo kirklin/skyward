@@ -32,6 +32,8 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 
 刷机包的安装脚本可以使用 `7za` 和 `zstd`，支持刷入 super 镜像使用 zstd 压缩的第三方 ROM；`unzip -p` 边解压边输出镜像。安装脚本还可以使用 `avbctl` 关闭验证启动的校验，使用 `resetprop` 读取和设置属性。
 
+分区镜像按内容识别：boot、init_boot、vendor_boot、recovery、dtbo、vbmeta 和整个 super 的镜像各自刷入对应的分区；包含 erofs、ext4 或 f2fs 文件系统的镜像可以刷入当前槽位在 super 中的任何一个逻辑分区，刷入前这个逻辑分区会调整为镜像的大小，和 fastbootd 的做法相同。内容无法识别的镜像按文件名刷入同名的分区，例如 `modem.img` 刷入 modem，这个分区必须在两个槽位各有一份，或者是 super 中的逻辑分区。sparse 格式的镜像在刷入时展开。系统更新尚未合并的时候，暂不刷入 super 和其中的逻辑分区。
+
 ### 在线更新
 
 ![系统和 Skyward 都能在线更新](slides/zh-CN/out/05-updates.png)
@@ -194,7 +196,7 @@ cargo ndk -t arm64-v8a --platform 30 clippy --workspace --all-targets -- -D warn
 名称以 `on_the_phone` 开头的测试会创建文件系统、挂载分区、设置加密密钥，这些操作只有手机能够完成。把一台已经进入 Skyward、数据分区已经打开的手机通过 adb 连接到电脑，`cargo ndk` 会把每个测试程序推送到手机上运行，测试逐个执行：
 
 ```sh
-cargo ndk -t arm64-v8a --platform 30 test -p skyward -p skyward-block -p skyward-files -p skyward-mtp on_the_phone -- --test-threads=1
+cargo ndk -t arm64-v8a --platform 30 test -p skyward -p skyward-block -p skyward-files -p skyward-install -p skyward-mtp -p skyward-vab on_the_phone -- --test-threads=1
 ```
 
 `skyward-preview` 无需手机，在电脑上把页面绘制成 PNG 文件：每个页面完整绘制成长截图的样子，覆盖它可能处于的各种状态，另外还有触摸和动画过程中某些时刻的屏幕。`--lang` 按照地区代码选择语言，例如 `en` 或者 `zh-TW`：

@@ -802,9 +802,9 @@ impl App {
             }
             Confirm::Flash => {
                 if let Install::Choosing(choice) = &self.state.install {
-                    let partition = choice.partitions[choice.partition];
-                    fx.push(Effect::Flash { partition, pick: choice.pick });
-                    self.state.install = Install::Flashing { partition, stage: None };
+                    let FlashTarget { name, place } = choice.partitions[choice.partition].clone();
+                    fx.push(Effect::Flash { partition: name.clone(), place, pick: choice.pick });
+                    self.state.install = Install::Flashing { partition: name, stage: None };
                     self.refresh();
                 }
             }

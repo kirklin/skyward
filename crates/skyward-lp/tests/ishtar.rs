@@ -1,4 +1,4 @@
-use skyward_lp::{read, read_image, Extent, Geometry, ATTR_READONLY, ATTR_UPDATED, HEADER_FLAG_VIRTUAL_AB_DEVICE};
+use skyward_lp::{read, read_image, write, Extent, Geometry, ATTR_READONLY, ATTR_UPDATED, HEADER_FLAG_VIRTUAL_AB_DEVICE};
 use std::path::{Path, PathBuf};
 
 /// The first 405504 bytes of the super partition of a Xiaomi 13 Ultra on
@@ -110,6 +110,157 @@ fn an_image_file_keeps_the_geometry_then_one_copy_of_the_metadata() {
     std::fs::remove_file(&path).unwrap();
     assert_eq!(read_back.unwrap(), read(fixture(), 1).unwrap());
     assert!(format!("{:#}", cut.unwrap_err()).contains("tables run past"), "an image cut short");
+}
+
+/// The fixture as the whole super it is the start of, the rest of it a
+/// hole, in a temporary file.
+fn whole(name: &str) -> PathBuf {
+    let path = std::env::temp_dir().join(format!("skyward-lp-{name}-{}", std::process::id()));
+    std::fs::copy(fixture(), &path).unwrap();
+    std::fs::OpenOptions::new().write(true).open(&path).unwrap().set_len(SUPER_SIZE).unwrap();
+    path
+}
+
+const SUPER_SIZE: u64 = 9_663_676_416;
+
+/// The sectors of super the metadata gives to no partition, in the one
+/// hole its partitions leave.
+const FREE: std::ops::Range<u64> = 13_320_192..13_325_368;
+
+#[test]
+fn metadata_written_back_is_what_liblp_wrote() {
+    let path = whole("written-back");
+    for slot in 0..3 {
+        write(&path, &read(&path, slot).unwrap(), &[slot]).unwrap();
+    }
+    let head = std::fs::read(&path).map(|mut data| {
+        data.truncate(405_504);
+        data
+    });
+    std::fs::remove_file(&path).unwrap();
+    assert!(head.unwrap() == std::fs::read(fixture()).unwrap(), "every copy reads as it did, byte for byte");
+}
+
+#[test]
+fn a_partition_grows_into_the_free_room_behind_it() {
+    let mut md = read(fixture(), 1).unwrap();
+    let before = md.partition("vendor_dlkm_b").unwrap().bytes();
+    md.resize("vendor_dlkm_b", before + 1_048_576 - 100).unwrap();
+    let grown = md.partition("vendor_dlkm_b").unwrap();
+    assert_eq!(grown.bytes(), before + 1_048_576, "whole logical blocks");
+    // Its last extent ended where the free room begins, and goes on into it.
+    assert_eq!(
+        grown.extents,
+        [
+            Extent::Linear { sectors: 81_088, device: 0, sector: 18_248_976 },
+            Extent::Linear { sectors: 32, device: 0, sector: 13_378_032 },
+            Extent::Linear { sectors: 8 + 2048, device: 0, sector: 13_320_184 },
+        ]
+    );
+    // Another partition takes what is left from where the first stopped.
+    md.resize("system_dlkm_b", 680 * 512 + 8192).unwrap();
+    assert_eq!(
+        md.partition("system_dlkm_b").unwrap().extents,
+        [Extent::Linear { sectors: 680, device: 0, sector: 15_157_560 }, Extent::Linear { sectors: 16, device: 0, sector: FREE.start + 2048 }]
+    );
+}
+
+#[test]
+fn a_partition_takes_no_more_than_super_or_its_group_holds() {
+    let mut md = read(fixture(), 1).unwrap();
+    let before = md.clone();
+    let free = (FREE.end - FREE.start) * 512;
+    let held = md.partition("vendor_b").unwrap().bytes();
+    let err = md.resize("vendor_b", held + free + 4096).unwrap_err();
+    assert!(format!("{err:#}").contains("super has 4096 bytes too few free"), "{err:#}");
+    assert_eq!(md, before, "nothing changes where there is too little room");
+    md.resize("vendor_b", held + free).unwrap();
+    assert_eq!(md.partition("vendor_b").unwrap().bytes(), held + free, "all the room there is");
+
+    let mut md = before.clone();
+    let group = md.partition("vendor_b").unwrap().group;
+    md.groups[group].maximum_size = md.partitions.iter().filter(|p| p.group == group).map(|p| p.bytes()).sum();
+    let err = md.resize("vendor_b", held + 4096).unwrap_err();
+    assert!(format!("{err:#}").contains("qti_dynamic_partitions_b"), "{err:#}");
+    assert!(md.resize("no_such_b", 4096).is_err());
+}
+
+#[test]
+fn a_partition_that_shrinks_gives_up_its_last_sectors() {
+    let mut md = read(fixture(), 1).unwrap();
+    md.resize("system_b", 104_857_600).unwrap();
+    assert_eq!(md.partition("system_b").unwrap().extents, [Extent::Linear { sectors: 204_800, device: 0, sector: 13_392_312 }]);
+    // What it gave up is free for another to take, in the order it lies
+    // in super: the eight sectors of its last extent, then the hole.
+    let held = md.partition("mi_ext_b").unwrap().bytes();
+    md.resize("mi_ext_b", held + (FREE.end - FREE.start) * 512 + 4096).unwrap();
+    let extents = &md.partition("mi_ext_b").unwrap().extents;
+    assert_eq!(
+        extents[extents.len() - 2..],
+        [Extent::Linear { sectors: 8, device: 0, sector: 13_320_168 }, Extent::Linear { sectors: FREE.end - FREE.start, device: 0, sector: FREE.start }]
+    );
+    md.resize("system_b", 0).unwrap();
+    assert!(md.partition("system_b").unwrap().extents.is_empty());
+}
+
+#[test]
+fn resized_metadata_reads_back_from_every_slot_it_is_written_to() {
+    let path = whole("resized");
+    let mut md = read(&path, 1).unwrap();
+    md.resize("odm_b", 1_073_741_824).unwrap();
+    md.resize("vendor_b", 1_610_612_736).unwrap();
+    write(&path, &md, &[0, 1]).unwrap();
+    let (a, b, untouched) = (read(&path, 0), read(&path, 1), read(&path, 2));
+    // With the primary copy of slot 1 damaged, its backup reads the same.
+    let data = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+    std::os::unix::fs::FileExt::write_all_at(&data, &[0xff; 16], PRIMARY_SLOT_1 as u64 + 300).unwrap();
+    let from_backup = read(&path, 1);
+    std::fs::remove_file(&path).unwrap();
+    assert_eq!(a.unwrap(), md);
+    assert_eq!(b.unwrap(), md);
+    assert_eq!(untouched.unwrap(), read(fixture(), 2).unwrap());
+    let from_backup = from_backup.unwrap();
+    assert_eq!(from_backup.damaged.len(), 1);
+    assert_eq!(from_backup.partitions, md.partitions);
+}
+
+#[test]
+fn a_copy_that_no_longer_reads_is_made_good_before_the_new_one_is_written() {
+    let path = whole("made-good");
+    let old = read(&path, 1).unwrap();
+    // The backup copy of slot 1: after the three primary copies and the
+    // backup of slot 0.
+    let backup = 12288 + 65536 * 4;
+    let damage = |at: usize| {
+        let data = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        std::os::unix::fs::FileExt::write_all_at(&data, &[0xff; 16], at as u64 + 300).unwrap();
+    };
+    damage(backup);
+    // Metadata too large to write stops before either copy is touched.
+    let mut large = old.clone();
+    large.partitions = (0..2000).map(|k| skyward_lp::Partition { name: format!("p{k}"), attributes: 0, group: 0, extents: Vec::new() }).collect();
+    let refused = write(&path, &large, &[1]).unwrap_err();
+    assert!(format!("{refused:#}").contains("65536 at most"), "{refused:#}");
+    assert_eq!(read(&path, 1).unwrap(), old);
+    let mut md = old.clone();
+    md.resize("system_dlkm_b", 0).unwrap();
+    write(&path, &md, &[1]).unwrap();
+    damage(PRIMARY_SLOT_1);
+    let from_backup = read(&path, 1);
+    std::fs::remove_file(&path).unwrap();
+    assert_eq!(from_backup.unwrap().partitions, md.partitions, "the backup copy was written as well");
+}
+
+#[test]
+fn metadata_for_another_super_is_not_written() {
+    let path = whole("another");
+    let mut md = read(&path, 1).unwrap();
+    md.block_devices[0].size += 4096;
+    let err = write(&path, &md, &[1]).unwrap_err();
+    let unchanged = read(&path, 1);
+    std::fs::remove_file(&path).unwrap();
+    assert!(format!("{err:#}").contains("holds 9663676416 bytes"), "{err:#}");
+    assert_eq!(unchanged.unwrap(), read(fixture(), 1).unwrap());
 }
 
 #[test]

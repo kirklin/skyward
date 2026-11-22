@@ -2555,9 +2555,9 @@ impl Pages<'_> {
                     self.installer = Some(Installer::open(PathBuf::from(path), detach(self.programs.to_vec()), install_options(&self.app))?);
                 }
             }
-            Effect::Flash { partition, pick } => {
+            Effect::Flash { partition, place, pick } => {
                 let slot = skyward_vab::current_slot()?.context("not an A/B phone")?;
-                self.installer.as_ref().context("no installer holds an image")?.flash(partition, pick.slots(slot));
+                self.installer.as_ref().context("no installer holds an image")?.flash(partition, pick.slots(place, slot));
             }
             Effect::Cancel => self.cancel_install(now)?,
             Effect::ReadMounts => self.app.set_mounts(self.mounts()),

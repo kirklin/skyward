@@ -248,6 +248,82 @@ pub fn unmap_whole(whole: &Whole) -> Result<()> {
     dm::remove(&whole.name)
 }
 
+/// The base names of the logical partitions super lists for the slot, in
+/// its order, those that hold nothing yet among them: the ones an image
+/// can be written into.
+pub fn slot_names(slot: Slot) -> Result<Vec<String>> {
+    let md = skyward_lp::read(&super_device(), slot.number())?;
+    Ok(md.partitions.iter().filter_map(|p| p.name.strip_suffix(slot.suffix())).map(str::to_string).collect())
+}
+
+/// A logical partition [`remake`] readied for an image, mapped writable as
+/// `device` and as large as the image.
+#[derive(Debug)]
+pub struct Remade {
+    pub name: String,
+    pub device: PathBuf,
+    pub size: u64,
+    /// Its table, where the recovery had it mapped already and something
+    /// still holds it: it stays mapped, read-only again, once written.
+    held: Option<Vec<dm::Target>>,
+}
+
+/// Check that the slot's logical partition `base_name` can be made to hold
+/// `bytes`, changing nothing: no update snapshot is outstanding, super
+/// lists the partition, and has the room.
+pub fn can_remake(slot: Slot, base_name: &str, bytes: u64) -> Result<()> {
+    ensure_no_snapshot()?;
+    let mut md = skyward_lp::read(&super_device(), slot.number())?;
+    md.resize(&format!("{base_name}{}", slot.suffix()), bytes)
+}
+
+/// Make the slot's logical partition `base_name` hold `bytes` and map it
+/// writable under its own name, for an image to be written into it, as
+/// fastbootd readies one: super's metadata is written anew, for both slots
+/// alike, with the partition as large as the image. No update snapshot may
+/// be outstanding, and the partition has to be off its mount point, as it
+/// is once the recovery has moved off the installed system; one a program
+/// still holds is mapped already, and takes its new table where it is.
+pub fn remake(slot: Slot, base_name: &str, bytes: u64) -> Result<Remade> {
+    ensure_no_snapshot()?;
+    remake_on(&super_device(), slot, base_name, bytes)
+}
+
+fn remake_on(super_dev: &Path, slot: Slot, base_name: &str, bytes: u64) -> Result<Remade> {
+    let mut md = skyward_lp::read(super_dev, slot.number())?;
+    let name = format!("{base_name}{}", slot.suffix());
+    let mapped = dm::status(&name)?;
+    if let Some(device) = mapped {
+        let points = mount::points_of(device)?;
+        ensure!(points.is_empty(), "{name} is mounted on {}, and is written only once it is off", points[0].display());
+    }
+    let before = md.partition(&name).with_context(|| format!("super holds no {name}"))?.extents.clone();
+    md.resize(&name, bytes)?;
+    let p = md.partition(&name).expect("resizing keeps the partition");
+    if p.extents != before {
+        skyward_lp::write(super_dev, &md, &[Slot::A.number(), Slot::B.number()])?;
+    }
+    let table = targets(p, &block_devices(&md, super_dev)?);
+    let (device, held) = match mapped {
+        None => (dm::create(&name, &table, false)?, None),
+        Some((_, minor)) => {
+            dm::reload(&name, &table, false)?;
+            (PathBuf::from(format!("/dev/block/dm-{minor}")), Some(table))
+        }
+    };
+    Ok(Remade { name, device, size: p.bytes(), held })
+}
+
+/// Take away the mapping [`remake`] made once the image is written; one
+/// the recovery had already, and something still holds, stays as it was
+/// found, read-only.
+pub fn settle(remade: &Remade) -> Result<()> {
+    match &remade.held {
+        None => dm::remove(&remade.name),
+        Some(table) => dm::reload(&remade.name, table, true),
+    }
+}
+
 /// What [`map_slot`] did to the slot's logical partitions, for
 /// [`unmap_slot`] to undo: those it mapped, and those the recovery had
 /// mapped read-only already, and still uses, that it made writable.
@@ -420,4 +496,106 @@ pub fn unmount_partitions(slot: Slot) -> Result<()> {
         mount::umount(metadata)?;
     }
     Ok(())
+}
+
+#[cfg(all(test, target_os = "android"))]
+mod tests {
+    use super::*;
+    use crate::current_slot;
+    use std::io::{Read, Seek, SeekFrom, Write};
+
+    fn run(program: &str, args: &[&str]) -> String {
+        let out = std::process::Command::new(program).args(args).output().unwrap();
+        assert!(out.status.success(), "{program} {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8(out.stdout).unwrap().trim().to_string()
+    }
+
+    /// What `device` holds from `at`, `len` bytes of it.
+    fn read_at(device: &Path, at: u64, len: usize) -> Vec<u8> {
+        let mut file = fs::File::open(device).unwrap();
+        skyward_block::drop_cache(&file).unwrap();
+        file.seek(SeekFrom::Start(at)).unwrap();
+        let mut buf = vec![0u8; len];
+        file.read_exact(&mut buf).unwrap();
+        buf
+    }
+
+    /// The bytes an image of `len` bytes holds, told apart by `seed`.
+    fn image(len: usize, seed: u8) -> Vec<u8> {
+        (0..len).map(|i| (i % 251) as u8 ^ seed).collect()
+    }
+
+    fn write_whole(device: &Path, data: &[u8]) {
+        let mut file = fs::OpenOptions::new().write(true).open(device).unwrap();
+        file.write_all(data).unwrap();
+        file.sync_all().unwrap();
+    }
+
+    /// A copy of the phone's own super, its metadata alone, in a file as
+    /// large as super whose rest is a hole, so that nothing here writes to
+    /// the phone's partitions: one of its partitions is resized, mapped and
+    /// written as an image goes into it.
+    #[test]
+    fn on_the_phone_a_logical_partition_takes_the_size_of_an_image_and_is_mapped_for_it() {
+        let slot = current_slot().unwrap().expect("an A/B phone");
+        let real = super_device();
+        let md = skyward_lp::read(&real, slot.number()).unwrap();
+        let head = read_at(&real, 0, (md.block_devices[0].first_logical_sector * 512) as usize);
+        let file = std::env::temp_dir().join(format!("skyward-super-{}.img", std::process::id()));
+        let mut copy = fs::File::create(&file).unwrap();
+        copy.write_all(&head).unwrap();
+        copy.set_len(md.block_devices[0].size).unwrap();
+        drop(copy);
+        let device = PathBuf::from(run("/system/bin/losetup", &["-f", "--show", file.to_str().unwrap()]));
+
+        // A name of its own, which nothing the recovery mapped has.
+        let mut md = skyward_lp::read(&device, slot.number()).unwrap();
+        let taken = md.partitions.iter().position(|p| p.name == format!("vendor_dlkm{}", slot.suffix())).expect("super lists vendor_dlkm");
+        let name = format!("scratch{}", slot.suffix());
+        md.partitions[taken].name = name.clone();
+        skyward_lp::write(&device, &md, &[slot.number()]).unwrap();
+        let was = md.partitions[taken].bytes();
+
+        // Smaller: it gives up its last sectors, and is mapped anew.
+        let small = image(8 << 20, 0x5a);
+        let remade = remake_on(&device, slot, "scratch", small.len() as u64 - 100).unwrap();
+        assert_eq!((remade.name.as_str(), remade.size), (name.as_str(), 8 << 20));
+        assert_eq!(skyward_block::size_bytes(&remade.device).unwrap(), 8 << 20);
+        write_whole(&remade.device, &small);
+        let Extent::Linear { sector, .. } = md.partitions[taken].extents[0] else { panic!("its first extent lies on super") };
+        assert_eq!(read_at(&device, sector * 512, small.len()), small, "what is written to it lies where its first extent is");
+        settle(&remade).unwrap();
+        assert!(dm::status(&name).unwrap().is_none(), "a mapping made for the image goes with it");
+        for number in [0, 1] {
+            let written = skyward_lp::read(&device, number).unwrap();
+            assert_eq!(written.partition(&name).unwrap().bytes(), 8 << 20, "both slots read the new size");
+        }
+
+        // Larger again, while something holds the mapping it had: the
+        // mapping takes the new table where it is, and stays read-only.
+        let before = skyward_lp::read(&device, slot.number()).unwrap();
+        let p = before.partition(&name).unwrap();
+        let held = dm::create(&name, &targets(p, &block_devices(&before, &device).unwrap()), true).unwrap();
+        let large = image(24 << 20, 0xa5);
+        assert!(was >= 24 << 20, "the room it gave up holds it again");
+        let remade = remake_on(&device, slot, "scratch", large.len() as u64).unwrap();
+        assert_eq!(remade.device, held);
+        assert_eq!(skyward_block::size_bytes(&held).unwrap(), 24 << 20);
+        write_whole(&held, &large);
+        assert_eq!(read_at(&held, 0, large.len()), large);
+        settle(&remade).unwrap();
+        assert!(dm::readonly(&name).unwrap(), "it is read-only as it was found");
+        assert_eq!(read_at(&held, 0, large.len()), large);
+
+        // More than super has free changes nothing.
+        let unchanged = skyward_lp::read(&device, slot.number()).unwrap();
+        dm::remove(&name).unwrap();
+        let err = remake_on(&device, slot, "scratch", md.block_devices[0].size).unwrap_err();
+        assert!(format!("{err:#}").contains("too few free") || format!("{err:#}").contains("its group"), "{err:#}");
+        assert_eq!(skyward_lp::read(&device, slot.number()).unwrap(), unchanged);
+        assert!(dm::status(&name).unwrap().is_none());
+
+        run("/system/bin/losetup", &["-d", device.to_str().unwrap()]);
+        fs::remove_file(&file).unwrap();
+    }
 }

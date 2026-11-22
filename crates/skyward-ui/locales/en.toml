@@ -345,6 +345,10 @@ boot = "Boot image"
 vendor_boot = "vendor_boot image"
 dtbo = "dtbo image"
 vbmeta = "vbmeta image"
+# An image of all of super.
+whole_super = "super image"
+# An image of a logical partition, or one only its file's name places.
+partition = "Partition image"
 
 [image.holds]
 kernel_and_recovery_ramdisk = "Holds a kernel and a recovery ramdisk"
@@ -355,6 +359,10 @@ generic_ramdisk = "Holds a generic ramdisk alone"
 vendor_ramdisk = "Holds the vendor ramdisk and device tree"
 overlays = "Holds device tree overlays"
 verified_boot_data = "Holds verified boot data"
+logical_partitions = "Holds every logical partition"
+# {fs} is the filesystem's name: erofs, ext4 or f2fs.
+filesystem = "Holds an {fs} filesystem"
+unidentified = "Holds nothing Skyward recognizes"
 
 # What a partition an image can go to is for.
 [image.role]
@@ -366,6 +374,8 @@ dtbo = "Device tree overlays"
 vbmeta = "Verified boot data"
 vbmeta_system = "Verification data of the system partitions"
 vbmeta_vendor = "Verification data of the vendor partitions"
+logical = "Logical partition in super"
+whole_super = "Every logical partition"
 partition = "Partition"
 
 # How long the screen stays on with nothing touched.
@@ -769,8 +779,8 @@ ways = "Ways to install"
 choose_in_storage = "Choose a package or image in internal storage"
 choose_on_usb_drive = "Choose a package or image on the USB drive"
 sideload = "Run adb sideload on the computer"
-what_with_second_system = "Installs A/B full OTA packages, flashable zips with an install script and second systems' packages, and flashes boot, init_boot, vendor_boot, recovery, dtbo and vbmeta partition images. A system update installs to the other slot, which starts after a reboot; a second system installs into the data partition, and Dual boot switches to it. Choosing a file lists only folders and .zip and .img files."
-what = "Installs A/B full OTA packages and flashable zips with an install script, and flashes boot, init_boot, vendor_boot, recovery, dtbo and vbmeta partition images. A system update installs to the other slot, which starts after a reboot. Choosing a file lists only folders and .zip and .img files."
+what_with_second_system = "Installs A/B full OTA packages, flashable zips with an install script and second systems' packages, and flashes partition images, sparse ones included: those of boot, init_boot, vendor_boot, recovery, dtbo, vbmeta, super and the logical partitions in super, and any other named after its partition, such as modem.img. A system update installs to the other slot, which starts after a reboot; a second system installs into the data partition, and Dual boot switches to it. Choosing a file lists only folders and .zip and .img files."
+what = "Installs A/B full OTA packages and flashable zips with an install script, and flashes partition images, sparse ones included: those of boot, init_boot, vendor_boot, recovery, dtbo, vbmeta, super and the logical partitions in super, and any other named after its partition, such as modem.img. A system update installs to the other slot, which starts after a reboot. Choosing a file lists only folders and .zip and .img files."
 verify_signatures = "Verify zip signatures"
 verify_signatures_note = "When on, only zips signed with this phone's official keys install."
 flash_skyward_again = "Flash Skyward again"
@@ -903,6 +913,8 @@ to_slot = "The new system is installed to slot {slot}, which starts after a rebo
 flashed = "Flashed"
 flashed_one = "Flashed to {partition} in slot {slot}."
 flashed_two = "Flashed to {partition} in slots {a} and {b}."
+# A partition the phone has once, in no slot: super.
+flashed_whole = "Flashed to {partition}."
 script_ran = "The install script ran to its end."
 second_system = "{name} is installed as the second system. Switch to it from Dual boot."
 cancelled = "Cancelled"

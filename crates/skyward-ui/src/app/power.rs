@@ -539,15 +539,15 @@ mod tests {
         press(&mut app, Key::Power, 0);
         app.install(Event::Checking { size: 1 << 20 }, 10);
         assert!(!app.display_on(), "reading the package does not light it");
-        app.install(Event::Image { kind: ImageKind::Dtbo, size: 1 << 20, partitions: vec!["dtbo"] }, 20);
+        app.install(Event::Image { kind: ImageKind::Dtbo, size: 1 << 20, partitions: slotted(&["dtbo"]) }, 20);
         assert!(app.display_on(), "an image waiting for its partition does");
         app.tick(20 + 520);
         assert_eq!(app.deadline(20 + 520), Some(20 + DIMS));
-        app.state.install = Install::Flashing { partition: "dtbo", stage: None };
+        app.state.install = Install::Flashing { partition: "dtbo".into(), stage: None };
         press(&mut app, Key::Power, 500);
         app.install(Event::Progress(Stage::Flashing { done: 1, total: 2 }), 510);
         assert!(!app.display_on(), "progress does not");
-        app.install(Event::Finished(Outcome::Flashed { partition: "dtbo", slots: vec![Slot::A] }), 520);
+        app.install(Event::Finished(Outcome::Flashed { partition: "dtbo".into(), slots: vec![Slot::A] }), 520);
         assert!(app.display_on(), "the end does");
     }
 

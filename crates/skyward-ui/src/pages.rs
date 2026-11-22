@@ -19,7 +19,7 @@ use crate::theme::Theme;
 use crate::icons::{self, Icon};
 use crate::widgets::{self, Caption, Detail, Fact, Outline, Row, Spec, SystemCard, SystemMark, Tone, Trail};
 use skyward_info::{DeviceInfo, VERSION};
-use skyward_install::{Outcome, Reflash, Refusal, Stage};
+use skyward_install::{Outcome, Place as FlashPlace, Reflash, Refusal, Stage};
 use skyward_net::download::Progress;
 use skyward_net::supplicant::Security;
 use skyward_net::wlan::{Bands, Network, Power, Stage as Joining};
@@ -895,7 +895,10 @@ fn update_stage(l: Lang, stage: Option<&Stage>) -> (String, Option<f32>) {
         }
         Some(Stage::Finishing) => (l.pick(texts::installing::UPDATE_FINISHING).into(), None),
         Some(Stage::Reflashing { done, total }) => (l.pick(texts::installing::REFLASHING).into(), Some(*done as f32 / *total as f32)),
-        Some(Stage::Flashing { .. } | Stage::Script { .. } | Stage::Signature { .. } | Stage::Allocating { .. } | Stage::Root { .. } | Stage::Storing) | None => {
+        Some(
+            Stage::Resizing | Stage::Flashing { .. } | Stage::Script { .. } | Stage::Signature { .. } | Stage::Allocating { .. } | Stage::Root { .. } | Stage::Storing,
+        )
+        | None => {
             (l.pick(texts::installing::GETTING_READY).into(), None)
         }
     }
@@ -1054,26 +1057,40 @@ pub fn installing(cx: &Ctx) -> Frame {
         }
         Install::Choosing(choice) => {
             let (name, holds) = fmt::image_kind(l, choice.kind);
-            let detail = texts::installing::size_and_holds(l, fmt::bytes(choice.size), holds);
+            let detail = texts::installing::size_and_holds(l, fmt::bytes(choice.size), &holds);
             let y = widgets::list(&mut c, t, f, top, &[standing(name, GREEN, Icon::Install, &detail)]).bottom;
             let y = widgets::section(&mut c, t, f, y, l.pick(texts::flash::PARTITION));
             let rows: Vec<Row> = choice
                 .partitions
                 .iter()
                 .enumerate()
-                .map(|(k, p)| Row::new(p).subtitle(fmt::partition_role(l, p)).trail(Trail::Check(k == choice.partition)))
+                .map(|(k, p)| Row::new(&p.name).subtitle(fmt::partition_role(l, p)).trail(Trail::Check(k == choice.partition)))
                 .collect();
             let parts = widgets::list(&mut c, t, f, y, &rows);
             let choose: Vec<Action> = (0..choice.partitions.len()).map(Action::FlashPartition).collect();
             out.extend(hits(&parts.rows, &choose));
-            let y = widgets::section(&mut c, t, f, parts.bottom, l.pick(texts::slot::TITLE));
-            let titles = Pick::ALL.map(|p| pick_title(l, p, i.slot));
-            let rows: Vec<Row> =
-                Pick::ALL.iter().zip(&titles).map(|(p, title)| Row::new(title).trail(Trail::Check(*p == choice.pick))).collect();
-            let picks = widgets::list(&mut c, t, f, y, &rows);
-            out.extend(hits(&picks.rows, &Pick::ALL.map(Action::FlashSlots)));
+            // A partition the phone has in each slot goes to the slots
+            // picked, and a logical one to the slot the phone runs from,
+            // which is shown with nothing to pick; super is in no slot.
+            let bottom = match choice.partitions[choice.partition].place {
+                FlashPlace::Slotted => {
+                    let y = widgets::section(&mut c, t, f, parts.bottom, l.pick(texts::slot::TITLE));
+                    let titles = Pick::ALL.map(|p| pick_title(l, p, i.slot));
+                    let rows: Vec<Row> =
+                        Pick::ALL.iter().zip(&titles).map(|(p, title)| Row::new(title).trail(Trail::Check(*p == choice.pick))).collect();
+                    let picks = widgets::list(&mut c, t, f, y, &rows);
+                    out.extend(hits(&picks.rows, &Pick::ALL.map(Action::FlashSlots)));
+                    picks.bottom
+                }
+                FlashPlace::Logical => {
+                    let y = widgets::section(&mut c, t, f, parts.bottom, l.pick(texts::slot::TITLE));
+                    let title = pick_title(l, Pick::Current, i.slot);
+                    widgets::list(&mut c, t, f, y, &[Row::new(&title).trail(Trail::Check(true))]).bottom
+                }
+                FlashPlace::Single => parts.bottom,
+            };
             let (label, danger) = confirm_label(Confirm::Flash, cx.state);
-            let track = widgets::confirm(&mut c, t, f, picks.bottom + t.m.dp(28.0), label, danger, s.confirm);
+            let track = widgets::confirm(&mut c, t, f, bottom + t.m.dp(28.0), label, danger, s.confirm);
             out.push(Hit { rect: track, action: Action::Confirm(Confirm::Flash) });
             let note = l.pick(match s.source {
                 Source::Computer => texts::flash::OVERWRITES_ENDS_SIDELOAD,
@@ -1211,7 +1228,7 @@ pub fn installing(cx: &Ctx) -> Frame {
             }
             widgets::footnote(&mut c, t, f, y, l.pick(texts::installing::MORE_COMMANDS))
         }
-        Install::Finished { outcome, damage } => finished(&mut c, cx, top, outcome, *damage, &mut out, &mut rows),
+        Install::Finished { outcome, damage } => finished(&mut c, cx, top, outcome, damage.as_ref(), &mut out, &mut rows),
     };
     // What the system asked for says why, where it said.
     let bottom = match (s.source, &s.asked.reason) {
@@ -1243,7 +1260,7 @@ fn finished(
     cx: &Ctx,
     top: f32,
     outcome: &Outcome,
-    damage: Option<Damage>,
+    damage: Option<&Damage>,
     out: &mut Vec<Hit>,
     rows: &mut Option<Rows>,
 ) -> f32 {
@@ -1271,6 +1288,7 @@ fn finished(
         }
         Outcome::Flashed { partition, slots } => {
             let detail = match slots.as_slice() {
+                [] => installed::flashed_whole(l, partition),
                 [slot] => installed::flashed_one(l, partition, slot.letter()),
                 [a, b] => installed::flashed_two(l, partition, a.letter(), b.letter()),
                 other => unreachable!("a phone has two slots, and the image went to {other:?}"),

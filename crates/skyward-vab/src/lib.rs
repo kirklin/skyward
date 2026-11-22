@@ -10,9 +10,9 @@ mod partitions;
 pub mod snapshots;
 
 pub use partitions::{
-    check_merge, map_slot, map_whole, mount_one, mount_partitions, mount_point, mounted_partitions, release_partitions, slot_bases,
-    slot_sizes, snapshots_mapped, start_merge, unmap_slot, unmap_whole, unmount_one, unmount_partitions, Mounted, Mounts, SlotMaps,
-    Whole,
+    can_remake, check_merge, map_slot, map_whole, mount_one, mount_partitions, mount_point, mounted_partitions, release_partitions,
+    remake, settle, slot_bases, slot_names, slot_sizes, snapshots_mapped, start_merge, unmap_slot, unmap_whole, unmount_one,
+    unmount_partitions, Mounted, Mounts, Remade, SlotMaps, Whole,
 };
 pub use snapshots::Merge;
 

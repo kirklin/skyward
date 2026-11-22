@@ -24,7 +24,7 @@ use crate::texts;
 use crate::theme::Theme;
 use crate::widgets::{self, Bar, Bolt, Cap, Layer, WlanMark};
 use skyward_info::DeviceInfo;
-use skyward_install::{Event, ImageKind, Outcome, Reflash, Refusal, Stage};
+use skyward_install::{Event, ImageKind, Outcome, Place as FlashPlace, Reflash, Refusal, Stage, Target as FlashTarget};
 use skyward_net::download::{Failure, Progress};
 use skyward_net::github::{Build, Newest};
 use skyward_net::release::{Release, Unanswered};
@@ -441,9 +441,9 @@ pub enum Effect {
     /// Start installing the file at this full path, opened in the file
     /// manager, telling how it goes as [`Effect::Sideload`] does.
     InstallPath(String),
-    /// Write the image the installer holds to `partition` in the slots
-    /// `pick` means.
-    Flash { partition: &'static str, pick: Pick },
+    /// Write the image the installer holds to `partition`, which lies in
+    /// `place`, in the slots `pick` means there.
+    Flash { partition: String, place: FlashPlace, pick: Pick },
     /// Stop waiting for the computer, for where an image goes, or for an
     /// update to be agreed to.
     Cancel,

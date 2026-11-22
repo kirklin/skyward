@@ -122,6 +122,49 @@ pub fn devnum(path: impl AsRef<Path>) -> Result<(u32, u32)> {
     anyhow::bail!("this host has no block device {}", path.as_ref().display())
 }
 
+/// Whether a block device is marked read-only, as Android marks one when
+/// it mounts it read-only; writing to one so marked is refused whether or
+/// not it is still mounted.
+#[cfg(target_os = "android")]
+pub fn read_only(path: impl AsRef<Path>) -> Result<bool> {
+    use std::os::unix::io::AsRawFd;
+    // _IO(0x12, 94)
+    const BLKROGET: u32 = 0x125e;
+    let p = path.as_ref();
+    let f = fs::File::open(p).with_context(|| format!("open {}", p.display()))?;
+    let mut marked: libc::c_int = 0;
+    if unsafe { libc::ioctl(f.as_raw_fd(), BLKROGET as libc::c_int, &mut marked as *mut libc::c_int) } != 0 {
+        return Err(std::io::Error::last_os_error()).with_context(|| format!("ask whether {} is read-only", p.display()));
+    }
+    Ok(marked != 0)
+}
+
+#[cfg(not(target_os = "android"))]
+pub fn read_only(path: impl AsRef<Path>) -> Result<bool> {
+    anyhow::bail!("this host has no block device {}", path.as_ref().display())
+}
+
+/// Mark a block device read-only, or take the mark off it.
+#[cfg(target_os = "android")]
+pub fn set_read_only(path: impl AsRef<Path>, read_only: bool) -> Result<()> {
+    use std::os::unix::io::AsRawFd;
+    // _IO(0x12, 93)
+    const BLKROSET: u32 = 0x125d;
+    let p = path.as_ref();
+    let f = fs::File::open(p).with_context(|| format!("open {}", p.display()))?;
+    let mark = libc::c_int::from(read_only);
+    if unsafe { libc::ioctl(f.as_raw_fd(), BLKROSET as libc::c_int, &mark as *const libc::c_int) } != 0 {
+        let what = if read_only { "mark" } else { "no longer mark" };
+        return Err(std::io::Error::last_os_error()).with_context(|| format!("{what} {} read-only", p.display()));
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "android"))]
+pub fn set_read_only(path: impl AsRef<Path>, _read_only: bool) -> Result<()> {
+    anyhow::bail!("this host has no block device {}", path.as_ref().display())
+}
+
 /// Drop the device's cached pages, so reading it back reads the flash.
 #[cfg(target_os = "android")]
 pub fn drop_cache(f: &fs::File) -> Result<()> {
@@ -154,5 +197,30 @@ mod tests {
     fn parses_slot_from_bootconfig() {
         let line = "androidboot.slot_suffix = \"_a\"\nandroidboot.force_normal_boot = \"1\"";
         assert_eq!(find_kv(line, "androidboot.slot_suffix").as_deref(), Some("_a"));
+    }
+
+    #[cfg(target_os = "android")]
+    #[test]
+    fn on_the_phone_a_device_marked_read_only_takes_no_writing_until_the_mark_is_off() {
+        use std::io::Write;
+        let losetup = |args: &[&str]| {
+            let out = std::process::Command::new("/system/bin/losetup").args(args).output().unwrap();
+            assert!(out.status.success(), "losetup {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+            String::from_utf8(out.stdout).unwrap().trim().to_string()
+        };
+        let image = std::env::temp_dir().join(format!("skyward-read-only-{}.img", std::process::id()));
+        fs::File::create(&image).unwrap().set_len(1 << 20).unwrap();
+        let device = PathBuf::from(losetup(&["-f", "--show", image.to_str().unwrap()]));
+        let write = || fs::OpenOptions::new().write(true).open(&device).and_then(|mut f| f.write_all(&[0x5a; 4096]));
+        assert!(!read_only(&device).unwrap());
+        write().unwrap();
+        set_read_only(&device, true).unwrap();
+        assert!(read_only(&device).unwrap());
+        assert_eq!(write().unwrap_err().raw_os_error(), Some(libc::EPERM), "it opens, and is not written");
+        set_read_only(&device, false).unwrap();
+        assert!(!read_only(&device).unwrap());
+        write().unwrap();
+        losetup(&["-d", device.to_str().unwrap()]);
+        fs::remove_file(&image).unwrap();
     }
 }

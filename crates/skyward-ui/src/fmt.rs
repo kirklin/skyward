@@ -9,7 +9,7 @@ pub use jiff::tz::TimeZone;
 use jiff::Timestamp;
 use skyward_info::{Battery, Charge, Cpu, PatchLevel, Storage};
 use skyward_install::ota::Trouble;
-use skyward_install::{Failure, ImageKind, Ramdisk, Refusal};
+use skyward_install::{Failure, ImageKind, Place as FlashPlace, Ramdisk, Refusal, Target as FlashTarget};
 use skyward_net::download::Failure as DownloadFailure;
 use skyward_net::reach::Reach;
 use skyward_net::release::Unanswered;
@@ -764,7 +764,7 @@ pub fn parts(l: Lang, held: &[bool; 4]) -> String {
 }
 
 /// What an image is, and what it holds.
-pub fn image_kind(l: Lang, kind: ImageKind) -> (&'static str, &'static str) {
+pub fn image_kind(l: Lang, kind: ImageKind) -> (&'static str, String) {
     use texts::image::{self, holds};
     let (name, holds) = match kind {
         ImageKind::Boot { kernel: true, ramdisk: Ramdisk::Recovery } => (image::RECOVERY, holds::KERNEL_AND_RECOVERY_RAMDISK),
@@ -775,23 +775,28 @@ pub fn image_kind(l: Lang, kind: ImageKind) -> (&'static str, &'static str) {
         ImageKind::VendorBoot => (image::VENDOR_BOOT, holds::VENDOR_RAMDISK),
         ImageKind::Dtbo => (image::DTBO, holds::OVERLAYS),
         ImageKind::Vbmeta => (image::VBMETA, holds::VERIFIED_BOOT_DATA),
+        ImageKind::Super => (image::WHOLE_SUPER, holds::LOGICAL_PARTITIONS),
+        ImageKind::Filesystem(filesystem) => return (l.pick(image::PARTITION), holds::filesystem(l, filesystem.name())),
+        ImageKind::Other => (image::PARTITION, holds::UNIDENTIFIED),
     };
-    (l.pick(name), l.pick(holds))
+    (l.pick(name), l.pick(holds).into())
 }
 
 /// What a partition an image can go to is for.
-pub fn partition_role(l: Lang, name: &str) -> &'static str {
+pub fn partition_role(l: Lang, partition: &FlashTarget) -> &'static str {
     use texts::image::role;
-    l.pick(match name {
-        "boot" => role::BOOT,
-        "init_boot" => role::INIT_BOOT,
-        "recovery" => role::RECOVERY,
-        "vendor_boot" => role::VENDOR_BOOT,
-        "dtbo" => role::DTBO,
-        "vbmeta" => role::VBMETA,
-        "vbmeta_system" => role::VBMETA_SYSTEM,
-        "vbmeta_vendor" => role::VBMETA_VENDOR,
-        _ => role::PARTITION,
+    l.pick(match (partition.place, partition.name.as_str()) {
+        (FlashPlace::Logical, _) => role::LOGICAL,
+        (FlashPlace::Single, _) => role::WHOLE_SUPER,
+        (FlashPlace::Slotted, "boot") => role::BOOT,
+        (FlashPlace::Slotted, "init_boot") => role::INIT_BOOT,
+        (FlashPlace::Slotted, "recovery") => role::RECOVERY,
+        (FlashPlace::Slotted, "vendor_boot") => role::VENDOR_BOOT,
+        (FlashPlace::Slotted, "dtbo") => role::DTBO,
+        (FlashPlace::Slotted, "vbmeta") => role::VBMETA,
+        (FlashPlace::Slotted, "vbmeta_system") => role::VBMETA_SYSTEM,
+        (FlashPlace::Slotted, "vbmeta_vendor") => role::VBMETA_VENDOR,
+        (FlashPlace::Slotted, _) => role::PARTITION,
     })
 }
 

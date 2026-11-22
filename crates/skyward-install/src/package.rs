@@ -4,7 +4,7 @@
 //! an update package may go on this phone, checked the way Android's
 //! recovery checks it.
 
-use crate::image::{self, ImageKind};
+use crate::image::{self, Image};
 use crate::Refusal;
 use anyhow::{bail, Context, Result};
 use std::collections::BTreeMap;
@@ -17,14 +17,15 @@ const METADATA: &str = "META-INF/com/android/metadata";
 /// The install script of a zip that installs itself.
 pub const UPDATE_BINARY: &str = "META-INF/com/google/android/update-binary";
 
-/// The most read to tell an image's kind: every header this recovery
-/// writes fits in one page.
-const HEAD: usize = 4096;
+/// What a zip starts with.
+const ZIP_MAGIC: &[u8] = b"PK\x03\x04";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Package {
     Update(Update),
-    Image(ImageKind),
+    /// A file that is no zip: an image, of a kind what it holds tells, or
+    /// of none this recovery knows.
+    Image(Image),
     /// A zip that installs itself by running the script inside it.
     Script,
     /// A system to install beside the installed one.
@@ -80,10 +81,11 @@ impl Metadata {
 /// Tell what `file` holds from its first bytes and, for a zip, its
 /// directory.
 pub fn identify<R: Read + Seek>(mut file: R) -> Result<Package> {
-    let mut head = Vec::with_capacity(HEAD);
-    (&mut file).take(HEAD as u64).read_to_end(&mut head).context("read the package's first bytes")?;
-    if !head.starts_with(b"PK\x03\x04") {
-        return Ok(image::detect(&mut file, &head)?.map_or(Package::Unknown, Package::Image));
+    let mut head = Vec::with_capacity(ZIP_MAGIC.len());
+    (&mut file).take(ZIP_MAGIC.len() as u64).read_to_end(&mut head).context("read the package's first bytes")?;
+    if head != ZIP_MAGIC {
+        let len = file.seek(SeekFrom::End(0)).context("find the package's size")?;
+        return image::open(&mut file, len).map(Package::Image);
     }
     file.seek(SeekFrom::Start(0)).context("rewind the package")?;
     let mut zip = ZipArchive::new(file).context("read the zip directory")?;
@@ -322,6 +324,8 @@ METADATA_SIZE=1024
         assert!(identify(Cursor::new(squeezed)).is_err());
         let other = zip_with(&[("readme.txt", b"hello", CompressionMethod::Stored)]);
         assert_eq!(identify(Cursor::new(other)).unwrap(), Package::Unknown);
-        assert_eq!(identify(Cursor::new(b"just some text".to_vec())).unwrap(), Package::Unknown);
+        let text = Image { kind: image::ImageKind::Other, layout: image::Layout::whole(14) };
+        assert_eq!(identify(Cursor::new(b"just some text".to_vec())).unwrap(), Package::Image(text), "no zip, and nothing an image is known by");
+        assert_eq!(identify(Cursor::new(Vec::new())).unwrap(), Package::Image(Image { kind: image::ImageKind::Other, layout: image::Layout::whole(0) }));
     }
 }

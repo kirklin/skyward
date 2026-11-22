@@ -88,6 +88,7 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 | --- | --- | --- |
 | 小米 17 Ultra | `nezha` | OS4.0.4.0.XPACNXM（Android 17） |
 | 小米 13 Ultra | `ishtar` | OS3.0.308.0.WMACNXM（Android 16） |
+| REDMI K60 Pro | `socrates` | OS4.0.0.24.XMKCNXM（Android 17） |
 
 ### 🚧 施工中
 
@@ -107,7 +108,6 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 | 🚧 小米 17 Pro | `pandora` | OS4.0.4.0.XBLCNXM（Android 17） |
 | 🚧 小米 17 Pro Max | `popsicle` | OS4.0.4.0.XPBCNXM（Android 17） |
 | 🚧 小米 17 Max | `byron` | OS3.0.310.0.WAFCNXM（Android 16） |
-| 🚧 REDMI K60 Pro | `socrates` | OS3.0.304.0.WMKCNXM（Android 16） |
 | 🚧 REDMI K80 | `zorn` | OS3.0.309.0.WOKCNXM（Android 16） |
 | 🚧 REDMI K80 Pro | `miro` | OS3.0.305.0.WOMCNXM（Android 16） |
 | 🚧 REDMI K90 | `annibale` | OS3.0.307.0.WPKCNXM（Android 16） |

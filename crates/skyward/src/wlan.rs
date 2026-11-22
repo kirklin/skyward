@@ -643,23 +643,33 @@ fn bring_up(cfg: &Config, modules: &[PathBuf]) -> Result<()> {
     iface::set_up(&cfg.interface, true)
 }
 
-/// Put a file the driver asks for where the firmware loader looks.
+/// Put a file the driver asks for where the firmware loader looks. One the
+/// phone may be without is passed over where the phone has none, and the
+/// loader then tells the driver so, as it does in the phone's own system.
 fn place(file: &Firmware) -> Result<()> {
     let to = Path::new(FIRMWARE).join(&file.name);
     let dir = to.parent().expect("a firmware file is in a folder");
     fs::create_dir_all(dir).with_context(|| format!("make {}", dir.display()))?;
+    let held = |path: &Path| match fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(e) if file.optional && e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    };
     let bytes = match &file.partition {
-        None => fs::read(&file.path).with_context(|| format!("read {}", file.path))?,
+        None => held(Path::new(&file.path)).with_context(|| format!("read {}", file.path))?,
         Some(partition) => {
             let at = Path::new(PARTITIONS).join(partition);
             fs::create_dir_all(&at).with_context(|| format!("make {}", at.display()))?;
             skyward_block::mount::mount_ro(&Path::new(skyward_block::BY_NAME).join(partition), &at)?;
-            let read = fs::read(at.join(&file.path)).with_context(|| format!("read {} on {partition}", file.path));
+            let read = held(&at.join(&file.path)).with_context(|| format!("read {} on {partition}", file.path));
             skyward_block::mount::umount(&at)?;
             read?
         }
     };
-    fs::write(&to, bytes).with_context(|| format!("write {}", to.display()))
+    match bytes {
+        Some(bytes) => fs::write(&to, bytes).with_context(|| format!("write {}", to.display())),
+        None => skyward_sys::kmsg(&format!("the phone has no {}, and the driver starts without it", file.path)),
+    }
 }
 
 /// Start the supplicant on the interface, and wait for its control socket.

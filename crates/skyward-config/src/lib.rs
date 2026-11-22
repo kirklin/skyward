@@ -222,6 +222,12 @@ pub struct Haptics {
     /// tenths of a hertz whatever its label.
     pub resonance: String,
     pub strength: Strength,
+    /// Whether the strength goes into the samples made, each made that
+    /// share of itself and played at the driver's full magnitude, on
+    /// phones whose driver plays samples at only two strengths whatever
+    /// magnitude between none and the full one it is given.
+    #[serde(default)]
+    pub scale_samples: bool,
 }
 
 /// How strongly the click plays, each as a share of the most its waveform
@@ -650,6 +656,7 @@ mod tests {
         let haptics = cfg.haptics.expect("the 13 Ultra has a motor");
         assert_eq!((haptics.click, haptics.resonance.as_str()), (Some(0), "/sys/class/qcom-haptics/lra_frequency_hz"));
         assert_eq!(haptics.strength, Strength { lightest: 0.5, strongest: 1.0 });
+        assert!(!haptics.scale_samples, "its strength is the magnitude its driver is given");
     }
 
     #[test]

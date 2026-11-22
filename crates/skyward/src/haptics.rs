@@ -1,4 +1,4 @@
-use crate::waveform::{made, share, ticks, RATE, TICKS_RATE};
+use crate::waveform::{made, scaled, share, ticks, RATE, TICKS_RATE};
 use anyhow::{anyhow, ensure, Context, Result};
 use evdev::raw_stream::RawDevice;
 use skyward_config::Strength;
@@ -34,6 +34,8 @@ pub struct Haptics {
     click: Click,
     ticks: Click,
     strength: Strength,
+    /// Whether the driver is given the strength in the samples it plays.
+    scale_samples: bool,
     /// The click playing, by its slot and its count, until it is taken
     /// away; a click taken away early by the next is not taken away again.
     playing: Arc<Mutex<Option<(i16, u64)>>>,
@@ -68,7 +70,7 @@ impl Haptics {
             }
         };
         let ticks = Click::Samples { data: ticks(hz), rate: TICKS_RATE };
-        Ok(Haptics { dev, click, ticks, strength: cfg.strength, playing: Arc::new(Mutex::new(None)), clicks: 0 })
+        Ok(Haptics { dev, click, ticks, strength: cfg.strength, scale_samples: cfg.scale_samples, playing: Arc::new(Mutex::new(None)), clicks: 0 })
     }
 
     /// One short click at the strength the slider's `position` gives, after
@@ -91,7 +93,7 @@ impl Haptics {
             erase(&self.dev, slot).context("take away the click still playing")?;
         }
         let effect = if ticks { &self.ticks } else { &self.click };
-        let loaded = upload(&self.dev, effect, share).context("load the click")?;
+        let loaded = upload(&self.dev, effect, share, self.scale_samples).context("load the click")?;
         play(&mut self.dev, loaded.slot).context("play the click")?;
         self.clicks += 1;
         let this = (loaded.slot, self.clicks);
@@ -178,8 +180,16 @@ struct Samples {
 
 /// Load `click` at `share` of its full strength as a custom periodic
 /// effect in a slot of its own. The driver drives the motor at the click's
-/// highest voltage times the magnitude.
-fn upload(dev: &File, click: &Click, share: f32) -> Result<Loaded> {
+/// highest voltage times the magnitude; where it is given the strength in
+/// the samples it plays, `scale_samples`, they are made that share of
+/// themselves and the magnitude is the full one.
+fn upload(dev: &File, click: &Click, share: f32, scale_samples: bool) -> Result<Loaded> {
+    let share = share.clamp(0.0, 1.0);
+    // Kept until the driver has copied what the effect points to.
+    let lighter = match click {
+        Click::Samples { data, .. } if scale_samples => Some(scaled(data, share)),
+        _ => None,
+    };
     // The driver tells the two kinds apart by the length in bytes of what
     // the effect points to, and loads nothing for any other length, though
     // the upload still succeeds. For a waveform it keeps it reads the
@@ -195,14 +205,14 @@ fn upload(dev: &File, click: &Click, share: f32) -> Result<Loaded> {
         Click::Samples { data, rate } => {
             samples.length = u32::try_from(data.len())?;
             samples.rate = *rate;
-            samples.data = data.as_ptr();
+            samples.data = lighter.as_deref().unwrap_or(data).as_ptr();
             (std::mem::size_of::<Samples>(), (&mut samples as *mut Samples).cast::<i16>())
         }
     };
     let periodic = libc::ff_periodic_effect {
         waveform: FF_CUSTOM,
         period: 0,
-        magnitude: (share.clamp(0.0, 1.0) * f32::from(i16::MAX)).round() as i16,
+        magnitude: if lighter.is_some() { i16::MAX } else { (share * f32::from(i16::MAX)).round() as i16 },
         offset: 0,
         phase: 0,
         envelope: libc::ff_envelope { attack_length: 0, attack_level: 0, fade_length: 0, fade_level: 0 },

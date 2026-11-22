@@ -1255,7 +1255,18 @@ impl<'a> Pages<'a> {
         let inputs = Inputs::open(w, h, cfg.touch.writes.clone())?;
         let started = Instant::now();
         let control = Control::open()?;
-        let haptics = cfg.haptics.as_ref().map(Haptics::open).transpose()?;
+        // A motor the configuration cannot reach leaves the pages without
+        // vibration, as one it does not describe does: the screens and the
+        // keys still work, and a phone whose motor is behind a service of its
+        // own would otherwise show nothing at all.
+        let haptics = match cfg.haptics.as_ref().map(Haptics::open) {
+            Some(Ok(haptics)) => Some(haptics),
+            Some(Err(e)) => {
+                skyward_sys::kmsg(&format!("the motor is left out: {e:#}"))?;
+                None
+            }
+            None => None,
+        };
         let backlight = Backlight::open()?;
         let first = match &request.work {
             Work::Fastboot => Screen::Fastboot,

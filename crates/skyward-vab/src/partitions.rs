@@ -399,7 +399,7 @@ pub fn release_partitions(slot: Slot, busy: &[PathBuf]) -> Result<()> {
         if busy.contains(&m.mount_point) {
             mount::umount_detach_over(&m.mount_point)?;
         } else {
-            mount::umount_over(&m.mount_point)?;
+            mount::umount_when_free(&m.mount_point)?;
             snapshots::unmap_snapshot(&m.partition)?;
         }
     }

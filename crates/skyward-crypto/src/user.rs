@@ -10,6 +10,10 @@ use anyhow::{bail, ensure, Result};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
+/// The phone's owner, the first of its users.
+#[cfg(any(target_os = "android", test))]
+pub(crate) const OWNER: u32 = 0;
+
 /// Each of these names one use of the hashing, so the same bytes hashed
 /// for two purposes never agree.
 const SECDISCARDABLE: &[u8] = b"secdiscardable-transform";
@@ -61,6 +65,19 @@ pub struct Protector {
 impl Protector {
     pub fn key_alias(&self) -> String {
         format!("synthetic_password_{}", self.id.trim_start_matches('0'))
+    }
+}
+
+/// A secondary user can have a device-encrypted key without a synthetic
+/// password directory. Its credential-encrypted files stay closed.
+#[cfg(any(target_os = "android", test))]
+pub(crate) fn protector_entries(dir: &std::path::Path, user: u32) -> Result<Option<std::fs::ReadDir>> {
+    use anyhow::Context;
+
+    match std::fs::read_dir(dir) {
+        Ok(entries) => Ok(Some(entries)),
+        Err(e) if user != OWNER && e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e).with_context(|| format!("read {}", dir.display())),
     }
 }
 
@@ -336,6 +353,28 @@ mod tests {
     fn the_key_the_secure_world_holds_is_named_after_the_protector() {
         let p = Protector { id: "08a692c0f39d97c6".into(), blob: Vec::new(), bound: Bound::Weaver(0), lock: None };
         assert_eq!(p.key_alias(), "synthetic_password_8a692c0f39d97c6");
+    }
+
+    #[test]
+    fn a_missing_secondary_protector_directory_does_not_stop_user_discovery() {
+        let root = std::env::temp_dir().join(format!("skyward-protectors-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        let owner = root.join("0/spblob");
+        let secondary = root.join("10/spblob");
+        let other = root.join("999/spblob");
+        std::fs::create_dir_all(&owner).unwrap();
+        std::fs::create_dir_all(secondary.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+
+        let present: Vec<_> = [(OWNER, &owner), (10, &secondary), (999, &other)]
+            .into_iter()
+            .filter_map(|(user, dir)| protector_entries(dir, user).unwrap().map(|_| user))
+            .collect();
+        assert_eq!(present, [OWNER, 999]);
+        assert!(protector_entries(&secondary, OWNER).is_err());
+        std::fs::write(&secondary, []).unwrap();
+        assert!(protector_entries(&secondary, 10).is_err());
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

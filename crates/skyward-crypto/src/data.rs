@@ -11,7 +11,7 @@ use crate::gatekeeper::Gatekeeper;
 use crate::keymint::KeyMint;
 use crate::keystore::{StoredKey, Unwrap};
 use crate::token::Token;
-use crate::user::Bound;
+use crate::user::{Bound, OWNER, protector_entries};
 use crate::weaver::Weaver;
 use anyhow::{Context, Result};
 use skyward_binder::driver::Binder;
@@ -30,9 +30,6 @@ pub const MAPPED: &str = "userdata";
 /// phone shows them to apps.
 pub const SHARED_STORAGE: &str = "/data/media";
 pub const SDCARD: &str = "/sdcard";
-
-/// The phone's owner, the first of its users.
-const OWNER: u32 = 0;
 
 /// Unwrap the key the phone keeps for its data partition and give the
 /// storage hardware the form of it that lasts until the phone is started
@@ -233,7 +230,7 @@ pub fn open_without_credential(keys: Option<&KeyMint>) -> Result<Opening> {
     let mut closed = Vec::new();
     let mut owner = Note::default();
     for user in open_users(service)? {
-        let protector = protector(user)?;
+        let Some(protector) = find_protector(user)? else { continue };
         match protector.lock {
             None => {
                 let note = open_user_files(service, user, None, None)?;
@@ -344,6 +341,10 @@ fn open_users(service: &KeyMint) -> Result<Vec<u32>> {
 /// Where a phone keeps what it needs to recover a user's own secret.
 const PROTECTORS: &str = "/data/system_de";
 
+fn protector(user: u32) -> Result<crate::user::Protector> {
+    find_protector(user)?.with_context(|| format!("read {}: the user's protector directory is missing", blobs(user).display()))
+}
+
 /// Read what a user's own credential keeps their secret behind. A phone
 /// may keep more than one blob for a user: Android keeps one for each
 /// token some part of the phone was given to reach the secret with, and
@@ -352,10 +353,11 @@ const PROTECTORS: &str = "/data/system_de";
 /// credential before can still be used. Which of them the user's current
 /// credential opens is the phone's own business, and it writes that down,
 /// so this reads it rather than guess.
-fn protector(user: u32) -> Result<crate::user::Protector> {
+fn find_protector(user: u32) -> Result<Option<crate::user::Protector>> {
     let dir = blobs(user);
+    let Some(entries) = protector_entries(&dir, user)? else { return Ok(None) };
     let mut ids = Vec::new();
-    for entry in std::fs::read_dir(&dir).with_context(|| format!("read {}", dir.display()))? {
+    for entry in entries {
         let path = entry.with_context(|| format!("read {}", dir.display()))?.path();
         if path.extension().is_some_and(|e| e == "spblob")
             && let Some(id) = path.file_stem().and_then(|s| s.to_str())
@@ -402,12 +404,12 @@ fn protector(user: u32) -> Result<crate::user::Protector> {
             std::fs::read(dir.join(format!("{id}.secdis"))).with_context(|| format!("read what the blob in {} is bound to", dir.display()))?,
         ),
     };
-    Ok(crate::user::Protector {
+    Ok(Some(crate::user::Protector {
         blob: std::fs::read(dir.join(format!("{id}.spblob"))).with_context(|| format!("read the blob in {}", dir.display()))?,
         bound,
         id,
         lock,
-    })
+    }))
 }
 
 /// Which of the secure world's slots a user's enrolments sit in. What the

@@ -255,7 +255,7 @@ pub fn describes(service: &crate::driver::Handle) -> Result<String> {
         bail!("the service answered a frame of {} bytes", frame.len());
     }
     let name = read.pointed().context("read the name of what the service serves")?;
-    Ok(String::from_utf8_lossy(name.strip_suffix(&[0]).unwrap_or(name)).into_owned())
+    Ok(String::from_utf8_lossy(name.trim_suffix(&[0])).into_owned())
 }
 
 #[cfg(test)]

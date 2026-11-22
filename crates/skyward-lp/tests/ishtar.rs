@@ -241,7 +241,7 @@ fn a_copy_that_no_longer_reads_is_made_good_before_the_new_one_is_written() {
     damage(backup);
     // Metadata too large to write stops before either copy is touched.
     let mut large = old.clone();
-    large.partitions = (0..2000).map(|k| skyward_lp::Partition { name: format!("p{k}"), attributes: 0, group: 0, extents: Vec::new() }).collect();
+    large.partitions = Vec::from_fn(2000, |k| skyward_lp::Partition { name: format!("p{k}"), attributes: 0, group: 0, extents: Vec::new() });
     let refused = write(&path, &large, &[1]).unwrap_err();
     assert!(format!("{refused:#}").contains("65536 at most"), "{refused:#}");
     assert_eq!(read(&path, 1).unwrap(), old);

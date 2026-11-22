@@ -13,7 +13,7 @@ impl App {
             Stop::Back => self.act(Action::Back, now),
             Stop::Button(action) => self.act(action, now),
             Stop::Hit(Action::Slider(which)) => {
-                self.adjusting = !self.adjusting;
+                self.adjusting.toggle();
                 if self.adjusting {
                     let said = match which {
                         Slider::Brightness => texts::toast::BRIGHTNESS_KEYS,

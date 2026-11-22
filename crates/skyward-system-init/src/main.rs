@@ -108,7 +108,6 @@ mod sys {
     use skyward_bootimg::{BootImage, Ramdisk};
     use skyward_sys::bcb::{self, Bcb};
     use skyward_systems::boot::{Start, INIT, START};
-    use std::convert::Infallible;
     use std::ffi::CString;
     use std::fs::{self, File, OpenOptions};
     use std::io::Write;
@@ -372,7 +371,7 @@ mod sys {
 
     /// Become `program`, with no arguments past its name, as the kernel
     /// starts the first program.
-    fn exec(program: &str) -> Result<Infallible> {
+    fn exec(program: &str) -> Result<!> {
         let path = c(program);
         let argv = [path.as_ptr(), std::ptr::null()];
         unsafe { libc::execv(path.as_ptr(), argv.as_ptr()) };
@@ -381,7 +380,7 @@ mod sys {
 
     /// Go over to the root mounted at [`NEW_ROOT`], the kernel's
     /// filesystems taken along, and become the system's own first program.
-    fn hand_over(init: &str) -> Result<Infallible> {
+    fn hand_over(init: &str) -> Result<!> {
         for dir in ["/dev", "/proc", "/sys"] {
             let to = format!("{NEW_ROOT}{dir}");
             if Path::new(&to).is_dir() {
@@ -449,7 +448,7 @@ mod sys {
     /// unpacked over the one the kernel unpacked, as the kernel unpacks it
     /// when the bootloader starts the recovery, and its own first program
     /// started, once what the start set up is taken down.
-    fn recovery() -> Result<Infallible> {
+    fn recovery() -> Result<!> {
         let name = format!("recovery{}", skyward_block::slot_suffix()?.unwrap_or_default());
         by_name(&name)?;
         let at = format!("{BY_NAME}/{name}");
@@ -564,7 +563,7 @@ mod sys {
     /// request in misc for the recovery, which a system or a start before
     /// this one left and the bootloader started the slot over, brings it up
     /// before anything is started.
-    fn start() -> Result<Infallible> {
+    fn start() -> Result<!> {
         step("mounting the kernel's filesystems");
         basics()?;
         step("loading the drivers");
@@ -599,7 +598,7 @@ mod sys {
     /// over to that program. Once the hand-over is under way, the ramdisk
     /// the recovery comes up from in place is out of reach, and a hand-over
     /// that fails restarts into the recovery.
-    fn boot(start: &Start, before: &Bcb) -> Result<Infallible> {
+    fn boot(start: &Start, before: &Bcb) -> Result<!> {
         step("laying the root out");
         let node = root(start)?;
         step("mounting the root");

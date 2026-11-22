@@ -7,7 +7,6 @@ use crate::wire::{
 };
 use crate::wire::{TransactionData, WriteRead};
 use anyhow::{bail, ensure, Context, Result};
-use std::convert::Infallible;
 use std::fs::File;
 use std::os::fd::AsRawFd;
 use std::path::Path;
@@ -178,7 +177,7 @@ impl Binder {
 
     /// Take the calls made on the objects served through this end, on the
     /// thread that asks, for as long as the driver gives them out.
-    pub fn serve(&self) -> Result<Infallible> {
+    pub fn serve(&self) -> Result<!> {
         ensure!(self.served.is_some(), "this end of the driver serves no object");
         let mut waiting = Waiting::default();
         waiting.tell(BC_ENTER_LOOPER, &[]);

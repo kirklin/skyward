@@ -42,6 +42,9 @@ const WIFI: u32 = 1010;
 /// loading meanwhile.
 const INTERFACE_WAIT: Duration = Duration::from_secs(20);
 
+/// How often the interface is looked for, and asked to be taken up.
+const INTERFACE_POLL: Duration = Duration::from_millis(100);
+
 /// How long the supplicant may take to open its control socket.
 const SOCKET_WAIT: Duration = Duration::from_secs(10);
 
@@ -624,6 +627,7 @@ impl Station {
 /// interface up.
 fn bring_up(cfg: &Config, modules: &[PathBuf]) -> Result<()> {
     let net = Path::new("/sys/class/net").join(&cfg.interface);
+    let until = Instant::now() + INTERFACE_WAIT;
     if !net.exists() {
         for file in &cfg.firmware {
             place(file)?;
@@ -638,13 +642,29 @@ fn bring_up(cfg: &Config, modules: &[PathBuf]) -> Result<()> {
         for w in &cfg.writes {
             fs::write(&w.path, &w.value).with_context(|| format!("write {} to {}", w.value, w.path))?;
         }
-        let until = Instant::now() + INTERFACE_WAIT;
         while !net.exists() {
             ensure!(Instant::now() < until, "the driver made no {} in {} seconds", cfg.interface, INTERFACE_WAIT.as_secs());
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(INTERFACE_POLL);
         }
     }
-    iface::set_up(&cfg.interface, true)
+    // The driver makes its interface before it will take it up: on a cold
+    // start it is still handing the chip its firmware, and the open answers
+    // busy until that ends, seconds after the interface appears. Waiting
+    // for the interface alone left the first try to fail, and the screen to
+    // say so until the WLAN was asked for a second time.
+    loop {
+        match iface::set_up(&cfg.interface, true) {
+            Ok(()) => return Ok(()),
+            Err(e) if !still_coming_up(&e) || Instant::now() >= until => return Err(e),
+            Err(_) => thread::sleep(INTERFACE_POLL),
+        }
+    }
+}
+
+/// Whether what the driver answered says it has the interface but is not
+/// ready to have it taken up yet.
+fn still_coming_up(e: &anyhow::Error) -> bool {
+    e.chain().filter_map(|c| c.downcast_ref::<std::io::Error>()).any(|io| io.raw_os_error() == Some(libc::EBUSY))
 }
 
 /// Put a file the driver asks for where the firmware loader looks. One the

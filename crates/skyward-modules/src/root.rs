@@ -3,7 +3,7 @@
 use anyhow::{Context, Result, ensure};
 use std::collections::BTreeMap;
 use std::ffi::CString;
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::{ErrorKind, Read};
 use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::fs::OpenOptionsExt;
@@ -227,6 +227,7 @@ pub fn change(adb: &Path, metadata: &Path, id: &str, choice: Change) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::os::unix::fs::symlink;
 
     fn fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {

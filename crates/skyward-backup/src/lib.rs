@@ -17,8 +17,14 @@ pub const MANIFEST: &str = "backup.toml";
 /// Where backups go, from the top of the place they are kept in.
 pub const FOLDER: &str = "Skyward/backups";
 
-/// The layout of a backup this recovery writes and reads.
-pub const FORMAT: u32 = 1;
+/// The layout of a backup this recovery writes: its data partition's files
+/// take in the apps' folders in internal storage, and the users' own files
+/// there are a part of their own.
+pub const FORMAT: u32 = 2;
+
+/// The layout before it, which this recovery reads as well: its data
+/// partition's files hold nothing of internal storage.
+pub const FORMAT_WITHOUT_STORAGE: u32 = 1;
 
 /// What a backup can hold, in the order the backup page lists it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,15 +35,18 @@ pub enum Part {
     Boot,
     /// The slot's partitions in super.
     System,
-    /// The data partition's files, all but internal storage.
+    /// The data partition's files, with the apps' folders in internal
+    /// storage.
     Data,
+    /// The users' own files in internal storage.
+    Media,
     /// The baseband's settings with the phone's own identity, and the
     /// sensors' calibration.
     Efs,
 }
 
 impl Part {
-    pub const ALL: [Part; 4] = [Part::Boot, Part::System, Part::Data, Part::Efs];
+    pub const ALL: [Part; 5] = [Part::Boot, Part::System, Part::Data, Part::Media, Part::Efs];
 }
 
 /// What a backup holds.
@@ -52,6 +61,8 @@ pub struct Manifest {
     pub slot: String,
     /// The system it was made from, as its version reads.
     pub system: Option<String>,
+    /// The Android that system is, as its release reads.
+    pub android: Option<String>,
     /// With the data partition's files, the reference of the key the
     /// partition encrypts with: one made afresh, as a factory reset makes
     /// it, has another.
@@ -59,12 +70,12 @@ pub struct Manifest {
     pub items: Vec<Item>,
 }
 
-/// One part of what a backup holds: a partition's image, or the data
-/// partition's files.
+/// One part of what a backup holds: a partition's image, or the files of
+/// the data partition or of internal storage.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Item {
     pub part: Part,
-    /// The partition's name without its slot's suffix, or `data`.
+    /// The partition's name without its slot's suffix, `data`, or `media`.
     pub name: String,
     #[serde(flatten)]
     pub stored: store::Stored,
@@ -76,7 +87,12 @@ impl Manifest {
         let path = folder.join(MANIFEST);
         let text = std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
         let manifest: Manifest = toml::from_str(&text).with_context(|| format!("read {}", path.display()))?;
-        ensure!(manifest.format == FORMAT, "{} is in layout {}, which this recovery does not read", path.display(), manifest.format);
+        ensure!(
+            (FORMAT_WITHOUT_STORAGE..=FORMAT).contains(&manifest.format),
+            "{} is in layout {}, which this recovery does not read",
+            path.display(),
+            manifest.format
+        );
         Ok(manifest)
     }
 
@@ -90,7 +106,7 @@ impl Manifest {
     }
 
     /// Which of [`Part::ALL`] it holds.
-    pub fn parts(&self) -> [bool; 4] {
+    pub fn parts(&self) -> [bool; 5] {
         Part::ALL.map(|p| self.items.iter().any(|i| i.part == p))
     }
 
@@ -116,16 +132,32 @@ mod tests {
             made: 1_792_561_872,
             slot: "_b".into(),
             system: Some("OS3.0.305.0.WMACNXM".into()),
+            android: Some("16".into()),
             data_key: Some("00112233445566778899aabbccddeeff".into()),
             items: vec![
                 Item { part: Part::Boot, name: "boot".into(), stored: stored("boot", 201_326_592) },
                 Item { part: Part::Data, name: "data".into(), stored: stored("data", 9_000_000_000) },
+                Item { part: Part::Media, name: "media".into(), stored: stored("media", 40_000_000_000) },
             ],
         };
         m.write(&at, Ownership::Kept).unwrap();
         assert_eq!(Manifest::read(&at).unwrap(), m);
-        assert_eq!(m.parts(), [true, false, true, false]);
-        assert_eq!(m.size(), 100_663_296 + 4_500_000_000);
+        assert_eq!(m.parts(), [true, false, true, true, false]);
+        assert_eq!(m.size(), 100_663_296 + 4_500_000_000 + 20_000_000_000);
+        std::fs::remove_dir_all(&at).unwrap();
+    }
+
+    #[test]
+    fn a_backup_in_the_layout_before_reads_and_one_in_a_later_layout_does_not() {
+        let at = std::env::temp_dir().join(format!("skyward-manifest-layouts-{}", std::process::id()));
+        std::fs::create_dir_all(&at).unwrap();
+        let before = "format = 1\ndevice = \"ishtar\"\nmade = 1792561872\nslot = \"_b\"\nsystem = \"OS3.0.305.0.WMACNXM\"\ndata_key = \"0011\"\n\n[[items]]\npart = \"data\"\nname = \"data\"\nfiles = [\"data.tar.000\"]\nsize = 9\nstored = 9\ncompressed = false\nsha256 = \"ab\"\n";
+        std::fs::write(at.join(MANIFEST), before).unwrap();
+        let m = Manifest::read(&at).unwrap();
+        assert_eq!((m.format, m.android.as_deref(), m.parts()), (FORMAT_WITHOUT_STORAGE, None, [false, false, true, false, false]));
+        std::fs::write(at.join(MANIFEST), before.replace("format = 1", "format = 3")).unwrap();
+        let e = Manifest::read(&at).unwrap_err();
+        assert!(e.to_string().ends_with("is in layout 3, which this recovery does not read"), "{e:#}");
         std::fs::remove_dir_all(&at).unwrap();
     }
 }

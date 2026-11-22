@@ -2,7 +2,7 @@ use crate::app::{
     Action, BackupAt, BackupEnd, BackupJob, Check, ClashChoice, Confirm, Damage, Data, Dock, DownloadEnd, EraseStop, Field, FileKind,
     FileOp, FileTask, Fold, Folder, Frame, FsAction, FsChoice, FsRow, Have, HeroArt, Hit, Install, JobEnd, Keys, Pick, Place, Region, Rows,
     Screen, SkywardCheck, SkywardEnd, SkywardJob, SkywardStage, Slider, Source, State, Switch, SystemsWork, Target, UsbDrive, UsbLink, Wipe,
-    ADDABLE, BACKUP_PARTS, DATA_PARTITION, DOWNLOADS, FASTBOOT_CHOICES, SCREEN_OFF, TARGETS, TIME_ZONES, UTC, WIPES, installs, listed, starting,
+    ADDABLE, BACKUP_PARTS, DATA_PART, DATA_PARTITION, DOWNLOADS, FASTBOOT_CHOICES, MEDIA_PART, SCREEN_OFF, TARGETS, TIME_ZONES, UTC, WIPES, installs, listed, starting,
 };
 use crate::canvas::Canvas;
 use crate::color::Rgba;
@@ -1511,13 +1511,13 @@ pub fn backup(cx: &Ctx) -> Frame {
     let top = t.m.content_top;
     let y = widgets::section_first(&mut c, t, f, top, l.pick(texts::backup::CONTENTS));
     let system = fmt::snapshot_backup_note(l, &i.snapshot).unwrap_or(l.pick(texts::backup::SYSTEM_HOLDS));
-    let data = l.pick(match s.data == Data::Open {
-        true => texts::backup::DATA_HOLDS,
-        false => texts::backup::DATA_HOLDS_LOCKED,
-    });
+    let (data, media) = match s.data == Data::Open {
+        true => (texts::backup::DATA_HOLDS, texts::backup::MEDIA_HOLDS),
+        false => (texts::backup::DATA_HOLDS_LOCKED, texts::backup::MEDIA_HOLDS_LOCKED),
+    };
     let boot = l.pick(texts::backup::BOOT_HOLDS);
     let modem = l.pick(texts::backup::MODEM_HOLDS);
-    let subs = [boot, system, data, modem];
+    let subs = [boot, system, l.pick(data), l.pick(media), modem];
     let rows: Vec<Row> = BACKUP_PARTS
         .iter()
         .zip(subs)
@@ -1525,7 +1525,7 @@ pub fn backup(cx: &Ctx) -> Frame {
         .map(|(k, (name, sub))| Row::new(l.pick(*name)).subtitle(sub).trail(Trail::Check(s.backup[k])))
         .collect();
     let parts = widgets::list(&mut c, t, f, y, &rows);
-    out.extend(hits(&parts.rows, &[0, 1, 2, 3].map(Action::BackupPart)));
+    out.extend(hits(&parts.rows, &[0, 1, 2, 3, 4].map(Action::BackupPart)));
     let y = widgets::section(&mut c, t, f, parts.bottom, l.pick(texts::backup::SAVE_TO));
     let storage = match (s.data.storage_open(), i.storage.free.map(fmt::gb)) {
         (true, Some(free)) => texts::backup::free(l, free),
@@ -1622,8 +1622,11 @@ pub fn restore_backup(cx: &Ctx) -> Frame {
                 let list = widgets::list(&mut c, t, f, y, &rows);
                 out.extend(list.rows.iter().zip(&kept).map(|(&rect, &k)| Hit { rect, action: Action::RestorePart(k) }));
                 let mut y = widgets::footnote(&mut c, t, f, list.bottom, l.pick(texts::restore::OVERWRITES));
-                if chosen[2] {
+                if chosen[DATA_PART] {
                     y = widgets::footnote(&mut c, t, f, y, l.pick(texts::restore::DATA_NOTE));
+                }
+                if chosen[MEDIA_PART] {
+                    y = widgets::footnote(&mut c, t, f, y, l.pick(texts::restore::MEDIA_NOTE));
                 }
                 // The boot partitions' vbmeta checks the system's: one of
                 // another version without the other may not start.
@@ -3505,7 +3508,7 @@ mod tests {
         r.outcome = Some(BackupEnd::Failed("write /dev/block/by-name/boot_b".into()));
         assert_eq!(states(&r), ["未完成", "未恢复"]);
         r.at = None;
-        r.outcome = Some(BackupEnd::Refused(BackupRefusal::DataReset));
+        r.outcome = Some(BackupEnd::Refused(BackupRefusal::OlderAndroid { was: "17".into(), now: "16".into() }));
         assert_eq!(states(&r), ["未开始", "未开始"]);
     }
 

@@ -271,7 +271,7 @@ impl App {
             // All a backup holds is ticked to restore at first.
             Action::OpenBackup(i) => {
                 let entry = self.state.backups[i].clone();
-                let parts = entry.held.as_ref().map_or([false; 4], |h| h.parts);
+                let parts = entry.held.as_ref().map_or([false; 5], |h| h.parts);
                 self.state.restore = Some((entry, parts));
                 self.state.asking_delete = false;
                 self.open(Screen::RestoreBackup);
@@ -734,7 +734,7 @@ impl App {
                 let s = &self.state;
                 let refused = if !s.backup.contains(&true) {
                     Some(texts::toast::CHOOSE_BACKUP)
-                } else if s.backup[2] && s.data != Data::Open {
+                } else if (s.backup[DATA_PART] || s.backup[MEDIA_PART]) && s.data != Data::Open {
                     Some(texts::toast::DECRYPT_TO_BACK_UP)
                 } else if s.place_open(s.backup_to) {
                     None
@@ -755,9 +755,15 @@ impl App {
             Confirm::Restore => {
                 let (entry, parts) = self.state.restore.as_ref().expect("the restore page shows a backup");
                 let restore = Effect::Restore { place: entry.place, name: entry.name.clone(), parts: *parts };
+                // The files of the data partition and of internal storage go
+                // back into a data partition that is open: one erased is
+                // made again by the system, as it next starts.
+                let files = parts[DATA_PART] || parts[MEDIA_PART];
                 if !parts.contains(&true) {
                     self.say(l.pick(texts::toast::CHOOSE_RESTORE), now);
-                } else if parts[2] && self.state.data != Data::Open {
+                } else if files && self.state.data == Data::Erased {
+                    self.say(l.pick(texts::toast::RESTORE_ONCE_MADE), now);
+                } else if files && self.state.data != Data::Open {
                     self.say(l.pick(texts::toast::DECRYPT_TO_RESTORE), now);
                 } else {
                     fx.push(restore);

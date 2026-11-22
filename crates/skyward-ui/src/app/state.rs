@@ -72,7 +72,7 @@ pub struct State {
     pub mounts: Result<Vec<MountRow>, String>,
     pub mount_failure: Option<MountFailure>,
     /// Which of [`BACKUP_PARTS`] a backup takes.
-    pub backup: [bool; 4],
+    pub backup: [bool; 5],
     /// Where a backup goes.
     pub backup_to: Place,
     pub compress: bool,
@@ -81,7 +81,7 @@ pub struct State {
     pub backups: Vec<BackupEntry>,
     /// The backup the restore page shows, as it was found, and which of its
     /// parts to restore.
-    pub restore: Option<(BackupEntry, [bool; 4])>,
+    pub restore: Option<(BackupEntry, [bool; 5])>,
     /// Backing up or restoring under way, or how it last ended.
     pub backup_job: Option<BackupJob>,
     /// Which logs to export: the recovery's, the kernel's.
@@ -227,7 +227,7 @@ impl Default for State {
             reflash: None,
             mounts: Ok(Vec::new()),
             mount_failure: None,
-            backup: [true, true, false, true],
+            backup: [true, true, false, false, true],
             backup_to: Place::Storage,
             compress: false,
             verify: true,

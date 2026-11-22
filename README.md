@@ -52,7 +52,7 @@ merged, super and the logical partitions in it are not flashed.
 
 ### Backup and restore
 
-![Back up the system, apps and IMEI](slides/en/out/06-backup.png)
+![Back up the system, apps, photos and IMEI](slides/en/out/06-backup.png)
 
 ### File manager
 

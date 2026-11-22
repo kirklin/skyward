@@ -9,8 +9,8 @@
 <main class="slide feature">
   <header class="head">
     <p class="eyebrow">Backup and restore</p>
-    <h1 class="headline">Back up the system,<br>apps and IMEI.</h1>
-    <p class="body">Backups go to internal storage or a USB drive, compressed and verified if you choose. A restore checks the whole backup before it writes anything.</p>
+    <h1 class="headline">Back up the system,<br>apps, photos and IMEI.</h1>
+    <p class="body">Backups go to internal storage or a USB drive, compressed and verified if you choose. A restore checks the whole backup before it writes anything, and a backup still restores after a factory reset.</p>
   </header>
   <div class="visual">
     <p class="ui-section">Contents</p>
@@ -24,23 +24,16 @@
         <span class="check on"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
       </li>
       <li>
-        <div><b>data partition</b><small>Apps, accounts and settings, without internal storage, the screen lock or fingerprints</small></div>
+        <div><b>data partition</b><small>Apps and their data, accounts and settings, with internal storage's Android folder, without the screen lock or fingerprints</small></div>
+        <span class="check on"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      </li>
+      <li>
+        <div><b>Internal storage</b><small>Photos, videos, downloads and your other files, without the Android and Skyward/backups folders</small></div>
         <span class="check on"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
       </li>
       <li>
         <div><b>Modem and EFS</b><small>IMEI, modem settings and sensor calibration</small></div>
         <span class="check on"><svg viewBox="0 0 24 24"><path class="icon-line" d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
-      </li>
-    </ul>
-    <p class="ui-section">Options</p>
-    <ul class="ui-list tight">
-      <li>
-        <div><b>Compress</b><small>Smaller, and slower to make</small></div>
-        <span class="switch on"></span>
-      </li>
-      <li>
-        <div><b>Verify when done</b><small>Checks the backup's files are whole</small></div>
-        <span class="switch on"></span>
       </li>
     </ul>
   </div>

@@ -299,7 +299,7 @@ pub fn backup_refusal(l: Lang, r: &BackupRefusal, restore: bool) -> String {
             .into(),
         BackupRefusal::OtherPhone(device) => refused::other_phone(l, device),
         BackupRefusal::Resized(name) => refused::resized(l, name),
-        BackupRefusal::DataReset => l.pick(refused::DATA_RESET).into(),
+        BackupRefusal::OlderAndroid { was, now } => refused::older_android(l, was, now),
     }
 }
 
@@ -759,7 +759,7 @@ pub fn file_line(l: Lang, f: &FileRow, now: i64, zone: &TimeZone) -> String {
 }
 
 /// The parts a backup holds: `启动分区、系统分区`.
-pub fn parts(l: Lang, held: &[bool; 4]) -> String {
+pub fn parts(l: Lang, held: &[bool; 5]) -> String {
     list(l, BACKUP_PARTS.iter().zip(held).filter(|&(_, &on)| on).map(|(name, _)| l.pick(*name)))
 }
 
@@ -1424,9 +1424,25 @@ mod tests {
 
     #[test]
     fn a_backup_lists_its_parts() {
-        assert_eq!(parts(HANS, &[true, true, false, true]), "启动分区、系统分区、基带与 EFS");
-        assert_eq!(parts(Lang::Hant, &[true, true, false, true]), "啟動分割區、系統分割區、基頻與 EFS");
-        assert_eq!(parts(Lang::En, &[true, true, true, true]), "Boot partitions, system partitions, data partition, modem and EFS");
+        assert_eq!(parts(HANS, &[true, true, false, false, true]), "启动分区、系统分区、基带与 EFS");
+        assert_eq!(parts(Lang::Hant, &[true, true, false, true, true]), "啟動分割區、系統分割區、內部儲存空間、基頻與 EFS");
+        assert_eq!(
+            parts(Lang::En, &[true, true, true, true, true]),
+            "Boot partitions, system partitions, data partition, internal storage, modem and EFS"
+        );
+    }
+
+    #[test]
+    fn a_data_partition_of_a_newer_android_is_said_not_to_go_back() {
+        let older = BackupRefusal::OlderAndroid { was: "17".into(), now: "16".into() };
+        assert_eq!(
+            backup_refusal(HANS, &older, true),
+            "该备份的 data 分区来自 Android 17，本机当前为 Android 16，无法恢复到更低的 Android 版本。"
+        );
+        assert_eq!(
+            backup_refusal(Lang::En, &older, true),
+            "This backup's data partition is from Android 17, and this phone runs Android 16. An older Android can't read it, so it can't be restored."
+        );
     }
 
     #[test]

@@ -88,6 +88,9 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 | --- | --- | --- |
 | 小米 17 Ultra | `nezha` | OS4.0.4.0.XPACNXM（Android 17） |
 | 小米 13 Ultra | `ishtar` | OS3.0.308.0.WMACNXM（Android 16） |
+| 小米 15 Pro | `haotian` | OS3.0.309.0.WOBCNXM（Android 16） |
+
+小米 15 Pro 的马达是 recovery 够不到的那一种：它的设备树把 17 Ultra 用的那两个振动器件都关掉了，唯一留着的一个由声卡那一侧驱动，而 recovery 不会把声卡建起来。所以它的界面没有振动反馈，其余都在。
 
 ### 🚧 施工中
 
@@ -101,7 +104,6 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 | 🚧 小米 14 Pro | `shennong` | OS3.0.309.0.WNBCNXM（Android 16） |
 | 🚧 小米 14 Ultra | `aurora` | OS3.0.308.0.WNACNXM（Android 16） |
 | 🚧 小米 15 | `dada` | OS3.0.307.0.WOCCNXM（Android 16） |
-| 🚧 小米 15 Pro | `haotian` | OS3.0.309.0.WOBCNXM（Android 16） |
 | 🚧 小米 15 Ultra | `xuanyuan` | OS3.0.314.0.WOACNXM（Android 16） |
 | 🚧 小米 17 | `pudding` | OS4.0.4.0.XPCCNXM（Android 17） |
 | 🚧 小米 17 Pro | `pandora` | OS4.0.4.0.XBLCNXM（Android 17） |

@@ -1,3 +1,10 @@
+# File capabilities make the stock Weaver executable run with AT_SECURE.
+# Its vendor libhardware needs these in the linker's default path.
+key_libraries = [
+    "/mnt/system/system/lib64/libvndksupport.so",
+    "/mnt/system/system/lib64/bootstrap/libdl_android.so",
+]
+
 [device]
 codename = "myron"
 brand = "Redmi"

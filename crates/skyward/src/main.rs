@@ -603,6 +603,7 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
     for line in keys::describe(&steps) {
         skyward_sys::kmsg(&format!("for the phone's keys: {}", line.replace("\n  ", ", ")))?;
     }
+    stage_key_libraries(&cfg.key_libraries)?;
     keys::start(&steps)?;
     agree_on_the_notes_key(&registering)
 }
@@ -642,6 +643,38 @@ fn hand_over(owners: &[skyward_config::Owners]) -> Result<usize> {
 /// The folder the recovery's own programs load their libraries from.
 #[cfg(target_os = "android")]
 const RECOVERY_LIBRARIES: &str = "/system/lib64";
+
+/// Give key services with file capabilities the dependencies the recovery
+/// lacks, in the linker's default path. The installed system is mounted
+/// read-only and the recovery's own libraries take precedence.
+#[cfg(target_os = "android")]
+fn stage_key_libraries(libraries: &[String]) -> Result<()> {
+    for library in libraries {
+        let source = Path::new(library);
+        let name = source.file_name().with_context(|| format!("no file name in {library}"))?;
+        anyhow::ensure!(
+            source.extension().is_some_and(|ext| ext == "so")
+                && source.parent().is_some_and(|dir| {
+                    dir == Path::new("/mnt/system/system/lib64") || dir == Path::new("/mnt/system/system/lib64/bootstrap")
+                }),
+            "{library} is not in a supported system library directory"
+        );
+        let dest = Path::new(RECOVERY_LIBRARIES).join(name);
+        if dest.try_exists().with_context(|| format!("look for {}", dest.display()))? {
+            anyhow::ensure!(dest.is_file(), "{} is not a library file", dest.display());
+            continue;
+        }
+        let partial = dest.with_extension("so.skyward-key-library-part");
+        std::fs::copy(source, &partial).with_context(|| format!("stage {library}"))?;
+        // Publish the complete file without replacing an existing library.
+        let linked = std::fs::hard_link(&partial, &dest);
+        let removed = std::fs::remove_file(&partial);
+        linked.with_context(|| format!("put {} in place", dest.display()))?;
+        removed.with_context(|| format!("remove {}", partial.display()))?;
+        skyward_sys::kmsg(&format!("key services use {library} at {}", dest.display()))?;
+    }
+    Ok(())
+}
 
 /// How long logd may take to say it is ready once started.
 #[cfg(target_os = "android")]

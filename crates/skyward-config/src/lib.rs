@@ -65,6 +65,10 @@ pub struct DeviceConfig {
     /// libraries it needs.
     #[serde(default)]
     pub logd: Option<Logd>,
+    /// Installed system libraries needed by key services whose file
+    /// capabilities make the linker ignore its environment's search paths.
+    #[serde(default)]
+    pub key_libraries: Vec<String>,
     /// Files the phone's own init hands to an account as it boots, before
     /// the programs that open them start; a recovery runs none of init's
     /// boot actions.

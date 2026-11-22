@@ -19,12 +19,26 @@ pub fn source_dir(source: &str) -> Result<PathBuf> {
     }))
 }
 
+/// What became of the modules [`load`] was given.
+#[derive(Debug, Default)]
+pub struct Loaded {
+    /// The modules the kernel took, dependencies first.
+    pub taken: Vec<PathBuf>,
+    /// The ones it would not take, with what it said. A phone's own
+    /// modules.load names the drivers of both chip revisions of a part,
+    /// only one of which binds to the one fitted; init takes the one that
+    /// refuses as a line in its log and goes on to the next, and so does
+    /// this, or a recovery would leave a phone that names two drivers
+    /// without the one that works.
+    pub refused: Vec<(PathBuf, String)>,
+}
+
 /// Load `names` (module names without `.ko`) with their dependencies. Each
 /// comes from the first of `dirs` that holds it, and its dependencies from
 /// that directory's modules.dep; a module the kernel already has counts as
-/// loaded. Returns the files loaded, dependencies first.
-pub fn load(dirs: &[PathBuf], names: &[String]) -> Result<Vec<PathBuf>> {
-    let mut loaded = Vec::new();
+/// loaded.
+pub fn load(dirs: &[PathBuf], names: &[String]) -> Result<Loaded> {
+    let mut out = Loaded::default();
     for name in names {
         let file = format!("{name}.ko");
         let dir = dirs
@@ -36,11 +50,13 @@ pub fn load(dirs: &[PathBuf], names: &[String]) -> Result<Vec<PathBuf>> {
             let path = graph
                 .resolve_path(&m)
                 .ok_or_else(|| anyhow!("{m} is listed in {}/modules.dep but missing", dir.display()))?;
-            insmod(&path, "")?;
-            loaded.push(path);
+            match insmod(&path, "") {
+                Ok(()) => out.taken.push(path),
+                Err(e) => out.refused.push((path, format!("{e:#}"))),
+            }
         }
     }
-    Ok(loaded)
+    Ok(out)
 }
 
 /// A `modules.dep` graph: each module file mapped to the module files it

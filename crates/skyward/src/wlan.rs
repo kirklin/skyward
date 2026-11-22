@@ -628,8 +628,12 @@ fn bring_up(cfg: &Config, modules: &[PathBuf]) -> Result<()> {
         for file in &cfg.firmware {
             place(file)?;
         }
-        for path in skyward_modules::load(modules, &cfg.modules)? {
+        let loaded = skyward_modules::load(modules, &cfg.modules)?;
+        for path in &loaded.taken {
             skyward_sys::kmsg(&format!("loaded {}", path.display()))?;
+        }
+        for (path, why) in &loaded.refused {
+            skyward_sys::kmsg(&format!("did not load {}: {why}", path.display()))?;
         }
         for w in &cfg.writes {
             fs::write(&w.path, &w.value).with_context(|| format!("write {} to {}", w.value, w.path))?;

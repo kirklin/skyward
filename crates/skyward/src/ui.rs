@@ -22,6 +22,7 @@ use skyward_config::{DeviceConfig, Service};
 use skyward_crypto::data::{Closed, Opened};
 use skyward_install::asked::{self, Needs};
 use skyward_install::{Detach, Installer, Options};
+use skyward_modules::root as root_modules;
 use skyward_sys::bcb::{self, Work, REFORMATS};
 use skyward_sys::control::{Control, Request};
 use skyward_sys::Power;
@@ -987,6 +988,16 @@ fn read_mounts(services: &[Service]) -> Result<Vec<skyward_ui::app::MountRow>> {
 
 /// What the phone's boot control holds of the slots, or why it cannot be
 /// asked.
+fn root_module_data(app: &App) -> Result<PathBuf> {
+    let data = Path::new(skyward_crypto::data::MOUNT);
+    ensure!(app.state.place_open(Place::Storage) && mount::is_mount_point(data)?, "decrypt the data partition first");
+    Ok(data.join("adb"))
+}
+
+fn read_root_modules(app: &App) -> Result<Vec<root_modules::Module>, String> {
+    root_module_data(app).and_then(|adb| root_modules::list(&adb, Path::new("/metadata"))).map_err(|e| format!("{e:#}"))
+}
+
 fn read_slots() -> Result<skyward_vab::BootSlots, String> {
     let read = || -> Result<skyward_vab::BootSlots> {
         let (binder, hardware) = (skyward_binder::driver::Binder::open()?, skyward_binder::driver::Binder::hardware()?);
@@ -2562,6 +2573,16 @@ impl Pages<'_> {
             Effect::Cancel => self.cancel_install(now)?,
             Effect::ReadMounts => self.app.set_mounts(self.mounts()),
             Effect::ReadSlots => self.app.set_boot_slots(read_slots()),
+            Effect::ReadRootModules => {
+                self.app.set_root_modules(read_root_modules(&self.app));
+            }
+            Effect::SetRootModule { id, change } => {
+                let result = root_module_data(&self.app)
+                    .and_then(|adb| root_modules::change(&adb, Path::new("/metadata"), &id, change))
+                    .map_err(|e| format!("{e:#}"));
+                self.app.set_root_modules(read_root_modules(&self.app));
+                self.app.root_module_changed(result, now);
+            }
             Effect::SetSlot(slot) => self.app.slot_switched(set_slot(slot), now),
             Effect::ReadSystems => self.systems()?.send(systems::Task::Read),
             // An install still under way may yet write the boot

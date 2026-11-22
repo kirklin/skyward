@@ -25,6 +25,7 @@ use crate::theme::Theme;
 use crate::widgets::{self, Bar, Bolt, Cap, Layer, WlanMark};
 use skyward_info::DeviceInfo;
 use skyward_install::{Event, ImageKind, Outcome, Place as FlashPlace, Reflash, Refusal, Stage, Target as FlashTarget};
+use skyward_modules::root::{Change as RootChange, Module as RootModule};
 use skyward_net::download::{Failure, Progress};
 use skyward_net::github::{Build, Newest};
 use skyward_net::release::{Release, Unanswered};
@@ -50,6 +51,7 @@ mod power;
 mod prefs;
 mod reboot;
 mod relabel;
+mod root_modules;
 mod scroll;
 mod skyward;
 mod state;
@@ -72,6 +74,7 @@ pub use mount::*;
 pub use prefs::*;
 pub use reboot::*;
 pub use relabel::*;
+pub(crate) use root_modules::root_changes;
 pub use skyward::*;
 pub use state::*;
 pub use systems::*;
@@ -113,6 +116,8 @@ pub enum Screen {
     BackupJob,
     /// Tools for the experienced: files, a terminal, the logs.
     Advanced,
+    RootModules,
+    RootModule,
     Files,
     /// One file, and what can be done with it.
     FileInfo,
@@ -201,6 +206,7 @@ pub enum Confirm {
     Restore,
     /// Start next from the slot chosen on the slot page.
     Slot,
+    RootModule,
     /// Erase all user data, as the system offered when it could not start.
     FactoryReset,
     /// Delete the entry the file page shows.
@@ -233,6 +239,8 @@ pub enum Confirm {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Action {
     Open(Screen),
+    OpenRootModule(usize),
+    ChooseRootChange(RootChange),
     /// Leave the decrypt page for the page it was opened from; the page
     /// the recovery started on, for the home page without keeping it
     /// behind.
@@ -452,6 +460,8 @@ pub enum Effect {
     /// Read what the boot control holds of the slots, telling it with
     /// [`App::set_boot_slots`].
     ReadSlots,
+    ReadRootModules,
+    SetRootModule { id: String, change: RootChange },
     /// Have the bootloader start this slot next, telling how it went with
     /// [`App::slot_switched`].
     SetSlot(Slot),

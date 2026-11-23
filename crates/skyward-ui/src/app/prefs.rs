@@ -368,7 +368,8 @@ impl App {
     }
 
     pub(super) fn set_slider(&mut self, t: &Theme, which: Slider, track: Rect, x: f32) {
-        self.set_level(t, which, track, (x - track.x) / track.w);
+        let travel = (track.w - track.h).max(1.0);
+        self.set_level(t, which, track, (x - track.x - track.h / 2.0) / travel);
     }
 
     /// Where a slider stands, as a share of its span.
@@ -435,10 +436,11 @@ mod tests {
         let mut app = App::new(Screen::Settings, W, H, PPD);
         let track = app.frame(&f, &i).hits.iter().find(|h| h.action == Action::Slider(Slider::Brightness)).unwrap().rect;
         let y = track.centre().1 - app.top().1;
-        assert!(app.touch(Touch::Down(track.x + track.w * 0.25, y), &f, 0).is_empty());
-        assert_eq!(app.panel(0), Some(0.25));
-        assert!(app.touch(Touch::Move(track.x + track.w * 0.75, y + 40.0), &f, 0).is_empty());
-        assert_eq!(app.panel(0), Some(0.75));
+        let travel = track.w - track.h;
+        assert!(app.touch(Touch::Down(track.x + track.h / 2.0 + travel * 0.25, y), &f, 0).is_empty());
+        assert!((app.panel(0).unwrap() - 0.25).abs() < 1e-5);
+        assert!(app.touch(Touch::Move(track.x + track.h / 2.0 + travel * 0.75, y + 40.0), &f, 0).is_empty());
+        assert!((app.panel(0).unwrap() - 0.75).abs() < 1e-5);
         assert!(app.touch(Touch::Up, &f, 0).is_empty(), "the panel shows the brightness");
         assert_eq!(app.state.brightness, 0.75);
     }
@@ -450,7 +452,8 @@ mod tests {
         let track = app.frame(&f, &i).hits.iter().find(|h| h.action == Action::Slider(Slider::Vibration)).unwrap().rect;
         let y = track.centre().1 - app.top().1;
         assert!(app.touch(Touch::Down(track.x + track.w * 0.25, y), &f, 0).is_empty());
-        assert!(app.touch(Touch::Move(track.x + track.w * 0.8, y + 40.0), &f, 0).is_empty(), "nothing taps while the finger moves");
+        let x = track.x + track.h / 2.0 + (track.w - track.h) * 0.8;
+        assert!(app.touch(Touch::Move(x, y + 40.0), &f, 0).is_empty(), "nothing taps while the finger moves");
         assert_eq!(app.touch(Touch::Up, &f, 0), vec![Effect::Haptic], "let go, the motor taps");
         assert!((app.state.vibration - 0.8).abs() < 1e-5);
         assert!(app.touch(Touch::Down(track.x - 50.0, y), &f, 0).is_empty());

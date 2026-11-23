@@ -1883,8 +1883,9 @@ pub fn switch(c: &mut Canvas, t: &Theme, right: f32, cy: f32, on: bool) {
 pub fn slider(c: &mut Canvas, t: &Theme, x: f32, top: f32, w: f32, value: f32) {
     let m = &t.m;
     let h = m.slider_h;
+    let travel = (w - h).max(0.0);
     c.fill_round_rect(x, top, w, h, h / 2.0, t.pal.track);
-    let fw = (w * value.clamp(0.0, 1.0)).max(h);
+    let fw = w - travel * (1.0 - value.clamp(0.0, 1.0));
     c.fill_round_rect(x, top, fw, h, h / 2.0, t.pal.accent);
     c.fill_circle(x + fw - h / 2.0, top + h / 2.0, m.slider_knob / 2.0, Rgba::rgb(255, 255, 255));
 }

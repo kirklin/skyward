@@ -9,6 +9,9 @@ const WAIT_OR_STOP: Text = texts::toast::back::WAIT_OR_STOP;
 impl App {
     /// Open `screen` over the page shown, sliding in over it.
     pub(super) fn open(&mut self, screen: Screen) {
+        if self.split_active() {
+            self.split.as_mut().expect("split active").key_pane = Pane::Detail;
+        }
         self.leave(false);
         self.push(screen);
     }
@@ -17,6 +20,23 @@ impl App {
         self.stack.push((screen, 0.0, Focus::Unset));
         self.settle_page();
         self.refresh();
+    }
+
+    /// Snapshot the page as it last showed into a [`Turn`] ready to slide.
+    pub(super) fn snapshot_turn(&mut self, back: bool) -> Option<Turn> {
+        let view = self.shown.take()?;
+        let w = self.pane_w();
+        let mut left = self.backdrop.take().filter(|c| c.w == w && c.h == self.h).unwrap_or_else(|| Canvas::new(w, self.h));
+        // The `<` comes up with the finger, before its page goes.
+        let view = View { pressing: None, ..view };
+        let t = self.theme();
+        self.paint_page(&mut left, &t, None, &view);
+        // A page left within the first frames of sliding in, before it was
+        // drawn across, shows its colour where it was not drawn yet.
+        if let Some(fr) = self.frame.as_ref().filter(|_| self.cols < w) {
+            left.fill_rect(self.cols as f32, 0.0, (w - self.cols) as f32, self.h as f32, fr.bg);
+        }
+        Some(Turn { back, left, spring: None })
     }
 
     /// The page shown gives way to another, opened over it or, `back`, gone
@@ -29,18 +49,8 @@ impl App {
             return;
         }
         self.end_turn();
-        let Some(view) = self.shown.take() else { return };
-        let mut left = self.backdrop.take().unwrap_or_else(|| Canvas::new(self.w, self.h));
-        // The `<` comes up with the finger, before its page goes.
-        let view = View { pressing: None, ..view };
-        let t = self.theme();
-        self.paint_page(&mut left, &t, None, &view);
-        // A page left within the first frames of sliding in, before it was
-        // drawn across, shows its colour where it was not drawn yet.
-        if let Some(fr) = self.frame.as_ref().filter(|_| self.cols < self.w) {
-            left.fill_rect(self.cols as f32, 0.0, (self.w - self.cols) as f32, self.h as f32, fr.bg);
-        }
-        self.turn = Some(Turn { back, left, spring: None });
+        let Some(turn) = self.snapshot_turn(back) else { return };
+        self.turn = Some(turn);
         self.dirty = true;
     }
 
@@ -79,16 +89,60 @@ impl App {
     /// In the file manager, back climbs a folder until it reaches the root,
     /// and in a place, until it reaches the place's top.
     pub(super) fn back(&mut self, now: u64) -> Vec<Effect> {
-        let (l, mut fx) = (self.state.lang, Vec::new());
+        let mut fx = Vec::new();
+        if self.split_active() && self.stack.len() <= 2 {
+            if self.screen() == Screen::Search {
+                let prev = self.split.as_mut().and_then(|sp| sp.before_search.take()).unwrap_or(Screen::About);
+                *self.top_mut() = (prev, 0.0, Focus::Unset);
+                if let Some(sp) = &mut self.split {
+                    sp.key_pane = Pane::Sidebar;
+                }
+                self.settle_page();
+                self.refresh();
+                fx.extend(self.arrive_at(prev));
+            } else if self.keys && self.focus_pane() == Pane::Detail {
+                self.split.as_mut().expect("split active").key_pane = Pane::Sidebar;
+                self.dirty = true;
+            }
+            return fx;
+        }
         if self.stack.len() <= 1 {
             return fx;
         }
-        let morph = self.screen() == Screen::Search && self.stack[self.stack.len() - 2].0 == Screen::Home;
+        let morph = !self.split_active() && self.screen() == Screen::Search && self.stack[self.stack.len() - 2].0 == Screen::Home;
         if morph {
             self.start_morph(false, now);
         }
         let left = self.screen();
-        match left {
+        if !self.try_leave(left, true, now, &mut fx) {
+            return fx;
+        }
+        if !morph {
+            self.leave(true);
+        }
+        self.stack.pop();
+        self.state.confirm = 0.0;
+        self.settle_page();
+        self.refresh();
+        // Coming back to the list of backups looks for them again: one may
+        // have been made, deleted or opened up to be read since. So does
+        // coming back to the partitions after work on one, which may have
+        // changed what it holds.
+        match self.screen() {
+            Screen::Restore => fx.push(self.find_backups()),
+            Screen::Filesystem | Screen::Filesystems if left == Screen::PartWork => fx.push(Effect::ReadFilesystems),
+            _ => {}
+        }
+        fx
+    }
+
+    /// Check whether `screen` can be left and clear its transient state.
+    /// When `climb` is true, in-page sub-navigation (`Files`, `Choose`,
+    /// `WlanAdd`) steps up one level instead of leaving; returns `false` when
+    /// leaving is blocked or handled in place.
+    pub(super) fn try_leave(&mut self, screen: Screen, climb: bool, now: u64, fx: &mut Vec<Effect>) -> bool {
+        let l = self.state.lang;
+        match screen {
             Screen::Mount => self.state.mount_failure = None,
             // A slot picked and not switched to is put down.
             Screen::Slot => self.state.next_slot = None,
@@ -97,21 +151,23 @@ impl App {
             Screen::Systems => {
                 if self.state.systems_work.is_some() {
                     self.say(l.pick(texts::toast::back::WRITING), now);
-                    return fx;
+                    return false;
                 }
                 self.state.system_pick = None;
                 self.state.asking_delete = false;
             }
             Screen::Files => {
-                if let Some(up) = self.state.files.up() {
-                    return vec![Effect::ReadDir(up)];
+                if climb && let Some(up) = self.state.files.up() {
+                    fx.push(Effect::ReadDir(up));
+                    return false;
                 }
                 // Leaving the file manager puts a picked entry down.
                 self.state.clip = None;
             }
             Screen::Choose(place) => {
-                if let Some(up) = self.state.folder(Screen::Choose(place)).up() {
-                    return vec![Effect::ReadPlace(place, up)];
+                if climb && let Some(up) = self.state.folder(Screen::Choose(place)).up() {
+                    fx.push(Effect::ReadPlace(place, up));
+                    return false;
                 }
             }
             Screen::FileInfo => {
@@ -125,7 +181,7 @@ impl App {
                 if changed && self.unsaved_warned.is_none_or(|at| now >= at + TOAST_MS) {
                     self.unsaved_warned = Some(now);
                     self.say(l.pick(texts::toast::back::UNSAVED), now);
-                    return fx;
+                    return false;
                 }
                 self.state.editor = None;
                 self.unsaved_warned = None;
@@ -140,10 +196,10 @@ impl App {
             Screen::WlanNetwork => self.state.details = None,
             // A list open over the page closes first.
             Screen::WlanAdd => {
-                if let Some(a) = self.state.adding.as_mut().filter(|a| a.choosing) {
+                if climb && let Some(a) = self.state.adding.as_mut().filter(|a| a.choosing) {
                     a.choosing = false;
                     self.refresh();
-                    return fx;
+                    return false;
                 }
                 self.state.adding = None;
                 self.state.password.clear();
@@ -151,14 +207,14 @@ impl App {
             Screen::FileJob => {
                 if self.state.job.as_ref().is_some_and(|j| j.outcome.is_none()) {
                     self.say(l.pick(WAIT_OR_STOP), now);
-                    return fx;
+                    return false;
                 }
                 self.state.job = None;
             }
             Screen::Relabel => {
                 if self.state.relabel.as_ref().is_some_and(|j| j.outcome.is_none()) {
                     self.say(l.pick(WAIT_OR_STOP), now);
-                    return fx;
+                    return false;
                 }
                 self.state.relabel = None;
             }
@@ -168,7 +224,7 @@ impl App {
             Screen::PartWork => {
                 if self.state.part_work.as_ref().is_some_and(|w| w.outcome.is_none()) {
                     self.say(l.pick(texts::toast::back::WAIT), now);
-                    return fx;
+                    return false;
                 }
                 self.state.part_work = None;
                 self.state.fs_action = FsAction::Repair;
@@ -182,11 +238,11 @@ impl App {
             Screen::SkywardUpdate => match self.state.skyward_job.as_ref().filter(|j| j.outcome.is_none()).map(|j| j.stage) {
                 Some(Some(SkywardStage::Write { .. })) => {
                     self.say(l.pick(texts::toast::back::WRITING), now);
-                    return fx;
+                    return false;
                 }
                 Some(_) => {
                     self.say(l.pick(WAIT_OR_STOP), now);
-                    return fx;
+                    return false;
                 }
                 None => {}
             },
@@ -197,13 +253,13 @@ impl App {
                     let writing = job.restore && job.at.is_some_and(|a| !a.checking);
                     let said = if writing { texts::toast::back::RESTORING } else { WAIT_OR_STOP };
                     self.say(l.pick(said), now);
-                    return fx;
+                    return false;
                 }
                 self.state.backup_job = None;
             }
             _ => {}
         }
-        if self.screen() == Screen::Installing {
+        if screen == Screen::Installing {
             match self.state.install {
                 // Checking a signature only reads the package, and stops
                 // when the page is left.
@@ -213,27 +269,27 @@ impl App {
                 }
                 Install::Checking { .. } => {
                     self.say(l.pick(texts::toast::back::READING), now);
-                    return fx;
+                    return false;
                 }
                 Install::Updating { .. } | Install::Scripting { .. } => {
                     self.say(l.pick(texts::toast::back::INSTALLING), now);
-                    return fx;
+                    return false;
                 }
                 Install::Flashing { .. } => {
                     self.say(l.pick(texts::toast::back::FLASHING), now);
-                    return fx;
+                    return false;
                 }
                 Install::Systeming { .. } => {
                     self.say(l.pick(texts::toast::back::INSTALLING), now);
-                    return fx;
+                    return false;
                 }
                 Install::Opening => {
                     self.say(l.pick(DATA_OPENING), now);
-                    return fx;
+                    return false;
                 }
                 Install::Wiping => {
                     self.say(l.pick(texts::toast::back::WIPING), now);
-                    return fx;
+                    return false;
                 }
                 Install::Starting
                 | Install::Locked(_)
@@ -255,23 +311,7 @@ impl App {
                 Install::Idle | Install::Ending => {}
             }
         }
-        if !morph {
-            self.leave(true);
-        }
-        self.stack.pop();
-        self.state.confirm = 0.0;
-        self.settle_page();
-        self.refresh();
-        // Coming back to the list of backups looks for them again: one may
-        // have been made, deleted or opened up to be read since. So does
-        // coming back to the partitions after work on one, which may have
-        // changed what it holds.
-        match self.screen() {
-            Screen::Restore => fx.push(self.find_backups()),
-            Screen::Filesystem | Screen::Filesystems if left == Screen::PartWork => fx.push(Effect::ReadFilesystems),
-            _ => {}
-        }
-        fx
+        true
     }
 
     /// What the page shown first asks of the runtime as it shows.

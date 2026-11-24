@@ -28,12 +28,15 @@ impl App {
     /// it on screen, the rest as they come into view; or, where only some
     /// rows changed, those rows.
     pub fn frame(&mut self, f: &Fonts, info: &DeviceInfo) -> &Frame {
-        self.render(f, info, self.w)
+        let w = self.pane_w();
+        self.render(f, info, w)
     }
 
     /// [`App::frame`], drawing of a page rendered anew only its columns
     /// from the left edge to `wide`.
     fn render(&mut self, f: &Fonts, info: &DeviceInfo, wide: u32) -> &Frame {
+        let w = self.pane_w();
+        let hide_root_back = self.split_active() && self.stack.len() <= 2;
         if self.frame.is_some() && !self.stale.is_empty() {
             let t = self.theme();
             let screen = self.screen();
@@ -44,21 +47,28 @@ impl App {
                 let mut canvas = self.frame.take().expect("checked above").canvas;
                 assert_eq!(canvas.h, fresh.canvas.h, "a page drawn again in part is as tall as it was");
                 canvas.replace(&fresh.canvas);
-                self.frame = Some(Frame { canvas, ..fresh });
+                let mut frame = Frame { canvas, ..fresh };
+                if hide_root_back {
+                    frame.back = false;
+                }
+                self.frame = Some(frame);
             }
         }
         if self.frame.is_none() {
             let t = self.theme();
             let screen = self.screen();
             let first = self.top().1.max(0.0) as u32;
-            let band = Band { rows: (first, first + self.h), cols: (0, wide.min(self.w)) };
+            let band = Band { rows: (first, first + self.h), cols: (0, wide.min(w)) };
             let cx = Ctx { t: &t, f, info, state: &self.state, term: self.term.as_ref(), band: Some(band) };
             let mut frame = pages::render(screen, &cx);
+            if hide_root_back {
+                frame.back = false;
+            }
             // A page drawn in part across holds its rows whole, the columns
             // of them drawn on as they are needed.
             self.cols = frame.canvas.cols().end;
-            if self.cols < self.w {
-                let mut whole = Canvas::unfilled(self.w, frame.canvas.h, frame.canvas.held());
+            if self.cols < w {
+                let mut whole = Canvas::unfilled(w, frame.canvas.h, frame.canvas.held());
                 whole.replace(&frame.canvas);
                 frame.canvas = whole;
             }
@@ -76,8 +86,9 @@ impl App {
 
     /// The current page rendered, all of it drawn.
     pub fn whole_frame(&mut self, f: &Fonts, info: &DeviceInfo) -> &Frame {
+        let w = self.pane_w();
         let h = self.frame(f, info).canvas.h;
-        self.draw_cols(f, info, self.w);
+        self.draw_cols(f, info, w);
         self.draw_rows(f, info, 0.0, h as f32);
         self.frame.as_ref().expect("rendered above")
     }
@@ -88,24 +99,26 @@ impl App {
     /// it scrolls into view; that done, make the About page field's dither,
     /// for that page to open without making it. Whether any is left to do.
     pub fn draw_ahead(&mut self, f: &Fonts, info: &DeviceInfo) -> bool {
+        let w = self.pane_w();
         let Some(frame) = &self.frame else { return false };
         let (held, h) = (frame.canvas.held(), frame.canvas.h);
-        if self.cols < self.w {
-            self.draw_cols(f, info, self.w);
+        if self.cols < w {
+            self.draw_cols(f, info, w);
         } else if held.end < h {
             self.draw_rows(f, info, held.end as f32, (held.end + 1) as f32);
         } else if held.start > 0 {
             self.draw_rows(f, info, (held.start - 1) as f32, held.start as f32);
-        } else if self.dither.is_none() {
-            self.dither = Some(glow::Dither::new(self.w as usize, self.h as usize));
+        } else if self.dither.as_ref().is_none_or(|d| !d.matches(w as usize, self.h as usize)) {
+            self.dither = Some(glow::Dither::new(w as usize, self.h as usize));
         }
-        self.cols < self.w || self.frame.as_ref().is_some_and(|fr| !fr.canvas.whole()) || self.dither.is_none()
+        self.cols < w || self.frame.as_ref().is_some_and(|fr| !fr.canvas.whole()) || self.dither.as_ref().is_none_or(|d| !d.matches(w as usize, self.h as usize))
     }
 
     /// Draw the columns of the current page's rows drawn from where they
     /// were drawn to, on to `wide`.
     fn draw_cols(&mut self, f: &Fonts, info: &DeviceInfo, wide: u32) {
-        let wide = wide.min(self.w);
+        let w = self.pane_w();
+        let wide = wide.min(w);
         let Some(frame) = &self.frame else { return };
         if self.cols >= wide {
             return;
@@ -139,11 +152,12 @@ impl App {
         if bands.is_empty() {
             return;
         }
-        self.draw_cols(f, info, self.w);
+        let w = self.pane_w();
+        self.draw_cols(f, info, w);
         let t = self.theme();
         let screen = self.screen();
         for rows in bands {
-            let band = Band { rows, cols: (0, self.w) };
+            let band = Band { rows, cols: (0, w) };
             let cx = Ctx { t: &t, f, info, state: &self.state, term: self.term.as_ref(), band: Some(band) };
             let part = pages::render(screen, &cx).canvas;
             self.frame.as_mut().expect("drawn above").canvas.join(&part);
@@ -178,12 +192,22 @@ impl App {
     /// The charging screen, `level` of the way over the page drawn on `out`.
     fn compose_charging(&mut self, out: &mut Canvas, f: &Fonts, info: &DeviceInfo, level: f32, now: u64) {
         let battery = info.battery.as_ref().expect("a cable went in on a phone whose battery is read");
-        let (t, lang) = (self.theme(), self.state.lang);
+        let (t, lang) = (self.full_theme(), self.state.lang);
         if !self.charge_art.as_ref().is_some_and(|a| a.shows(lang, battery)) {
             self.charge_art = Some(charge::Art::new(f, &t.m, lang, battery).expect("the screens' face takes the charging screen's weight"));
         }
         let since = self.charging.as_ref().map_or(now, |c| c.since);
-        let dither = self.dither.get_or_insert_with(|| glow::Dither::new(out.w as usize, out.h as usize));
+        let dither = match &mut self.split {
+            Some(sp) => sp
+                .charge_dither
+                .get_or_insert_with(|| glow::Dither::new(out.w as usize, out.h as usize)),
+            None => {
+                if self.dither.as_ref().is_none_or(|d| !d.matches(out.w as usize, out.h as usize)) {
+                    self.dither = Some(glow::Dither::new(out.w as usize, out.h as usize));
+                }
+                self.dither.as_mut().expect("inserted above")
+            }
+        };
         let art = self.charge_art.as_ref().expect("drawn above");
         if level >= 1.0 {
             charge::draw(out, art, &t.m, battery.level, now.saturating_sub(since), dither);
@@ -198,11 +222,71 @@ impl App {
     /// title fading as it scrolls, the bar and its title over a scrolled
     /// page, the `<`, the page sliding in or out over or under the page
     /// left, the status bar, any message, and the back cue while a swipe
-    /// from an edge is under way.
+    /// from an edge is under way. On wide landscape tablets in root view,
+    /// composes the navigation sidebar on the left and the detail pane on
+    /// the right before overlaying the full-width status bar and toast.
     fn compose_page(&mut self, out: &mut Canvas, f: &Fonts, info: &DeviceInfo, clock: &str, now: u64) {
+        if self.toast.as_ref().is_some_and(|m| now >= m.1) {
+            self.toast = None;
+        }
+        if self.split_active() {
+            self.morph = None;
+            self.compose_sidebar(f, info, now);
+            let mut detail = self
+                .split
+                .as_mut()
+                .map(|sp| std::mem::replace(&mut sp.detail_canvas, Canvas::new(0, 0)))
+                .expect("split view active");
+            self.compose_detail(&mut detail, f, info, now);
+            {
+                let sp = self.split.as_mut().expect("split view active");
+                sp.compose_split(out, &detail, self.corners, now);
+                sp.detail_canvas = detail;
+            }
+            let full_t = self.full_theme();
+            self.draw_back_cue(out, &full_t, now);
+            widgets::status_bar(out, &full_t, f, &self.bar(clock, info), full_t.pal.status);
+            if let Some((text, _)) = &self.toast {
+                widgets::toast(out, &full_t, f, text);
+            }
+            return;
+        }
+        if self.morph.is_some() {
+            let w = self.pane_w();
+            let opening = self.turn.as_ref().is_some_and(|t| !t.back);
+            self.render(f, info, if opening { 0 } else { w });
+            let screen = self.screen();
+            let caret_on = match self.frame.as_ref().is_some_and(|fr| fr.caret.is_some()) {
+                true => self.caret_up(screen, now),
+                false => {
+                    self.blink = None;
+                    self.caret_shown = false;
+                    false
+                }
+            };
+            if let Some(m) = &self.morph {
+                if !m.at(now).1 {
+                    return self.compose_morph(out, f, info, clock, now, caret_on);
+                }
+                self.morph = None;
+            }
+        }
+        self.compose_detail(out, f, info, now);
+        let t = self.theme();
+        self.draw_back_cue(out, &t, now);
+        widgets::status_bar(out, &t, f, &self.bar(clock, info), t.pal.status);
+        if let Some((text, _)) = &self.toast {
+            widgets::toast(out, &t, f, text);
+        }
+    }
+
+    /// Compose the active content pane onto `out` (width `pane_w()`), including
+    /// its scrolling/sliding transitions and edge-swipe back cue.
+    fn compose_detail(&mut self, out: &mut Canvas, f: &Fonts, info: &DeviceInfo, now: u64) {
+        let w = self.pane_w();
         // A page opened is drawn from its left edge as it slides in.
         let opening = self.turn.as_ref().is_some_and(|t| !t.back);
-        self.render(f, info, if opening { 0 } else { self.w });
+        self.render(f, info, if opening { 0 } else { w });
         let screen = self.screen();
         let scroll = self.top().1;
         let offset = (scroll + self.overscroll(now)).round();
@@ -214,18 +298,15 @@ impl App {
                 false
             }
         };
-        if let Some(m) = &self.morph {
-            if !m.at(now).1 {
-                return self.compose_morph(out, f, info, clock, now, caret_on);
-            }
-            self.morph = None;
-        }
         let t = self.theme();
+        if self.frame.as_ref().is_some_and(|fr| fr.hero.is_some()) {
+            let look = t.hero.glow;
+            if self.glow.as_ref().is_none_or(|g| !std::ptr::eq(g.look(), look)) {
+                self.glow = Some(GlowClock::new(look, now));
+            }
+        }
         if let Some((which, track)) = self.knob.take() {
             self.paint_knob(&t, f, which, track);
-        }
-        if self.toast.as_ref().is_some_and(|m| now >= m.1) {
-            self.toast = None;
         }
         let title = self.frame.as_ref().expect("rendered above").title;
         let key = (title, self.state.dark);
@@ -255,9 +336,9 @@ impl App {
             // early in the slide; all of it once a row of it is held.
             let wide = match (slide, &self.turn) {
                 (Some((at, _, _)), Some(turn)) if !turn.back && self.row_press.is_none() => {
-                    (self.w - at.clamp(0, self.w as i32) as u32).max(self.cols + self.w / 4)
+                    (w - at.clamp(0, w as i32) as u32).max(self.cols + w / 4)
                 }
-                _ => self.w,
+                _ => w,
             };
             self.draw_cols(f, info, wide);
             self.draw_rows(f, info, offset, offset + self.h as f32);
@@ -267,13 +348,13 @@ impl App {
         // before then never waits for it.
         if let (Some(press), None) = (self.row_press.filter(|p| now >= p.rise), &self.row_art) {
             let page = &self.frame.as_ref().expect("rendered above").canvas;
-            let (x, y, w, h) = row_part(press.rect, page);
+            let (x, y, rw, rh) = row_part(press.rect, page);
             let pressed = t.pressed();
-            let band = Band { rows: (y, y + h), cols: (x, x + w) };
+            let band = Band { rows: (y, y + rh), cols: (x, x + rw) };
             let cx = Ctx { t: &pressed, f, info, state: &self.state, term: self.term.as_ref(), band: Some(band) };
             let down = pages::render(screen, &cx).canvas;
             assert_eq!((down.w, down.h), (page.w, page.h), "a page held down is laid out as it was");
-            self.row_art = Some((page.crop(x, y, w, h), down.crop(x, y, w, h)));
+            self.row_art = Some((page.crop(x, y, rw, rh), down.crop(x, y, rw, rh)));
         }
         let view = View {
             scroll,
@@ -285,6 +366,7 @@ impl App {
             row: self.row_press.map_or(0.0, |p| p.level(now)),
             pressing: self.pressing(),
         };
+        let slide_corners = if self.split_active() { 0.0 } else { self.corners };
         match slide {
             Some((at, shift, dim)) => {
                 // The page shown is drawn on its own canvas, once for as
@@ -293,22 +375,25 @@ impl App {
                 // A page opened shows nothing of itself until its edge comes
                 // in from the right: the page left alone shows.
                 let back = self.turn.as_ref().expect("sliding").back;
-                if !back && at >= self.w as i32 {
+                if !back && at >= w as i32 {
                     let left = &self.turn.as_ref().expect("sliding").left;
-                    out.slide(left, left, at, shift, dim, self.corners);
+                    out.slide(left, left, at, shift, dim, slide_corners);
                 } else {
                     let still = self.frame.as_ref().is_some_and(|fr| fr.hero.is_none());
                     let page = match self.layer.take() {
-                        Some((shown, c)) if still && shown == view => c,
+                        Some((shown, c)) if still && shown == view && c.w == out.w && c.h == out.h => c,
                         kept => {
-                            let mut c = kept.map(|(_, c)| c).unwrap_or_else(|| Canvas::new(out.w, out.h));
+                            let mut c = kept
+                                .map(|(_, c)| c)
+                                .filter(|c| c.w == out.w && c.h == out.h)
+                                .unwrap_or_else(|| Canvas::new(out.w, out.h));
                             self.paint_page(&mut c, &t, Some((f, info)), &view);
                             c
                         }
                     };
                     let turn = self.turn.as_ref().expect("sliding");
                     let (front, behind) = if back { (&turn.left, &page) } else { (&page, &turn.left) };
-                    out.slide(front, behind, at, shift, dim, self.corners);
+                    out.slide(front, behind, at, shift, dim, slide_corners);
                     self.layer = Some((view, page));
                 }
             }
@@ -318,19 +403,19 @@ impl App {
             }
         }
         self.shown = Some(view);
+    }
 
-        widgets::status_bar(out, &t, f, &self.bar(clock, info), t.pal.status);
-        if let Some((text, _)) = &self.toast {
-            widgets::toast(out, &t, f, text);
-        }
+    /// Draw the active or receding edge-swipe back cue along the physical
+    /// left or right screen edge.
+    fn draw_back_cue(&self, out: &mut Canvas, t: &Theme, now: u64) {
         match self.drag {
             Drag::Edge { start, from_left, armed, x, cy } => {
                 let travel = if from_left { x - start } else { start - x };
-                widgets::back_cue(out, &t, from_left, cy, widgets::back_cue_depth(&t, travel), armed);
+                widgets::back_cue(out, t, from_left, cy, widgets::back_cue_depth(t, travel), armed);
             }
             _ => {
                 if let Some((from_left, cy, s)) = self.cue {
-                    widgets::back_cue(out, &t, from_left, cy, s.at(now).0.max(0.0), false);
+                    widgets::back_cue(out, t, from_left, cy, s.at(now).0.max(0.0), false);
                 }
             }
         }
@@ -372,7 +457,10 @@ impl App {
             let fade = (1.0 - scroll / m.dp(ABOUT_FIELD_DP)).clamp(0.0, 1.0);
             let top = (widgets::bar_bottom(t) + m.dp(ABOUT_FIELD_DP)) / m.h as f32;
             let field = glow::sample(glow, out.w as usize, out.h as usize, FIELD_CELL, top, t.pal.bg, fade);
-            let dither = self.dither.get_or_insert_with(|| glow::Dither::new(out.w as usize, out.h as usize));
+            if self.dither.as_ref().is_none_or(|d| !d.matches(out.w as usize, out.h as usize)) {
+                self.dither = Some(glow::Dither::new(out.w as usize, out.h as usize));
+            }
+            let dither = self.dither.as_mut().expect("dither initialized above");
             glow::paint(out, &field, fade, &glow::Layer { canvas: &frame.canvas, runs: &art.runs, offset: offset as isize }, dither);
             press_row(out);
             let range = m.dp(ABOUT_LOGO_DP) - widgets::bar_bottom(t);
@@ -517,7 +605,7 @@ impl App {
         // Where the page in front stands, in screen widths from the left
         // edge.
         let along = if turn.back { 1.0 + x / 1000.0 } else { x / 1000.0 };
-        let w = self.w as f32;
+        let w = self.pane_w() as f32;
         Some(((along * w).round() as i32, (BEHIND_SHIFT * w * (1.0 - along)).round() as i32, BEHIND_DIM * (1.0 - along)))
     }
 

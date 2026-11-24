@@ -92,6 +92,7 @@ impl App {
     pub fn erase_started(&mut self, reset: bool, asked: bool, parts: Vec<Part>) {
         self.state.erase = Erase { reset, asked, parts, done: 0, progress: None, outcome: None };
         self.stack = vec![(Screen::Erase, 0.0, Focus::Unset)];
+        self.reset_split_caches();
         self.settle_page();
         self.refresh();
     }

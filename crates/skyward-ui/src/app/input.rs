@@ -4,7 +4,7 @@
 use super::*;
 
 impl App {
-    pub fn touch(&mut self, ev: Touch, f: &Fonts, now: u64) -> Vec<Effect> {
+    pub fn touch(&mut self, mut ev: Touch, f: &Fonts, now: u64) -> Vec<Effect> {
         // A finger on the dark panel lights nothing, as on the phone's own
         // system, where the power key lights it.
         if !self.display_on {
@@ -38,6 +38,35 @@ impl App {
             self.end_turn();
         }
         self.stir(now);
+        let split = self.split_active();
+        let sidebar_w = if split {
+            let sp = self.split.as_mut().expect("split active");
+            let sw = sp.sidebar_w as f32;
+            if !matches!(self.drag, Drag::Edge { .. }) {
+                match ev {
+                    Touch::Down(x, y) if x < sw => {
+                        sp.touch_sidebar = true;
+                        sp.key_pane = Pane::Sidebar;
+                        return self.touch_sidebar(Touch::Down(x, y), now);
+                    }
+                    Touch::Down(x, y) => {
+                        sp.touch_sidebar = false;
+                        sp.key_pane = Pane::Detail;
+                        ev = Touch::Down(x - sw, y);
+                    }
+                    Touch::Move(x, y) if sp.touch_sidebar => return self.touch_sidebar(Touch::Move(x, y), now),
+                    Touch::Move(x, y) => ev = Touch::Move(x - sw, y),
+                    Touch::Up if sp.touch_sidebar => {
+                        sp.touch_sidebar = false;
+                        return self.touch_sidebar(Touch::Up, now);
+                    }
+                    Touch::Up => {}
+                }
+            }
+            sw
+        } else {
+            0.0
+        };
         let t = self.theme();
         let m = t.m;
         let (slop, edge) = (m.dp(8.0), m.dp(20.0));
@@ -48,7 +77,7 @@ impl App {
             Touch::Down(x, y) => {
                 self.tracker.clear();
                 self.tracker.add(now, y);
-                let side = if x < edge {
+                let side = if !split && x < edge {
                     Some(true)
                 } else if x > m.w as f32 - edge {
                     Some(false)
@@ -57,7 +86,7 @@ impl App {
                 };
                 // The first page has nothing to go back to: its edges are
                 // like the rest of it.
-                let at_edge = side.filter(|_| self.stack.len() > 1);
+                let at_edge = side.filter(|_| self.can_edge_back());
                 // A swipe in from an edge goes back over whatever the page is
                 // doing: a finger landing there leaves a gliding or springing
                 // page alone until it drags the page, and presses nothing.
@@ -142,7 +171,7 @@ impl App {
                     self.drag = match at_edge {
                         Some(from_left) if dx.abs() > slop && dx.abs() > dy.abs() => {
                             self.dirty = true;
-                            Drag::Edge { start: x0, from_left, armed: false, x, cy: y0 - m.dp(CUE_LIFT_DP) }
+                            Drag::Edge { start: x0 + sidebar_w, from_left, armed: false, x: x + sidebar_w, cy: y0 - m.dp(CUE_LIFT_DP) }
                         }
                         _ if dy.abs() > slop => {
                             let history = self.frame.as_ref().and_then(|fr| fr.scrollback).filter(|(r, _)| r.contains(x0, y0 + scroll));
@@ -303,14 +332,9 @@ impl App {
     /// The finger left the row it held, scrolling the page or swiping: a
     /// row not darkening yet never does, and one darkening fades back.
     fn let_row_go(&mut self, now: u64) {
-        let Some(p) = self.row_press else { return };
-        if now < p.rise {
-            self.row_press = None;
-            self.row_art = None;
-        } else if p.fall.is_none() {
-            self.row_press = Some(RowPress { fall: Some(now), ..p });
+        if scroll::let_row_go(&mut self.row_press, &mut self.row_art, now) {
+            self.dirty = true;
         }
-        self.dirty = true;
     }
 
     /// No touchscreen answers: the keys work the pages, their light shown
@@ -330,6 +354,9 @@ impl App {
     pub fn key(&mut self, key: Key, now: u64) -> Vec<Effect> {
         // Any button stops a gliding page, and brings a sliding one to rest.
         self.fling = None;
+        if let Some(sp) = &mut self.split {
+            sp.fling = None;
+        }
         self.end_turn();
         if let Some((first, at)) = self.chord
             && matches!((first, key), (Key::Power, Key::VolumeDown) | (Key::VolumeDown, Key::Power))
@@ -409,19 +436,20 @@ impl App {
             }
             // A press before the page it lands on is drawn is lost, rather
             // than taken for one on nothing.
-            Key::Power if self.keys && self.frame.is_none() => {
+            Key::Power if self.keys && self.pane_frame(self.focus_pane()).is_none() => {
                 self.button = Some((key, Press::Spent));
                 Vec::new()
             }
             Key::Power => {
                 self.dirty = true;
-                match self.keys.then(|| self.lit()).flatten() {
+                let pane = self.focus_pane();
+                match self.keys.then(|| self.lit_on(pane)).flatten() {
                     // Held on a swipe-to-confirm control, the key slides
                     // its knob along as a finger would.
                     Some(Spot { stop: Stop::Hit(Action::Confirm(which)), rect, .. }) => {
                         self.button = Some((key, Press::Slide { which, track: rect, at }))
                     }
-                    Some(spot) => self.button = Some((key, Press::Power { spot, at })),
+                    Some(spot) => self.button = Some((key, Press::Power { pane, spot, at })),
                     // Turning the screen off, the key ticks the motor.
                     None => {
                         self.button = Some((key, Press::Spent));
@@ -450,7 +478,7 @@ impl App {
         self.button = None;
         self.dirty = true;
         match press {
-            Press::Power { spot, .. } => fx.extend(self.work(spot, now)),
+            Press::Power { pane, spot, .. } => fx.extend(self.work(pane, spot, now)),
             Press::Slide { which, track, .. } => {
                 let done = self.state.confirm > SLID;
                 self.let_knob_go(which, track);

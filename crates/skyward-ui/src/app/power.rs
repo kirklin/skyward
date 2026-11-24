@@ -119,6 +119,9 @@ impl App {
         self.morph = None;
         self.row_press = None;
         self.row_art = None;
+        if let Some(sp) = &mut self.split {
+            sp.stop_motion();
+        }
         self.end_turn();
     }
 
@@ -128,6 +131,7 @@ impl App {
             self.backdrop = Some(turn.left);
             self.dirty = true;
         }
+        self.end_split_transitions();
     }
 }
 

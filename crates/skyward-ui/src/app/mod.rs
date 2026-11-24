@@ -54,6 +54,7 @@ mod scroll;
 mod skyward;
 mod state;
 mod systems;
+mod split;
 mod terminal;
 #[cfg(test)]
 mod testing;
@@ -633,16 +634,23 @@ enum Focus {
     On(Spot),
 }
 
+/// Which pane of a split view currently holds hardware-key focus.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Pane {
+    Sidebar,
+    Detail,
+}
+
 /// A button held down, and what holding it does.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Press {
     /// A volume key, moving the light down the page or up it, and again at
     /// `next`.
     Volume { down: bool, next: u64 },
-    /// The power key on the control lit, from `at`, which it works as it
-    /// comes up; held long enough over an entry of the file manager, it
+    /// The power key on the control lit in `pane`, from `at`, which it works
+    /// as it comes up; held long enough over an entry of the file manager, it
     /// opens what can be done with the entry, as a long press does.
-    Power { spot: Spot, at: u64 },
+    Power { pane: Pane, spot: Spot, at: u64 },
     /// The power key on a swipe-to-confirm control, whose knob slides along
     /// its track at `track` from `at` while the key is held; let go once
     /// it has slid far enough, the control confirms.
@@ -1191,6 +1199,8 @@ pub struct App {
     cols: u32,
     /// The canvas the last page left was drawn on, to draw the next on.
     backdrop: Option<Canvas>,
+    /// Split-pane state, when the panel is wide enough for a sidebar.
+    split: Option<split::Split>,
     /// How round the screen's corners are, in pixels.
     corners: f32,
     dirty: bool,
@@ -1201,9 +1211,16 @@ pub struct App {
 
 impl App {
     pub fn new(start: Screen, w: u32, h: u32, px_per_dp: f32) -> Self {
+        let split = crate::theme::is_split(w, h, px_per_dp).then(|| split::Split::new(w, h, px_per_dp));
+        let stack = if split.is_some() && start == Screen::Home {
+            vec![(Screen::Home, 0.0, Focus::Unset), (Screen::About, 0.0, Focus::Unset)]
+        } else {
+            vec![(start, 0.0, Focus::Unset)]
+        };
+        let hero = stack.last().expect("stack non-empty").0 == Screen::About;
         App {
             state: State::default(),
-            stack: vec![(start, 0.0, Focus::Unset)],
+            stack,
             frame: None,
             spots: None,
             // The touchscreen may run from the partitions fastboot leaves
@@ -1232,8 +1249,8 @@ impl App {
             pull: 0.0,
             bounce: None,
             cue: None,
-            title: title_fade(start == Screen::About),
-            bar: bar_fade(start == Screen::About),
+            title: title_fade(hero),
+            bar: bar_fade(hero),
             snap: false,
             glow: None,
             term: None,
@@ -1258,12 +1275,72 @@ impl App {
             stale: Vec::new(),
             cols: 0,
             backdrop: None,
+            split,
             corners: 0.0,
             dirty: true,
             w,
             h,
             px_per_dp,
         }
+    }
+
+    /// Whether the UI is currently presenting the split view.
+    pub(super) fn split_active(&self) -> bool {
+        self.split.is_some() && self.stack[0].0 == Screen::Home
+    }
+
+    /// Width of the active detail page canvas (`detail_w` in split view, `self.w` otherwise).
+    pub(super) fn pane_w(&self) -> u32 {
+        match &self.split {
+            Some(sp) if self.stack[0].0 == Screen::Home => sp.detail_w,
+            _ => self.w,
+        }
+    }
+
+    /// Minimum stack depth in the current layout mode (`2` in split view, `1` otherwise).
+    pub(super) fn min_stack(&self) -> usize {
+        if self.split_active() { 2 } else { 1 }
+    }
+
+    /// Whether an edge-swipe back gesture can leave the current page.
+    pub(super) fn can_edge_back(&self) -> bool {
+        self.stack.len() > self.min_stack() || (self.split_active() && self.screen() == Screen::Search)
+    }
+
+    /// Drop width-dependent rendering caches when switching between fullscreen and split view.
+    pub(super) fn reset_split_caches(&mut self) {
+        self.dither = None;
+        self.backdrop = None;
+        self.layer = None;
+        self.turn = None;
+        self.drawn.clear();
+        self.spare.clear();
+        self.chip = None;
+        self.button_chip = None;
+        self.titles = None;
+        self.search_words = None;
+    }
+
+    /// Transition to the root recovery view (`[Home, About]` on split, `[Home]` on phone).
+    pub(super) fn go_home(&mut self) {
+        if self.split.is_some() {
+            let outgoing = (!self.split_active()).then(|| self.snapshot_turn(true)).flatten();
+            let sp = self.split.as_mut().expect("checked above");
+            sp.stop_motion();
+            sp.invalidate_frame();
+            sp.active = Some(Screen::About);
+            sp.before_search = None;
+            sp.scroll = 0.0;
+            sp.key_pane = Pane::Sidebar;
+            sp.turn = outgoing;
+            sp.snap = true;
+            self.stack = vec![(Screen::Home, 0.0, Focus::Unset), (Screen::About, 0.0, Focus::Unset)];
+            self.reset_split_caches();
+        } else {
+            self.stack = vec![(Screen::Home, 0.0, Focus::Unset)];
+        }
+        self.settle_page();
+        self.refresh();
     }
 
     /// The screen's corners are rounded to `radius` pixels: so are the
@@ -1273,10 +1350,11 @@ impl App {
     }
 
     pub fn theme(&self) -> Theme {
+        let w = self.pane_w();
         if self.state.dark {
-            Theme::dark(self.w, self.h, self.px_per_dp)
+            Theme::dark(w, self.h, self.px_per_dp)
         } else {
-            Theme::light(self.w, self.h, self.px_per_dp)
+            Theme::light(w, self.h, self.px_per_dp)
         }
     }
 
@@ -1330,12 +1408,16 @@ impl App {
         };
         let repeat = match self.button {
             Some((_, Press::Volume { next, .. })) => Some(next),
-            Some((_, Press::Power { spot: Spot { stop: Stop::Hit(Action::OpenEntry(_)), .. }, at })) => Some(at + LONG_PRESS_MS),
+            Some((_, Press::Power { spot: Spot { stop: Stop::Hit(Action::OpenEntry(_)), .. }, at, .. })) => Some(at + LONG_PRESS_MS),
             _ => None,
         };
         let blink = self.blink_at(now).filter(|_| self.display_on).map(|(_, next)| next);
         let chord = self.chord.map(|(_, at)| at + CHORD_MS);
-        [self.toast.as_ref().map(|t| t.1), easing, self.idle_due(), held, repeat, blink, darkens, chord].into_iter().flatten().min()
+        let sidebar = self.split.as_ref().filter(|_| self.split_active()).and_then(|sp| sp.has_deadline(now));
+        [self.toast.as_ref().map(|t| t.1), easing, self.idle_due(), held, repeat, blink, darkens, chord, sidebar]
+            .into_iter()
+            .flatten()
+            .min()
     }
 
     /// Whether a text field's cursor shows at `now`, and when it next turns;
@@ -1376,7 +1458,7 @@ impl App {
             self.drag = Drag::Held;
             fx.extend(self.held_entry(i));
         }
-        if let Some((key, Press::Power { spot: Spot { stop: Stop::Hit(Action::OpenEntry(i)), .. }, at })) = self.button
+        if let Some((key, Press::Power { spot: Spot { stop: Stop::Hit(Action::OpenEntry(i)), .. }, at, .. })) = self.button
             && now >= at + LONG_PRESS_MS
         {
             self.button = Some((key, Press::Spent));
@@ -1429,25 +1511,12 @@ impl App {
                 self.dirty = true;
             }
         }
-        if let Some(fling) = self.fling {
-            let (y, done) = fling.at(now);
-            let next = y.clamp(0.0, self.max_scroll());
-            let top = self.top_mut();
-            if next != top.1 {
-                top.1 = next;
-                self.dirty = true;
-            }
-            if next != y {
-                // The glide ran into an end: the speed it had left throws
-                // the page past it, and it springs back.
-                let speed = fling.velocity(now);
-                let period = if speed.abs() <= self.theme().m.dp(HARD_BOUNCE_DP) { 0.4 } else { 0.55 };
-                self.bounce = Some(Spring::new(now, 0.0, speed, period));
-                self.fling = None;
-            } else if done {
-                self.fling = None;
-                self.settle_fold(now);
-            }
+        let max = self.max_scroll();
+        let hard_bounce = self.theme().m.dp(HARD_BOUNCE_DP);
+        let mut s = self.top().1;
+        if scroll::tick(&mut s, &mut self.fling, &mut self.bounce, &mut self.seek, self.frame.as_ref(), max, hard_bounce, now) {
+            self.top_mut().1 = s;
+            self.dirty = true;
         }
         if let Some((glide, pitch, scrolled)) = self.glide {
             let (y, done) = glide.at(now);
@@ -1456,24 +1525,6 @@ impl App {
                 self.scroll_rows(rows - scrolled);
             }
             self.glide = if done { None } else { Some((glide, pitch, rows)) };
-        }
-        if let Some(b) = self.bounce {
-            self.dirty = true;
-            if b.at(now).1 {
-                self.bounce = None;
-            }
-        }
-        if let Some((target, spring)) = self.seek {
-            let (off, done) = spring.at(now);
-            let at = if done { target } else { (target + off).clamp(0.0, self.max_scroll()) };
-            let top = self.top_mut();
-            if top.1 != at {
-                top.1 = at;
-                self.dirty = true;
-            }
-            if done {
-                self.seek = None;
-            }
         }
         // The power key held on a swipe-to-confirm control slides its knob.
         if let Some((_, Press::Slide { which, track, at })) = self.button {
@@ -1488,7 +1539,7 @@ impl App {
         // last moved on has been drawn.
         if let Some((key, Press::Volume { down, next })) = self.button
             && now >= next
-            && self.frame.is_some()
+            && self.pane_frame(self.focus_pane()).is_some()
         {
             self.button = Some((key, Press::Volume { down, next: now + REPEAT_MS }));
             fx.extend(self.volume(down, now));
@@ -1510,6 +1561,9 @@ impl App {
             }
         }
         self.follow_scroll(now);
+        if self.split_active() {
+            self.tick_sidebar(now);
+        }
         fx
     }
 
@@ -1523,16 +1577,8 @@ impl App {
     /// once the content slides under it. On the About page both come once
     /// the version has faded out.
     fn bar_wanted(&self) -> Option<(bool, bool)> {
-        let fr = self.frame.as_ref()?;
         let t = self.theme();
-        let scroll = self.top().1;
-        Some(if fr.hero.is_some() {
-            let gone = scroll >= t.m.dp(ABOUT_LOGO_DP) - widgets::bar_bottom(&t);
-            (gone, gone)
-        } else {
-            let under = (fr.content_top - widgets::bar_bottom(&t) - t.m.dp(20.0)).max(0.0);
-            (fr.header && fr.title_lift(scroll) >= t.m.dp(TITLE_FADE_DP), scroll > under)
-        })
+        scroll::bar_wanted(self.frame.as_ref(), self.top().1, &t)
     }
 
     /// Bring the bar and its title in or out as the page scrolls.
@@ -1548,11 +1594,7 @@ impl App {
     /// How far past its end the page shows at `now`: negative past the
     /// top, positive past the bottom.
     fn overscroll(&self, now: u64) -> f32 {
-        if self.pull != 0.0 {
-            motion::rubber(self.pull, self.h as f32)
-        } else {
-            self.bounce.map_or(0.0, |b| b.at(now).0)
-        }
+        scroll::overscroll(self.pull, self.bounce, self.h, now)
     }
 
     /// Something laid over the page changed (the clock): compose again.
@@ -1590,6 +1632,9 @@ impl App {
         self.shown = None;
         self.layer = None;
         self.spare.extend(self.drawn.drain(..).map(|(_, c)| c));
+        if let Some(sp) = &mut self.split {
+            sp.invalidate_frame();
+        }
         self.dirty = true;
     }
 

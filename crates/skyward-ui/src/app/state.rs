@@ -95,6 +95,9 @@ pub struct State {
     /// The slot picked on the slot page to start next; with none picked,
     /// the page shows the one the boot control starts next.
     pub next_slot: Option<Slot>,
+    pub root_modules: Option<Result<Vec<RootModule>, String>>,
+    pub root_module_id: Option<String>,
+    pub root_change: Option<RootChange>,
     /// The phone has what a second system needs: boot and init_boot
     /// partitions in both slots, which a switch writes, and recovery
     /// partitions apart from them, which keep Skyward through it.
@@ -238,6 +241,9 @@ impl Default for State {
             logs_to: 0,
             boot_slots: None,
             next_slot: None,
+            root_modules: None,
+            root_module_id: None,
+            root_change: None,
             dual_boot: false,
             systems: None,
             system_pick: None,

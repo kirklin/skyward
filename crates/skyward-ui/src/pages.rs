@@ -2,7 +2,7 @@ use crate::app::{
     Action, BackupAt, BackupEnd, BackupJob, Check, ClashChoice, Confirm, Damage, Data, Dock, DownloadEnd, EraseStop, Field, FileKind,
     FileOp, FileTask, Fold, Folder, Frame, FsAction, FsChoice, FsRow, Have, HeroArt, Hit, Install, JobEnd, Keys, Pick, Place, Region, Rows,
     Screen, SkywardCheck, SkywardEnd, SkywardJob, SkywardStage, Slider, Source, State, Switch, SystemsWork, Target, UsbDrive, UsbLink, Wipe,
-    ADDABLE, BACKUP_PARTS, DATA_PART, DATA_PARTITION, DOWNLOADS, FASTBOOT_CHOICES, MEDIA_PART, SCREEN_OFF, TARGETS, TIME_ZONES, UTC, WIPES, installs, listed, starting,
+    ADDABLE, BACKUP_PARTS, DATA_PART, DATA_PARTITION, DOWNLOADS, FASTBOOT_CHOICES, MEDIA_PART, SCREEN_OFF, TARGETS, TIME_ZONES, UTC, WIPES, installs, listed, root_changes, starting,
 };
 use crate::canvas::Canvas;
 use crate::color::Rgba;
@@ -20,6 +20,7 @@ use crate::icons::{self, Icon};
 use crate::widgets::{self, Caption, Detail, Fact, Outline, Row, Spec, SystemCard, SystemMark, Tone, Trail};
 use skyward_info::{DeviceInfo, VERSION};
 use skyward_install::{Outcome, Place as FlashPlace, Reflash, Refusal, Stage};
+use skyward_modules::root::{Change as RootChange, Module as RootModule};
 use skyward_net::download::Progress;
 use skyward_net::supplicant::Security;
 use skyward_net::wlan::{Bands, Network, Power, Stage as Joining};
@@ -79,6 +80,8 @@ pub fn render(screen: Screen, cx: &Ctx) -> Frame {
         Screen::RestoreBackup => restore_backup(cx),
         Screen::BackupJob => backup_job(cx),
         Screen::Advanced => advanced(cx),
+        Screen::RootModules => root_modules(cx),
+        Screen::RootModule => root_module(cx),
         Screen::Files => files(cx),
         Screen::FileInfo => file_info(cx),
         Screen::Permissions => permissions(cx),
@@ -127,6 +130,7 @@ pub fn confirm_label(which: Confirm, s: &State) -> (&'static str, bool) {
         Confirm::Backup => (confirm::BACK_UP, false),
         Confirm::Restore => (confirm::RESTORE, true),
         Confirm::Slot => (confirm::SWITCH, true),
+        Confirm::RootModule => (confirm::CHANGE, s.root_change == Some(RootChange::Remove)),
         Confirm::FactoryReset => (confirm::FACTORY_RESET, true),
         Confirm::DeleteEntry | Confirm::DeleteBackup => (confirm::DELETE, true),
         Confirm::Install => (confirm::INSTALL, false),
@@ -1888,13 +1892,14 @@ pub fn backup_job(cx: &Ctx) -> Frame {
 /// Tools for the experienced.
 pub fn advanced(cx: &Ctx) -> Frame {
     let (t, f, l) = (cx.t, cx.f, cx.state.lang);
-    let mut c = page(cx);
+    let mut c = long_page(cx);
     let top = t.m.content_top;
     let tools = widgets::list(&mut c, t, f, top, &[
         Row::new(l.pick(texts::page::FILES)).icon(BLUE, Icon::Folder),
         Row::new(l.pick(texts::page::TERMINAL)).icon(SLATE, Icon::Terminal),
         Row::new(l.pick(texts::page::RELABEL)).icon(PURPLE, Icon::Shield),
         Row::new(l.pick(texts::page::FILESYSTEMS)).icon(RED, Icon::Mount),
+        Row::new(l.pick(texts::root_modules::TITLE)).icon(PURPLE, Icon::Layers),
         Row::new(l.pick(texts::page::LOGS)).icon(ORANGE, Icon::Log),
         Row::new(l.pick(texts::page::UPDATE)).icon(GREEN, Icon::Layers).trail(Trail::Value(update_value(cx))),
     ]);
@@ -1903,10 +1908,87 @@ pub fn advanced(cx: &Ctx) -> Frame {
         Action::Open(Screen::Terminal),
         Action::Open(Screen::Relabel),
         Action::Open(Screen::Filesystems),
+        Action::Open(Screen::RootModules),
         Action::Open(Screen::Logs),
         Action::Open(Screen::Update),
     ]);
-    Frame::new(t, c, out, l.pick(texts::page::ADVANCED), top)
+    Frame::new(t, fit(c, t, tools.bottom), out, l.pick(texts::page::ADVANCED), top)
+}
+
+fn root_modules(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let title = l.pick(texts::root_modules::TITLE);
+    let top = t.m.content_top.round();
+    let mut c = page(cx);
+    let mut out = Vec::new();
+    if !s.data.storage_open() {
+        let y = widgets::paragraph(&mut c, t, f, top, l.pick(texts::toast::DECRYPT_FIRST));
+        let list = widgets::list(&mut c, t, f, y + t.m.card_gap, &[Row::new(l.pick(texts::page::DECRYPT))]);
+        out.extend(hits(&list.rows, &[Action::Open(Screen::Decrypt)]));
+    } else {
+        match &s.root_modules {
+            Some(Ok(modules)) if !modules.is_empty() => {
+                let pitch = t.m.dp(65.0).round();
+                let edges = (0..=modules.len()).map(|row| top + row as f32 * pitch).collect();
+                let rows = Rows { edges, action: Some(Action::OpenRootModule) };
+                return Frame { rows: Some(rows), ..Frame::new(t, c, out, title, top) };
+            }
+            Some(Ok(_)) => { widgets::paragraph(&mut c, t, f, top, l.pick(texts::root_modules::EMPTY)); }
+            Some(Err(why)) => { widgets::paragraph(&mut c, t, f, top, why); }
+            None => {}
+        }
+    }
+    Frame::new(t, c, out, title, top)
+}
+
+fn root_status(l: Lang, module: &RootModule) -> &'static str {
+    use texts::root_modules::*;
+    l.pick(if module.remove { PENDING } else if module.disabled { DISABLED } else { ENABLED })
+}
+
+fn root_module(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let title = l.pick(texts::root_modules::TITLE);
+    let top = t.m.content_top;
+    let mut c = long_page(cx);
+    let mut out = Vec::new();
+    let Some(module) = s.selected_root_module().filter(|_| s.data.storage_open()) else {
+        let why = s.root_modules.as_ref().and_then(|result| result.as_ref().err()).map_or(l.pick(texts::common::UNREADABLE), String::as_str);
+        widgets::paragraph(&mut c, t, f, top, why);
+        return Frame::new(t, c, out, title, top);
+    };
+    let facts = [
+        (l.pick(texts::files::NAME), module.name.clone()),
+        (l.pick(texts::common::LOCATION), format!("/data/adb/modules/{}", module.id)),
+        (l.pick(texts::root_modules::STATUS), root_status(l, module).into()),
+    ];
+    let mut y = widgets::info_card(&mut c, t, f, top, &facts);
+    let changes = root_changes(module);
+    if changes.is_empty() {
+        y = widgets::footnote(&mut c, t, f, y, l.pick(texts::root_modules::READ_ONLY));
+    } else {
+        use texts::root_modules::*;
+        let rows: Vec<Row> = changes.iter().map(|&change| {
+            let label = l.pick(match change {
+                RootChange::Enable => ENABLE,
+                RootChange::Disable => DISABLE,
+                RootChange::Remove => REMOVE,
+                RootChange::UndoRemove => UNDO_REMOVE,
+            });
+            Row::new(label).trail(Trail::Check(s.root_change == Some(change)))
+        }).collect();
+        let actions: Vec<_> = changes.into_iter().map(Action::ChooseRootChange).collect();
+        let list = widgets::list(&mut c, t, f, y + t.m.card_gap, &rows);
+        out.extend(hits(&list.rows, &actions));
+        y = list.bottom;
+        if s.root_change.is_some() {
+            let (label, danger) = confirm_label(Confirm::RootModule, s);
+            let track = widgets::confirm(&mut c, t, f, y + t.m.dp(24.0), label, danger, s.confirm);
+            y = track.y + track.h;
+            out.push(Hit { rect: track, action: Action::Confirm(Confirm::RootModule) });
+        }
+    }
+    Frame::new(t, fit(c, t, y), out, title, top)
 }
 
 /// Giving the data partition's files the SELinux labels the installed
@@ -2720,6 +2802,15 @@ fn listing(
 /// drawn as the row comes into view.
 pub fn row(screen: Screen, cx: &Ctx, i: usize, c: &mut Canvas) {
     match screen {
+        Screen::RootModules => {
+            let (t, f, s) = (cx.t, cx.f, cx.state);
+            let module = &s.root_modules.as_ref().expect("the module list is open").as_ref().expect("the modules were read")[i];
+            let x = t.m.margin;
+            let width = t.m.w as f32 - 2.0 * x;
+            c.clear(t.pal.bg);
+            c.text_top(&f.heading, &module.name, x, t.m.dp(9.0), t.m.dp(17.0), t.pal.text, Some(width));
+            c.text_top(&f.value, root_status(s.lang, module), x, t.m.dp(34.0), t.m.dp(13.0), t.pal.subtitle, Some(width));
+        }
         Screen::Files | Screen::Choose(_) => {
             let folder = cx.state.folder(screen);
             let entries = folder.entries.as_ref().expect("a folder listed draws its rows");

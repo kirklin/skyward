@@ -398,6 +398,13 @@ pub struct Service {
     /// names it: it keeps these alone, through its change of user.
     #[serde(default)]
     pub capabilities: Vec<String>,
+    /// The program is passed over where it is not in the partition, or does
+    /// not become what it says it will be, without holding up the programs
+    /// after it: a phone carries one of several builds of a service, and a
+    /// program that will never be ready must not keep the ones that matter
+    /// from starting.
+    #[serde(default)]
+    pub optional: bool,
 }
 
 /// The kernel's capabilities, by the names init's capabilities lines give

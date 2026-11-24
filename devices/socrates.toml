@@ -82,6 +82,26 @@ user = "system"
 groups = ["system", "uhid", "input"]
 capabilities = ["SYS_NICE"]
 
+# The directories the phone's own services register with, which the
+# recovery starts before them: the newer kind's and the older kind's, from
+# the installed system the recovery mounts at /mnt/system. Each is passed
+# over where it is not there, and holds up nothing after it.
+[[service]]
+path = "/mnt/system/bin/servicemanager"
+libraries = ["/mnt/system/lib64/bootstrap", "/mnt/system/lib64", "/mnt/system_ext/lib64"]
+ready_property = "servicemanager.ready"
+optional = true
+user = "system"
+groups = ["system", "readproc"]
+
+[[service]]
+path = "/mnt/system/bin/hwservicemanager"
+libraries = ["/mnt/system/lib64/bootstrap", "/mnt/system/lib64", "/mnt/system_ext/lib64"]
+ready_property = "hwservicemanager.ready"
+optional = true
+user = "system"
+groups = ["system", "readproc"]
+
 # WLAN: the 13 Ultra's WCN7850, driven by qca_cld3_kiwi_v2 over the cnss2
 # platform driver, with the settings and the MAC address given to the
 # firmware loader again as on the 13 Ultra: the settings from the vendor

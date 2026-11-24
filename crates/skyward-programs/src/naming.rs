@@ -116,6 +116,7 @@ fn run(phone: &Phone, command: &[String]) -> Result<Started> {
         user: as_whom.get(1).cloned(),
         groups: as_whom.iter().skip(2).cloned().collect(),
         capabilities: Vec::new(),
+        optional: false,
     };
     Ok(Started::from(service))
 }
@@ -157,6 +158,7 @@ mod tests {
             user: user.map(str::to_string),
             groups: words(groups),
             capabilities: Vec::new(),
+            optional: false,
         })))
     }
 

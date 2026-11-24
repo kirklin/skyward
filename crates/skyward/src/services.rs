@@ -62,7 +62,20 @@ const LIBRARY_PATH: &str = "LD_LIBRARY_PATH";
 pub fn start(programs: &[Started], libraries: Option<&Path>) -> Result<()> {
     let known = accounts();
     for program in programs {
-        let (s, who, given) = readied(program, libraries, &known)?;
+        let optional = program.service.optional;
+        if optional && !Path::new(&program.service.path).is_file() {
+            skyward_sys::kmsg(&format!("{} is not here, so it is passed over", program.service.path))?;
+            continue;
+        }
+        let path = program.service.path.clone();
+        let (s, who, given) = match readied(program, libraries, &known) {
+            Ok(ready) => ready,
+            Err(e) if optional => {
+                skyward_sys::kmsg(&format!("{path} is passed over: {e:#}"))?;
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
         if s.oneshot {
             let status = to_its_end(&s, &who, &given)?;
             ensure!(status.success(), "{} {} ended: {status}", s.path, s.args.join(" "));
@@ -83,7 +96,11 @@ pub fn start(programs: &[Started], libraries: Option<&Path>) -> Result<()> {
         let waiting = s.clone();
         let name = Path::new(&s.path).file_name().map_or_else(|| s.path.clone(), |n| n.to_string_lossy().into_owned());
         thread::Builder::new().name(name).spawn(move || supervise(&s, &who, &given)).context("start a supervising thread")?;
-        ready(&waiting)?;
+        match ready(&waiting) {
+            Ok(()) => {}
+            Err(e) if optional => skyward_sys::kmsg(&format!("{} is not ready, so it is passed over: {e:#}", waiting.path))?,
+            Err(e) => return Err(e),
+        }
     }
     Ok(())
 }

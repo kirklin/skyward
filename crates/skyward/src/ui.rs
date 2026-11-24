@@ -998,6 +998,21 @@ fn read_root_modules(app: &App) -> Result<Vec<root_modules::Module>, String> {
     root_module_data(app).and_then(|adb| root_modules::list(&adb, Path::new("/metadata"))).map_err(|e| format!("{e:#}"))
 }
 
+/// Whether the bootloader lets what it is given be written: the state it
+/// left the phone in, or the colour it booted in where it names no state —
+/// orange is a phone whose own keys it no longer checks, which is what
+/// unlocking it makes.
+fn bootloader_unlocked() -> bool {
+    let param = |key: &str| skyward_block::boot_param(key).ok().flatten();
+    if param("androidboot.flash.locked").as_deref() == Some("0") {
+        return true;
+    }
+    if param("androidboot.vbmeta.device_state").as_deref() == Some("unlocked") {
+        return true;
+    }
+    matches!(param("androidboot.verifiedbootstate").as_deref(), Some("orange") | Some("red"))
+}
+
 fn read_slots() -> Result<skyward_vab::BootSlots, String> {
     let read = || -> Result<skyward_vab::BootSlots> {
         let (binder, hardware) = (skyward_binder::driver::Binder::open()?, skyward_binder::driver::Binder::hardware()?);
@@ -1062,7 +1077,7 @@ fn installed(cfg: &DeviceConfig, info: &skyward_info::DeviceInfo) -> Result<Inst
         device: prop("ro.product.mod_device")?,
         version: prop(&cfg.device.os_version_prop)?,
         android: prop("ro.build.version.release")?,
-        unlocked: skyward_block::boot_param("androidboot.flash.locked")?.as_deref() == Some("0"),
+        unlocked: bootloader_unlocked(),
     })
 }
 

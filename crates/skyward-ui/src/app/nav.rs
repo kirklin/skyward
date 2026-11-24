@@ -9,6 +9,9 @@ const WAIT_OR_STOP: Text = texts::toast::back::WAIT_OR_STOP;
 impl App {
     /// Open `screen` over the page shown, sliding in over it.
     pub(super) fn open(&mut self, screen: Screen) {
+        if self.split_active() {
+            self.tablet.as_mut().expect("split active").key_pane = Pane::Detail;
+        }
         self.leave(false);
         self.push(screen);
     }
@@ -17,6 +20,23 @@ impl App {
         self.stack.push((screen, 0.0, Focus::Unset));
         self.settle_page();
         self.refresh();
+    }
+
+    /// Snapshot the page as it last showed into a [`Turn`] ready to slide.
+    pub(super) fn snapshot_turn(&mut self, back: bool) -> Option<Turn> {
+        let view = self.shown.take()?;
+        let w = self.pane_w();
+        let mut left = self.backdrop.take().filter(|c| c.w == w && c.h == self.h).unwrap_or_else(|| Canvas::new(w, self.h));
+        // The `<` comes up with the finger, before its page goes.
+        let view = View { pressing: None, ..view };
+        let t = self.theme();
+        self.paint_page(&mut left, &t, None, &view);
+        // A page left within the first frames of sliding in, before it was
+        // drawn across, shows its colour where it was not drawn yet.
+        if let Some(fr) = self.frame.as_ref().filter(|_| self.cols < w) {
+            left.fill_rect(self.cols as f32, 0.0, (w - self.cols) as f32, self.h as f32, fr.bg);
+        }
+        Some(Turn { back, left, spring: None })
     }
 
     /// The page shown gives way to another, opened over it or, `back`, gone
@@ -29,18 +49,8 @@ impl App {
             return;
         }
         self.end_turn();
-        let Some(view) = self.shown.take() else { return };
-        let mut left = self.backdrop.take().unwrap_or_else(|| Canvas::new(self.w, self.h));
-        // The `<` comes up with the finger, before its page goes.
-        let view = View { pressing: None, ..view };
-        let t = self.theme();
-        self.paint_page(&mut left, &t, None, &view);
-        // A page left within the first frames of sliding in, before it was
-        // drawn across, shows its colour where it was not drawn yet.
-        if let Some(fr) = self.frame.as_ref().filter(|_| self.cols < self.w) {
-            left.fill_rect(self.cols as f32, 0.0, (self.w - self.cols) as f32, self.h as f32, fr.bg);
-        }
-        self.turn = Some(Turn { back, left, spring: None });
+        let Some(turn) = self.snapshot_turn(back) else { return };
+        self.turn = Some(turn);
         self.dirty = true;
     }
 
@@ -80,10 +90,26 @@ impl App {
     /// and in a place, until it reaches the place's top.
     pub(super) fn back(&mut self, now: u64) -> Vec<Effect> {
         let (l, mut fx) = (self.state.lang, Vec::new());
+        if self.split_active() && self.stack.len() <= 2 {
+            if self.screen() == Screen::Search {
+                let prev = self.tablet.as_mut().and_then(|tb| tb.before_search.take()).unwrap_or(Screen::About);
+                *self.top_mut() = (prev, 0.0, Focus::Unset);
+                if let Some(tb) = &mut self.tablet {
+                    tb.key_pane = Pane::Sidebar;
+                }
+                self.settle_page();
+                self.refresh();
+                fx.extend(self.arrive_at(prev));
+            } else if self.keys && self.focus_pane() == Pane::Detail {
+                self.tablet.as_mut().expect("split active").key_pane = Pane::Sidebar;
+                self.dirty = true;
+            }
+            return fx;
+        }
         if self.stack.len() <= 1 {
             return fx;
         }
-        let morph = self.screen() == Screen::Search && self.stack[self.stack.len() - 2].0 == Screen::Home;
+        let morph = !self.split_active() && self.screen() == Screen::Search && self.stack[self.stack.len() - 2].0 == Screen::Home;
         if morph {
             self.start_morph(false, now);
         }

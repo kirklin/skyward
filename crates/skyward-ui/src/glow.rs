@@ -361,6 +361,11 @@ impl Dither {
         }
         Dither { w, steps }
     }
+
+    /// Whether this dither table was built for a `w` × `h` canvas.
+    pub fn matches(&self, w: usize, h: usize) -> bool {
+        self.w == w && self.steps.len() == w * h
+    }
 }
 
 /// Cards scrolling over the field: their pixels, their coverage row by

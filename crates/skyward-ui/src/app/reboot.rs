@@ -58,9 +58,7 @@ impl App {
     /// Fastboot has stopped and the recovery is up: its pages start again
     /// from the home page, which nothing can go back from to fastboot.
     pub fn enter_recovery(&mut self) {
-        self.stack = vec![(Screen::Home, 0.0, Focus::Unset)];
-        self.settle_page();
-        self.refresh();
+        self.go_home();
     }
 }
 

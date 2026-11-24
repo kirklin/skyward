@@ -1075,7 +1075,8 @@ const CANCEL_STROKE_DP: f32 = 1.8;
 pub fn search_layout(t: &Theme) -> (Rect, Rect) {
     let m = &t.m;
     let (top, d) = (m.dp(SEARCH_TOP_DP), m.search_h);
-    let cancel = Rect::new(m.w as f32 - m.dp(CANCEL_RIGHT_DP) - d, top, d, d);
+    let cancel_right = m.margin.max(m.dp(CANCEL_RIGHT_DP));
+    let cancel = Rect::new(m.w as f32 - cancel_right - d, top, d, d);
     (Rect::new(m.margin, top, cancel.x - m.dp(CANCEL_GAP_DP) - m.margin, d), cancel)
 }
 
@@ -1414,11 +1415,12 @@ fn draw_text_field(c: &mut Canvas, t: &Theme, f: &Fonts, x0: f32, top: f32, text
     at
 }
 
-/// A full-width button in the accent colour, for a page's one action that
-/// destroys nothing. Returns its rect.
+/// A full-width button in the accent colour (capped at 420 dp and centred on
+/// wide screens), for a page's one action that destroys nothing. Returns its rect.
 pub fn button(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, label: &str) -> Rect {
     let m = &t.m;
-    let (x, w, h) = (m.margin, m.w as f32 - m.margin * 2.0, m.dp(48.0));
+    let w = (m.w as f32 - m.margin * 2.0).min(m.dp(420.0));
+    let (x, h) = ((m.w as f32 - w) / 2.0, m.dp(48.0));
     c.fill_round_rect(x, top, w, h, h / 2.0, t.pal.accent);
     c.text_center_in(&f.heading, label, x + w / 2.0, top + h / 2.0, m.row_title_px, Rgba::rgb(255, 255, 255), w - h / 2.0);
     Rect::new(x, top, w, h)
@@ -1812,13 +1814,28 @@ const ROUND_MARK_W: f32 = 4.0;
 const ROUND_MARK_H: f32 = 7.5;
 const ROUND_MARK_STROKE: f32 = 1.7;
 
+fn draw_active_pill(c: &mut Canvas, t: &Theme, card_x: f32, row_y: f32, card_w: f32, row_h: f32) {
+    let m = &t.m;
+    let alpha = if t.dark { 52 } else { 28 };
+    c.fill_round_rect(card_x + m.dp(4.0), row_y + m.dp(3.0), card_w - m.dp(8.0), row_h - m.dp(6.0), m.dp(16.0), t.pal.accent.with_alpha(alpha));
+}
+
 /// A flat settings card holding `rows`.
 pub fn list(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, rows: &[Row]) -> Block {
     list_toned(c, t, f, top, rows, &Tone::page(t))
 }
 
+/// [`list`] with `active` row highlighted for tablet navigation sidebars.
+pub fn list_active(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, rows: &[Row], active: Option<usize>) -> Block {
+    list_toned_active(c, t, f, top, rows, &Tone::page(t), active)
+}
+
 /// [`list`] in the given colours.
 pub fn list_toned(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, rows: &[Row], tone: &Tone) -> Block {
+    list_toned_active(c, t, f, top, rows, tone, None)
+}
+
+fn list_toned_active(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, rows: &[Row], tone: &Tone, active: Option<usize>) -> Block {
     let m = &t.m;
     let lays: Vec<Layout> = rows.iter().map(|r| layout(c, t, f, r)).collect();
     let h: f32 = lays.iter().map(|l| l.h).sum();
@@ -1826,8 +1843,15 @@ pub fn list_toned(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, rows: &[Row], 
     c.fill_round_rect(m.margin, top, w, h, m.card_radius, tone.card);
     let mut y = top;
     let mut rects = Vec::new();
-    for (r, l) in rows.iter().zip(&lays) {
-        draw_row(c, t, f, r, l, y, tone);
+    for (idx, (r, l)) in rows.iter().zip(&lays).enumerate() {
+        let mut row = *r;
+        if active == Some(idx) {
+            draw_active_pill(c, t, m.margin, y, w, l.h);
+            if row.tint.is_none() {
+                row.tint = Some(t.pal.accent);
+            }
+        }
+        draw_row(c, t, f, &row, l, y, tone);
         rects.push(Rect::new(m.margin, y, w, l.h));
         y += l.h;
     }
@@ -1837,11 +1861,22 @@ pub fn list_toned(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, rows: &[Row], 
 /// Account-style card: avatar, name and detail, then optional rows. The
 /// first rect returned covers the name row.
 pub fn device_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, title: &str, sub: &str, rows: &[Row]) -> Block {
+    device_card_active(c, t, f, top, title, sub, rows, None)
+}
+
+/// [`device_card`] with `active` row highlighted (0 = device header row).
+#[allow(clippy::too_many_arguments)]
+pub fn device_card_active(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, title: &str, sub: &str, rows: &[Row], active: Option<usize>) -> Block {
     let m = &t.m;
     let lays: Vec<Layout> = rows.iter().map(|r| layout(c, t, f, r)).collect();
     let h = m.account_row_h + lays.iter().map(|l| l.h).sum::<f32>();
     let (card_x, right) = (m.margin, m.w as f32 - m.margin);
-    c.fill_round_rect(card_x, top, right - card_x, h, m.card_radius, t.pal.card);
+    let card_w = right - card_x;
+    c.fill_round_rect(card_x, top, card_w, h, m.card_radius, t.pal.card);
+
+    if active == Some(0) {
+        draw_active_pill(c, t, card_x, top, card_w, m.account_row_h);
+    }
 
     let cy = top + m.account_row_h / 2.0;
     let av = m.avatar;
@@ -1854,16 +1889,24 @@ pub fn device_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, title: &str, 
     let (st, sb) = f.body.ink(m.sub_px);
     let block = (tb - tt) + m.sub_gap + (sb - st);
     let ink_top = cy - block / 2.0;
-    c.text_top(&f.heading, title, tx, ink_top, m.account_title_px, t.pal.text, None);
+    let header_ink = if active == Some(0) { t.pal.accent } else { t.pal.text };
+    c.text_top(&f.heading, title, tx, ink_top, m.account_title_px, header_ink, None);
     c.text_top(&f.body, sub, tx, ink_top + (tb - tt) + m.sub_gap, m.sub_px, t.pal.subtitle, None);
     chevron(c, t, right - m.chevron_inset, cy, t.pal.chevron);
 
     let tone = Tone::page(t);
-    let mut rects = vec![Rect::new(card_x, top, right - card_x, m.account_row_h)];
+    let mut rects = vec![Rect::new(card_x, top, card_w, m.account_row_h)];
     let mut y = top + m.account_row_h;
-    for (r, l) in rows.iter().zip(&lays) {
-        draw_row(c, t, f, r, l, y, &tone);
-        rects.push(Rect::new(card_x, y, right - card_x, l.h));
+    for (idx, (r, l)) in rows.iter().zip(&lays).enumerate() {
+        let mut row = *r;
+        if active == Some(idx + 1) {
+            draw_active_pill(c, t, card_x, y, card_w, l.h);
+            if row.tint.is_none() {
+                row.tint = Some(t.pal.accent);
+            }
+        }
+        draw_row(c, t, f, &row, l, y, &tone);
+        rects.push(Rect::new(card_x, y, card_w, l.h));
         y += l.h;
     }
     Block { bottom: top + h, rows: rects }
@@ -1956,12 +1999,14 @@ pub fn slider_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, caption: Capt
     SliderBlock { bottom: top + h, track, below: below_rect }
 }
 
-/// Swipe-to-confirm control in the thick-slider style; `progress` (0 to 1)
-/// is how far the knob has been dragged. Returns the track.
+/// Swipe-to-confirm control in the thick-slider style (capped at 420 dp and
+/// centred on wide screens); `progress` (0 to 1) is how far the knob has been
+/// dragged. Returns the track.
 pub fn confirm(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, label: &str, danger: bool, progress: f32) -> Rect {
     let m = &t.m;
     let accent = if danger { t.pal.danger } else { t.pal.accent };
-    let (x, w, h) = (m.margin, m.w as f32 - m.margin * 2.0, m.dp(56.0));
+    let w = (m.w as f32 - m.margin * 2.0).min(m.dp(420.0));
+    let (x, h) = ((m.w as f32 - w) / 2.0, m.dp(56.0));
     c.fill_round_rect(x, top, w, h, h / 2.0, if danger { t.pal.danger_soft } else { t.pal.badge });
     // The label stands between the knob at rest and the track's end.
     c.text_center_in(&f.heading, label, x + w / 2.0 + h / 4.0, top + h / 2.0, m.row_title_px, accent, w - h * 2.0);
@@ -2642,7 +2687,8 @@ pub fn output_row(c: &mut Canvas, t: &Theme, f: &Fonts, lines: &[String], i: usi
 pub fn theme_picker(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32) -> Block {
     let m = &t.m;
     let gap = m.dp(4.0);
-    let slot_w = (m.w as f32 - m.margin * 2.0 - gap) / 2.0;
+    let slot_w = ((m.w as f32 - m.margin * 2.0 - gap) / 2.0).min(m.dp(196.0));
+    let x0 = (m.w as f32 - (slot_w * 2.0 + gap)) / 2.0;
     let (ring, inset) = (m.dp(3.0), m.dp(6.0));
     let tile = slot_w - inset * 2.0;
     let label_px = m.dp(15.9);
@@ -2652,7 +2698,7 @@ pub fn theme_picker(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32) -> 
     let mut rects = Vec::new();
     let modes = [(texts::settings::LIGHT_MODE, false), (texts::settings::DARK_MODE, true)];
     for (i, (label, dark)) in modes.map(|(label, dark)| (l.pick(label), dark)).into_iter().enumerate() {
-        let sx = m.margin + (slot_w + gap) * i as f32;
+        let sx = x0 + (slot_w + gap) * i as f32;
         let on = t.dark == dark;
         if on {
             let r = m.dp(26.0) - ring / 2.0;
@@ -2826,6 +2872,8 @@ pub fn keyboard_height(t: &Theme) -> f32 {
 pub fn keyboard(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32, layer: Layer, pressed: Option<Cap>, enter: &str) -> Vec<(Rect, Cap)> {
     let m = &t.m;
     let w = m.w as f32;
+    let kb_w = w.min(m.dp(680.0));
+    let kb_x = (w - kb_w) / 2.0;
     let (panel, key, side, ink, shadow) = if t.dark {
         (Rgba::rgb(18, 18, 18), Rgba::rgb(58, 58, 58), Rgba::rgb(38, 38, 38), Rgba::rgb(237, 237, 237), Rgba::rgb(0, 0, 0))
     } else {
@@ -2833,14 +2881,14 @@ pub fn keyboard(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32, layer: 
     };
     c.fill_rect(0.0, top, w, keyboard_height(t), panel);
     let (pad, gx, gy, kh) = (m.dp(KEYBOARD_PAD_X_DP), m.dp(KEY_GAP_X_DP), m.dp(KEY_GAP_Y_DP), m.dp(KEY_H_DP));
-    let kw = (w - pad * 2.0 - gx * 9.0) / 10.0;
+    let kw = (kb_w - pad * 2.0 - gx * 9.0) / 10.0;
     let side_w = kw * 1.35;
     let row_top = |r: usize| top + m.dp(KEYBOARD_TOP_DP) + r as f32 * (kh + gy);
     let mut keys: Vec<(Rect, Cap)> = Vec::new();
     let [first, second, third] = rows(layer);
     // Rows of plain keys are centred: the letters' second row sits half a
     // key in, as on any phone keyboard.
-    let centred = |n: usize, width: f32| (w - (n as f32 * width + (n as f32 - 1.0) * gx)) / 2.0;
+    let centred = |n: usize, width: f32| kb_x + (kb_w - (n as f32 * width + (n as f32 - 1.0) * gx)) / 2.0;
     for (r, row) in [first, second].iter().enumerate() {
         let n = row.chars().count();
         let x0 = centred(n, kw);
@@ -2848,7 +2896,7 @@ pub fn keyboard(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32, layer: 
             keys.push((Rect::new(x0 + k as f32 * (kw + gx), row_top(r), kw, kh), Cap::Char(ch)));
         }
     }
-    let (left, right) = (pad, w - pad - side_w);
+    let (left, right) = (kb_x + pad, kb_x + kb_w - pad - side_w);
     let shift = match layer {
         Layer::Letters | Layer::Shifted => Cap::Shift,
         Layer::Digits => Cap::Show(Layer::Symbols),
@@ -2872,12 +2920,12 @@ pub fn keyboard(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, top: f32, layer: 
     let inset = m.dp(KEY_WORD_INSET_DP);
     let enter_w = (c.text_width(&f.heading, enter, m.sub_px) + inset * 2.0).clamp(kw * 2.2, kw * 3.6);
     let space_x = left + side_w + gx + kw + gx;
-    let space_w = w - pad - enter_w - gx - kw - gx - space_x;
+    let space_w = kb_x + kb_w - pad - enter_w - gx - kw - gx - space_x;
     keys.push((Rect::new(left, row_top(3), side_w, kh), switch));
     keys.push((Rect::new(left + side_w + gx, row_top(3), kw, kh), Cap::Char(',')));
     keys.push((Rect::new(space_x, row_top(3), space_w, kh), Cap::Space));
     keys.push((Rect::new(space_x + space_w + gx, row_top(3), kw, kh), Cap::Char('.')));
-    keys.push((Rect::new(w - pad - enter_w, row_top(3), enter_w, kh), Cap::Enter));
+    keys.push((Rect::new(kb_x + kb_w - pad - enter_w, row_top(3), enter_w, kh), Cap::Enter));
 
     let radius = m.dp(KEY_RADIUS_DP);
     let glyph_px = m.dp(21.0);

@@ -155,8 +155,20 @@ fn sheet(kind: FileType) -> Rgba {
     }
 }
 
+fn side(t: &Theme) -> f32 {
+    t.m.margin + t.m.inner + t.m.dp(SIDE_DP - 28.0)
+}
+
+fn text_x(t: &Theme) -> f32 {
+    side(t) + t.m.dp(TEXT_X_DP - SIDE_DP)
+}
+
+fn text_right(t: &Theme) -> f32 {
+    side(t) + t.m.dp(TEXT_RIGHT_DP - SIDE_DP)
+}
+
 fn name_width(t: &Theme) -> f32 {
-    t.m.w as f32 - t.m.dp(TEXT_X_DP) - t.m.dp(TEXT_RIGHT_DP)
+    t.m.w as f32 - text_x(t) - text_right(t)
 }
 
 /// A name as the stock file manager sets it in `w` pixels: on one line if
@@ -233,7 +245,7 @@ pub fn row(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, e: &FileRow, now: i64,
     let cy = c.h as f32 / 2.0;
     let size = m.dp(ICON_DP);
     let folder = matches!(e.kind, FileKind::Folder { .. } | FileKind::Link { folder: true, .. });
-    let (ix, iy) = (m.dp(SIDE_DP), cy - size / 2.0);
+    let (ix, iy) = (side(t), cy - size / 2.0);
     if folder {
         folder_icon(c, ix, iy, size);
     } else {
@@ -243,7 +255,7 @@ pub fn row(c: &mut Canvas, t: &Theme, f: &Fonts, l: Lang, e: &FileRow, now: i64,
         };
         file_icon(c, f, ix, iy, size, p.page, kind);
     }
-    let (x, w) = (m.dp(TEXT_X_DP), name_width(t));
+    let (x, w) = (text_x(t), name_width(t));
     let lines = name_lines(&f.heading, m.dp(NAME_DP), &e.name, w);
     for (k, line) in lines.iter().enumerate() {
         c.text_top(&f.heading, line, x, m.dp(NAME_TOP_DP + NAME_LINE_DP * k as f32), m.dp(NAME_DP), p.name, None);
@@ -418,7 +430,7 @@ fn sign(c: &mut Canvas, f: &Fonts, kind: FileType, x: f32, y: f32, u: f32, sheet
 /// The list's chevron, 10 by 16 dp at the right margin.
 fn chevron(c: &mut Canvas, t: &Theme, cy: f32, color: Rgba) {
     let m = &t.m;
-    let (x0, y0) = (m.w as f32 - m.dp(SIDE_DP) - m.dp(10.0), cy - m.dp(8.0));
+    let (x0, y0) = (m.w as f32 - side(t) - m.dp(10.0), cy - m.dp(8.0));
     let at = |v: f32, w: f32| (x0 + m.dp(v), y0 + m.dp(w));
     let (a, b, d) = (at(2.23, 1.94), at(8.28, 8.0), at(2.23, 14.06));
     let sw = m.dp(1.43);
@@ -454,7 +466,7 @@ pub fn strip(t: &Theme, f: &Fonts, top: &str, folder: &str) -> Pinned {
     let widths: Vec<f32> = names.iter().map(|n| c.text_width(&f.value, n, px) + m.dp(PILL_PAD_DP) * 2.0).collect();
     let step = m.dp(ARROW_GAP_DP) * 2.0 + m.dp(ARROW_DP);
     let total = widths.iter().sum::<f32>() + step * (names.len() - 1) as f32;
-    let mut x = m.dp(SIDE_DP).min(m.w as f32 - m.dp(SIDE_DP) - total);
+    let mut x = side(t).min(m.w as f32 - side(t) - total);
     let (top, h) = (m.dp(PILL_TOP_DP), m.dp(PILL_DP));
     let mut hits = Vec::new();
     for (k, (name, &w)) in names.iter().zip(&widths).enumerate() {
@@ -480,7 +492,7 @@ pub fn note(c: &mut Canvas, t: &Theme, f: &Fonts, title: &str, why: Option<&str>
     let cy = m.dp(ROWS_TOP_DP + NOTE_DP);
     c.text_center(&f.body, title, cx, cy, m.dp(NOTE_TEXT_DP), p.note);
     let Some(why) = why else { return };
-    let lines = widgets::wrap(c, &f.body, why, m.sub_px, m.w as f32 - m.dp(SIDE_DP) * 2.0);
+    let lines = widgets::wrap(c, &f.body, why, m.sub_px, m.w as f32 - side(t) * 2.0);
     for (k, line) in lines.iter().enumerate() {
         c.text_center(&f.body, line, cx, cy + m.dp(32.0) + m.sub_pitch * k as f32, m.sub_px, p.line);
     }

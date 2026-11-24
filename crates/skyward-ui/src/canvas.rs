@@ -248,6 +248,22 @@ impl Canvas {
         }
     }
 
+    /// Copy the whole `src` canvas into this canvas with its top-left at `(dst_x, dst_y)`.
+    pub fn blit_at(&mut self, src: &Canvas, dst_x: u32, dst_y: u32) {
+        assert!(self.whole() && src.whole(), "blit_at requires whole canvases");
+        if dst_x >= self.w || dst_y >= self.h || src.w == 0 || src.h == 0 {
+            return;
+        }
+        let copy_w = src.w.min(self.w - dst_x) as usize;
+        let copy_h = src.h.min(self.h - dst_y);
+        let row_bytes = copy_w * 4;
+        for row in 0..copy_h {
+            let from = (row * src.w) as usize * 4;
+            let to = (((dst_y + row) * self.w + dst_x) as usize) * 4;
+            self.data[to..to + row_bytes].copy_from_slice(&src.data[from..from + row_bytes]);
+        }
+    }
+
     /// The rows of `y0..y1` this canvas holds.
     #[inline]
     fn rows(&self, y0: i32, y1: i32) -> (i32, i32) {
@@ -1448,6 +1464,18 @@ mod tests {
         let part = src.crop(1, 2, 1, 3);
         assert_eq!((part.w, part.h), (1, 3));
         assert_eq!(part.data.chunks(4).map(|p| p[0]).collect::<Vec<_>>(), [2, 3, 4]);
+    }
+
+    #[test]
+    fn blit_at_copies_rows_into_offset_pane() {
+        let mut dst = Canvas::filled(6, 4, Rgba::rgb(0, 0, 0));
+        let src = Canvas::filled(2, 2, Rgba::rgb(90, 120, 150));
+        dst.blit_at(&src, 3, 1);
+        let at = |x: usize, y: usize| (y * 6 + x) * 4;
+        assert_eq!(dst.data[at(3, 0)], 0);
+        assert_eq!(dst.data[at(3, 1)..at(3, 1) + 4], [90, 120, 150, 255]);
+        assert_eq!(dst.data[at(4, 2)..at(4, 2) + 4], [90, 120, 150, 255]);
+        assert_eq!(dst.data[at(5, 2)], 0);
     }
 }
 

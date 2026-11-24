@@ -8,7 +8,7 @@ impl App {
         let l = self.state.lang;
         match action {
             Action::Open(s) => {
-                if s == Screen::Search && self.screen() == Screen::Home {
+                if s == Screen::Search && self.screen() == Screen::Home && !self.split_active() {
                     // The bar moves up from where it stands unfolded: a
                     // page easing there for the keys gets there at once.
                     if let Some((rest, _)) = self.seek.take() {
@@ -23,14 +23,26 @@ impl App {
             }
             Action::OpenData => return self.open_data(),
             Action::Skip => {
-                self.leave(true);
-                if self.stack.len() > 1 {
+                if self.split_active() {
+                    self.leave(true);
+                    if self.stack.len() > 2 {
+                        self.stack.pop();
+                    } else {
+                        *self.top_mut() = (Screen::About, 0.0, Focus::Unset);
+                    }
+                    self.settle_page();
+                    self.refresh();
+                } else if self.stack.len() > 1 {
+                    self.leave(true);
                     self.stack.pop();
+                    self.settle_page();
+                    self.refresh();
                 } else {
-                    *self.top_mut() = (Screen::Home, 0.0, Focus::Unset);
+                    if self.tablet.is_none() {
+                        self.leave(true);
+                    }
+                    self.go_home();
                 }
-                self.settle_page();
-                self.refresh();
             }
             Action::Back | Action::CloseSearch => return self.back(now),
             Action::Theme { dark } => {
@@ -150,9 +162,7 @@ impl App {
             Action::RebootTo(target) => return vec![Effect::Reboot(target)],
             Action::EnterRecovery => return vec![Effect::EnterRecovery],
             Action::Dismiss => {
-                self.stack = vec![(Screen::Home, 0.0, Focus::Unset)];
-                self.settle_page();
-                self.refresh();
+                self.go_home();
                 return vec![Effect::Dismiss];
             }
             Action::PickEntry(op) => {

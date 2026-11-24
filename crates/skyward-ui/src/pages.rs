@@ -175,7 +175,7 @@ fn long_page(cx: &Ctx) -> Canvas {
 /// How tall a long page whose content ends at `bottom` is: to the bottom
 /// margin after it, and never shorter than one screen.
 fn fitted(t: &Theme, bottom: f32) -> u32 {
-    ((bottom + t.m.margin * 2.0).ceil() as u32).max(t.m.h)
+    ((bottom + t.m.pad_bottom).ceil() as u32).max(t.m.h)
 }
 
 /// Trim a long page to its content plus the bottom margin, and never shorter
@@ -192,6 +192,11 @@ fn hits(rects: &[Rect], actions: &[Action]) -> Vec<Hit> {
 /// card, then grouped entries. The status bar carries the readings: the
 /// slot, the data partition's lock and the battery's temperature.
 pub fn home(cx: &Ctx) -> Frame {
+    home_with_active(cx, None)
+}
+
+/// [`home`] with `active` screen highlighted for tablet navigation sidebars.
+pub fn home_with_active(cx: &Ctx, active: Option<Screen>) -> Frame {
     let (t, f, i, l) = (cx.t, cx.f, cx.info, cx.state.lang);
     let mut c = long_page(cx);
     let mut out = Vec::new();
@@ -237,7 +242,12 @@ pub fn home(cx: &Ctx) -> Frame {
         rows.push(Row::new(l.pick(texts::systems::SECOND_FAILED)).icon(RED, Icon::Systems).subtitle(why).trail(Trail::Arrow));
         opens.push(Some(Action::Open(Screen::Systems)));
     }
-    let card = widgets::device_card(&mut c, t, f, y, &i.model, &sub, &rows);
+    let card_active = if active == Some(Screen::About) {
+        Some(0)
+    } else {
+        opens.iter().position(|open| active.is_some_and(|a| *open == Some(Action::Open(a)))).map(|k| k + 1)
+    };
+    let card = widgets::device_card_active(&mut c, t, f, y, &i.model, &sub, &rows, card_active);
     out.push(Hit { rect: card.rows[0], action: Action::Open(Screen::About) });
     out.extend(card.rows[1..].iter().zip(&opens).filter_map(|(&rect, open)| open.map(|action| Hit { rect, action })));
     y = card.bottom + t.m.card_gap;
@@ -260,38 +270,32 @@ pub fn home(cx: &Ctx) -> Frame {
         opens.push(Action::Open(Screen::Systems));
     }
     if !rows.is_empty() {
-        let first = widgets::list(&mut c, t, f, y, &rows);
+        let first_active = opens.iter().position(|open| active.is_some_and(|a| *open == Action::Open(a)));
+        let first = widgets::list_active(&mut c, t, f, y, &rows, first_active);
         out.extend(hits(&first.rows, &opens));
         y = first.bottom + t.m.card_gap;
     }
-    let tools = widgets::list(&mut c, t, f, y, &[
+    let tool_screens = [Screen::Install, Screen::Backup, Screen::Restore, Screen::Mount, Screen::Decrypt];
+    let tools_active = active.and_then(|a| tool_screens.iter().position(|&s| s == a));
+    let tools = widgets::list_active(&mut c, t, f, y, &[
         Row::new(l.pick(texts::page::INSTALL)).icon(GREEN, Icon::Install),
         Row::new(l.pick(texts::page::BACKUP)).icon(BLUE, Icon::Backup),
         Row::new(l.pick(texts::page::RESTORE)).icon(PURPLE, Icon::Restore),
         Row::new(l.pick(texts::page::MOUNT)).icon(SLATE, Icon::Mount),
         Row::new(l.pick(texts::page::DECRYPT)).icon(BLUE, Icon::Lock).trail(Trail::Value(fmt::data(l, &cx.state.data))),
-    ]);
-    out.extend(hits(&tools.rows, &[
-        Action::Open(Screen::Install),
-        Action::Open(Screen::Backup),
-        Action::Open(Screen::Restore),
-        Action::Open(Screen::Mount),
-        Action::Open(Screen::Decrypt),
-    ]));
+    ], tools_active);
+    out.extend(hits(&tools.rows, &tool_screens.map(Action::Open)));
     y = tools.bottom + t.m.card_gap;
     let target = l.pick(REBOOT_TARGETS[cx.state.reboot].0);
-    let system = widgets::list(&mut c, t, f, y, &[
+    let system_screens = [Screen::Wipe, Screen::Advanced, Screen::Settings, Screen::Reboot];
+    let system_active = active.and_then(|a| system_screens.iter().position(|&s| s == a));
+    let system = widgets::list_active(&mut c, t, f, y, &[
         Row::new(l.pick(texts::page::WIPE)).icon(RED, Icon::Wipe),
         Row::new(l.pick(texts::page::ADVANCED)).icon(SLATE, Icon::More),
         Row::new(l.pick(texts::page::SETTINGS)).icon(SLATE, Icon::Gear),
         Row::new(l.pick(texts::page::REBOOT)).icon(ORANGE, Icon::Power).trail(Trail::Value(target)),
-    ]);
-    out.extend(hits(&system.rows, &[
-        Action::Open(Screen::Wipe),
-        Action::Open(Screen::Advanced),
-        Action::Open(Screen::Settings),
-        Action::Open(Screen::Reboot),
-    ]));
+    ], system_active);
+    out.extend(hits(&system.rows, &system_screens.map(Action::Open)));
     // However little it holds, the page scrolls far enough to fold its bar
     // away.
     let height = fitted(t, system.bottom).max(t.m.h + fold.span.ceil() as u32);

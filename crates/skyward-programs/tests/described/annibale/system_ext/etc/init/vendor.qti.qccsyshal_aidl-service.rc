@@ -7,6 +7,9 @@
 #on post-fs-data
 #    start qccsyshal_aidl-service
 
+on property:persist.vendor.sys.location.xtra.native_download=true
+    stop qccsyshal_aidl-service
+
 on post-fs-data
     mkdir /dev/socket/qcc_app 0770 system misc
     chmod 2770 /dev/socket/qcc_app

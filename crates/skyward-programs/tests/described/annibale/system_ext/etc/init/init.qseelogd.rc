@@ -14,3 +14,6 @@ on property:persist.sys.qseelogd=true
 
 on property:persist.sys.qseelogd=false
 	stop qseelogd
+
+on property:ro.mi.os.logs.romtype=perf-test
+	stop qseelogd

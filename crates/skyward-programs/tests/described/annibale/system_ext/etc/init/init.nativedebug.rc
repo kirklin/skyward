@@ -28,3 +28,24 @@ on property:sys.miui.gki_ndcd=on
 
 on property:sys.miui.gki_ndcd=off
     write /proc/sys/kernel/core_pattern "|/bin/false"
+
+# Make logd size can be customized.
+on property:persist.sys.stability.logd.size=*
+    setprop persist.logd.size ${persist.sys.stability.logd.size:-}
+    start logd-reinit
+
+on property:persist.sys.stability.logd.size.main=*
+    setprop persist.logd.size.main ${persist.sys.stability.logd.size.main:-}
+    start logd-reinit
+
+on property:persist.sys.stability.logd.size.system=*
+    setprop persist.logd.size.system ${persist.sys.stability.logd.size.system:-}
+    start logd-reinit
+
+on property:persist.sys.stability.logd.size.events=*
+    setprop persist.logd.size.events ${persist.sys.stability.logd.size.events:-}
+    start logd-reinit
+
+on property:persist.sys.stability.logd.size.radio=*
+    setprop persist.logd.size.radio ${persist.sys.stability.logd.size.radio:-}
+    start logd-reinit

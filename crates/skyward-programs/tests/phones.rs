@@ -370,6 +370,28 @@ fn dada_s_weaver_goes_through_the_secure_element_service_to_the_element_s_own_se
     assert!(at("/odm/bin/hw/android.hardware.weaver-service.thales").anew);
 }
 
+/// The K90's Android 17 OTA uses a Qualcomm key service and an NXP
+/// Weaver. The latter needs a usable eSE before it can open a PIN protector.
+#[test]
+fn annibale_starts_the_stock_pin_protector_services_in_order() {
+    let properties = [("ro.boot.hardware", "qcom"), ("ro.boot.product.vendor.sku", "sun"), ("ro.boot.product.hardware.sku", "annibale")];
+    let steps = secure::steps(&phone("annibale", &properties)).unwrap();
+    let programs = secure::programs(&steps);
+    let service = |ready: &str| programs.iter().copied().find(|started| started.service.ready_service.as_deref() == Some(ready)).unwrap();
+    let keymint = service(KEYS);
+    assert!(keymint.service.registers.iter().any(|name| name == SHARED_SECRET));
+    assert_eq!(service(CREDENTIALS).service.path, "/vendor/bin/hw/android.hardware.gatekeeper-service-qti");
+    let element = service("android.hardware.secure_element.ISecureElement/eSE1");
+    let weaver = service(WEAVER);
+    assert_eq!(weaver.service.path, "/odm/bin/hw/android.hardware.weaver-service.nxp-qti");
+    assert!(weaver.anew, "the stock Weaver is restarted once OMAPI is served");
+    assert!(weaver.service.libraries.iter().any(|dir| dir == "/mnt/system/system/lib64/bootstrap"));
+    let equal = |started: &Started| steps.iter().position(|step| matches!(step, Step::Start(s) if s.as_ref() == started)).unwrap();
+    let controller = steps.iter().position(|step| *step == Step::Drive(Driver { module: "nxp-nci", node: "/dev/nq-nci" })).unwrap();
+    let omapi = steps.iter().position(|step| *step == Step::ServeElements).unwrap();
+    assert!(controller < equal(element) && equal(element) < omapi && omapi < equal(weaver));
+}
+
 /// A phone that tells of its secure element in the description its whole
 /// vendor partition shares: the element's service registers that alone.
 #[test]

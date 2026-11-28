@@ -1,8 +1,6 @@
-on post-fs-data
+on property:sys.boot_completed=1
     chmod 0666 /dev/cam_msger
     chmod 0666 /dev/cam_intentaware_fsys
-
-on property:sys.boot_completed=1
     mkdir /dev/cpuctl/camera-inhibit
     chown system_cameramind system_cameramind /dev/cpuctl/camera-inhibit/tasks
     chown system_cameramind system_cameramind /dev/cpuctl/camera-inhibit/cgroup.procs

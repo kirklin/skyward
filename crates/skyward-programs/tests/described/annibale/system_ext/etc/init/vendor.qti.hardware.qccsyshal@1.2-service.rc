@@ -50,3 +50,9 @@ service qccsyshal@1.2-service /system/system_ext/bin/qccsyshal@1.2-service
 
 on property:hwservicemanager.disabled=true
     stop qccsyshal@1.2-service
+
+on property:init.svc.qcc-native=running
+    stop qccsyshal@1.2-service
+
+on property:persist.vendor.sys.location.xtra.native_download=true
+    stop qccsyshal@1.2-service

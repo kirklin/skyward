@@ -6,7 +6,7 @@ service hyos_spawner /system_ext/bin/hyos_spawner /system_ext/bin --spawner --st
     disabled
 
 on property:init.svc.zygote=running
-    setprop rust.runtime_version 1.5.0
+    setprop rust.runtime_version 3.9.0
 
 on property:init.svc.zygote=running && property:rust.runtime_active=1
     start hyos_spawner

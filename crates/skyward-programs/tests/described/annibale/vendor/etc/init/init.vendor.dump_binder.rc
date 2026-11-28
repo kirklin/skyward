@@ -1,0 +1,5 @@
+# MIUI ADD: Stability_StabilityEnhance
+# insmod dump_binder.ko after monitor thread ready
+on property:sys.oneway_ipc_monitor.enable=1
+    insmod /vendor/lib/modules/dump_binder.ko
+# END Stability_StabilityEnhance

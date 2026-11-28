@@ -244,8 +244,8 @@ on boot
 
     # MIUI ADD: Power_LogEnhance
     # Allow access to power_debug
-    chown system system /sys/class/power_debug/debug_suspend
-    chown system system /sys/class/power_debug/temp_aware
+    chown system shell /sys/class/power_debug/debug_suspend
+    chown system shell /sys/class/power_debug/temp_aware
     # END Power_LogEnhance
 
     # MIUI ADD: Performance_UnfairMem

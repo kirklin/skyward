@@ -225,6 +225,9 @@ on property:dev.bootcomplete=1 && property:ro.product.device=piano
 	write /config/usb_gadget/g1/functions/rndis.rndis/subclass 1
 	write /config/usb_gadget/g1/functions/rndis.rndis/protocol 3
 
+on property:dev.bootcomplete=1 && property:ro.product.device=warsaw
+    write /sys/module/usbhid/parameters/ignoreled 1
+
 #
 # USB compositions
 #

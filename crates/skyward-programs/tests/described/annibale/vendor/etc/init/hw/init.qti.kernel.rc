@@ -91,6 +91,7 @@ on post-fs
 
 on early-boot
     # Allow subsystem (modem etc) debugging
+    start vendor.pd_mapper
     exec_background u:r:vendor_qti_init_shell_bg:s0 -- /vendor/bin/init.qti.write.sh /sys/devices/virtual/cvp/cvp/boot 1
 
 
@@ -127,14 +128,28 @@ on boot
     chown root system /proc/process_monitor/signal_record/monitor_list
 
 on boot && property:persist.sys.stability.smartfocusio.v1=on
-    write /sys/block/sda/queue/scheduler cpq
+    write /sys/block/${dev.mnt.rootdisk.data}/queue/scheduler cpq
+
+    mkdir /dev/blkio/vip 0770 root system
+    mkdir /dev/blkio/hipri 0770 root system
+    mkdir /dev/blkio/lowpri 0770 root system
+    mkdir /dev/blkio/limit 0770 root system
+
+    write /dev/blkio/vip/blkio.cpq.level 0
+    write /dev/blkio/hipri/blkio.cpq.level 1
+    write /dev/blkio/lowpri/blkio.cpq.level 3
+    write /dev/blkio/limit/blkio.cpq.level 4
 on boot && property:persist.sys.stability.smartfocusio.v2=on
     write /sys/block/sda/queue/sfi_tag_limit 1
     write /sys/block/sda/queue/sfi_tag_limit_threshold 30
 on property:persist.sys.stability.smartfocusio.v1=off
-    write /sys/block/sda/queue/scheduler mq-deadline
+    write /sys/block/${dev.mnt.rootdisk.data}/queue/scheduler mq-deadline
 on property:persist.sys.stability.smartfocusio.v2=off
     write /sys/block/sda/queue/sfi_tag_limit 0
+on boot && property:persist.sys.stability.smartfocusio.v3=on
+    write /proc/mikblockd_enable 1
+on property:persist.sys.stability.smartfocusio.v3=off
+    write /proc/mikblockd_enable 0
 
 on post-fs-data
     # Create directory used for dump collection
@@ -163,6 +178,12 @@ on property:persist.vendor.sys.rawdump_copy=1
 
 on property:persist.vendor.sys.rawdump_copy=0
     write /sys/kernel/dload/emmc_dload 0
+
+on property:persist.sys.stability.node_cache=on
+    write /sys/kernel/node_cache/comp_enable 1
+
+on property:persist.sys.stability.node_cache=off
+    write /sys/kernel/node_cache/comp_enable 0
 
 on property:vendor.memory.min_free_kbytes=*
     write /proc/sys/vm/min_free_kbytes ${vendor.memory.min_free_kbytes}

@@ -2,6 +2,9 @@ service vendor.cld-hal-aidl /vendor/bin/hw/vendor.xiaomi.hardware.cld_aidl-servi
     class hal
     user root
     group root
+    interface aidl vendor.xiaomi.hardware.cld_aidl.ICld/default
+    disabled
+    oneshot
 
 on property:persist.sys.stability.smartgc.ctrl=*
     setprop vendor.smartgc.ctrl ${persist.sys.stability.smartgc.ctrl}

@@ -7,17 +7,18 @@ ro.product.system_ext.device=missi
 ro.product.system_ext.manufacturer=QUALCOMM
 ro.product.system_ext.model=missi
 ro.product.system_ext.name=missi
-ro.system_ext.build.date=Fri Jul 17 00:01:54 CST 2026
-ro.system_ext.build.date.utc=1784217714
-ro.system_ext.build.fingerprint=Xiaomi/missi/missi:16/BP2A.250605.031.A3/16OS3.1.260716.235326947.QCPECN.S:user/release-keys
-ro.system_ext.build.id=BP2A.250605.031.A3
+ro.system_ext.build.date=Tue Oct 20 22:51:48 CST 2026
+ro.system_ext.build.date.utc=1792507908
+ro.system_ext.build.fingerprint=Xiaomi/missi/missi:17/CP2A.260605.016/17OS4.0.261020.224641798.QCPECN.S:user/release-keys
+ro.system_ext.build.id=CP2A.260605.016
+ro.system_ext.build.uuid=dArp_4B-HEXzxLQ8qoLyGMt1Sq1ONKjnYYRg9hHlN3g
 ro.system_ext.build.tags=release-keys
 ro.system_ext.build.type=user
-ro.system_ext.build.version.incremental=16OS3.1.260716.235326947.QCPECN.S
-ro.system_ext.build.version.release=16
-ro.system_ext.build.version.release_or_codename=16
-ro.system_ext.build.version.sdk=36
-ro.system_ext.build.version.sdk_full=36.0
+ro.system_ext.build.version.incremental=17OS4.0.261020.224641798.QCPECN.S
+ro.system_ext.build.version.release=17
+ro.system_ext.build.version.release_or_codename=17
+ro.system_ext.build.version.sdk=37
+ro.system_ext.build.version.sdk_full=37.0
 ####################################
 # from build/make/target/board/gsi_system_ext_user.prop
 ####################################
@@ -29,14 +30,14 @@ ro.nnapi.extensions.deny_on_product=true
 # MIUI DEL: Stability_StabilityEnhance
 # persist.sys.disable_rescue=true
 # END Stability_StabilityEnhance
-# TODO(b/78105955): disable privapp_permissions checking before the bug solved
-ro.control_privapp_permissions=disable
+ro.control_privapp_permissions=enforce
 ####################################
 # from variable PRODUCT_SYSTEM_EXT_PROPERTIES
 ####################################
 persist.wm.extensions.enabled=true
 persist.wm.extensions.activity_embedding_guard_with_android_15=false
 persist.settings.on_animation_consume.enabled=true
+persist.miui.thirdappopt_enable=true
 persist.sys.mcd_config_file=/system_ext/etc/mcd_default.conf
 persist.sys.gps.polaris=true
 persist.sys.gps.fence=true
@@ -93,14 +94,33 @@ persist.sys.mi_shadow_supported=true
 persist.sys.support_window_mishadow=true
 persist.sys.support_view_mishadow=true
 ro.multiwin.fulldecor_support=true
+persist.sys.stability.gcImproveEnable.808=true
+persist.sys.stability.picwatch=true
+persist.sys.stability.f2fsTrackEnable=true
+persist.sys.hyper_view_scale=true
 ro.miui.enable_cloud_verify=true
 persist.sys.miui_gnss_dc=true
 ro.config.isolated_compilation_enabled=true
 ro.mi.development=
 ro.config.isolated_compilation_enabled=true
 ro.audio.ihaladaptervendorextension_enabled=true
+bluetooth.profile.a2dp.source.enabled=true
+bluetooth.profile.avrcp.target.enabled=true
+bluetooth.profile.avrcp.controller.enabled=false
+bluetooth.profile.hfp.ag.enabled=true
+bluetooth.profile.gatt.enabled=true
+bluetooth.profile.hid.host.enabled=true
+bluetooth.profile.hid.device.enabled=true
+bluetooth.profile.map.server.enabled=true
+bluetooth.profile.opp.enabled=true
+bluetooth.profile.pbap.server.enabled=true
+bluetooth.profile.bas.client.enabled=true
+bluetooth.device_id.vendor_id=0x038F
+bluetooth.device_id.product_id=0x1200
 bluetooth.profile.sap.server.enabled=true
 bluetooth.profile.pbap.sim.enabled=true
+bluetooth.profile.pan.nap.enabled=true
+bluetooth.profile.pan.panu.enabled=true
 bluetooth.hfp.codec_aptx_voice.enabled=true
 ro.bluetooth.leaudio_offload.supported=true
 bluetooth.device.class_of_device=90,2,12
@@ -108,6 +128,7 @@ persist.bluetooth.leaudio_offload.disabled=false
 bluetooth.leaudio.dual_bidirection_swb.supported=true
 persist.bluetooth.leaudio.notify.idle.during.call=true
 persist.vendor.bluetooth.haltest=true
+bluetooth.core.le.max_number_of_concurrent_connections=10
 persist.vendor.dpm.feature=11
 ro.telephony.sim_slots.count=2
 telephony.active_modems.max_count=2

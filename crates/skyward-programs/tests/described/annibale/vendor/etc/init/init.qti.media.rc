@@ -42,10 +42,8 @@ service qti-media /vendor/bin/init.qti.media.sh
 on early-init
     setprop vendor.media.system.build_codename ${ro.build.version.release_or_codename}
 
-on late-fs
-    start qti-media
-
 on post-fs-data
+    start qti-media
     setprop ro.media.xml_variant.codecs ${vendor.media.target_variant}
     setprop ro.media.xml_variant.codecs_performance ${vendor.media.target_variant}
 

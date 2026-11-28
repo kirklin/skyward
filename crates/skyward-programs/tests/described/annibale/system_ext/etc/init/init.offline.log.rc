@@ -4,16 +4,13 @@ on post-fs-data
 	mkdir /data/vendor/tz_log 0771 root root
 	chown system system /dev/mtd0
 
-
-
-
 on charger
 	mkdir /dev/logfs 0771 system system
 	mount vfat /dev/block/bootdevice/by-name/logfs /dev/logfs noatime umask=006,uid=1000,gid=1000
 	mkdir /dev/rescue 0777 system system
 	mount ext4 /dev/block/bootdevice/by-name/rescue /dev/rescue noatime
 	mkdir /dev/rescue/poweroff_charger_log 0777 system system
-	setprop persist.sys.offlinelog.poweroff_charger_log clean
+	setprop persist.sys.offlinelog.poweroff_charger_log true
 
 service logcatkernel /system/bin/sh /system_ext/bin/logcatkernel.sh
         class main

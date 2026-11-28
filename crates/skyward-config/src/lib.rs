@@ -161,6 +161,9 @@ pub struct Firmware {
     /// read-only while the file is read.
     #[serde(default)]
     pub partition: Option<String>,
+    /// Other sources on the same filesystem, tried only if the previous one is absent.
+    #[serde(default)]
+    pub alternatives: Vec<String>,
     /// Whether the phone may be without the file, as it is without the
     /// MAC address until its own system has written one into the folder
     /// its init makes for it: the driver then starts without the file, as
@@ -599,17 +602,20 @@ impl DeviceConfig {
                 let name = Path::new(&file.name);
                 let plain = name.components().all(|c| matches!(c, std::path::Component::Normal(_)));
                 ensure!(plain && !file.name.is_empty(), "[wlan] firmware: {} is not a name from the top of the loader's folders", file.name);
-                let path = Path::new(&file.path);
-                match &file.partition {
-                    Some(partition) => {
+                if let Some(partition) = &file.partition {
+                    ensure!(
+                        !partition.is_empty() && !partition.contains('/'),
+                        "[wlan] firmware: {partition} is not a partition's name"
+                    );
+                }
+                for source in std::iter::once(&file.path).chain(&file.alternatives) {
+                    let path = Path::new(source);
+                    if let Some(partition) = &file.partition {
                         let plain = path.components().all(|c| matches!(c, std::path::Component::Normal(_)));
-                        ensure!(
-                            !partition.is_empty() && !partition.contains('/'),
-                            "[wlan] firmware: {partition} is not a partition's name"
-                        );
-                        ensure!(plain && !file.path.is_empty(), "[wlan] firmware: {} is not a path from the top of {partition}", file.path);
+                        ensure!(plain && !source.is_empty(), "[wlan] firmware: {source} is not a path from the top of {partition}");
+                    } else {
+                        ensure!(path.is_absolute(), "[wlan] firmware: {source} is not an absolute path");
                     }
-                    None => ensure!(path.is_absolute(), "[wlan] firmware: {} is not an absolute path", file.path),
                 }
             }
         }
@@ -818,7 +824,7 @@ mod tests {
             (include_str!("../../../devices/byron.toml"), "OS3.0.310.0.WAFCNXM"),
             (include_str!("../../../devices/zorn.toml"), "OS3.0.309.0.WOKCNXM"),
             (include_str!("../../../devices/miro.toml"), "OS3.0.305.0.WOMCNXM"),
-            (include_str!("../../../devices/annibale.toml"), "OS3.0.307.0.WPKCNXM"),
+            (include_str!("../../../devices/annibale.toml"), "OS4.0.5.0.XPKCNXM"),
             (include_str!("../../../devices/warsaw.toml"), "OS3.0.309.0.WHPCNXM"),
         ] {
             let stock = DeviceConfig::parse(text).unwrap().stock.expect("a stock build to build on");
@@ -961,6 +967,31 @@ mod tests {
         let file = |file: &str| with(file).unwrap().wlan.unwrap().firmware.remove(0);
         assert!(!file("{ name = \"wlan/a.ini\", path = \"/vendor/etc/a.ini\" }").optional, "a phone has each file unless it is said it may not");
         assert!(file("{ name = \"wlan/mac.bin\", partition = \"persist\", path = \"kiwi/mac.bin\", optional = true }").optional);
+    }
+
+    #[test]
+    fn firmware_alternatives_follow_the_same_path_rules_as_the_primary_source() {
+        let base = "[device]\ncodename = \"x\"\n[wlan]\nmodules = []\ninterface = \"wlan0\"\nsupplicant = \"/s\"\nservice = \"a/b\"\nprobe = \"http://p/\"\n";
+        let with = |file: &str| DeviceConfig::parse(&format!("{base}firmware = [{file}]\n"));
+        assert!(with(r#"{ name = "mac.bin", partition = "persist", path = "wlan/mac.bin", alternatives = ["mac.bin"] }"#).is_ok());
+        assert!(with(r#"{ name = "mac.bin", partition = "persist", path = "wlan/mac.bin", alternatives = ["../mac.bin"] }"#).is_err());
+        assert!(with(r#"{ name = "mac.bin", partition = "persist", path = "wlan/mac.bin", alternatives = ["/mac.bin"] }"#).is_err());
+        assert!(with(r#"{ name = "mac.bin", partition = "persist", path = "wlan/mac.bin", alternatives = [""] }"#).is_err());
+        assert!(with(r#"{ name = "a.ini", path = "/vendor/etc/a.ini", alternatives = ["/odm/etc/a.ini"] }"#).is_ok());
+        assert!(with(r#"{ name = "a.ini", path = "/vendor/etc/a.ini", alternatives = ["odm/etc/a.ini"] }"#).is_err());
+    }
+
+    #[test]
+    fn annibale_uses_the_stock_kiwi_driver_without_requiring_a_mac_file() {
+        let cfg = DeviceConfig::parse(include_str!("../../../devices/annibale.toml")).unwrap();
+        let wlan = cfg.wlan.unwrap();
+        let [settings, mac] = &wlan.firmware[..] else { panic!("the driver settings and MAC address") };
+        assert_eq!(wlan.modules, ["rfkill", "qca_cld3_kiwi_v2"]);
+        assert!(!settings.optional && settings.alternatives.is_empty());
+        assert_eq!(mac.partition.as_deref(), Some("persist"));
+        assert_eq!(mac.path, "wlan/wlan_mac.bin");
+        assert_eq!(mac.alternatives, ["kiwi_v2/wlan_mac.bin", "wlan_mac.bin"]);
+        assert!(mac.optional);
     }
 
     #[test]

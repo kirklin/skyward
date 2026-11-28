@@ -23,6 +23,8 @@ on boot
     chmod 0666 /sys/bus/platform/devices/soc:xiaomi_fingerprint/intr2
     chown system system /sys/class/touch/touch_dev/fod_low_attn
     chmod 0666 /sys/class/touch/touch_dev/fod_low_attn
+    chown system system /sys/class/xiaomi_fp/xiaomi-fp/device/intr2_ap_per_low
+    chmod 0664 /sys/class/xiaomi_fp/xiaomi-fp/device/intr2_ap_per_low
 
 on post-fs-data
     mkdir /data/vendor/misc 01771 system system

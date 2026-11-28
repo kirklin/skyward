@@ -3,3 +3,7 @@ service vendor.keymint-strongbox /odm/bin/hw/android.hardware.security.keymint-s
     user vendor_nxp_strongbox
     group vendor_nxp_strongbox
     capabilities WAKE_ALARM
+
+on init
+    setprop ro.strongbox.manufacturer "NXP"
+    setprop ro.strongbox.model "SN220"

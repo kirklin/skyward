@@ -39,6 +39,9 @@ on property:dev.bootcomplete=1
     chown system system /sys/class/xm_power/hw_monitor/connector/mos_ctrl
     chown system system /sys/class/xm_power/hw_monitor/connector/connector_temp_1
     chown system system /sys/class/xm_power/hw_monitor/connector/connector_temp_2
+    chown system system /sys/class/xm_power/hw_monitor/pwm_fan/fan_support
+    chown system system /sys/class/xm_power/hw_monitor/pwm_fan/target_level
+    chown system system /sys/class/xm_power/hw_monitor/pwm_fan/real_speed
     chown system system /sys/class/xm_power/typec/strategy_pd_auth/adapter_id
     chown system system /sys/class/xm_power/fuelgauge/strategy_fg/fast_charge
     chown system system /sys/class/xm_power/fuelgauge/strategy_fg/soc_decimal
@@ -59,6 +62,10 @@ on property:dev.bootcomplete=1
     chown system system /sys/class/xm_power/charger/charger_thermal/wls_quick_chg_control_limit
     chown system system /sys/class/xm_power/charger/wls_rev_charge/wls_fw_state
     chown system system /sys/class/xm_power/charger/wls_basic_charge/set_rx_sleep
+    chown system system /sys/class/xm_power/charger/quick_charge/current_ration
+    chown system system /sys/class/xm_power/charger/smart_charge/batt_safe_lvl
+    chown system system /sys/class/xm_power/charger/smart_charge/batt_safe_vlim
+    chown system system /sys/class/xm_power/fuelgauge/strategy_fg/batt_emerg
     chown system system /sys/class/xm_power/charger/charger_partition/charger_partition_poweroffmode
     chown system system /sys/class/xm_power/charger/charger_partition/charger_partition_mishow
     chown system system /sys/class/xm_power/fuelgauge/strategy_fg/battery_num
@@ -107,6 +114,8 @@ on property:dev.bootcomplete=1
     chown system system /sys/class/xm_power/fg_slave/chip_ok
     chown system system /sys/class/xm_power/fuelgauge/strategy_fg/authentic
     chown system system /sys/class/xm_power/fuelgauge/strategy_fg/slave_authentic
+    chown system system /sys/class/xm_power/fuelgauge/strategy_fg/clear_cycle_flag
+    chown system system /sys/class/xm_power/fuelgauge/strategy_fg/clear_cycle
     chown system system /sys/class/xm_power/fg_master/rel_soh
     chown system system /sys/class/xm_power/fg_master/rel_soh_cyclecount
     chown system system /sys/class/xm_power/fg_master/eis_soh
@@ -121,6 +130,7 @@ on property:dev.bootcomplete=1
     chown system system /sys/class/xm_power/fg_master/max_life_temp
     chown system system /sys/class/xm_power/fg_master/min_life_temp
     chown system system /sys/class/xm_power/fg_master/over_vol_duration
+    chown system system /sys/class/xm_power/fg_master/support_batt_manager_4p0
     chown system system /sys/class/xm_power/wireless_master/tx_uuid
     chown system system /sys/class/xm_power/fuelgauge/strategy_fg/enable_rollback
     chmod 0660 /sys/class/xm_power/hw_monitor/connector/connector_temp_1
@@ -145,12 +155,18 @@ on property:dev.bootcomplete=1
     chown system system /sys/class/xm_power/fg_master/count_level2
     chown system system /sys/class/xm_power/fg_master/count_level3
     chown system system /sys/class/xm_power/fg_master/charge_absoc
+    chown system system /sys/class/xm_power/fg_slave/charge_absoc
     chown system system /sys/class/xm_power/fuelgauge/strategy_fg/audio_state
     chown system system /sys/class/xm_power/typec/apdo_max
     chown system system /sys/class/xm_power/cp_master/pogo_connect
     chown system system /sys/class/xm_power/fg_master/chem_df_sign
     chown system system /sys/class/xm_power/fg_master/df_check
+    chown system system /sys/class/xm_power/fg_master/if_sig
     chown system system /sys/class/xm_power/fg_master/pack_vendor
+    chown system system /sys/class/usb_enhance/usb_enhance/usb_enhance_state
+    chown system system /sys/class/usb_enhance/usb_enhance/usb_enhance_support_mode
+    chown system system /sys/class/usb_enhance/usb_enhance/current_eye_tune
+
 
     chmod 0660 /sys/class/xm_power/charger/charger_partition/charger_partition_poweroffmode
     chmod 0660 /sys/class/xm_power/charger/charger_partition/charger_partition_mishow
@@ -162,6 +178,8 @@ on property:dev.bootcomplete=1
     chmod 0660 /sys/class/xm_power/charger/charger_interface/shipmode_count_reset
     chmod 0660 /sys/class/xm_power/fuelgauge/strategy_fg/manufacturing_date
     chmod 0660 /sys/class/xm_power/fuelgauge/strategy_fg/first_usage_date
+    chmod 0440 /sys/class/xm_power/fuelgauge/strategy_fg/clear_cycle_flag
+    chmod 0660 /sys/class/xm_power/fuelgauge/strategy_fg/clear_cycle
     chmod 0660 /sys/class/xm_power/fg_master/ui_soh
     chmod 0440 /sys/class/xm_power/fg_master/design_capacity
     chmod 0440 /sys/class/xm_power/fg_slave/design_capacity
@@ -189,6 +207,9 @@ on property:dev.bootcomplete=1
     chmod 0660 /sys/class/xm_power/hw_monitor/connector/mos_ctrl
     chmod 0660 /sys/class/xm_power/charger/smart_charge/smart_chg
     chmod 0660 /sys/class/xm_power/fuelgauge/strategy_fg/enable_rollback
+    chmod 0660 /sys/class/usb_enhance/usb_enhance/usb_enhance_state
+    chmod 0440 /sys/class/usb_enhance/usb_enhance/usb_enhance_support_mode
+    chmod 0440 /sys/class/usb_enhance/usb_enhance/current_eye_tune
 
 service micharge-hal /vendor/bin/hw/vendor.xiaomi.hardware.micharge-service
     interface aidl vendor.xiaomi.hardware.micharge.IMiCharge/default

@@ -1,5 +1,0 @@
-
-service vendor.xiaomi.aidl.miwill  /vendor/bin/hw/vendor.xiaomi.aidl.miwill@1.0-service
-    class hal
-    user system
-    group system

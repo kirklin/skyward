@@ -17,6 +17,8 @@ service hypsys_system /system_ext/bin/hypsys_system
     disabled
     socket mqsasd stream 0660 system system
     socket mqsasd_pr dgram 0666 system system
+    # keep in sync with __scudo_default_options() in main.cpp
+    setenv SCUDO_OPTIONS release_to_os_interval_ms=0:quarantine_size_mb=0:thread_local_quarantine_size_kb=0:quarantine_max_chunk_size=0:dealloc_type_mismatch=false:may_return_null=true
 
 # post fs start hypsys system
 on post-fs
@@ -52,6 +54,8 @@ on post-fs-data
     mkdir /data/miuilog/stability 0775 system system
     mkdir /data/mqsas/aging 0770 system system
 
+    mkdir /data/system/bootlog 2771 root log
+    mkdir /data/system/ota_exception 2771 root log
 # umount memory partition when boot monitor completed!
 on property:sys.boot_monitor_completed=1 && property:sys.ota.type=update_engine
     umount /mnt/rescue/mqsas/dumpstateTemporary

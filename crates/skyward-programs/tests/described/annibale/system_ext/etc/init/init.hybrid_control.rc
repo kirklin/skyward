@@ -9,7 +9,9 @@ service hybrid_control /system_ext/bin/hybrid_control
 
 on property:persist.sys.stability.hybrid_enable=*
     start hybrid_control
-on property:persist.sys.stability.hybrid_params=*
+on property:sys.boot_completed=1 && property:persist.sys.stability.hybrid_params=*
     start hybrid_control
 
+on property:sys.boot_completed=1 && property:persist.sys.stability.iostat_params=*
+    start hybrid_control
 # END Kernel_F2fsHybridUFS

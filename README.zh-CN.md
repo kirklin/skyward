@@ -112,7 +112,7 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 | 🚧 小米 17 Max | `byron` | OS3.0.310.0.WAFCNXM（Android 16） |
 | 🚧 REDMI K80 | `zorn` | OS3.0.309.0.WOKCNXM（Android 16） |
 | 🚧 REDMI K80 Pro | `miro` | OS3.0.305.0.WOMCNXM（Android 16） |
-| 🚧 REDMI K90 | `annibale` | OS3.0.307.0.WPKCNXM（Android 16） |
+| 🚧 REDMI K90 | `annibale` | OS4.0.5.0.XPKCNXM（Android 17） |
 | 🚧 REDMI K90 Pro Max | `myron` | OS4.0.4.0.XPMCNXM（Android 17） |
 | 🚧 REDMI K90 Ultra | `warsaw` | OS3.0.309.0.WHPCNXM（Android 16） |
 | 🚧 REDMI K100 Pro | `athens` | OS4.0.4.0.XPICNXM（Android 17） |

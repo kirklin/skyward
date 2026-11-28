@@ -14,17 +14,17 @@ ro.product.brand_for_attestation=Redmi
 ro.product.name_for_attestation=annibale
 ro.product.device_for_attestation=annibale
 ro.product.manufacturer_for_attestation=Xiaomi
-ro.vendor.build.fingerprint=Redmi/annibale/annibale:15/AQ3A.250226.002/OS3.0.307.0.WPKCNXM:user/release-keys
+ro.vendor.build.fingerprint=Redmi/annibale/annibale:15/AQ3A.250226.002/OS4.0.5.0.XPKCN:user/release-keys
 ro.odm.product.cpu.abilist=arm64-v8a
 ro.odm.product.cpu.abilist32=
 ro.odm.product.cpu.abilist64=arm64-v8a
-ro.odm.build.date=Wed Jul 22 23:13:08 CST 2026
-ro.odm.build.date.utc=1784733188
-ro.odm.build.fingerprint=Redmi/annibale/annibale:15/AQ3A.250226.002/OS3.0.307.0.WPKCNXM:user/release-keys
+ro.odm.build.date=Tue Oct 20 23:08:36 CST 2026
+ro.odm.build.date.utc=1792508916
+ro.odm.build.fingerprint=Redmi/annibale/annibale:15/AQ3A.250226.002/OS4.0.5.0.XPKCN:user/release-keys
 ro.odm.build.id=AQ3A.250226.002
 ro.odm.build.tags=release-keys
 ro.odm.build.type=user
-ro.odm.build.version.incremental=OS3.0.307.0.WPKCNXM
+ro.odm.build.version.incremental=OS4.0.5.0.XPKCN
 ro.odm.build.version.release=15
 ro.odm.build.version.release_or_codename=15
 ro.odm.build.version.sdk=35
@@ -56,6 +56,8 @@ ro.miui.support.aon.qrcode=1
 ro.vendor.proxcal.factor=2.8
 #support fov feature
 ro.miui.support.light.fov=1
+#sensor add dfx stuck_detect
+ro.miui.support.sensor.stuck_detect=true
 ####################################
 # from device/xiaomi/annibale/odm/special_rw.prop
 ####################################
@@ -95,15 +97,15 @@ persist.vendor.sensor.onetrack=true
 persist.vendor.sensor.deviceorient=true
 #enable sensor mis check
 persist.vendor.sensor.mischeck=true
-#enable ssr
-persist.vendor.ssr.restart_level=ALL_ENABLE
-#enable hal trigger ssr
-persist.vendor.sensors.debug.hal_trigger_ssr=true
 # support low cutoff
 persist.vendor.low.cutoff=true
 #enable wechat videocall beauty
 persist.vendor.vcb.ability=true
 persist.vendor.vcb.enable=false
+#enable ssr
+persist.vendor.ssr.restart_level=ALL_ENABLE
+#enable hal trigger ssr
+persist.vendor.sensors.debug.hal_trigger_ssr=true
 ####################################
 # from variable ADDITIONAL_ODM_PROPERTIES
 ####################################
@@ -168,6 +170,7 @@ vendor.display.demura_long_timer=600000
 vendor.display.demura_recalib_timer=3600000
 vendor.display.demura_record_timer=1800000
 vendor.display.demura_recalib_timer_divider=1
+vendor.display.antiaging_service_retry_wait_time=10
 vendor.display.support_builtin_high_fps_when_pluggable_connected=0
 ro.vendor.display.uiservice.enable=true
 ro.vendor.display.uiservice_dbi.enable=true
@@ -189,6 +192,7 @@ ro.vendor.mi_sf.gpu_hdr_virtual_display.enable=true
 ro.vendor.display.vivid_calibration.enable=1
 persist.sys.qti.frc.support=true
 vendor.gpp.create_frc_extension=1
+vendor.gpp.dynamic.settings.enable=1
 debug.vpp.frc.game.min.latency=1
 ro.vendor.display.gppservice.support=true
 persist.vendor.display.dbi_enable=1
@@ -196,6 +200,7 @@ persist.vendor.display.cwb_enable=5
 persist.vendor.dc_backlight.enable=false
 ro.vendor.mi_sf.ticket_grab_lock_refresh_rate=120
 ro.vendor.display.qingshan_eyecare.enable=1
+ro.vendor.display.hdr_calibration.enable=1
 ro.vendor.display.video_or_camera_fps.support=true
 persist.sys.miui_resolution=1156,2510,480
 ro.vendor.display.set_fps_stat_timer_ms=250
@@ -206,7 +211,6 @@ vendor.display.enable_antiaging=1
 vendor.display.enable_spr=1
 vendor.display.enable_spr_bypass=1
 vendor.display.force_tonemapping=1
-ro.vendor.xiaomi.minet.ftun=1.0.0
 persist.vendor.audio.call.tx.ns=true
 ro.vendor.audio.karaoke.enable=true
 ro.miui.audio.karaoke.suppot.lowlatency=true
@@ -224,6 +228,7 @@ ro.vendor.audio.lowpower.pa.para.support=false
 vendor.audio.version.v=true
 ro.vendor.touchfeature.type=255
 persist.vendor.touchfeature.gameturbotool.version=v4
+persist.vendor.touchfeature.hot_area.version=v2.0
 ro.vendor.touch.touchscheduler.enable=true
 persist.vendor.touchfeature.hot_area.enable=true
 ro.vendor.touch.touchflinger.enable=true
@@ -231,9 +236,10 @@ persist.sys.touch.followup.enable=true
 persist.vendor.touchfeature.gamepad.highlight=true
 persist.vendor.touchfeature.ticketgrab.enable=true
 ro.vendor.kernel.build=gki
-persist.sys.stability.f2fsTrackEnable=true
+persist.sys.stability.vip_file=true
 ro.vendor.s2_reboot_time=12
 ro.product.first_api_level=36
+ro.soc.model=SM8750
 ro.vendor.audio.triplemic.support=true
 ro.vendor.audio.algorithm.support=Mi
 ro.vendor.audio.product.sleepmonitor.config=true
@@ -262,7 +268,7 @@ ro.vendor.audio.special.video.frontfacingrecord.type=4,C,0,1,1,1
 ro.vendor.audio.meeting.mode=true
 ro.vendor.audio.meeting.mode.type=2
 ro.vendor.audio.denoiseutils=true
-persist.vendor.audio.cloud.enable.camera.leamic=true
+persist.vendor.audio.cloud.enable.camera.leamic=false
 persist.vendor.audio.cinema.thermal_control=false
 ro.vendor.audio.spatializer.lowlatency=false
 persist.vendor.audio.ambience_noisy_spl.threshold=80
@@ -272,7 +278,6 @@ ro.vendor.audio.lea.karaoke=true
 persist.vendor.audio.cloud.headphone.lea.karaoke=true
 persist.vendor.audio.csd=true
 persist.vendor.audio.csd.gain=5
-persist.vendor.audio.silencelowpower.support=true
 persist.vendor.audio.power.save.setting=45
 ro.miui.audio.support.BleSpatializer=true
 vendor.audio.cpu.sched.douyin=31
@@ -281,8 +286,9 @@ vendor.audio.cpu.sched.douyin.cpuset.af=63
 vendor.audio.cpu.sched.douyin.cpuset.hso=63
 vendor.audio.cpu.sched.douyin.cpus=8
 vendor.audio.only.douyin.powersave.support=1
-persist.vendor.audio.mi.perception=9
+persist.vendor.audio.mi.perception=2185
 persist.vendor.audio.cpuload.threshold=26
+persist.vendor.audio.cpupror.schedDy=true
 vendor.audio.rt.mode=55
 vendor.audio.rt.mode.onlyfast=false
 vendor.audio.cpu.sched=31
@@ -312,7 +318,7 @@ ro.vendor.seaaudio.model=/odm/etc/TcnRecordmodel_8750_w8a16pcq_qnn2_24_19_nhwc.m
 ro.vendor.audio.seaaudio.model=true
 persist.vendor.audio.supereffect.enable=true
 ro.vendor.audio.bose.effect.enable=true
-ro.vendor.audio.misoundsa.kms=true
+vendor.audio.start.boost=true
 ro.vendor.camera.interpolation.mialgo.support=true
 ro.odm.mm.vibrator.sys_path=/sys/class/qcom-haptics
 ro.odm.mm.vibrator.device_type=agm
@@ -376,13 +382,15 @@ ro.vendor.nfc.debounce_field_on=1
 ro.vendor.nfc.field_on_debounce=800
 nfc.fw.is_downloading=false
 ro.vendor.nfc.mitouch=1
+ro.vendor.nfc.mitouch.version=1
 ro.vendor.dpc_support=1
 vendor.wv.oemcrypto.debug.enable_prov40=true
-vendor.xiaomi.trustedvm.version=V002.0102.20251120
+vendor.xiaomi.trustedvm.version=V002.0102.20260402
 ro.vendor.mitee_support
 remote_provisioning.hostname.cn=deviceapi.micloud.xiaomi.net/proxyGoogle
 odm.xiaomi.security.tee.rkp_only=true
 ro.product.camera.livephoto.support=3
+ro.miui.support.enable_lite_factory_reset=1
 ro.hardware.fp.fod.touch.ctl.version=2.0
 ro.hardware.fp.fod=true
 persist.vendor.sys.fp.fod.location.X_Y=504,1831
@@ -407,6 +415,7 @@ debug.game.video.support=true
 debug.video.codec.capability.support=16383
 debug.video.codec.capability.apilevel=2
 debug.video.fdroi.encode.support=true
+debug.config.media.video.dve.support=true
 debug.config.media.video.ace.support=true
 debug.config.media.video.dolby_vision_suports=true
 debug.config.media.video.dolby_capture_supports=false
@@ -423,7 +432,6 @@ debug.config.video.p3.decode.support=true
 debug.config.media.video.voip.detect=true
 debug.video.render.broadcast.support=true
 debug.config.video.hevchdr10.encode.support=true
-debug.video.recovery.killenable=true
 ro.vendor.display.dbi.support=qcom
 persist.vendor.audio.fpsop.game.effect=true
 persist.vendor.audio.fpsop.game.effect.speaker=false
@@ -431,7 +439,6 @@ persist.vendor.audio.fpsop.game.effect.switch=false
 persist.vendor.audio.game.effect.version=2
 ro.vendor.gpp.frc.support=true
 ro.vendor.xiaomi.sr.support=true
-ro.memory.isSupportSnapshot=true
 import /odm/etc/${ro.boot.product.hardware.sku}_${ro.boot.ptcountrycode}_build.prop
 # end of file
 

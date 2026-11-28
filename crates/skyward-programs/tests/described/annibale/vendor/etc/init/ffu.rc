@@ -34,3 +34,13 @@ on property:vendor.ffu.is.valid=1
 on property:vendor.ffu.is.valid=2
 	rm /data/vendor/ffu/ffu.log
 	setprop vendor.ffu.is.valid 4
+
+# rmmod ufs_ffu.ko
+service rmmod_ffu_service /vendor/bin/ffu -x
+	class core
+	disabled
+	user root
+	oneshot
+
+on property:sys.boot_completed=1
+	start rmmod_ffu_service

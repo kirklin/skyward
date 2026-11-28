@@ -2,7 +2,15 @@ service vendor.fbo-hal /vendor/bin/hw/vendor.xiaomi.hardware.fbo-service
     class hal
     user root
     group root
+    oneshot
+    interface aidl vendor.xiaomi.hardware.fbo.IFbo/default
 
+service vendor.snapshot_clear /vendor/bin/hw/snapshot_clear
+    class main
+    user system
+    group system
+    disabled
+    oneshot
 
 on property:persist.sys.stability.snapshot_control=*
     setprop vendor.snapshot_control ${persist.sys.stability.snapshot_control}
@@ -51,3 +59,6 @@ on property:persist.sys.stability.userdatabackup_period=*
 
 on property:persist.sys.stability.alluserdatabackup_period=*
     setprop vendor.snapshot2_control.alluserdatabackup_period ${persist.sys.stability.alluserdatabackup_period}
+
+on property:sys.boot_completed=1
+    start vendor.snapshot_clear

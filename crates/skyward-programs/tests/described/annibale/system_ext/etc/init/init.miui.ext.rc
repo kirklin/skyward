@@ -31,6 +31,15 @@ on late-init
     mkdir /dev/memcg/protect_memcg_1 0750 system system
     mkdir /dev/memcg/protect_memcg_2 0750 system system
     mkdir /dev/memcg/protect_memcg_3 0750 system system
+    mkdir /sys/fs/cgroup/protect_memcg_1 0750 system system
+    mkdir /sys/fs/cgroup/protect_memcg_2 0750 system system
+    mkdir /sys/fs/cgroup/protect_memcg_3 0750 system system
+
+    # MIUI ADD: xswapd cgroup permissions for system user
+    chown system system /sys/fs/cgroup/memory.xswapd.enable
+    chmod 0666 /sys/fs/cgroup/memory.xswapd.enable
+    chown system system /sys/fs/cgroup/memory.xswapd.umrenable
+    chmod 0666 /sys/fs/cgroup/memory.xswapd.umrenable
 
 on  zygote-start
     chown system system /dev/memcg/protect_memcg_1/memory.mctrl.level
@@ -39,6 +48,12 @@ on  zygote-start
     chown system system /dev/memcg/protect_memcg_2/memory.mctrl.max
     chown system system /dev/memcg/protect_memcg_3/memory.mctrl.level
     chown system system /dev/memcg/protect_memcg_3/memory.mctrl.max
+    chown system system /sys/fs/cgroup/protect_memcg_1/memory.mctrl.level
+    chown system system /sys/fs/cgroup/protect_memcg_1/memory.mctrl.max
+    chown system system /sys/fs/cgroup/protect_memcg_2/memory.mctrl.level
+    chown system system /sys/fs/cgroup/protect_memcg_2/memory.mctrl.max
+    chown system system /sys/fs/cgroup/protect_memcg_3/memory.mctrl.level
+    chown system system /sys/fs/cgroup/protect_memcg_3/memory.mctrl.max
 
 # use rescue partition
 on post-fs && property:sys.ota.type=update_engine
@@ -81,11 +96,24 @@ on post-fs-data
     mkdir /data/system/mcd 0755 system system
     mkdir /data/system/whetstone 0770 system system
     mkdir /data/system/migt 0777 system system
+    mkdir /data/system/ssru_cpuloadrecord 0770 system system
     restorecon_recursive /data/system/mcd
     restorecon_recursive /data/system/whetstone
     restorecon_recursive /data/system/migt
+    restorecon_recursive /data/system/ssru_cpuloadrecord
     chmod 0777 /data/system/migt
     chmod 0777 /data/system/migt/migt
+
+
+# MIUI ADD: Performance_ScenarioRecognition
+on post-fs-data
+    write /data/system/mcd/fs ""
+    chmod 0644 /data/system/mcd/fs
+    chown system system /data/system/mcd/fs
+    write /data/system/mcd/gpu_comp "0"
+    chmod 0644 /data/system/mcd/gpu_comp
+    chown system system /data/system/mcd/gpu_comp
+# END Performance_ScenarioRecognition
 
 # MIUI ADD: Performance_APPCacheOptimization
 on post-fs-data
@@ -110,13 +138,11 @@ on post-fs-data
 # MIUI ADD: SF_MIUIRenderEngine
 on post-fs-data
     mkdir /data/misc/lut 0770 system system
+    restorecon_recursive /data/misc/lut
     copy /product/etc/lut/lutForPrimeShaderCache.txt /data/misc/lut/lutForPrimeShaderCache.txt
     chown system system /data/misc/lut/lutForPrimeShaderCache.txt
     chmod 0660 /data/misc/lut/lutForPrimeShaderCache.txt
-    copy /product/etc/lut/SfPqSetting.bin /data/misc/lut/SfPqSetting.bin
-    chown system system /data/misc/lut/SfPqSetting.bin
-    chmod 0660 /data/misc/lut/SfPqSetting.bin
-    restorecon_recursive /data/misc/lut
+    restorecon /data/misc/lut/lutForPrimeShaderCache.txt
 # END SF_MIUIRenderEngine
 
 # rtmm
@@ -179,6 +205,9 @@ on post-fs && property:ro.debuggable=1
 on post-fs && property:ro.debuggable=1 && property:ro.kernel.version=6.12
    mount overlay overlay /system/xbin lowerdir=/mnt/vendor/mi_ext/root/xbin:/system/xbin
 
+on post-fs && property:ro.debuggable=1 && property:ro.kernel.version=6.18
+   mount overlay overlay /system/xbin lowerdir=/mnt/vendor/mi_ext/root/xbin:/system/xbin
+
 on post-fs-data
     mkdir /data/mqsas 0775 system system
     mkdir /data/miuilog 0775 system system
@@ -196,6 +225,13 @@ on post-fs-data
     mkdir /data/miuilog/stability/memleak/sentinel/hprof 0777 system system
     mkdir /data/miuilog/stability/resleak 0775 system system
     mkdir /data/miuilog/stability/fdtrack 0777 system system
+    chown system system /proc/rss_monitor/enable
+    chown system system /proc/rss_monitor/debug
+    chown system system /proc/rss_monitor/event_threshold
+    chown system system /proc/rss_monitor/max_pending_works
+    chown system system /proc/rss_monitor/rss_threshold
+    chown system system /proc/rss_monitor/time_threshold
+    chown system system /proc/rss_monitor/stats
     mkdir /data/miuilog/misight 0775 system system
     mkdir /data/miuilog/power 0775 system system
     mkdir /data/miuilog/thermal 0775 system system
@@ -221,6 +257,10 @@ on post-fs-data
     chown system system /data/system/graphicsengine/pipelinecache
     chmod 0775 /data/system/graphicsengine/pipelinecache
     restorecon /data/system/graphicsengine/pipelinecache
+    mkdir /data/system/pipelineinfos 0775 system system
+    chown system system /data/system/pipelineinfos
+    chmod 0775 /data/system/pipelineinfos
+    restorecon /data/system/pipelineinfos
 # END SF_EnhanceVkPipelineCache
 
 # system_perf_init: after load_persist_props_action && before zygote-start
@@ -244,16 +284,6 @@ service copy_bugreport_file /system/bin/sh /system_ext/bin/copy_bugreport_file.s
     oneshot
     disabled
     seclabel u:r:shell:s0
-
-# fdpp
-service fdpp /system_ext/bin/fdpp daemon
-    class main
-    user root
-    group system
-
-service shelld /system_ext/bin/shelld
-    class main
-    user root
 
 # for system_theme
 on post-fs-data
@@ -307,12 +337,6 @@ on property:init.svc.zygote=running
     setprop mcd.extra.params "4"
     start mcd_init
 
-#service for mcd main service
-service mcd_service /system_ext/bin/mcd
-    class main
-    disabled
-    user root
-
 # umount memory partition when boot monitor completed!
 on property:sys.boot_monitor_completed=1 && property:sys.ota.type=update_engine
     umount /mnt/rescue/mqsas/dumpstateTemporary
@@ -322,7 +346,6 @@ on property:sys.boot_monitor_completed=1 && property:sys.ota.type=recovery
     umount /cache/mqsas/dumpstateTemporary
 
 on property:sys.boot_completed=1
-    start mcd_service
     start miui-post-boot
 
 #service for su
@@ -367,11 +390,24 @@ on property:ro.vendor.oem.ctacode=*
 on boot
     # reclaim
     chown system system /sys/kernel/mi_reclaim/event
+    chown system system /sys/kernel/mi_reclaim/info
     # psi
     chown system system /proc/pressure/cpu
     chown system system /proc/pressure/io
     chmod 0664 /proc/pressure/io
     chmod 0664 /proc/pressure/cpu
+    # mimon cpu highload
+    chown system system /sys/kernel/mimon/cpu_load_monitor/cpumask_big
+    chown system system /sys/kernel/mimon/cpu_load_monitor/cpumask_bg
+    chown system system /sys/kernel/mimon/cpu_load_monitor/cpumask_root
+    chown system system /sys/kernel/mimon/cpu_load_monitor/enable
+    chown system system /sys/kernel/mimon/cpu_load_monitor/threshold
+    chown system system /sys/kernel/mimon/cpu_stat/enable
+    chown system system /sys/kernel/mimon/task_track/proc_short_window_ms
+    chown system system /sys/kernel/mimon/task_track/proc_short_thresh_pct
+    chown system system /sys/kernel/mimon/task_track/proc_long_window_multiplier
+    chown system system /sys/kernel/mimon/task_track/proc_long_thresh_pct
+    chown system system /sys/kernel/mimon/task_track/enable
 
 # ODM-HQ ADD：START
 # separate launcher of Redmi and POCO
@@ -452,3 +488,25 @@ on property:dump_lightweight_trace.switch=1
 # factory_id
 on property:ro.vendor.ril.oem.factory_id=*
     setprop ro.ril.factory_id ${ro.vendor.ril.oem.factory_id}
+
+# MIUI ADD: DFX_CpuLoadRecord
+service ssru_login_on /system/bin/sh -c "cmd ssru dfx-set-login on"
+    user shell
+    group shell system
+    seclabel u:r:shell:s0
+    disabled
+    oneshot
+
+service ssru_login_off /system/bin/sh -c "cmd ssru dfx-set-login off"
+    user shell
+    group shell system
+    seclabel u:r:shell:s0
+    disabled
+    oneshot
+
+on property:sys.jtom.login=1
+    start ssru_login_on
+
+on property:sys.jtom.login=0
+    start ssru_login_off
+# END DFX_CpuLoadRecord

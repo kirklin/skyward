@@ -4,6 +4,7 @@ service fbo-installd /system_ext/bin/FboNativeService
     group root
     disabled
     seclabel u:r:installd:s0
+    writepid /dev/cpuset/background/tasks
 
 on property:persist.sys.fboservice.ctrl=true
     start fbo-installd

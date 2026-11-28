@@ -2,7 +2,7 @@
 service misight /system_ext/bin/misight
    class main
    user root
-   group system cache log readproc media_rw everybody
+   group system cache log readproc media_rw everybody nfc
    seclabel u:r:misight:s0
    onrestart restart vendor.mi_misight
  on post-fs-data

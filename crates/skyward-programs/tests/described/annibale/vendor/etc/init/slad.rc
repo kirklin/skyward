@@ -1,3 +1,7 @@
+on boot
+    write /proc/sys/net/ipv4/conf/all/arp_ignore "1"
+    write /proc/sys/net/ipv4/conf/all/arp_ignore "2"
+
 service slad /vendor/bin/slad
     class main
     user root

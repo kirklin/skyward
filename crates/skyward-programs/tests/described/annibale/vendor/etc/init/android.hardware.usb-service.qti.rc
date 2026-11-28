@@ -2,10 +2,9 @@
 # SPDX-License-Identifier: BSD-3-Clause-Clear
 
 on property:dev.bootcomplete=1
-       chown system  proc/usb_msflag
-
-on property:dev.bootcomplete=1
-       chown system  proc/usb_ms_use
+       chown system system /sys/class/usb_enhance/usb_enhance/current_eye_tune
+       chown system system /sys/class/usb_enhance/usb_enhance/usb_enhance_state
+       chown system system /sys/class/usb_enhance/usb_enhance/usb_enhance_support_mode
 
 service vendor.usb-hal /vendor/bin/hw/android.hardware.usb-service.qti
     class hal

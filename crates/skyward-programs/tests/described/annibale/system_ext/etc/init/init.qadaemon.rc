@@ -1,6 +1,0 @@
-# qadaemon rc
-
-service qadaemon /system_ext/bin/qadaemon
-    class main
-    user root
-    group system

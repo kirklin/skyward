@@ -127,6 +127,7 @@ on init
     mkdir /dev/memcg/camera/limit 0755 system system
     chmod 0666 /dev/memcg/camera/limit/cgroup.procs
     chmod 0664 /sys/kernel/reserve_pool/config
+    chmod 0664 /sys/kernel/camera_reserve_pool/config
 
 on late-init
     write /dev/cpuset/camera-daemon/limit-level0/cpus 0-1
@@ -150,43 +151,32 @@ on early-boot
     mkdir /data/miuilog/camera 0775 system system
 
 on boot
-    chown system system /sys/kernel/mi_mempool/enable_cam_provider
-    chown system system /sys/kernel/mi_mempool/pool_size
+    chown system system /sys/kernel/reserve_pool/enable
     chown system system /sys/kernel/reserve_pool/cam_reserved_pages
-    chown system system /sys/module/xr_heaps/parameters/system_pool_low_mark
-    chown system system /sys/module/xr_heaps/parameters/system_pool_fill_mark
-    chown system system /sys/module/xr_heaps/parameters/system_pool_resv_pages
-    chown system system /sys/module/xr_heaps/parameters/page_pool_dump
-    chown system system /sys/module/xr_heaps/parameters/system_pool_refill_record
+    chown system system /sys/kernel/camera_reserve_pool/extra_pages
+    chown system system /sys/kernel/camera_reserve_pool/cam_reserved_pages
+    chown system system /sys/kernel/camera_reserve_pool/bypass_ratio
+    chown system system /dev/cam_opt
+    chown system camera /dev/dio_dma_mapper_misc
+    chown system camera /dev/cam_meminfo
 
-    chmod 0660 /sys/kernel/mi_mempool/enable_cam_provider
-    chmod 0660 /sys/kernel/mi_mempool/pool_size
-    chmod 0660 /sys/kernel/reserve_pool/cam_reserved_pages
-    chmod 0660 /sys/module/xr_heaps/parameters/system_pool_fill_mark
-    chmod 0660 /sys/module/xr_heaps/parameters/system_pool_low_mark
-    chmod 0660 /sys/module/xr_heaps/parameters/page_pool_dump
-    chmod 0660 /sys/module/xr_heaps/parameters/system_pool_resv_pages
-    chmod 0660 /sys/module/xr_heaps/parameters/system_pool_refill_record
     chmod 0666 /dev/memcg/memory.reclaim_once
+    chmod 0660 /sys/kernel/reserve_pool/enable
+    chmod 0660 /sys/kernel/reserve_pool/cam_reserved_pages
+    chmod 0660 /sys/kernel/camera_reserve_pool/extra_pages
+    chmod 0660 /sys/kernel/camera_reserve_pool/cam_reserved_pages
+    chmod 0660 /sys/kernel/camera_reserve_pool/bypass_ratio
 
-on property:persist.vendor.camera.TriggerSimpleperf=1 && property:persist.vendor.camera.SimpleperfDebug=1
-  exec_background system/xbin/su -c "/system/bin/simpleperf record -p ${persist.vendor.camera.TriggerSimpleperfPid} --call-graph fp --duration 5 -o /data/vendor/camera/offlinelog/${persist.vendor.camera.TriggerSimpleperfPid}_${persist.vendor.camera.TriggerSimpleperfTime}_perf.data"
+    chmod 0660 /dev/cam_opt
+    chmod 0660 /dev/dio_dma_mapper_misc
+    chmod 0660 /dev/cam_meminfo
 
-on property:persist.vendor.camera.TriggerPerfettoStart=1 && property:persist.vendor.camera.PerfettoDebug=1
-exec_background /system/bin/perfetto --detach=traceur --txt -c /system_ext/etc/camera_perfetto.cfg -o /data/misc/perfetto-traces/trace_file${persist.vendor.camera.TriggerPerfettoTime}.perfetto-trace
-
-on property:persist.vendor.camera.TriggerPerfettoStop=1 && property:persist.vendor.camera.PerfettoDebug=1
-exec_background /system/bin/perfetto --stop --attach=traceur
 on property:persist.sys.miui.camera.boost.debug=true
-    setprop persist.sys.miui.cameraopt.debug true
+    setprop persist.sys.miui.cameraopt.loglevel 0
+    setprop persist.sys.miui.camera.algo.disable 1
     setprop persist.vendor.camera.forceMFNR 1
     setprop vendor.debug.camera.forceHWMFFixedNumOfFrames 5
     setprop persist.vendor.sat.binningModeW 1
     setprop persist.vendor.camera.mlshortGain 0.1
     stop vendor.camera-provider
     start vendor.camera-provider
-
-on load-bpf-programs
-    chmod 0755 /sys/kernel/tracing
-    chmod 0777 /sys/kernel/tracing/kprobe_events
-    chmod 0777 /sys/kernel/tracing/uprobe_events

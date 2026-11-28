@@ -650,25 +650,33 @@ fn place(file: &Firmware) -> Result<()> {
     let to = Path::new(FIRMWARE).join(&file.name);
     let dir = to.parent().expect("a firmware file is in a folder");
     fs::create_dir_all(dir).with_context(|| format!("make {}", dir.display()))?;
-    let held = |path: &Path| match fs::read(path) {
-        Ok(bytes) => Ok(Some(bytes)),
-        Err(e) if file.optional && e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e),
-    };
-    let bytes = match &file.partition {
-        None => held(Path::new(&file.path)).with_context(|| format!("read {}", file.path))?,
+    let loaded = match &file.partition {
+        None => skyward_programs::firmware::read(Path::new("/"), file)?,
         Some(partition) => {
             let at = Path::new(PARTITIONS).join(partition);
             fs::create_dir_all(&at).with_context(|| format!("make {}", at.display()))?;
             skyward_block::mount::mount_ro(&Path::new(skyward_block::BY_NAME).join(partition), &at)?;
-            let read = held(&at.join(&file.path)).with_context(|| format!("read {} on {partition}", file.path));
-            skyward_block::mount::umount(&at)?;
-            read?
+            let read = skyward_programs::firmware::read(&at, file).with_context(|| format!("read firmware on {partition}"));
+            let unmounted = skyward_block::mount::umount(&at);
+            let loaded = read?;
+            unmounted?;
+            loaded
         }
     };
-    match bytes {
-        Some(bytes) => fs::write(&to, bytes).with_context(|| format!("write {}", to.display())),
-        None => skyward_sys::kmsg(&format!("the phone has no {}, and the driver starts without it", file.path)),
+    match loaded {
+        Some((from, bytes)) => {
+            fs::write(&to, bytes).with_context(|| format!("write {}", to.display()))?;
+            skyward_sys::kmsg(&format!("WLAN firmware {} read from {}", file.name, from.display()))
+        }
+        None => {
+            // A previous enable may have supplied a file which is no longer there.
+            match fs::remove_file(&to) {
+                Ok(()) => (),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+                Err(error) => return Err(error).with_context(|| format!("remove stale {}", to.display())),
+            }
+            skyward_sys::kmsg(&format!("the phone has no {}, and the driver starts without it", file.name))
+        }
     }
 }
 

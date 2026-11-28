@@ -124,6 +124,7 @@ impl App {
         match asked {
             true => {
                 self.stack = vec![(Screen::PartWork, 0.0, Focus::Unset)];
+                self.reset_split_caches();
                 self.settle_page();
             }
             false => self.open(Screen::PartWork),

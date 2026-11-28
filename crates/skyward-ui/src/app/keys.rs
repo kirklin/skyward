@@ -3,11 +3,112 @@
 use super::*;
 
 impl App {
-    /// Work the control the keys are on, as touching it does. The
+    /// Which pane currently receives hardware-key navigation.
+    pub(super) fn focus_pane(&self) -> Pane {
+        match &self.split {
+            Some(sp) if self.split_active() => sp.key_pane,
+            _ => Pane::Detail,
+        }
+    }
+
+    pub(super) fn pane_frame(&self, pane: Pane) -> Option<&Frame> {
+        match pane {
+            Pane::Sidebar => self.split.as_ref().and_then(|sp| sp.frame.as_ref()),
+            Pane::Detail => self.frame.as_ref(),
+        }
+    }
+
+    fn pane_theme(&self, pane: Pane) -> Theme {
+        match pane {
+            Pane::Sidebar => self.sidebar_theme(),
+            Pane::Detail => self.theme(),
+        }
+    }
+
+    fn pane_max_scroll(&self, pane: Pane) -> f32 {
+        match pane {
+            Pane::Sidebar => self.split.as_ref().map_or(0.0, |sp| sp.max_scroll(self.h)),
+            Pane::Detail => self.max_scroll(),
+        }
+    }
+
+    fn pane_resting(&self, pane: Pane) -> f32 {
+        match pane {
+            Pane::Sidebar => self.split.as_ref().map_or(0.0, |sp| sp.resting()),
+            Pane::Detail => self.resting(),
+        }
+    }
+
+    fn pane_seek_to(&mut self, pane: Pane, target: f32, now: u64) {
+        match pane {
+            Pane::Sidebar => {
+                if let Some(sp) = &mut self.split
+                    && sp.seek_to(target, now)
+                {
+                    self.dirty = true;
+                }
+            }
+            Pane::Detail => self.seek_to(target, now),
+        }
+    }
+
+    fn pane_focus(&self, pane: Pane) -> Focus {
+        match pane {
+            Pane::Sidebar => self.stack[0].2,
+            Pane::Detail => self.top().2,
+        }
+    }
+
+    fn pane_focus_mut(&mut self, pane: Pane) -> &mut Focus {
+        match pane {
+            Pane::Sidebar => &mut self.stack[0].2,
+            Pane::Detail => &mut self.top_mut().2,
+        }
+    }
+
+    fn set_focus_pane(&mut self, pane: Pane) {
+        if let Some(sp) = &mut self.split {
+            sp.key_pane = pane;
+        }
+    }
+
+    fn cached_spots(&self, pane: Pane) -> Option<&[Spot]> {
+        match pane {
+            Pane::Sidebar => self.split.as_ref().and_then(|sp| sp.spots.as_deref()),
+            Pane::Detail => self.spots.as_deref(),
+        }
+    }
+
+    fn pane_spots(&mut self, pane: Pane) -> Option<&[Spot]> {
+        let t = self.pane_theme(pane);
+        let (frame, spots) = match pane {
+            Pane::Sidebar => {
+                let sp = self.split.as_mut()?;
+                (sp.frame.as_ref()?, &mut sp.spots)
+            }
+            Pane::Detail => (self.frame.as_ref()?, &mut self.spots),
+        };
+        if spots.is_none() {
+            *spots = Some(focus::spots(&t, frame));
+        }
+        spots.as_deref()
+    }
+
+    /// Work the control the keys are on in `pane`, as touching it does. The
     /// brightness slider takes the volume keys until the power key lets it
     /// go, and a pattern's dots are joined one press at a time, a second
     /// press on the last one joined ending the pattern.
-    pub(super) fn work(&mut self, spot: Spot, now: u64) -> Vec<Effect> {
+    pub(super) fn work(&mut self, pane: Pane, spot: Spot, now: u64) -> Vec<Effect> {
+        if pane == Pane::Sidebar {
+            if let Stop::Hit(Action::Open(target)) = spot.stop {
+                let fx = self.open_from_sidebar(target, now);
+                if self.screen() == target {
+                    self.set_focus_pane(Pane::Detail);
+                }
+                return fx;
+            }
+            return Vec::new();
+        }
         let l = self.state.lang;
         match spot.stop {
             Stop::Back => self.act(Action::Back, now),
@@ -53,11 +154,12 @@ impl App {
     /// down the page or up it, or moves a slider that takes the keys, the
     /// strength slider tapping the motor as strongly as it was moved to.
     pub(super) fn volume(&mut self, down: bool, now: u64) -> Vec<Effect> {
-        if self.frame.is_none() {
+        let pane = self.focus_pane();
+        if self.pane_frame(pane).is_none() {
             return Vec::new();
         }
         if self.adjusting {
-            if let Some(Spot { stop: Stop::Hit(Action::Slider(which)), rect, .. }) = self.lit() {
+            if let Some(Spot { stop: Stop::Hit(Action::Slider(which)), rect, .. }) = self.lit_on(Pane::Detail) {
                 let level = self.level(which) + if down { -SLIDER_STEP } else { SLIDER_STEP };
                 self.set_level(&self.theme(), which, rect, level);
                 if which == Slider::Vibration && self.state.vibrate {
@@ -67,40 +169,52 @@ impl App {
             return Vec::new();
         }
         if self.keys {
-            self.step(down, now);
+            self.step(pane, down, now);
             return Vec::new();
         }
         self.keys = true;
         self.dirty = true;
-        let scroll = self.resting();
-        let shows = self.lit().is_some_and(|spot| self.shows(&spot, scroll));
+        let scroll = self.pane_resting(pane);
+        let shows = self.lit_on(pane).is_some_and(|spot| self.shows_on(pane, &spot, scroll));
         if !shows {
-            self.top_mut().2 = Focus::Unset;
-            self.lit();
+            *self.pane_focus_mut(pane) = Focus::Unset;
+            if self.lit_on(pane).is_none()
+                && self.split_active()
+                && self.stack.len() == 2
+                && pane == Pane::Detail
+                && self.pane_spots(Pane::Detail).is_some_and(<[Spot]>::is_empty)
+            {
+                self.set_focus_pane(Pane::Sidebar);
+                self.lit_on(Pane::Sidebar);
+            }
         }
         Vec::new()
     }
 
-    /// Move the light to the next control down the page, or up it. A
-    /// control far off is scrolled to half a screen at a time, the light
-    /// staying on its control while that shows; past the last control the
-    /// light goes round to the first, and past the first to the last.
-    fn step(&mut self, down: bool, now: u64) {
-        let scroll = self.resting();
-        let current = self.lit();
-        if self.spots().is_none() {
+    /// Move the light to the next control down `pane`, or up it. A control
+    /// far off is scrolled to half a screen at a time, the light staying
+    /// on its control while that shows; past the last control the light
+    /// crosses to the sibling pane at root split level or goes round to the
+    /// first, and past the first to the last.
+    fn step(&mut self, pane: Pane, down: bool, now: u64) {
+        let scroll = self.pane_resting(pane);
+        let current = self.lit_on(pane);
+        if self.pane_spots(pane).is_none() {
             return;
         }
-        let spots = self.spots.clone().expect("made above");
+        let spots = self.cached_spots(pane).expect("made above").to_vec();
         let cur = current.and_then(|c| focus::find(&spots, &c));
-        let (top, bottom) = self.band(scroll);
-        let (max, n) = (self.max_scroll(), spots.len());
+        let (top, bottom) = self.band_on(pane, scroll);
+        let (max, n) = (self.pane_max_scroll(pane), spots.len());
         let page = |k: usize| spots[k].group == Group::Page;
         let held = |k: usize| matches!(spots[k].group, Group::Fixed | Group::Strip);
         let docked = |k: usize| spots[k].group == Group::Dock;
         // The page's own controls not wholly above the band, or below it.
-        let from_top = |k: usize| page(k) && self.place(&spots[k], scroll).is_some_and(|r| r.y + r.h > top);
-        let from_bottom = |k: usize| page(k) && self.place(&spots[k], scroll).is_some_and(|r| r.y < bottom);
+        let from_top = |k: usize| page(k) && self.place_on(pane, &spots[k], scroll).is_some_and(|r| r.y + r.h > top);
+        let from_bottom = |k: usize| page(k) && self.place_on(pane, &spots[k], scroll).is_some_and(|r| r.y < bottom);
+        // A page padded only for its search bar's fold holds no unseen content
+        // past its last control, so stepping past it wraps or crosses at once.
+        let fold_only = self.pane_frame(pane).and_then(|fr| fr.fold).is_some_and(|f| max <= f.span.ceil());
         enum To {
             Spot(usize),
             Scroll,
@@ -110,7 +224,7 @@ impl App {
             // Past the page's own: the rest of the page, then the bottom
             // strip, then round.
             let past = || {
-                if scroll < max {
+                if scroll < max && !fold_only {
                     To::Scroll
                 } else {
                     (0..n).find(|&k| docked(k)).map_or(To::Round, To::Spot)
@@ -143,105 +257,123 @@ impl App {
             To::Spot(k) => {
                 let s = spots[k];
                 if s.group == Group::Page {
-                    let target = self.reveal(&s, scroll);
+                    let target = self.reveal_on(pane, &s, scroll);
                     if (target - scroll).abs() > (bottom - top) / 2.0 {
-                        return self.scroll_on(down, &spots, cur, now);
+                        return self.scroll_on(pane, down, &spots, cur, now);
                     }
-                    self.seek_to(target, now);
+                    self.pane_seek_to(pane, target, now);
                 }
-                self.top_mut().2 = Focus::On(s);
+                *self.pane_focus_mut(pane) = Focus::On(s);
             }
-            To::Scroll => return self.scroll_on(down, &spots, cur, now),
-            To::Round if n == 0 => return,
-            // Going round, the page goes to its top or its end, as far as
-            // its control there shows.
+            To::Scroll => return self.scroll_on(pane, down, &spots, cur, now),
             To::Round => {
-                let s = spots[if down { 0 } else { n - 1 }];
-                let end = if down { 0.0 } else { max };
-                let target = if self.shows(&s, end) { end } else { self.reveal(&s, end) };
-                self.seek_to(target, now);
-                self.top_mut().2 = Focus::On(s);
+                let sibling = match pane {
+                    Pane::Sidebar => Pane::Detail,
+                    Pane::Detail => Pane::Sidebar,
+                };
+                let crossed = self.split_active() && self.stack.len() == 2 && self.pane_spots(sibling).is_some_and(|sp| !sp.is_empty());
+                let (next_pane, next_spots) = if crossed {
+                    let sp = self.cached_spots(sibling).expect("checked above").to_vec();
+                    self.set_focus_pane(sibling);
+                    (sibling, sp)
+                } else {
+                    if n == 0 {
+                        return;
+                    }
+                    (pane, spots)
+                };
+                // Going round or crossing panes, go to the top or end, as far as
+                // its control there shows.
+                let s = next_spots[if down { 0 } else { next_spots.len() - 1 }];
+                let end = if down { 0.0 } else { self.pane_max_scroll(next_pane) };
+                let target = if self.shows_on(next_pane, &s, end) { end } else { self.reveal_on(next_pane, &s, end) };
+                self.pane_seek_to(next_pane, target, now);
+                *self.pane_focus_mut(next_pane) = Focus::On(s);
             }
         }
         self.dirty = true;
     }
 
-    /// Scroll the page half a screen down or up for the keys. The light
-    /// stays on its control while that shows, and goes to the first in view
-    /// the way the page went when it does not.
-    fn scroll_on(&mut self, down: bool, spots: &[Spot], cur: Option<usize>, now: u64) {
-        let scroll = self.resting();
-        let (top, bottom) = self.band(scroll);
+    /// Scroll `pane` half a screen down or up for the keys. The light stays
+    /// on its control while that shows, and goes to the first in view the
+    /// way the pane went when it does not.
+    fn scroll_on(&mut self, pane: Pane, down: bool, spots: &[Spot], cur: Option<usize>, now: u64) {
+        let scroll = self.pane_resting(pane);
+        let (top, bottom) = self.band_on(pane, scroll);
         let half = (bottom - top) / 2.0;
-        let target = if down { (scroll + half).min(self.max_scroll()) } else { (scroll - half).max(0.0) };
+        let max = self.pane_max_scroll(pane);
+        let target = if down { (scroll + half).min(max) } else { (scroll - half).max(0.0) };
         // A page coming to rest with its search bar part folded folds it
         // whole or not at all, as one let go there does.
-        let target = self.frame.as_ref().map_or(target, |fr| fr.settle(target));
-        self.seek_to(target, now);
-        if cur.is_some_and(|i| self.shows(&spots[i], target)) {
+        let target = self.pane_frame(pane).map_or(target, |fr| fr.settle(target).min(max));
+        self.pane_seek_to(pane, target, now);
+        if cur.is_some_and(|i| self.shows_on(pane, &spots[i], target)) {
             return;
         }
-        let band = self.band(target);
-        let in_view = |k: &usize| spots[*k].group == Group::Page && self.place(&spots[*k], target).is_some_and(|r| within(r, band));
+        let band = self.band_on(pane, target);
+        let in_view = |k: &usize| spots[*k].group == Group::Page && self.place_on(pane, &spots[*k], target).is_some_and(|r| within(r, band));
         let next = if down { (0..spots.len()).find(in_view) } else { (0..spots.len()).rev().find(in_view) };
-        self.top_mut().2 = next.map_or(Focus::Off, |k| Focus::On(spots[k]));
+        *self.pane_focus_mut(pane) = next.map_or(Focus::Off, |k| Focus::On(spots[k]));
     }
 
     /// The page's controls in the order the keys go through them, once the
     /// page is drawn.
-    fn spots(&mut self) -> Option<&[Spot]> {
-        if self.spots.is_none() {
-            let t = self.theme();
-            self.spots = Some(focus::spots(&t, self.frame.as_ref()?));
-        }
-        self.spots.as_deref()
+    #[cfg(test)]
+    pub(super) fn spots(&mut self) -> Option<&[Spot]> {
+        self.pane_spots(Pane::Detail)
     }
 
-    /// The control the keys are on, once the page is drawn: the one they
-    /// were on, found again, or the first in view when they have not been
-    /// anywhere on the page yet or theirs has gone from it.
-    pub(super) fn lit(&mut self) -> Option<Spot> {
-        let scroll = self.resting();
-        self.spots()?;
-        let spots = self.spots.as_deref().expect("made above");
-        let found = match self.top().2 {
+    /// The control the keys are on in `pane`, once drawn: the one they were
+    /// on, found again, or the first in view when they have not been
+    /// anywhere on `pane` yet or theirs has gone from it.
+    pub(super) fn lit_on(&mut self, pane: Pane) -> Option<Spot> {
+        let scroll = self.pane_resting(pane);
+        self.pane_spots(pane)?;
+        let spots = self.cached_spots(pane).expect("made above");
+        let found = match self.pane_focus(pane) {
             Focus::Off => return None,
             Focus::On(at) => focus::find(spots, &at),
             Focus::Unset => None,
         };
-        let spot = spots[found.or_else(|| self.first_in_view(spots, scroll))?];
-        self.stack.last_mut().expect("the page stack always holds a page").2 = Focus::On(spot);
+        let spot = spots[found.or_else(|| self.first_in_view_on(pane, spots, scroll))?];
+        *self.pane_focus_mut(pane) = Focus::On(spot);
         Some(spot)
     }
 
-    /// The first of the page's own controls in view at `scroll`, or else
+    /// The control the keys are currently on, in the active focus pane.
+    #[cfg(test)]
+    pub(super) fn lit(&mut self) -> Option<Spot> {
+        self.lit_on(self.focus_pane())
+    }
+
+    /// The first of `pane`'s own controls in view at `scroll`, or else
     /// the bottom strip's first, or else the `<` or the top strip's first.
-    fn first_in_view(&self, spots: &[Spot], scroll: f32) -> Option<usize> {
-        let band = self.band(scroll);
-        let k = spots.iter().position(|s| s.group == Group::Page && self.place(s, scroll).is_some_and(|r| within(r, band)));
+    fn first_in_view_on(&self, pane: Pane, spots: &[Spot], scroll: f32) -> Option<usize> {
+        let band = self.band_on(pane, scroll);
+        let k = spots.iter().position(|s| s.group == Group::Page && self.place_on(pane, s, scroll).is_some_and(|r| within(r, band)));
         k.or_else(|| spots.iter().position(|s| s.group == Group::Dock))
             .or_else(|| spots.iter().position(|s| matches!(s.group, Group::Fixed | Group::Strip)))
     }
 
-    /// Where on screen `s` is with the page `offset` pixels down; nowhere
-    /// for a search bar folded away.
-    pub(super) fn place(&self, s: &Spot, offset: f32) -> Option<Rect> {
-        let fr = self.frame.as_ref().expect("a control is placed on the page drawn");
+    /// Where on screen `s` in `pane` is with `pane` `offset` pixels down;
+    /// nowhere for a search bar folded away.
+    fn place_on(&self, pane: Pane, s: &Spot, offset: f32) -> Option<Rect> {
+        let fr = self.pane_frame(pane).expect("a control is placed on the pane drawn");
         let dy = match s.group {
             Group::Fixed => 0.0,
-            Group::Strip => pinned_top(&self.theme(), fr.pinned.as_ref().expect("the strip holds its controls"), offset),
+            Group::Strip => pinned_top(&self.pane_theme(pane), fr.pinned.as_ref().expect("the strip holds its controls"), offset),
             Group::Page => return fr.shown(s.rect, offset),
             Group::Dock => self.h as f32 - fr.dock.as_ref().expect("the dock holds its controls").canvas.h as f32,
         };
         Some(Rect { y: s.rect.y + dy, ..s.rect })
     }
 
-    /// The band of the screen the page's own controls show in with the page
-    /// at `scroll`: under the bar, or under the strip held there, down to
-    /// the strip held at the bottom.
-    fn band(&self, scroll: f32) -> (f32, f32) {
-        let t = self.theme();
-        let fr = self.frame.as_ref().expect("the band is the page drawn's");
+    /// The band of the screen `pane`'s own controls show in with `pane` at
+    /// `scroll`: under the bar, or under the strip held there, down to the
+    /// strip held at the bottom.
+    fn band_on(&self, pane: Pane, scroll: f32) -> (f32, f32) {
+        let t = self.pane_theme(pane);
+        let fr = self.pane_frame(pane).expect("the band is the pane drawn's");
         let top = match &fr.pinned {
             Some(p) => pinned_top(&t, p, scroll) + p.canvas.h as f32,
             None => widgets::bar_bottom(&t),
@@ -249,26 +381,36 @@ impl App {
         (top, self.h as f32 - fr.dock.as_ref().map_or(0.0, |d| d.canvas.h as f32))
     }
 
-    /// Whether `s` shows, in part at least, with the page at `scroll`.
-    pub(super) fn shows(&self, s: &Spot, scroll: f32) -> bool {
-        s.group != Group::Page || self.place(s, scroll).is_some_and(|r| within(r, self.band(scroll)))
+    #[cfg(test)]
+    fn band(&self, scroll: f32) -> (f32, f32) {
+        self.band_on(Pane::Detail, scroll)
     }
 
-    /// How far down to scroll the page from `scroll` to show `s` whole, a
+    /// Whether `s` in `pane` shows, in part at least, at `scroll`.
+    pub(super) fn shows_on(&self, pane: Pane, s: &Spot, scroll: f32) -> bool {
+        s.group != Group::Page || self.place_on(pane, s, scroll).is_some_and(|r| within(r, self.band_on(pane, scroll)))
+    }
+
+    #[cfg(test)]
+    pub(super) fn shows(&self, s: &Spot, scroll: f32) -> bool {
+        self.shows_on(Pane::Detail, s, scroll)
+    }
+
+    /// How far down to scroll `pane` from `scroll` to show `s` whole, a
     /// margin clear of the band's edges, or as much of it from its top as
     /// fits. A search bar under the large title shows only unfolded, at
     /// the page's top, and a page scrolled down to show any other control
     /// goes on to fold the bar away whole.
-    fn reveal(&self, s: &Spot, scroll: f32) -> f32 {
-        let fr = self.frame.as_ref().expect("a control is revealed on the page drawn");
+    fn reveal_on(&self, pane: Pane, s: &Spot, scroll: f32) -> f32 {
+        let fr = self.pane_frame(pane).expect("a control is revealed on the pane drawn");
         let fold = fr.fold.filter(|_| s.group == Group::Page);
         if fold.is_some_and(|f| f.bar == s.rect) {
             return 0.0;
         }
-        let margin = self.theme().m.margin;
-        let (top, bottom) = self.band(scroll);
+        let margin = self.pane_theme(pane).m.margin;
+        let (top, bottom) = self.band_on(pane, scroll);
         let (top, bottom) = (top + margin, bottom - margin);
-        let r = self.place(s, scroll).expect("only a search bar folded away has no place");
+        let r = self.place_on(pane, s, scroll).expect("only a search bar folded away has no place");
         let d = if r.y < top {
             r.y - top
         } else if r.y + r.h > bottom {
@@ -278,24 +420,30 @@ impl App {
         };
         let target = scroll + d;
         let target = fold.map_or(target, |f| if target > 0.0 && target < f.span { f.span } else { target });
-        target.clamp(0.0, self.max_scroll())
+        target.clamp(0.0, self.pane_max_scroll(pane))
     }
 
-    /// The light on the control the keys are on while they work the page:
+    /// The light on the control the keys are on while they work `pane`:
     /// the part of the screen its control is drawn in, where the light
-    /// falls with the page `offset` pixels down, how round it is, and its
+    /// falls with the pane `offset` pixels down, how round it is, and its
     /// tint, stronger while the power key is held down on it.
-    pub(super) fn light(&mut self, offset: f32) -> Option<(Group, Rect, f32, Rgba)> {
-        if !self.keys {
+    pub(super) fn light_on(&mut self, pane: Pane, offset: f32) -> Option<(Group, Rect, f32, Rgba)> {
+        if !self.keys || self.focus_pane() != pane {
             return None;
         }
-        let spot = self.lit()?;
-        let t = self.theme();
-        let keypad = self.screen() == Screen::Decrypt && matches!(self.state.data, Data::Locked { keys: Keys::Digits, .. });
-        let (r, radius) = focus::lit(&t, spot.stop, self.place(&spot, offset)?, keypad);
+        let spot = self.lit_on(pane)?;
+        let t = self.pane_theme(pane);
+        let keypad = pane == Pane::Detail
+            && self.screen() == Screen::Decrypt
+            && matches!(self.state.data, Data::Locked { keys: Keys::Digits, .. });
+        let (r, radius) = focus::lit(&t, spot.stop, self.place_on(pane, &spot, offset)?, keypad);
         let held = matches!(self.button, Some((_, Press::Power { .. } | Press::Slide { .. })));
         let alpha = if held || self.adjusting { LIGHT_HELD_ALPHA } else { LIGHT_ALPHA };
         Some((spot.group, r, radius, t.pal.accent.with_alpha(alpha)))
+    }
+
+    pub(super) fn light(&mut self, offset: f32) -> Option<(Group, Rect, f32, Rgba)> {
+        self.light_on(Pane::Detail, offset)
     }
 }
 

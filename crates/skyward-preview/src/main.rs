@@ -162,6 +162,7 @@ fn main() -> Result<()> {
             let probes = args.get(3).ok_or_else(|| anyhow!("--match needs a probe file"))?;
             return matcher::run(&fonts, Path::new(probes));
         }
+        Some("--tablet") => return render_tablet(&out, &cfg, &fonts, lang),
         _ => {}
     }
 
@@ -1712,3 +1713,145 @@ fn write_png(path: &Path, canvas: &Canvas) -> Result<()> {
 /// How far, in pixels, a text's box may reach past the screen's edge or
 /// into another's before the preview says so.
 const EDGE: f32 = 1.0;
+
+/// Render composed landscape tablet UI previews (2800x1980 @ 360 dpi) into `out`.
+fn render_tablet(out: &Path, cfg: &DeviceConfig, fonts: &Fonts, lang: Lang) -> Result<()> {
+    let (tw, th, density, corner_radius) = (2800u32, 1980u32, 360u32, 56.0f32);
+    let ppd = density as f32 / 160.0;
+    let sidebar_w = skyward_ui::theme::sidebar_width(tw, ppd);
+
+    let mut info = nezha(cfg);
+    info.panel = Some((tw, th));
+
+    let settle = |app: &mut App, canvas: &mut Canvas, now: &mut u64| {
+        let _ = app.tick(*now);
+        app.compose(canvas, fonts, &info, "19:50", *now);
+        *now += 2000;
+        let _ = app.tick(*now);
+        app.compose(canvas, fonts, &info, "19:50", *now);
+    };
+
+    let open_sidebar = |app: &mut App, target: Screen, dark: bool, now: &mut u64| -> Result<Canvas> {
+        let mut canvas = Canvas::new(tw, th);
+        let side_t = if dark { Theme::dark(sidebar_w, th, ppd) } else { Theme::light(sidebar_w, th, ppd) };
+        let cx = Ctx { t: &side_t, f: fonts, info: &info, state: &app.state, term: None, band: None };
+        let side_frame = pages::render(Screen::Home, &cx);
+        let hit = side_frame
+            .hits
+            .iter()
+            .find(|h| h.action == Action::Open(target))
+            .ok_or_else(|| anyhow!("missing sidebar hit for {target:?}"))?;
+        let (hx, mut hy) = hit.rect.centre();
+        let max_scroll = (side_frame.height(&side_t) - th as f32).max(0.0);
+        if hy > th as f32 - 120.0 && max_scroll > 0.0 {
+            let drag = (hy - th as f32 * 0.55).clamp(240.0f32.min(max_scroll), max_scroll);
+            let y0 = th as f32 * 0.75;
+            app.touch(Touch::Down(hx, y0), fonts, *now);
+            app.touch(Touch::Move(hx, y0 - drag), fonts, *now + 60);
+            *now += 500;
+            app.touch(Touch::Up, fonts, *now);
+            hy -= drag;
+            settle(app, &mut canvas, now);
+        } else {
+            app.compose(&mut canvas, fonts, &info, "19:50", *now);
+        }
+        app.touch(Touch::Down(hx, hy), fonts, *now);
+        *now += 20;
+        app.touch(Touch::Up, fonts, *now);
+        settle(app, &mut canvas, now);
+        if app.screen() != target {
+            return Err(anyhow!("expected sidebar tap to open {target:?}, got {:?}", app.screen()));
+        }
+        Ok(canvas)
+    };
+
+    let make_tablet_app = |dark: bool| -> App {
+        let mut app = App::new(Screen::Home, tw, th, ppd);
+        app.state.lang = lang;
+        app.state.dark = dark;
+        app.state.data = Data::Open;
+        app.set_screen_corners(corner_radius);
+        app
+    };
+
+    // 1 & 2: Default split view (Home + About), light & dark.
+    for (name, dark) in [("01-tablet-home-about-light", false), ("02-tablet-home-about-dark", true)] {
+        let mut app = make_tablet_app(dark);
+        let mut canvas = Canvas::new(tw, th);
+        let mut now = 0;
+        settle(&mut app, &mut canvas, &mut now);
+        let path = out.join(format!("{name}.png"));
+        write_png(&path, &canvas)?;
+        println!("wrote {}", path.display());
+    }
+
+    // 3..6: Sidebar-selected detail pages (Settings light/dark, Wipe, Search).
+    for (name, target, dark) in [
+        ("03-tablet-settings-light", Screen::Settings, false),
+        ("04-tablet-settings-dark", Screen::Settings, true),
+        ("05-tablet-wipe-light", Screen::Wipe, false),
+        ("06-tablet-search-light", Screen::Search, false),
+    ] {
+        let mut app = make_tablet_app(dark);
+        let mut now = 0;
+        let mut canvas = Canvas::new(tw, th);
+        app.compose(&mut canvas, fonts, &info, "19:50", now);
+        let canvas = open_sidebar(&mut app, target, dark, &mut now)?;
+        let path = out.join(format!("{name}.png"));
+        write_png(&path, &canvas)?;
+        println!("wrote {}", path.display());
+    }
+
+    // 7: Nested sub-page inside detail pane (Settings -> Language, showing `<` back button).
+    {
+        let mut app = make_tablet_app(false);
+        let mut now = 0;
+        let mut canvas = Canvas::new(tw, th);
+        app.compose(&mut canvas, fonts, &info, "19:50", now);
+        let _ = open_sidebar(&mut app, Screen::Settings, false, &mut now)?;
+        let (dx, dy) = app
+            .frame(fonts, &info)
+            .hits
+            .iter()
+            .find(|h| h.action == Action::Open(Screen::Language))
+            .ok_or_else(|| anyhow!("missing Language row in Settings"))?
+            .rect
+            .centre();
+        app.touch(Touch::Down(sidebar_w as f32 + dx, dy), fonts, now);
+        now += 20;
+        app.touch(Touch::Up, fonts, now);
+        settle(&mut app, &mut canvas, &mut now);
+        if app.screen() != Screen::Language {
+            return Err(anyhow!("expected detail tap to open Language, got {:?}", app.screen()));
+        }
+        let path = out.join("07-tablet-subpage-language-light.png");
+        write_png(&path, &canvas)?;
+        println!("wrote {}", path.display());
+    }
+
+    // 8 & 9: Fullscreen tablet-adapted standalone flows (Decrypt Pattern & Fastboot), dark.
+    for (name, screen, data, pattern) in [
+        (
+            "08-tablet-decrypt-pattern-dark",
+            Screen::Decrypt,
+            Data::Locked { user: 0, keys: Keys::Pattern, checking: false },
+            &[0, 3, 4, 5, 8][..],
+        ),
+        ("09-tablet-fastboot-dark", Screen::Fastboot, Data::Open, &[][..]),
+    ] {
+        let mut app = App::new(screen, tw, th, ppd);
+        app.state.lang = lang;
+        app.state.dark = true;
+        app.state.data = data;
+        app.state.pattern = pattern.to_vec();
+        app.set_screen_corners(corner_radius);
+        let mut canvas = Canvas::new(tw, th);
+        let mut now = 0;
+        settle(&mut app, &mut canvas, &mut now);
+        let path = out.join(format!("{name}.png"));
+        write_png(&path, &canvas)?;
+        println!("wrote {}", path.display());
+    }
+
+    Ok(())
+}

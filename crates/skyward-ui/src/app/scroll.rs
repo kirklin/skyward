@@ -3,6 +3,142 @@
 
 use super::*;
 
+/// How far past an end a pane shows at `now`: negative past the top,
+/// positive past the bottom.
+pub(super) fn overscroll(pull: f32, bounce: Option<Spring>, h: u32, now: u64) -> f32 {
+    if pull != 0.0 {
+        motion::rubber(pull, h as f32)
+    } else {
+        bounce.map_or(0.0, |b| b.at(now).0)
+    }
+}
+
+/// Whether a pane is gliding, springing back, or easing on of its own
+/// accord at `now`.
+pub(super) fn in_motion(fling: Option<Fling>, bounce: Option<Spring>, seek: Option<(f32, Spring)>, now: u64) -> bool {
+    fling.is_some_and(|fl| !fl.at(now).1) || bounce.is_some_and(|b| !b.at(now).1) || seek.is_some_and(|(_, s)| !s.at(now).1)
+}
+
+/// Stop a pane's active glide, bounce or key seek at `now`, keeping any
+/// overscroll as `pull`. Returns whether any motion was stopped.
+pub(super) fn catch(pull: &mut f32, bounce: &mut Option<Spring>, fling: &mut Option<Fling>, seek: &mut Option<(f32, Spring)>, h: u32, now: u64) -> bool {
+    let glide = fling.take().is_some_and(|fl| !fl.at(now).1);
+    let seeking = seek.take().is_some_and(|(_, s)| !s.at(now).1);
+    let spring = bounce.take().map(|b| b.at(now)).filter(|&(_, done)| !done);
+    if let Some((offset, _)) = spring {
+        *pull = motion::unrubber(offset, h as f32);
+    }
+    glide || seeking || spring.is_some()
+}
+
+/// Scroll a pane by `d` pixels under a dragging finger, spilling travel
+/// past an end into `pull`.
+pub(super) fn drag_by(scroll: &mut f32, pull: &mut f32, max: f32, mut d: f32) {
+    if *pull != 0.0 {
+        let next_pull = *pull + d;
+        if next_pull * *pull > 0.0 {
+            *pull = next_pull;
+            return;
+        }
+        *pull = 0.0;
+        d = next_pull;
+    }
+    let next = *scroll + d;
+    *scroll = next.clamp(0.0, max);
+    *pull = next - *scroll;
+}
+
+/// Ease a pane whose search bar is part-folded to fold it whole or unfold
+/// it whole, whichever is nearer.
+pub(super) fn settle_fold(frame: Option<&Frame>, at: f32, max: f32, seek: &mut Option<(f32, Spring)>, now: u64) -> bool {
+    let Some(fr) = frame else { return false };
+    let rest = fr.settle(at).min(max);
+    if rest != at {
+        *seek = Some((rest, Spring::new(now, at - rest, 0.0, FOLD_PERIOD)));
+        return true;
+    }
+    false
+}
+
+/// Advance fling, overscroll bounce and key-seek springs on a pane,
+/// returning whether anything moved.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn tick(
+    scroll: &mut f32,
+    fling: &mut Option<Fling>,
+    bounce: &mut Option<Spring>,
+    seek: &mut Option<(f32, Spring)>,
+    frame: Option<&Frame>,
+    max: f32,
+    hard_bounce_px: f32,
+    now: u64,
+) -> bool {
+    let mut dirty = false;
+    if let Some(fl) = *fling {
+        let (y, done) = fl.at(now);
+        let next = y.clamp(0.0, max);
+        if next != *scroll {
+            *scroll = next;
+            dirty = true;
+        }
+        if next != y {
+            // The glide ran into an end: the speed it had left throws
+            // the page past it, and it springs back.
+            let speed = fl.velocity(now);
+            let period = if speed.abs() <= hard_bounce_px { 0.4 } else { 0.55 };
+            *bounce = Some(Spring::new(now, 0.0, speed, period));
+            *fling = None;
+            dirty = true;
+        } else if done {
+            *fling = None;
+            dirty |= settle_fold(frame, *scroll, max, seek, now);
+        }
+    }
+    if let Some(b) = *bounce {
+        dirty = true;
+        if b.at(now).1 {
+            *bounce = None;
+        }
+    }
+    if let Some((target, spring)) = *seek {
+        let (off, done) = spring.at(now);
+        let at = if done { target } else { (target + off).clamp(0.0, max) };
+        if *scroll != at {
+            *scroll = at;
+            dirty = true;
+        }
+        if done {
+            *seek = None;
+        }
+    }
+    dirty
+}
+
+/// Release a held row press at `now`: cancel if not yet darkened, or start
+/// fading back.
+pub(super) fn let_row_go(row_press: &mut Option<RowPress>, row_art: &mut Option<(Canvas, Canvas)>, now: u64) -> bool {
+    let Some(p) = *row_press else { return false };
+    if now < p.rise {
+        *row_press = None;
+        *row_art = None;
+    } else if p.fall.is_none() {
+        *row_press = Some(RowPress { fall: Some(now), ..p });
+    }
+    true
+}
+
+/// Whether the bar's title and backdrop belong over `frame` at `scroll`.
+pub(super) fn bar_wanted(frame: Option<&Frame>, scroll: f32, t: &Theme) -> Option<(bool, bool)> {
+    let fr = frame?;
+    Some(if fr.hero.is_some() {
+        let gone = scroll >= t.m.dp(ABOUT_LOGO_DP) - widgets::bar_bottom(t);
+        (gone, gone)
+    } else {
+        let under = (fr.content_top - widgets::bar_bottom(t) - t.m.dp(20.0)).max(0.0);
+        (fr.header && fr.title_lift(scroll) >= t.m.dp(TITLE_FADE_DP), scroll > under)
+    })
+}
+
 impl App {
     /// Where the page comes to rest: where the keys are scrolling it to, or
     /// where it is.
@@ -13,11 +149,9 @@ impl App {
     /// A page come to rest with its search bar part folded eases on from
     /// there to fold the bar away or unfold it whole, whichever is nearer.
     pub(super) fn settle_fold(&mut self, now: u64) {
-        let Some(fr) = self.frame.as_ref() else { return };
         let at = self.top().1;
-        let rest = fr.settle(at).min(self.max_scroll());
-        if rest != at {
-            self.seek = Some((rest, Spring::new(now, at - rest, 0.0, FOLD_PERIOD)));
+        let max = self.max_scroll();
+        if settle_fold(self.frame.as_ref(), at, max, &mut self.seek, now) {
             self.dirty = true;
         }
     }
@@ -33,20 +167,14 @@ impl App {
     /// Whether the page is gliding, springing back, or easing on of its own
     /// accord at `now`.
     pub(super) fn in_motion(&self, now: u64) -> bool {
-        self.fling.is_some_and(|fl| !fl.at(now).1) || self.bounce.is_some_and(|b| !b.at(now).1) || self.seek.is_some_and(|(_, s)| !s.at(now).1)
+        in_motion(self.fling, self.bounce, self.seek, now)
     }
 
     /// Stop a page gliding, springing back or easing on of its own accord,
     /// where it has got to, for a finger to hold: one past its end stays
     /// out there as the finger's pull. Whether there was one.
     pub(super) fn catch(&mut self, now: u64) -> bool {
-        let glide = self.fling.take().is_some_and(|fl| !fl.at(now).1);
-        let seeking = self.seek.take().is_some_and(|(_, s)| !s.at(now).1);
-        let spring = self.bounce.take().map(|b| b.at(now)).filter(|&(_, done)| !done);
-        if let Some((offset, _)) = spring {
-            self.pull = motion::unrubber(offset, self.h as f32);
-        }
-        glide || seeking || spring.is_some()
+        catch(&mut self.pull, &mut self.bounce, &mut self.fling, &mut self.seek, self.h, now)
     }
 
     /// Move the page `d` pixels under a dragging finger (positive moves it
@@ -55,21 +183,10 @@ impl App {
     /// before the page scrolls again.
     pub(super) fn drag_by(&mut self, d: f32) {
         self.dirty = true;
-        let mut d = d;
-        if self.pull != 0.0 {
-            let pull = self.pull + d;
-            if pull * self.pull > 0.0 {
-                self.pull = pull;
-                return;
-            }
-            self.pull = 0.0;
-            d = pull;
-        }
         let max = self.max_scroll();
-        let top = self.top_mut();
-        let next = top.1 + d;
-        top.1 = next.clamp(0.0, max);
-        self.pull = next - top.1;
+        let mut s = self.top().1;
+        drag_by(&mut s, &mut self.pull, max, d);
+        self.top_mut().1 = s;
     }
 }
 

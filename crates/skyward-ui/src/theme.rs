@@ -78,6 +78,25 @@ pub struct Hero {
     pub chevron: Rgba,
 }
 
+/// Thresholds and caps for wide and landscape tablet layouts, in dp.
+const SPLIT_MIN_W_DP: f32 = 840.0;
+const SPLIT_MIN_H_DP: f32 = 520.0;
+const WIDE_THRESHOLD_DP: f32 = 600.0;
+const CONTENT_MAX_W_DP: f32 = 720.0;
+const SIDEBAR_W_DP: f32 = 384.0;
+
+/// Whether a panel of `w` × `h` pixels at `px_per_dp` uses the landscape split-pane
+/// layout.
+pub fn is_split(w: u32, h: u32, px_per_dp: f32) -> bool {
+    let (w_dp, h_dp) = (w as f32 / px_per_dp, h as f32 / px_per_dp);
+    w > h && w_dp >= SPLIT_MIN_W_DP && h_dp >= SPLIT_MIN_H_DP
+}
+
+/// Pixel width of the left navigation sidebar on a split-pane panel `w` wide.
+pub fn sidebar_width(w: u32, px_per_dp: f32) -> u32 {
+    ((SIDEBAR_W_DP * px_per_dp).round() as u32).min(((w as f32) * 0.36).round() as u32)
+}
+
 /// Layout metrics measured on a Xiaomi 17 Ultra's stock settings, in dp,
 /// converted at the panel's density.
 #[derive(Clone, Copy)]
@@ -86,6 +105,7 @@ pub struct Metrics {
     pub h: u32,
     pub px_per_dp: f32,
     pub margin: f32,
+    pub bottom_margin: f32,
     pub card_radius: f32,
     pub card_gap: f32,
     pub section_block: f32,
@@ -176,11 +196,20 @@ impl Theme {
 
 fn metrics(w: u32, h: u32, px_per_dp: f32) -> Metrics {
     let dp = |v: f32| v * px_per_dp;
+    let w_dp = w as f32 / px_per_dp;
+    let (margin, title_x) = if w_dp > WIDE_THRESHOLD_DP {
+        let content_w_dp = (w_dp - 48.0).min(CONTENT_MAX_W_DP);
+        let margin = dp((w_dp - content_w_dp) / 2.0);
+        (margin, margin + dp(16.6))
+    } else {
+        (dp(12.0), dp(28.6))
+    };
     Metrics {
         w,
         h,
         px_per_dp,
-        margin: dp(12.0),
+        margin,
+        bottom_margin: dp(24.0),
         card_radius: dp(20.0),
         card_gap: dp(12.0),
         section_block: dp(45.67),
@@ -191,7 +220,7 @@ fn metrics(w: u32, h: u32, px_per_dp: f32) -> Metrics {
         icon: dp(28.0),
         icon_gap: dp(20.67),
         title_px: dp(32.0),
-        title_x: dp(28.6),
+        title_x,
         title_top: dp(117.7),
         back_x: dp(26.3),
         back_cy: dp(75.7),
@@ -353,3 +382,34 @@ const DARK_HERO: Hero = Hero {
     value: Rgba::rgb(157, 161, 188),
     chevron: Rgba::rgb(118, 122, 160),
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn phone_metrics_stay_unchanged_and_wide_surfaces_center_to_720dp() {
+        let phone = Theme::light(1440, 3200, 3.5).m;
+        assert!(!is_split(1440, 3200, 3.5));
+        assert!((phone.margin - phone.dp(12.0)).abs() < 1e-4);
+        assert!((phone.title_x - phone.dp(28.6)).abs() < 1e-4);
+        assert!((phone.bottom_margin - phone.dp(24.0)).abs() < 1e-4);
+
+        // 11-inch landscape tablet (2800x1980 @ 360 dpi -> 1244.4 x 880 dp)
+        assert!(is_split(2800, 1980, 2.25));
+        assert!(!is_split(1980, 2800, 2.25));
+        assert!(!is_split(2400, 1080, 3.0));
+        assert!(is_split(1680, 1040, 2.0));
+        assert!(!is_split(1678, 1040, 2.0));
+        assert!(!is_split(1680, 1038, 2.0));
+        assert_eq!(sidebar_width(2800, 2.25), 864);
+        let detail = Theme::light(2800 - 864, 1980, 2.25).m;
+        assert!((detail.w as f32 - 2.0 * detail.margin - detail.dp(CONTENT_MAX_W_DP)).abs() < 1.0);
+        assert!((detail.title_x - (detail.margin + detail.dp(16.6))).abs() < 1e-4);
+        assert!((detail.back_x - detail.dp(26.3)).abs() < 1e-4);
+
+        // Sidebar itself is 384 dp <= 600 dp, so it uses normal 12 dp phone card margins.
+        let side = Theme::light(864, 1980, 2.25).m;
+        assert!((side.margin - side.dp(12.0)).abs() < 1e-4);
+    }
+}
